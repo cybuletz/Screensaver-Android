@@ -54,7 +54,7 @@ class WebViewFragment : Fragment() {
     }
 
     private fun loadScreensaver() {
-        if (MainActivity.AccountManager.getGoogleAccount() != null) {
+        if ((requireActivity() as MainActivity).AccountManager.getGoogleAccount() != null) {
             lifecycleScope.launch {
                 try {
                     val photos = photosHelper.getPhotos(maxResults = 50)
