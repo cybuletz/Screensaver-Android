@@ -3,23 +3,17 @@ package com.example.screensaver
 import android.content.Context
 import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
+import com.google.api.client.http.HttpRequestInitializer
+import com.google.api.client.json.gson.GsonFactory
+import com.google.api.services.photoslibrary.v1.PhotosLibrary
+import com.google.api.services.photoslibrary.v1.PhotosLibraryScopes
+import com.google.auth.http.HttpCredentialsAdapter
+import com.google.auth.oauth2.AccessToken
+import com.google.auth.oauth2.GoogleCredentials
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.http.GET
-import retrofit2.http.Header
-import retrofit2.http.Query
-
-private const val TAG = "GooglePhotosManager"
-
-interface GooglePhotosApiService {
-    @GET("v1/mediaItems")
-    suspend fun listMediaItems(
-        @Header("Authorization") token: String,
-        @Query("pageSize") pageSize: Int
-    ): MediaItemsResponse
-}
+import java.util.*
 
 class GooglePhotosManager(private val context: Context) {
     private lateinit var photosLibraryClient: PhotosLibrary
@@ -33,28 +27,23 @@ class GooglePhotosManager(private val context: Context) {
         try {
             Log.d(TAG, "Initializing with account: ${account.email}")
 
-            // Get token
             val token = account.idToken
             if (token == null) {
                 Log.e(TAG, "ID token is null")
                 throw IllegalStateException("No ID token available")
             }
 
-            // Create credentials
             val credentials = GoogleCredentials.create(
                 AccessToken(
                     token,
-                    null // No expiration time available from GoogleSignInAccount
+                    Date(System.currentTimeMillis() + 3600000) // Token expires in 1 hour
                 )
-            ).createScoped(listOf(
-                "https://www.googleapis.com/auth/photoslibrary.readonly",
-                "https://www.googleapis.com/auth/photos.readonly"
-            ))
+            ).createScoped(listOf(PhotosLibraryScopes.PHOTOSLIBRARY_READONLY))
 
             val requestInitializer: HttpRequestInitializer = HttpCredentialsAdapter(credentials)
 
             photosLibraryClient = PhotosLibrary.Builder(
-                NetHttpTransport(),
+                GoogleNetHttpTransport.newTrustedTransport(),
                 GsonFactory.getDefaultInstance(),
                 requestInitializer
             )
@@ -78,9 +67,6 @@ class GooglePhotosManager(private val context: Context) {
 
             Log.d(TAG, "Getting random photos, maxResults: $count")
 
-            val request = ListMediaItemsRequest()
-                .setPageSize(50)
-
             val response = photosLibraryClient.mediaItems()
                 .list()
                 .setPageSize(50)
@@ -95,7 +81,7 @@ class GooglePhotosManager(private val context: Context) {
             return@withContext mediaItems
                 .shuffled()
                 .take(count)
-                .map { "${it.baseUrl}=w1920-h1080" } // Add size parameters
+                .map { mediaItem -> "${mediaItem.baseUrl}=w1920-h1080" }
                 .also { urls ->
                     Log.d(TAG, "Retrieved ${urls.size} random photos")
                     urls.forEach { url -> Log.d(TAG, "Photo URL: $url") }

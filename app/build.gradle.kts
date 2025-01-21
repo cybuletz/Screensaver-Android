@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -76,5 +77,8 @@ dependencies {
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
     implementation("com.google.android.gms:play-services-base:18.2.0")
+
+    implementation("com.google.oauth-client:google-oauth-client-jetty:1.34.1")
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
 
 }
