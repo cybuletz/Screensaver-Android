@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screensaver</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        #photo-container {
+            width: 100%;
+            height: 100%;
+        }
+        .photo {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            opacity: 0;
+            transition: opacity 1s ease-in-out;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .photo.active {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+<div id="photo-container"></div>
+<script>
+    class PhotoSlideshow {
+        constructor() {
+            this.container = document.getElementById('photo-container');
+            this.currentIndex = 0;
+            this.photos = [];
+            this.interval = 30000; // 30 seconds
+            this.init();
+        }
+
+        async init() {
+            try {
+                // Initialize with a sample photo until we implement the photos API
+                this.photos = [{
+                    url: 'https://picsum.photos/1920/1080', // Placeholder image
+                    title: 'Sample Photo'
+                }];
+                this.startSlideshow();
+            } catch (error) {
+                console.error('Error initializing slideshow:', error);
+            }
+        }
+
+        createPhotoElement(photo) {
+            const img = document.createElement('img');
+            img.src = photo.url;
+            img.alt = photo.title || '';
+            img.className = 'photo';
+            return img;
+        }
+
+        async showNextPhoto() {
+            const oldPhoto = this.container.querySelector('.photo.active');
+            const nextIndex = (this.currentIndex + 1) % this.photos.length;
+            const nextPhoto = this.createPhotoElement(this.photos[nextIndex]);
+
+            this.container.appendChild(nextPhoto);
+
+            // Wait for the image to load
+            await new Promise(resolve => {
+                nextPhoto.onload = resolve;
+            });
+
+            // Start transition
+            nextPhoto.classList.add('active');
+
+            if (oldPhoto) {
+                oldPhoto.classList.remove('active');
+                // Remove old photo after transition
+                setTimeout(() => {
+                    oldPhoto.remove();
+                }, 1000);
+            }
+
+            this.currentIndex = nextIndex;
+        }
+
+        startSlideshow() {
+            this.showNextPhoto();
+            setInterval(() => this.showNextPhoto(), this.interval);
+        }
+    }
+
+    // Start the slideshow when the page loads
+    window.addEventListener('load', () => {
+        new PhotoSlideshow();
+    });
+</script>
+</body>
+</html>

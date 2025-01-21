@@ -1,34 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
-
-    <PreferenceCategory
-        android:title="Screensaver Settings">
-
-        <EditTextPreference
-            android:key="username"
-            android:title="Username"
-            android:summary="Enter your username" />
-
-        <EditTextPreference
-            android:key="server_url"
-            android:title="Server URL"
-            android:summary="Enter the server URL"
-            android:defaultValue="http://localhost:3000" />
-
-        <SwitchPreferenceCompat
-            android:key="auto_start"
-            android:title="Auto Start"
-            android:summary="Automatically start screensaver"
-            android:defaultValue="true" />
-
-        <ListPreference
-            android:key="refresh_interval"
-            android:title="Refresh Interval"
-            android:summary="Select refresh interval"
-            android:entries="@array/refresh_intervals"
-            android:entryValues="@array/refresh_interval_values"
-            android:defaultValue="300" />
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <PreferenceCategory android:title="Photo Sources">
+        <SwitchPreference
+            android:key="use_google_photos"
+            android:title="Use Google Photos"
+            android:summary="Enable to use photos from your Google Photos account"
+            android:defaultValue="false" />
     </PreferenceCategory>
-
+    <PreferenceCategory android:title="Screensaver Settings">
+        <EditTextPreference
+            android:key="interval"
+            android:title="Photo Change Interval"
+            android:summary="Time in seconds between photo changes"
+            android:defaultValue="30"
+            android:inputType="number" />
+    </PreferenceCategory>
 </PreferenceScreen>
