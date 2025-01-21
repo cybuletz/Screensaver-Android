@@ -14,6 +14,12 @@ class WebViewFragment : Fragment() {
     private lateinit var webView: WebView
     private lateinit var photosManager: GooglePhotosManager
 
+    companion object {
+        fun newInstance(): WebViewFragment {
+            return WebViewFragment()
+        }
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,

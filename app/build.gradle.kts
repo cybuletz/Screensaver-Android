@@ -42,7 +42,13 @@ dependencies {
     // Preference library
     implementation("androidx.preference:preference-ktx:1.2.1")
 
+    // Google Photos API
+    implementation("com.google.api-client:google-api-client-android:2.2.0")
+    implementation("com.google.oauth-client:google-oauth-client-jetty:1.34.1")
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
+
     // Retrofit for network calls
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
