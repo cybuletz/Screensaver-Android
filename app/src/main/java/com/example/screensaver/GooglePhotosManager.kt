@@ -22,55 +22,88 @@ interface GooglePhotosApiService {
 }
 
 class GooglePhotosManager(private val context: Context) {
-    private var accessToken: String? = null
-    private val apiService: GooglePhotosApiService
+    private lateinit var photosLibraryClient: PhotosLibrary
+    private var isInitialized = false
 
     companion object {
-        private const val BASE_URL = "https://photoslibrary.googleapis.com/"
-    }
-
-    init {
-        Log.d(TAG, "Initializing GooglePhotosManager")
-        val retrofit = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-
-        apiService = retrofit.create(GooglePhotosApiService::class.java)
+        private const val TAG = "GooglePhotosManager"
     }
 
     fun initialize(account: GoogleSignInAccount) {
-        Log.d(TAG, "Initializing with account: ${account.email}")
-        accessToken = account.idToken
-        if (accessToken == null) {
-            Log.e(TAG, "Failed to get access token")
-        } else {
-            Log.d(TAG, "Access token retrieved successfully")
+        try {
+            Log.d(TAG, "Initializing with account: ${account.email}")
+
+            // Get token
+            val token = account.idToken
+            if (token == null) {
+                Log.e(TAG, "ID token is null")
+                throw IllegalStateException("No ID token available")
+            }
+
+            // Create credentials
+            val credentials = GoogleCredentials.create(
+                AccessToken(
+                    token,
+                    null // No expiration time available from GoogleSignInAccount
+                )
+            ).createScoped(listOf(
+                "https://www.googleapis.com/auth/photoslibrary.readonly",
+                "https://www.googleapis.com/auth/photos.readonly"
+            ))
+
+            val requestInitializer: HttpRequestInitializer = HttpCredentialsAdapter(credentials)
+
+            photosLibraryClient = PhotosLibrary.Builder(
+                NetHttpTransport(),
+                GsonFactory.getDefaultInstance(),
+                requestInitializer
+            )
+                .setApplicationName("Screensaver")
+                .build()
+
+            isInitialized = true
+            Log.d(TAG, "PhotosLibrary client initialized successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing PhotosLibrary client", e)
+            throw e
         }
     }
 
-    suspend fun getRandomPhotos(maxResults: Int = 50): List<String> = withContext(Dispatchers.IO) {
+    suspend fun getRandomPhotos(count: Int = 1): List<String> = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "Getting random photos, maxResults: $maxResults")
-            val token = accessToken
-            if (token == null) {
-                Log.e(TAG, "No access token available")
+            if (!isInitialized) {
+                Log.e(TAG, "PhotosLibrary client not initialized")
                 return@withContext emptyList()
             }
 
-            val authHeader = "Bearer $token"
-            Log.d(TAG, "Calling photos API")
-            val response = apiService.listMediaItems(authHeader, maxResults)
-            Log.d(TAG, "Retrieved ${response.mediaItems.size} items")
+            Log.d(TAG, "Getting random photos, maxResults: $count")
 
-            return@withContext response.mediaItems
-                .filter { it.mimeType.startsWith("image/") }
-                .map { it.baseUrl }
+            val request = ListMediaItemsRequest()
+                .setPageSize(50)
+
+            val response = photosLibraryClient.mediaItems()
+                .list()
+                .setPageSize(50)
+                .execute()
+
+            val mediaItems = response.mediaItems
+            if (mediaItems == null || mediaItems.isEmpty()) {
+                Log.d(TAG, "No media items found in Google Photos")
+                return@withContext emptyList()
+            }
+
+            return@withContext mediaItems
                 .shuffled()
-                .also { Log.d(TAG, "Returning ${it.size} filtered photos") }
+                .take(count)
+                .map { "${it.baseUrl}=w1920-h1080" } // Add size parameters
+                .also { urls ->
+                    Log.d(TAG, "Retrieved ${urls.size} random photos")
+                    urls.forEach { url -> Log.d(TAG, "Photo URL: $url") }
+                }
+
         } catch (e: Exception) {
-            Log.e(TAG, "Error fetching photos", e)
-            return@withContext emptyList()
+            Log.e(TAG, "Error getting random photos", e)
+            throw e
         }
     }
 }

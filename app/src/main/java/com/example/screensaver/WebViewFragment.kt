@@ -9,6 +9,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import kotlinx.coroutines.launch
 
 class WebViewFragment : Fragment() {
@@ -17,10 +18,6 @@ class WebViewFragment : Fragment() {
 
     companion object {
         private const val TAG = "WebViewFragment"
-
-        fun newInstance(): WebViewFragment {
-            return WebViewFragment()
-        }
     }
 
     override fun onCreateView(
@@ -40,7 +37,8 @@ class WebViewFragment : Fragment() {
         photosManager = GooglePhotosManager(requireContext())
 
         // Get the account from MainActivity
-        val account = MainActivity.AccountManager.getGoogleAccount()
+        val mainActivity = requireActivity() as MainActivity
+        val account = MainActivity.Companion.GlobalAccountManager.getGoogleAccount()
         if (account == null) {
             Log.e(TAG, "Google account is null")
             return
@@ -59,7 +57,7 @@ class WebViewFragment : Fragment() {
             javaScriptEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
-            domStorageEnabled = true  // Enable DOM storage
+            domStorageEnabled = true
             allowFileAccess = true
         }
 
@@ -100,5 +98,10 @@ class WebViewFragment : Fragment() {
                 )
             }
         }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        webView.destroy()
     }
 }
