@@ -3,60 +3,65 @@ package com.example.screensaver
 import android.content.Context
 import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
-import com.google.api.gax.core.FixedCredentialsProvider
-import com.google.auth.oauth2.AccessToken
-import com.google.auth.oauth2.UserCredentials
-import com.google.photos.library.v1.PhotosLibraryClient
-import com.google.photos.library.v1.PhotosLibrarySettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.concurrent.TimeUnit
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.GET
+import retrofit2.http.Header
+import retrofit2.http.Query
+
+interface GooglePhotosApiService {
+    @GET("v1/mediaItems")
+    suspend fun listMediaItems(
+        @Header("Authorization") token: String,
+        @Query("pageSize") pageSize: Int
+    ): MediaItemsResponse
+}
+
+data class MediaItemsResponse(
+    val mediaItems: List<MediaItem>
+)
+
+data class MediaItem(
+    val id: String,
+    val baseUrl: String,
+    val mimeType: String
+)
 
 class GooglePhotosManager(private val context: Context) {
-    private var photosLibraryClient: PhotosLibraryClient? = null
+    private var accessToken: String? = null
+    private val apiService: GooglePhotosApiService
 
     companion object {
         private const val TAG = "GooglePhotosManager"
+        private const val BASE_URL = "https://photoslibrary.googleapis.com/"
+    }
+
+    init {
+        val retrofit = Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+
+        apiService = retrofit.create(GooglePhotosApiService::class.java)
     }
 
     fun initialize(account: GoogleSignInAccount) {
-        try {
-            val token = AccessToken.newBuilder()
-                .setTokenValue(account.idToken ?: "")
-                .setExpirationTime(System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1))
-                .build()
-
-            val credentials = UserCredentials.newBuilder()
-                .setAccessToken(token)
-                .build()
-
-            val settings = PhotosLibrarySettings.newBuilder()
-                .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
-                .build()
-
-            photosLibraryClient = PhotosLibraryClient.initialize(settings)
-            Log.d(TAG, "PhotosLibraryClient initialized successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error initializing PhotosLibraryClient", e)
-        }
+        accessToken = "Bearer ${account.idToken}"
+        Log.d(TAG, "PhotosLibraryClient initialized successfully")
     }
 
-    fun isAuthenticated() = photosLibraryClient != null
+    fun isAuthenticated() = accessToken != null
 
     suspend fun getRandomPhotos(maxResults: Int = 50): List<String> = withContext(Dispatchers.IO) {
         try {
-            photosLibraryClient?.let { client ->
-                // Get media items without filters
-                val mediaItems = mutableListOf<String>()
-
-                client.listMediaItems()
-                    .iterateAll()
-                    .take(maxResults)
-                    .mapNotNullTo(mediaItems) { item ->
-                        item.baseUrl
-                    }
-
-                mediaItems.shuffled()
+            accessToken?.let { token ->
+                val response = apiService.listMediaItems(token, maxResults)
+                response.mediaItems
+                    .filter { it.mimeType.startsWith("image/") }
+                    .map { it.baseUrl }
+                    .shuffled()
             } ?: emptyList()
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching photos: ${e.message}", e)
