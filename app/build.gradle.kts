@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -14,7 +15,37 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
-
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("${projectDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+    sourceSets {
+        getByName("main") {
+            assets {
+                srcDirs("src/main/assets")
+            }
+        }
+    }
+    packaging {
+        resources {
+            excludes += listOf(
+                "META-INF/INDEX.LIST",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/license.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/notice.txt",
+                "META-INF/*.kotlin_module",
+                "META-INF/LGPL2.1"
+            )
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -34,9 +65,37 @@ android {
 }
 
 dependencies {
+    // Keep your existing AndroidX and other dependencies
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.webkit:webkit:1.9.0")
+    implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
+
+    // Material Design
+    implementation("com.google.android.material:material:1.11.0")
+
+    // Google Sign In and Auth
+    implementation("com.google.android.gms:play-services-base:18.2.0")
+    implementation("com.google.android.gms:play-services-auth:20.7.0")
+    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
+    implementation("com.google.firebase:firebase-auth-ktx")
+
+    // Google Photos Library API - corrected dependencies
+    implementation("com.google.photos.library:google-photos-library-client:1.7.3")
+    implementation("com.google.api-client:google-api-client-android:1.32.1")
+    implementation("com.google.http-client:google-http-client-gson:1.42.3")
+
+    // HTTP Client
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+
+    // Glide for image loading
+    implementation("com.github.bumptech.glide:glide:4.16.0")
+    annotationProcessor("com.github.bumptech.glide:compiler:4.16.0")
+
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }
