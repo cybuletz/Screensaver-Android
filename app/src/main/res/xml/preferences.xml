@@ -6,6 +6,10 @@
             android:title="Use Google Photos"
             android:summary="Enable to use photos from your Google Photos account"
             android:defaultValue="false" />
+        <Preference
+            android:key="select_albums"
+            android:title="Select Photo Albums"
+            android:summary="Choose which albums to display in the slideshow"/>
     </PreferenceCategory>
     <PreferenceCategory android:title="Screensaver Settings">
         <EditTextPreference
@@ -15,4 +19,5 @@
             android:defaultValue="30"
             android:inputType="number" />
     </PreferenceCategory>
+
 </PreferenceScreen>

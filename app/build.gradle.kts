@@ -75,15 +75,21 @@ dependencies {
     // Google Sign In - make sure these versions are correct
     implementation("com.google.android.gms:play-services-base:18.2.0")
     implementation("com.google.android.gms:play-services-auth:20.7.0")
-    implementation("com.google.photos.library:google-photos-library-client:1.7.3") {
-        exclude(group = "org.apache.httpcomponents")
-        exclude(module = "protobuf-lite")
-    }
+
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     // HTTP Client
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+
+    // Glide for image loading
+    implementation("com.github.bumptech.glide:glide:4.16.0")
+
+    // Google Photos Library API
+    implementation("com.google.photos.library:google-photos-library-client:1.7.3")
+
+    // Material Design
+    implementation("com.google.android.material:material:1.11.0")
 }
 
 // Update the keystore tasks
@@ -93,53 +99,6 @@ tasks.register("cleanKeystore") {
         if (keystoreFile.exists()) {
             delete(keystoreFile)
             println("Deleted existing debug.keystore from: ${keystoreFile.absolutePath}")
-        }
-    }
-}
-
-tasks.register("generateNewDebugKeystore") {
-    dependsOn("cleanKeystore")
-    doLast {
-        val javaHome = System.getProperty("java.home")
-        val keystoreFile = File(projectDir, "debug.keystore")
-
-        println("Generating keystore at: ${keystoreFile.absolutePath}")
-
-        exec {
-            workingDir = projectDir
-            executable = "$javaHome/bin/keytool"
-            args = listOf(
-                "-genkeypair",
-                "-v",
-                "-keystore", keystoreFile.absolutePath,
-                "-storepass", "android",
-                "-alias", "androiddebugkey",
-                "-keypass", "android",
-                "-keyalg", "RSA",
-                "-keysize", "2048",
-                "-validity", "10000",
-                "-dname", "CN=Android Debug,O=Android,C=US"
-            )
-        }
-
-        println("Generated keystore. Printing details:")
-
-        exec {
-            workingDir = projectDir
-            executable = "$javaHome/bin/keytool"
-            args = listOf(
-                "-list",
-                "-v",
-                "-keystore", keystoreFile.absolutePath,
-                "-alias", "androiddebugkey",
-                "-storepass", "android"
-            )
-        }
-
-        if (keystoreFile.exists()) {
-            println("Successfully created keystore at: ${keystoreFile.absolutePath}")
-        } else {
-            throw GradleException("Failed to create keystore file!")
         }
     }
 }

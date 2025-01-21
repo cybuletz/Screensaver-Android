@@ -157,6 +157,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun setupGooglePhotos() {
+        findPreference<Preference>("select_albums")?.setOnPreferenceClickListener {
+            if (GoogleSignIn.getLastSignedInAccount(requireContext()) != null) {
+                startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+                true
+            } else {
+                Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
+                false
+            }
+        }
+    }
+
     private fun updateGooglePhotosState(enabled: Boolean) {
         findPreference<SwitchPreference>("use_google_photos")?.isChecked = enabled
     }
