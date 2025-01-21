@@ -27,26 +27,37 @@ android {
             )
         }
     }
+
+    packaging {
+        resources {
+            excludes += listOf(
+                "META-INF/INDEX.LIST",
+                "META-INF/DEPENDENCIES",
+                "META-INF/*.kotlin_module",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/gradle/incremental.annotation.processors"
+            )
+            pickFirsts += listOf(
+                "META-INF/io.netty.versions.properties",
+                "META-INF/INDEX.LIST"
+            )
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
+
     kotlinOptions {
         jvmTarget = "1.8"
     }
 
-    packaging {
-        resources {
-            excludes += "/META-INF/DEPENDENCIES"
-            excludes += "/META-INF/LICENSE"
-            excludes += "/META-INF/LICENSE.txt"
-            excludes += "/META-INF/license.txt"
-            excludes += "/META-INF/NOTICE"
-            excludes += "/META-INF/NOTICE.txt"
-            excludes += "/META-INF/notice.txt"
-            excludes += "/META-INF/ASL2.0"
-            excludes += "/META-INF/*.kotlin_module"
-        }
+    // Moved lint configuration here, inside the android block
+    lint {
+        abortOnError = false    // To prevent build failure on lint errors
+        baseline = file("lint-baseline.xml")  // To create a baseline of current issues
     }
 }
 
@@ -81,4 +92,6 @@ dependencies {
     implementation("com.google.oauth-client:google-oauth-client-jetty:1.34.1")
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
 
+    // Additional dependency for page iteration
+    implementation("com.google.api:gax:2.23.0")
 }

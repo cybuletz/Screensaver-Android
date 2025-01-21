@@ -9,7 +9,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import kotlinx.coroutines.launch
 
 class WebViewFragment : Fragment() {
@@ -36,8 +35,7 @@ class WebViewFragment : Fragment() {
         webView = view.findViewById(R.id.webView)
         photosManager = GooglePhotosManager(requireContext())
 
-        // Get the account from MainActivity
-        val mainActivity = requireActivity() as MainActivity
+        // Get the account directly from GlobalAccountManager
         val account = MainActivity.Companion.GlobalAccountManager.getGoogleAccount()
         if (account == null) {
             Log.e(TAG, "Google account is null")

@@ -67,8 +67,11 @@ class GooglePhotosManager(private val context: Context) {
                 .setPageSize(50)
                 .build()
 
-            val response = photosLibraryClient?.listMediaItems(request)
-            val mediaItems: List<MediaItem> = response?.mediaItemsList ?: emptyList()
+            val mediaItems: MutableList<MediaItem> = mutableListOf()
+
+            photosLibraryClient?.listMediaItems(request)?.iterateAll()?.let { items ->
+                mediaItems.addAll(items.take(50))
+            }
 
             if (mediaItems.isEmpty()) {
                 Log.d(TAG, "No media items found in Google Photos")
