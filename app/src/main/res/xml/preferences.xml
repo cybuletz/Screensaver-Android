@@ -1,4 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        android:title="Screensaver Settings"
+        app:iconSpaceReserved="false">
+
+        <EditTextPreference
+            android:key="username"
+            android:title="Username"
+            android:summary="Enter your username"
+            app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+            android:key="server_url"
+            android:title="Server URL"
+            android:summary="Enter the server URL"
+            android:defaultValue="http://localhost:3000"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:key="auto_start"
+            android:title="Auto Start"
+            android:summary="Automatically start screensaver"
+            android:defaultValue="true"
+            app:iconSpaceReserved="false" />
+
+        <ListPreference
+            android:key="refresh_interval"
+            android:title="Refresh Interval"
+            android:summary="Select refresh interval"
+            android:entries="@array/refresh_intervals"
+            android:entryValues="@array/refresh_interval_values"
+            android:defaultValue="300"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
 
 </PreferenceScreen>
