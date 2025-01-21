@@ -1,56 +1,74 @@
 package com.example.screensaver
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
-import android.widget.Button
-import android.widget.Toast
+import android.util.Log
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.SignInButton
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
+import com.google.api.services.photoslibrary.v1.PhotosLibraryScopes
 
 class GoogleSignInActivity : AppCompatActivity() {
     private lateinit var googleSignInClient: GoogleSignInClient
-    private lateinit var googlePhotosManager: GooglePhotosManager
+    private lateinit var signInButton: SignInButton
 
     companion object {
-        private const val RC_SIGN_IN = 9001
-        private const val PHOTOS_SCOPE = "https://www.googleapis.com/auth/photoslibrary.readonly"
+        private const val TAG = "GoogleSignInActivity"
     }
+
+    // Add this constant
+    private val PHOTOS_SCOPE = Scope(PhotosLibraryScopes.PHOTOSLIBRARY_READONLY)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_google_sign_in)
 
-        googlePhotosManager = GooglePhotosManager(this)
-
+        // Initialize sign in options
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestScopes(Scope(PHOTOS_SCOPE))
+            .requestScopes(PHOTOS_SCOPE)
             .build()
 
+        // Build a GoogleSignInClient with the options
         googleSignInClient = GoogleSignIn.getClient(this, gso)
 
-        findViewById<Button>(R.id.sign_in_button).setOnClickListener {
-            startActivityForResult(googleSignInClient.signInIntent, RC_SIGN_IN)
+        // Set up the sign in button
+        signInButton = findViewById(R.id.sign_in_button)
+        signInButton.setOnClickListener {
+            signIn()
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == RC_SIGN_IN) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+    private val signInLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
             try {
-                val account = task.getResult(Exception::class.java)
-                val authCode = account.serverAuthCode
-                // Here you would exchange the auth code for tokens
-                // and save them using googlePhotosManager.saveTokens()
+                val account = task.getResult(ApiException::class.java)
+                // Pass account back to MainActivity
+                setResult(RESULT_OK, Intent().apply {
+                    putExtra("account", account)
+                })
                 finish()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Sign in failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            } catch (e: ApiException) {
+                Log.w(TAG, "signInResult:failed code=${e.statusCode}")
+                setResult(RESULT_CANCELED)
+                finish()
             }
+        } else {
+            setResult(RESULT_CANCELED)
+            finish()
         }
+    }
+
+    private fun signIn() {
+        signInLauncher.launch(googleSignInClient.signInIntent)
     }
 }

@@ -50,6 +50,9 @@ dependencies {
     implementation("androidx.webkit:webkit:1.9.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
 
+    // AndroidX Activity
+    implementation("androidx.activity:activity-ktx:1.8.2")
+
     // Google Sign In
     implementation("com.google.android.gms:play-services-auth:20.7.0")
 
