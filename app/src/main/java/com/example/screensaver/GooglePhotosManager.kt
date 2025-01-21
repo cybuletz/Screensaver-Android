@@ -8,9 +8,6 @@ import com.google.auth.oauth2.AccessToken
 import com.google.auth.oauth2.UserCredentials
 import com.google.photos.library.v1.PhotosLibraryClient
 import com.google.photos.library.v1.PhotosLibrarySettings
-import com.google.photos.library.v1.internal.InternalPhotosLibraryClient.SearchMediaItemsPagedResponse
-import com.google.photos.types.proto.Filters
-import com.google.photos.types.proto.MediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -49,21 +46,17 @@ class GooglePhotosManager(private val context: Context) {
     suspend fun getRandomPhotos(maxResults: Int = 50): List<String> = withContext(Dispatchers.IO) {
         try {
             photosLibraryClient?.let { client ->
-                val filters = Filters.newBuilder().build()
-                val response: SearchMediaItemsPagedResponse = client.searchMediaItems(filters)
+                // Get media items without filters
+                val mediaItems = mutableListOf<String>()
 
-                // Convert PagedResponse to List<MediaItem>
-                val mediaItems = mutableListOf<MediaItem>()
-                var count = 0
+                client.listMediaItems()
+                    .iterateAll()
+                    .take(maxResults)
+                    .mapNotNullTo(mediaItems) { item ->
+                        item.baseUrl
+                    }
 
-                for (item in response.iterateAll()) {
-                    if (count >= maxResults) break
-                    mediaItems.add(item)
-                    count++
-                }
-
-                // Extract baseUrls and shuffle
-                mediaItems.map { it.baseUrl }.shuffled()
+                mediaItems.shuffled()
             } ?: emptyList()
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching photos: ${e.message}", e)
