@@ -33,6 +33,14 @@ class GooglePhotosManager(private val context: Context) {
         }
     }
 
+    private fun buildCredentials(account: GoogleSignInAccount): UserCredentials {
+        return UserCredentials.newBuilder()
+            .setAccessToken(AccessToken.newBuilder()
+                .setTokenValue(account.idToken ?: "")
+                .build())
+            .build()
+    }
+
     private fun createPhotosLibraryClient(accessToken: String, refreshToken: String): PhotosLibraryClient {
         val credentials = UserCredentials.newBuilder()
             .setClientId(CLIENT_ID)

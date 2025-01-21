@@ -1,5 +1,6 @@
 package com.example.screensaver
 
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +10,8 @@ import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class WebViewFragment : Fragment() {
     private lateinit var webView: WebView
@@ -16,6 +19,7 @@ class WebViewFragment : Fragment() {
     private val handler = Handler(Looper.getMainLooper())
     private var refreshRunnable: Runnable? = null
     private lateinit var googlePhotosManager: GooglePhotosManager
+    private val photosHelper = PhotosHelper.getInstance()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -38,7 +42,11 @@ class WebViewFragment : Fragment() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             webViewClient = WebViewClient()
+        }
 
+        // Initialize PhotosHelper with Google Account if available
+        MainActivity.AccountManager.getGoogleAccount()?.let { account ->
+            photosHelper.initialize(account)
         }
 
         setupAutoRefresh()
@@ -46,25 +54,12 @@ class WebViewFragment : Fragment() {
     }
 
     private fun loadScreensaver() {
-        val username = preferencesManager.getUsername()
-        val serverUrl = preferencesManager.getServerUrl()
-
-        // Construct the URL with parameters
-        val url = if (username.isNotEmpty()) {
-            "$serverUrl?username=$username"
-        } else {
-            serverUrl
-        }
-
-        webView.loadUrl(url)
-    }
-
-    // Update loadScreensaver method
-    private fun loadScreensaver() {
-        if (googlePhotosManager.isAuthenticated()) {
+        if (MainActivity.AccountManager.getGoogleAccount() != null) {
             lifecycleScope.launch {
                 try {
-                    val photoUrls = googlePhotosManager.getRandomPhotos()
+                    val photos = photosHelper.getPhotos(maxResults = 50)
+                    val photoUrls = photos.map { it.url }
+
                     // Create a simple HTML slideshow
                     val html = """
                     <!DOCTYPE html>
@@ -94,16 +89,41 @@ class WebViewFragment : Fragment() {
                         <img id="photo" class="slideshow" src="${photoUrls.firstOrNull()}" />
                     </body>
                     </html>
-                """.trimIndent()
+                    """.trimIndent()
 
                     webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                 } catch (e: Exception) {
-                    // Handle error
+                    // Fallback to server URL if Google Photos fails
+                    loadServerUrl()
                 }
             }
         } else {
-            // Start sign in activity
-            startActivity(Intent(requireContext(), GoogleSignInActivity::class.java))
+            loadServerUrl()
+        }
+    }
+
+    private fun loadServerUrl() {
+        val username = preferencesManager.getUsername()
+        val serverUrl = preferencesManager.getServerUrl()
+
+        // Construct the URL with parameters
+        val url = if (username.isNotEmpty()) {
+            "$serverUrl?username=$username"
+        } else {
+            serverUrl
+        }
+
+        webView.loadUrl(url)
+    }
+
+    private fun setupAutoRefresh() {
+        refreshRunnable?.let { handler.removeCallbacks(it) }
+
+        refreshRunnable = Runnable {
+            loadScreensaver()
+            setupAutoRefresh() // Schedule next refresh
+        }.also {
+            handler.postDelayed(it, REFRESH_INTERVAL)
         }
     }
 
@@ -123,6 +143,7 @@ class WebViewFragment : Fragment() {
     }
 
     companion object {
+        private const val REFRESH_INTERVAL = 3600000L // 1 hour in milliseconds
         fun newInstance() = WebViewFragment()
     }
 }

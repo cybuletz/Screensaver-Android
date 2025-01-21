@@ -77,7 +77,8 @@ class MainActivity : AppCompatActivity() {
                 AccountManager.setGoogleAccount(account)
                 // Proceed with normal app flow
                 if (supportFragmentManager.fragments.isEmpty()) {
-                    bottomNavigation?.selectedItemId = R.id.navigation_screensaver
+                    findViewById<BottomNavigationView>(R.id.bottom_navigation)?.selectedItemId =
+                        R.id.navigation_screensaver
                 }
             } catch (e: ApiException) {
                 Log.w("MainActivity", "Google Sign In failed", e)
