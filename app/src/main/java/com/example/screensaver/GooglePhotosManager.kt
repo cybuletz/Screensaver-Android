@@ -18,8 +18,8 @@ class GooglePhotosManager(private val context: Context) {
         private const val REFRESH_TOKEN_KEY = "refreshToken"
 
         // Replace these with your actual OAuth 2.0 credentials from Google Cloud Console
-        private const val CLIENT_ID = "YOUR_CLIENT_ID"
-        private const val CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+        private const val CLIENT_ID = "152249287118-fi7fcltpcs5dol05serg7frpql2ameiu.apps.googleusercontent.com"
+        private const val CLIENT_SECRET = "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"
     }
 
     private fun getSharedPreferences() =
