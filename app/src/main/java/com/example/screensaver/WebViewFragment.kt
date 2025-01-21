@@ -1,7 +1,26 @@
+package com.example.screensaver
+
+import android.graphics.Bitmap
+import android.os.Bundle
+import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
 class WebViewFragment : Fragment() {
     private lateinit var webView: WebView
-    private lateinit var photosManager: GooglePhotosManager
     private var isLoading = false
+
+    companion object {
+        private const val TAG = "WebViewFragment"
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -17,28 +36,31 @@ class WebViewFragment : Fragment() {
         webView = view.findViewById(R.id.webView)
         setupWebView()
 
-        // Initialize photos manager on a background thread
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 initializePhotosManager()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize photos manager", e)
                 withContext(Dispatchers.Main) {
-                    showError("Failed to initialize photos: ${e.message}")
+                    showError("Failed to initialize: ${e.message}")
                 }
             }
         }
     }
 
     private fun setupWebView() {
+        // Set hardware acceleration
+        webView.apply {
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        }
+
+        // Configure WebView settings
         webView.settings.apply {
             javaScriptEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
             domStorageEnabled = true
             allowFileAccess = true
-            // Add hardware acceleration
-            setLayerType(View.LAYER_TYPE_HARDWARE, null)
         }
 
         webView.webViewClient = object : WebViewClient() {
@@ -65,32 +87,20 @@ class WebViewFragment : Fragment() {
                 return@withContext
             }
 
-            photosManager = GooglePhotosManager(requireContext())
-            photosManager.initialize(account)
-            loadRandomPhoto()
+            // For now, just load a placeholder URL
+            loadUrl("https://via.placeholder.com/400")
         }
     }
 
-    private suspend fun loadRandomPhoto() {
+    private suspend fun loadUrl(url: String) {
         if (isLoading) return
 
-        withContext(Dispatchers.IO) {
+        withContext(Dispatchers.Main) {
             try {
-                val photos = photosManager.getRandomPhotos(1)
-                if (photos.isNotEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        webView.loadUrl(photos.first())
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        showError("No photos available")
-                    }
-                }
+                webView.loadUrl(url)
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading photos", e)
-                withContext(Dispatchers.Main) {
-                    showError("Failed to load photos: ${e.message}")
-                }
+                Log.e(TAG, "Error loading URL", e)
+                showError("Failed to load image: ${e.message}")
             }
         }
     }

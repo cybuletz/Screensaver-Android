@@ -27,11 +27,17 @@ android {
             )
         }
         debug {
-            // Add debug signing config
-            signingConfig = signingConfigs.getByName("debug")
         }
     }
-
+    afterEvaluate {
+        tasks.register("debugSigningInfo") {
+            doLast {
+                val debug = android.signingConfigs.getByName("debug")
+                println("Debug keystore location: ${debug.storeFile?.absolutePath}")
+                println("Debug keystore exists: ${debug.storeFile?.exists()}")
+            }
+        }
+    }
     packaging {
         resources {
             excludes += listOf(
@@ -111,6 +117,13 @@ dependencies {
     implementation("com.google.api:gax:2.23.0") {
         exclude(group = "org.threeten")
     }
+    // Fragment
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
+
+    // Lifecycle
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
+
 
     // Retrofit
     implementation("com.squareup.retrofit2:retrofit:$retrofitVersion")
@@ -136,5 +149,67 @@ configurations.all {
         // Exclude conflicting dependencies
         exclude(group = "org.apache.httpcomponents")
         exclude(group = "org.threeten", module = "threetenbp")
+    }
+}
+
+
+tasks.register("cleanKeystore") {
+    doLast {
+        val keystoreFile = File(project.rootDir, "app/debug.keystore")
+        if (keystoreFile.exists()) {
+            delete(keystoreFile)
+            println("Deleted existing debug.keystore")
+        }
+
+        val userKeystoreFile = File(System.getProperty("user.home"), ".android/debug.keystore")
+        if (userKeystoreFile.exists()) {
+            delete(userKeystoreFile)
+            println("Deleted existing user debug.keystore")
+        }
+    }
+}
+
+tasks.register("generateNewDebugKeystore") {
+    dependsOn("cleanKeystore")
+    doLast {
+        // Get Java home from Android Studio's JDK
+        val javaHome = System.getProperty("java.home")
+            ?: project.android.sdkDirectory.parentFile.resolve("jre").absolutePath
+
+        // Ensure parent directories exist
+        File(project.rootDir, "app").mkdirs()
+
+        // Generate new debug keystore
+        exec {
+            workingDir = project.rootDir
+            executable = "$javaHome/bin/keytool"
+            args = listOf(
+                "-genkeypair",
+                "-v",
+                "-keystore", "app/debug.keystore",
+                "-storepass", "android",
+                "-alias", "androiddebugkey",
+                "-keypass", "android",
+                "-keyalg", "RSA",
+                "-keysize", "2048",
+                "-validity", "10000",
+                "-dname", "CN=Android Debug,O=Android,C=US"
+            )
+        }
+
+        // Print the new SHA-1
+        exec {
+            workingDir = project.rootDir
+            executable = "$javaHome/bin/keytool"
+            args = listOf(
+                "-list",
+                "-v",
+                "-keystore", "app/debug.keystore",
+                "-alias", "androiddebugkey",
+                "-storepass", "android"
+            )
+        }
+
+        println("New debug keystore generated successfully!")
     }
 }
