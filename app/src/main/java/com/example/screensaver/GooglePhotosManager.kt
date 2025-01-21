@@ -3,6 +3,7 @@ package com.example.screensaver
 import android.content.Context
 import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.api.gax.core.FixedCredentialsProvider
 import com.google.auth.oauth2.AccessToken
 import com.google.auth.oauth2.UserCredentials
 import com.google.photos.library.v1.PhotosLibraryClient
@@ -12,6 +13,7 @@ import com.google.photos.types.proto.Filters
 import com.google.photos.types.proto.MediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 
 class GooglePhotosManager(private val context: Context) {
     private var photosLibraryClient: PhotosLibraryClient? = null
@@ -22,14 +24,17 @@ class GooglePhotosManager(private val context: Context) {
 
     fun initialize(account: GoogleSignInAccount) {
         try {
+            val token = AccessToken.newBuilder()
+                .setTokenValue(account.idToken ?: "")
+                .setExpirationTime(System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1))
+                .build()
+
             val credentials = UserCredentials.newBuilder()
-                .setAccessToken(AccessToken.newBuilder()
-                    .setTokenValue(account.idToken ?: "")
-                    .build())
+                .setAccessToken(token)
                 .build()
 
             val settings = PhotosLibrarySettings.newBuilder()
-                .setCredentialsProvider { credentials }
+                .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
                 .build()
 
             photosLibraryClient = PhotosLibraryClient.initialize(settings)

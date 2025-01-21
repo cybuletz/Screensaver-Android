@@ -12,7 +12,6 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.SignInButton
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
-import com.google.api.services.photoslibrary.v1.PhotosLibraryScopes
 
 class GoogleSignInActivity : AppCompatActivity() {
     private lateinit var googleSignInClient: GoogleSignInClient
@@ -20,10 +19,9 @@ class GoogleSignInActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "GoogleSignInActivity"
+        // Changed from PHOTOS_SCOPE to photosScope to follow Kotlin naming conventions
+        private val photosScope = Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
     }
-
-    // Add this constant
-    private val PHOTOS_SCOPE = Scope(PhotosLibraryScopes.PHOTOSLIBRARY_READONLY)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,7 +30,7 @@ class GoogleSignInActivity : AppCompatActivity() {
         // Initialize sign in options
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestScopes(PHOTOS_SCOPE)
+            .requestScopes(photosScope)
             .build()
 
         // Build a GoogleSignInClient with the options
