@@ -15,4 +15,57 @@
         <item>1800</item>
         <item>3600</item>
     </string-array>
+    <string-array name="transition_effects">
+        <item>Fade</item>
+        <item>Slide</item>
+        <item>Zoom</item>
+        <item>Blur</item>
+    </string-array>
+
+    <string-array name="transition_effects_values">
+        <item>fade</item>
+        <item>slide</item>
+        <item>zoom</item>
+        <item>blur</item>
+    </string-array>
+
+    <string-array name="photo_scale_options">
+        <item>Fit Screen</item>
+        <item>Fill Screen</item>
+        <item>Original Size</item>
+    </string-array>
+
+    <string-array name="photo_scale_values">
+        <item>fit</item>
+        <item>fill</item>
+        <item>original</item>
+    </string-array>
+
+    <string-array name="days_of_week">
+        <item>Monday</item>
+        <item>Tuesday</item>
+        <item>Wednesday</item>
+        <item>Thursday</item>
+        <item>Friday</item>
+        <item>Saturday</item>
+        <item>Sunday</item>
+    </string-array>
+
+    <string-array name="days_of_week_values">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+        <item>6</item>
+        <item>7</item>
+    </string-array>
+
+    <string-array name="default_active_days">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+    </string-array>
 </resources>

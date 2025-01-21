@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.google.gms.google-services") // Add this
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -17,7 +17,7 @@ android {
     }
     signingConfigs {
         getByName("debug") {
-            storeFile = file("${projectDir}/debug.keystore") // Use absolute path in project
+            storeFile = file("${projectDir}/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
@@ -32,15 +32,18 @@ android {
     }
     packaging {
         resources {
-            excludes += "META-INF/INDEX.LIST"
-            excludes += "META-INF/DEPENDENCIES"
-            excludes += "META-INF/LICENSE"
-            excludes += "META-INF/LICENSE.txt"
-            excludes += "META-INF/license.txt"
-            excludes += "META-INF/NOTICE"
-            excludes += "META-INF/NOTICE.txt"
-            excludes += "META-INF/notice.txt"
-            excludes += "META-INF/*.kotlin_module"
+            excludes += listOf(
+                "META-INF/INDEX.LIST",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/license.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/notice.txt",
+                "META-INF/*.kotlin_module",
+                "META-INF/LGPL2.1"
+            )
         }
     }
     buildTypes {
@@ -62,43 +65,37 @@ android {
 }
 
 dependencies {
+    // Keep your existing AndroidX and other dependencies
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.webkit:webkit:1.9.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.fragment:fragment-ktx:1.6.2")
-    implementation("androidx.core:core-ktx:1.12.0")
 
-    // Google Sign In
-    // Google Sign In - make sure these versions are correct
+    // Material Design
+    implementation("com.google.android.material:material:1.11.0")
+
+    // Google Sign In and Auth
     implementation("com.google.android.gms:play-services-base:18.2.0")
     implementation("com.google.android.gms:play-services-auth:20.7.0")
-
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
+
+    // Google Photos Library API - corrected dependencies
+    implementation("com.google.photos.library:google-photos-library-client:1.7.3")
+    implementation("com.google.api-client:google-api-client-android:1.32.1")
+    implementation("com.google.http-client:google-http-client-gson:1.42.3")
+
     // HTTP Client
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
     // Glide for image loading
     implementation("com.github.bumptech.glide:glide:4.16.0")
+    annotationProcessor("com.github.bumptech.glide:compiler:4.16.0")
 
-    // Google Photos Library API
-    implementation("com.google.photos.library:google-photos-library-client:1.7.3")
-
-    // Material Design
-    implementation("com.google.android.material:material:1.11.0")
-}
-
-// Update the keystore tasks
-tasks.register("cleanKeystore") {
-    doLast {
-        val keystoreFile = File(projectDir, "debug.keystore")
-        if (keystoreFile.exists()) {
-            delete(keystoreFile)
-            println("Deleted existing debug.keystore from: ${keystoreFile.absolutePath}")
-        }
-    }
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }

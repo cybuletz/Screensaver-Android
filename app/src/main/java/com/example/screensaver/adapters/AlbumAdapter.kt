@@ -10,7 +10,7 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.example.screensaver.R
-import com.google.photos.types.Album
+import com.example.screensaver.models.Album
 
 class AlbumAdapter(
     private val onAlbumClick: (Album) -> Unit
@@ -39,15 +39,14 @@ class AlbumAdapter(
             titleTextView.text = album.title
             countTextView.text = "${album.mediaItemsCount} photos"
 
-            // Load cover photo if available
-            album.coverPhotoBaseUrl?.let { url ->
+            album.coverPhotoUrl?.let { url ->
                 Glide.with(itemView.context)
                     .load(url)
+                    .placeholder(R.drawable.placeholder_album)
                     .centerCrop()
                     .into(coverImageView)
             }
 
-            // Check if album is selected
             val isSelected = itemView.context.getSharedPreferences("screensaver_prefs", 0)
                 .getStringSet("selected_albums", setOf())
                 ?.contains(album.id) == true
@@ -60,11 +59,11 @@ class AlbumAdapter(
         }
     }
 
-    class AlbumDiffCallback : DiffUtil.ItemCallback<Album>() {
-        override fun areItemsEqual(oldItem: Album, newItem: Album) =
+    private class AlbumDiffCallback : DiffUtil.ItemCallback<Album>() {
+        override fun areItemsTheSame(oldItem: Album, newItem: Album): Boolean =
             oldItem.id == newItem.id
 
-        override fun areContentsTheSame(oldItem: Album, newItem: Album) =
+        override fun areContentsTheSame(oldItem: Album, newItem: Album): Boolean =
             oldItem == newItem
     }
 }

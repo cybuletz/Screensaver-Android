@@ -16,6 +16,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import java.security.MessageDigest
+import androidx.preference.Preference
 
 class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
