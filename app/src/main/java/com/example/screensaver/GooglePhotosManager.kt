@@ -19,16 +19,6 @@ interface GooglePhotosApiService {
     ): MediaItemsResponse
 }
 
-data class MediaItemsResponse(
-    val mediaItems: List<MediaItem>
-)
-
-data class MediaItem(
-    val id: String,
-    val baseUrl: String,
-    val mimeType: String
-)
-
 class GooglePhotosManager(private val context: Context) {
     private var accessToken: String? = null
     private val apiService: GooglePhotosApiService
