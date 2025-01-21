@@ -1,101 +1,106 @@
-package com.example.screensaver
-
-import android.os.Bundle
-import android.util.Log
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
-
 class WebViewFragment : Fragment() {
     private lateinit var webView: WebView
     private lateinit var photosManager: GooglePhotosManager
-
-    companion object {
-        private const val TAG = "WebViewFragment"
-    }
+    private var isLoading = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        Log.d(TAG, "onCreateView")
         return inflater.inflate(R.layout.fragment_web_view, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        Log.d(TAG, "onViewCreated")
 
         webView = view.findViewById(R.id.webView)
-        photosManager = GooglePhotosManager(requireContext())
-
-        // Get the account directly from GlobalAccountManager
-        val account = MainActivity.Companion.GlobalAccountManager.getGoogleAccount()
-        if (account == null) {
-            Log.e(TAG, "Google account is null")
-            return
-        }
-
-        // Initialize PhotosManager with the account
-        photosManager.initialize(account)
-
         setupWebView()
-        loadRandomPhoto()
+
+        // Initialize photos manager on a background thread
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                initializePhotosManager()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize photos manager", e)
+                withContext(Dispatchers.Main) {
+                    showError("Failed to initialize photos: ${e.message}")
+                }
+            }
+        }
     }
 
     private fun setupWebView() {
-        Log.d(TAG, "Setting up WebView")
         webView.settings.apply {
             javaScriptEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
             domStorageEnabled = true
             allowFileAccess = true
+            // Add hardware acceleration
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
         }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                isLoading = true
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                Log.d(TAG, "Page finished loading: $url")
+                isLoading = false
             }
         }
     }
 
-    private fun loadRandomPhoto() {
-        Log.d(TAG, "Loading random photo")
-        lifecycleScope.launch {
+    private suspend fun initializePhotosManager() {
+        withContext(Dispatchers.IO) {
+            val account = MainActivity.Companion.GlobalAccountManager.getGoogleAccount()
+            if (account == null) {
+                Log.e(TAG, "Google account is null")
+                withContext(Dispatchers.Main) {
+                    (activity as? MainActivity)?.signIn()
+                }
+                return@withContext
+            }
+
+            photosManager = GooglePhotosManager(requireContext())
+            photosManager.initialize(account)
+            loadRandomPhoto()
+        }
+    }
+
+    private suspend fun loadRandomPhoto() {
+        if (isLoading) return
+
+        withContext(Dispatchers.IO) {
             try {
                 val photos = photosManager.getRandomPhotos(1)
-                Log.d(TAG, "Retrieved ${photos.size} photos")
                 if (photos.isNotEmpty()) {
-                    val photoUrl = photos.first()
-                    Log.d(TAG, "Loading photo URL: $photoUrl")
-                    webView.loadUrl(photoUrl)
+                    withContext(Dispatchers.Main) {
+                        webView.loadUrl(photos.first())
+                    }
                 } else {
-                    Log.e(TAG, "No photos retrieved")
-                    // Show some error message to the user
-                    webView.loadData(
-                        "<html><body><h1>No photos available</h1></body></html>",
-                        "text/html",
-                        "UTF-8"
-                    )
+                    withContext(Dispatchers.Main) {
+                        showError("No photos available")
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading photos", e)
-                // Show error message to the user
-                webView.loadData(
-                    "<html><body><h1>Error loading photos: ${e.message}</h1></body></html>",
-                    "text/html",
-                    "UTF-8"
-                )
+                withContext(Dispatchers.Main) {
+                    showError("Failed to load photos: ${e.message}")
+                }
             }
         }
+    }
+
+    private fun showError(message: String) {
+        webView.loadData(
+            "<html><body><h1>Error</h1><p>$message</p></body></html>",
+            "text/html",
+            "UTF-8"
+        )
     }
 
     override fun onDestroyView() {

@@ -26,6 +26,10 @@ android {
                 "proguard-rules.pro"
             )
         }
+        debug {
+            // Add debug signing config
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 
     packaging {
@@ -36,7 +40,12 @@ android {
                 "META-INF/*.kotlin_module",
                 "META-INF/AL2.0",
                 "META-INF/LGPL2.1",
-                "META-INF/gradle/incremental.annotation.processors"
+                "META-INF/gradle/incremental.annotation.processors",
+                // Add these to resolve conflicts
+                "META-INF/NOTICE.txt",
+                "META-INF/LICENSE.txt",
+                "META-INF/services/com.fasterxml.jackson.core.JsonFactory",
+                "META-INF/services/com.google.auth.oauth2.OAuth2Credentials"
             )
             pickFirsts += listOf(
                 "META-INF/io.netty.versions.properties",
@@ -54,44 +63,78 @@ android {
         jvmTarget = "1.8"
     }
 
-    // Moved lint configuration here, inside the android block
     lint {
-        abortOnError = false    // To prevent build failure on lint errors
-        baseline = file("lint-baseline.xml")  // To create a baseline of current issues
+        abortOnError = false
+        baseline = file("lint-baseline.xml")
+        disable += listOf(
+            "InvalidPackage",
+            "ObsoleteLintCustomCheck",
+            "GradleDependency"
+        )
     }
 }
 
 dependencies {
+    // Version constants
+    val coroutinesVersion = "1.7.3"
+    val lifecycleVersion = "2.7.0"
+    val googleAuthVersion = "1.19.0"
+    val retrofitVersion = "2.9.0"
+
+    // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("com.google.android.material:material:1.11.0")
 
-    // Google Sign In
+    // Google Sign In and Services
     implementation("com.google.android.gms:play-services-auth:20.7.0")
+    implementation("com.google.android.gms:play-services-base:18.2.0")
 
-    // Retrofit for network calls
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    // Google Photos API
+    implementation("com.google.photos.library:google-photos-library-client:1.7.3") {
+        exclude(group = "org.apache.httpcomponents")
+        exclude(module = "protobuf-lite")
+    }
+
+    // Google Auth and API Client
+    implementation("com.google.api-client:google-api-client-android:2.2.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+    implementation("com.google.auth:google-auth-library-oauth2-http:$googleAuthVersion") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+    implementation("com.google.oauth-client:google-oauth-client-jetty:1.34.1") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+    implementation("com.google.api:gax:2.23.0") {
+        exclude(group = "org.threeten")
+    }
+
+    // Retrofit
+    implementation("com.squareup.retrofit2:retrofit:$retrofitVersion")
+    implementation("com.squareup.retrofit2:converter-gson:$retrofitVersion")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
 
+    // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+}
 
-    implementation("com.google.api-client:google-api-client-android:2.2.0")
-    implementation("com.google.photos.library:google-photos-library-client:1.7.3")
-    implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
-    implementation("com.google.android.gms:play-services-base:18.2.0")
+// Add configuration to handle dependency conflicts
+configurations.all {
+    resolutionStrategy {
+        force("com.google.guava:guava:32.1.3-android")
+        force("com.google.code.gson:gson:2.10.1")
 
-    implementation("com.google.oauth-client:google-oauth-client-jetty:1.34.1")
-    implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
-
-    // Additional dependency for page iteration
-    implementation("com.google.api:gax:2.23.0")
+        // Exclude conflicting dependencies
+        exclude(group = "org.apache.httpcomponents")
+        exclude(group = "org.threeten", module = "threetenbp")
+    }
 }
