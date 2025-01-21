@@ -87,15 +87,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        // Singleton to hold the Google Account
-        object AccountManager {
-            private var googleAccount: com.google.android.gms.auth.api.signin.GoogleSignInAccount? = null
+        private const val TAG = "MainActivity"
 
-            fun setGoogleAccount(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount?) {
+        object AccountManager {
+            private var googleAccount: GoogleSignInAccount? = null
+
+            fun setGoogleAccount(account: GoogleSignInAccount?) {
                 googleAccount = account
+                Log.d(TAG, "Setting Google Account: ${account?.email}")
             }
 
-            fun getGoogleAccount() = googleAccount
+            fun getGoogleAccount(): GoogleSignInAccount? {
+                Log.d(TAG, "Getting Google Account: ${googleAccount?.email}")
+                return googleAccount
+            }
         }
     }
 }
