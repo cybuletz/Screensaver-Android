@@ -1,42 +1,48 @@
 package com.example.screensaver
 
-import android.service.dreams.DreamService
-import android.widget.ImageView
-import kotlinx.coroutines.*
-import com.google.photos.library.v1.PhotosLibraryClient
-import com.google.photos.library.v1.PhotosLibrarySettings
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
+import android.animation.ObjectAnimator
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.Color
+import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
+import android.service.dreams.DreamService
 import android.util.Log
+import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.ProgressBar
+import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.ContextCompat
+import androidx.preference.PreferenceManager
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.RequestOptions
+import com.bumptech.glide.request.target.Target
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.auth.oauth2.AccessToken
-import com.google.auth.oauth2.OAuth2Credentials
+import com.google.auth.oauth2.GoogleCredentials
+import com.google.photos.library.v1.PhotosLibraryClient
+import com.google.photos.library.v1.PhotosLibrarySettings
+import com.google.photos.library.v1.proto.SearchMediaItemsRequest
+import com.google.photos.types.proto.MediaItem
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Date
-import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
-import com.google.photos.types.proto.MediaItem
-import com.google.photos.library.v1.proto.SearchMediaItemsRequest
-import android.widget.Toast
-import android.graphics.Color
-import android.view.View
-import com.bumptech.glide.request.RequestOptions
-import android.animation.ObjectAnimator
-import android.view.animation.AccelerateDecelerateInterpolator
-import android.widget.TextView
-import android.widget.ProgressBar
-import android.widget.FrameLayout
-import com.bumptech.glide.load.engine.GlideException
-import com.bumptech.glide.request.RequestListener
-import android.graphics.drawable.Drawable
-import com.bumptech.glide.load.DataSource
-import com.bumptech.glide.request.target.Target
-import android.content.Intent
-import android.content.IntentFilter
-import androidx.core.content.ContextCompat
 
 class PhotoDreamService : DreamService() {
     private lateinit var primaryImageView: ImageView
@@ -376,30 +382,42 @@ class PhotoDreamService : DreamService() {
         }
     }
 
-    private suspend fun getOrRefreshCredentials(serverAuthCode: String?): OAuth2Credentials {
-        return withContext(Dispatchers.IO) {
-            logDebugInfo("Getting/refreshing credentials")
-            val prefs = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
-            val accessTokenString = prefs.getString("access_token", null)
-            val expirationTime = prefs.getLong("token_expiration", 0)
+    private suspend fun getOrRefreshCredentials(): GoogleCredentials? = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "Getting/refreshing credentials")
 
-            if (accessTokenString == null || System.currentTimeMillis() >= expirationTime) {
-                if (serverAuthCode == null) {
-                    logDebugInfo("No server auth code available")
-                    throw IllegalStateException("No server auth code available for token refresh")
-                }
-                refreshAccessToken(serverAuthCode)
+            // Get the current Google account
+            val account = GoogleAccountHolder.currentAccount
+                ?: GoogleSignIn.getLastSignedInAccount(this@PhotoDreamService)
+
+            if (account == null) {
+                Log.e(TAG, "No Google account available")
+                return@withContext null
             }
 
-            val updatedAccessToken = prefs.getString("access_token", "")
-                ?: throw IllegalStateException("Access token not found")
-            val updatedExpirationTime = prefs.getLong("token_expiration", 0)
+            // Get the saved tokens
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this@PhotoDreamService)
+            val accessToken = prefs.getString("google_access_token", null)
+            val serverAuthCode = prefs.getString("google_server_auth_code", null)
 
-            logDebugInfo("Credentials obtained successfully")
-            OAuth2Credentials.create(AccessToken.newBuilder()
-                .setTokenValue(updatedAccessToken)
-                .setExpirationTime(Date(updatedExpirationTime))
-                .build())
+            if (accessToken == null || serverAuthCode == null) {
+                Log.e(TAG, "Missing access token or server auth code")
+                return@withContext null
+            }
+
+            // Create an AccessToken instance with the current token
+            val googleAccessToken = AccessToken(
+                accessToken,
+                Date(System.currentTimeMillis() + 3600000) // Token expires in 1 hour
+            )
+
+            // Create and return the credentials
+            return@withContext GoogleCredentials.create(googleAccessToken)
+                .createScoped(listOf("https://www.googleapis.com/auth/photoslibrary.readonly"))
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting/refreshing credentials: ${e.message}")
+            null
         }
     }
 
@@ -410,7 +428,8 @@ class PhotoDreamService : DreamService() {
                 val account = GoogleSignIn.getLastSignedInAccount(this@PhotoDreamService)
                     ?: throw IllegalStateException("No Google account found")
 
-                val credentials = getOrRefreshCredentials(account.serverAuthCode)
+                // Remove the serverAuthCode parameter here
+                val credentials = getOrRefreshCredentials()  // Remove the parameter
                 val settings = PhotosLibrarySettings.newBuilder()
                     .setCredentialsProvider { credentials }
                     .build()
@@ -441,6 +460,7 @@ class PhotoDreamService : DreamService() {
 
                 photoUrls.clear()
                 var totalPhotos = 0
+                var errorCount = 0
 
                 photosLibraryClient?.let { client ->
                     for (albumId in selectedAlbums) {
@@ -461,7 +481,12 @@ class PhotoDreamService : DreamService() {
                             }
                             logDebugInfo("Found $totalPhotos photos in album $albumId")
                         } catch (e: Exception) {
+                            errorCount++
                             logDebugInfo("Error loading album $albumId: ${e.message}")
+                            if (e.message?.contains("UNAUTHENTICATED") == true) {
+                                // Try to refresh the token
+                                refreshAccessToken(GoogleAccountHolder.currentAccount?.serverAuthCode ?: "")
+                            }
                         }
                     }
                 }
@@ -472,8 +497,9 @@ class PhotoDreamService : DreamService() {
                     withContext(Dispatchers.Main) {
                         startSlideshow()
                     }
+                } else if (errorCount > 0) {
+                    throw Exception("Failed to load photos due to authentication errors")
                 } else {
-                    logDebugInfo("No photos found in any albums")
                     throw IllegalStateException("No photos found in selected albums")
                 }
             } catch (e: Exception) {

@@ -86,9 +86,8 @@ dependencies {
 
     // Google Photos Library API - corrected dependencies
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")
-    implementation("com.google.api-client:google-api-client-android:1.32.1")
-    implementation("com.google.http-client:google-http-client-gson:1.42.3")
-
+    implementation("com.google.api-client:google-api-client-android:2.2.0")
+    implementation("com.google.api-client:google-api-client-gson:2.2.0")
 
     // HTTP Client
     implementation("com.squareup.retrofit2:retrofit:2.9.0")

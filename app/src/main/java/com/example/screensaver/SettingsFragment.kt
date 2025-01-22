@@ -48,6 +48,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.root_preferences, rootKey)
 
+        // Set up Google Sign-in
+        setupGoogleSignIn()
+
+        // Set up Google Photos album selection
+        setupGooglePhotos()
+
         // Add a preference for manual trigger
         findPreference<Preference>("test_screensaver")?.setOnPreferenceClickListener {
             startScreensaver()
@@ -91,59 +97,40 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
+
     private fun setupGoogleSignIn() {
-        // Log SHA-1 and package info using the new API
         try {
-            val packageInfo: PackageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                requireContext().packageManager.getPackageInfo(
-                    requireContext().packageName,
-                    PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                requireContext().packageManager.getPackageInfo(
-                    requireContext().packageName,
-                    PackageManager.GET_SIGNATURES
-                )
-            }
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestServerAuthCode(getString(R.string.google_oauth_client_id), true)
+                .requestScopes(Scope("https://www.googleapis.com/auth/photoslibrary.readonly"))
+                .requestIdToken(getString(R.string.google_oauth_client_id))
+                .build()
 
-            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                packageInfo.signingInfo.apkContentsSigners
-            } else {
-                @Suppress("DEPRECATION")
-                packageInfo.signatures
-            }
+            googleSignInClient = GoogleSignIn.getClient(requireActivity(), gso)
 
-            signatures.forEach { signature ->
-                val md = MessageDigest.getInstance("SHA1")
-                md.update(signature.toByteArray())
-                val sha1 = bytesToHex(md.digest())
-                Log.d(TAG, "Package: ${requireContext().packageName}")
-                Log.d(TAG, "SHA-1: $sha1")
+            findPreference<SwitchPreference>("use_google_photos")?.apply {
+                setOnPreferenceChangeListener { _, newValue ->
+                    if (newValue as Boolean) {
+                        showGoogleSignInPrompt()
+                        false
+                    } else {
+                        signOut()
+                        true
+                    }
+                }
+
+                // Check if already signed in
+                val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+                val hasRequiredScope = account?.grantedScopes?.contains(
+                    Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
+                ) == true
+
+                isChecked = account != null && hasRequiredScope
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting SHA-1", e)
-        }
-
-        findPreference<SwitchPreference>("use_google_photos")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                if (newValue as Boolean) {
-                    showGoogleSignInPrompt()
-                    false
-                } else {
-                    signOut()
-                    true
-                }
-            }
-
-            // Check if already signed in
-            val account = GoogleSignIn.getLastSignedInAccount(requireContext())
-            val hasRequiredScope = account?.grantedScopes?.contains(
-                Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
-            ) == true // Changed from ?: false to == true
-
-            isChecked = account != null && hasRequiredScope
-            Log.d(TAG, "Current sign in status: ${if (account != null) "Signed in" else "Not signed in"}")
+            Log.e(TAG, "Error in setupGoogleSignIn", e)
+            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -152,6 +139,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
                 .requestScopes(Scope("https://www.googleapis.com/auth/photoslibrary.readonly"))
+                .requestServerAuthCode(getString(R.string.google_oauth_client_id), true) // Add this line
+                .requestIdToken(getString(R.string.google_oauth_client_id))             // Add this line
                 .build()
 
             Log.d(TAG, "Configuring Google Sign In")
@@ -175,18 +164,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val account = completedTask.getResult(ApiException::class.java)
             Log.d(TAG, "Sign in successful for: ${account.email}")
             Log.d(TAG, "ID Token present: ${account.idToken != null}")
+            Log.d(TAG, "Server Auth Code present: ${account.serverAuthCode != null}")
             Log.d(TAG, "Granted scopes: ${account.grantedScopes?.joinToString()}")
 
             val hasRequiredScope = account.grantedScopes?.contains(
                 Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
-            ) == true // Changed from ?: false to == true
+            ) == true
 
             if (hasRequiredScope) {
                 PreferenceManager.getDefaultSharedPreferences(requireContext())
                     .edit()
                     .putString("google_account", account.email)
                     .putString("google_access_token", account.idToken)
+                    .putString("google_server_auth_code", account.serverAuthCode) // Add this line
                     .apply()
+
+                // Save account to global state
+                GoogleAccountHolder.currentAccount = account
 
                 updateGooglePhotosState(true)
                 Toast.makeText(context, "Signed in as ${account.email}", Toast.LENGTH_SHORT).show()
@@ -204,6 +198,26 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun signOutCompletely() {
+        googleSignInClient?.signOut()?.addOnCompleteListener {
+            PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .edit()
+                .remove("google_account")
+                .remove("google_access_token")
+                .apply()
+
+            // Clear any stored credentials
+            val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+            if (account != null) {
+                googleSignInClient?.revokeAccess()?.addOnCompleteListener {
+                    updateGooglePhotosState(false)
+                    Toast.makeText(context, "Signed out completely", Toast.LENGTH_SHORT).show()
+                    Log.d(TAG, "Account access revoked")
+                }
+            }
+        }
+    }
+
     private fun signOut() {
         googleSignInClient?.signOut()?.addOnCompleteListener {
             Log.d(TAG, "Sign out completed")
@@ -211,7 +225,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 .edit()
                 .remove("google_account")
                 .remove("google_access_token")
+                .remove("google_server_auth_code")  // Add this line
                 .apply()
+
+            // Clear the current account
+            GoogleAccountHolder.currentAccount = null
+
             Toast.makeText(context, "Signed out", Toast.LENGTH_SHORT).show()
         }
     }

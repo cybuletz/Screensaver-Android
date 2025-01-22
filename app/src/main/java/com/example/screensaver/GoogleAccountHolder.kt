@@ -1,4 +1,5 @@
-package com.example.screensaver
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 
-class GoogleAccountHolder {
+object GoogleAccountHolder {
+    var currentAccount: GoogleSignInAccount? = null
 }
