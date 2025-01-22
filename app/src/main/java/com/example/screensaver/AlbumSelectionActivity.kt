@@ -1,8 +1,11 @@
 package com.example.screensaver
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.View
+import android.widget.Button
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
@@ -19,172 +22,332 @@ import com.example.screensaver.adapters.AlbumAdapter
 import com.example.screensaver.models.Album
 import com.google.auth.oauth2.AccessToken
 import com.google.auth.oauth2.OAuth2Credentials
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import java.util.Date
 import java.util.concurrent.TimeUnit
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 
 class AlbumSelectionActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var albumAdapter: AlbumAdapter
+    private lateinit var confirmButton: Button
     private var photosLibraryClient: PhotosLibraryClient? = null
     private lateinit var googleSignInClient: GoogleSignInClient
+    private val coroutineScope = CoroutineScope(Dispatchers.Main + Job())
 
     companion object {
         private const val TAG = "AlbumSelection"
         private const val RC_SIGN_IN = 9001
         private val REQUIRED_SCOPES = listOf(
-            Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
+            Scope("https://www.googleapis.com/auth/photoslibrary.readonly"),
+            // Add these scopes as well
+            Scope("https://www.googleapis.com/auth/photoslibrary"),
+            Scope("https://www.googleapis.com/auth/photoslibrary.sharing")
         )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        logd("onCreate called")
         setContentView(R.layout.activity_album_selection)
 
-        setupRecyclerView()
-        setupGoogleSignIn()
-        checkGoogleSignIn()
+        try {
+            setupRecyclerView()
+            setupConfirmButton()
+            setupGoogleSignIn()
+        } catch (e: Exception) {
+            loge("Error in onCreate", e)
+            Toast.makeText(this, "Failed to initialize: ${e.message}", Toast.LENGTH_LONG).show()
+            finish()
+        }
     }
 
     private fun setupRecyclerView() {
+        logd("Setting up RecyclerView")
         recyclerView = findViewById(R.id.albumRecyclerView)
         recyclerView.layoutManager = GridLayoutManager(this, 2)
 
         albumAdapter = AlbumAdapter { album ->
+            logd("Album clicked: ${album.title}")
             toggleAlbumSelection(album)
         }
         recyclerView.adapter = albumAdapter
+        logd("RecyclerView setup completed")
+    }
+
+    private fun setupConfirmButton() {
+        logd("Setting up Confirm Button")
+        confirmButton = findViewById(R.id.confirmButton)
+
+        confirmButton.setOnClickListener {
+            logd("Confirm button clicked")
+            setResult(Activity.RESULT_OK)
+            finish()
+        }
+
+        val selectedAlbums = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+            .getStringSet("selected_albums", emptySet()) ?: emptySet()
+        logd("Retrieved ${selectedAlbums.size} previously selected albums")
+        confirmButton.isEnabled = selectedAlbums.isNotEmpty()
     }
 
     private fun setupGoogleSignIn() {
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestProfile()
-            .requestId()
-            .apply {
-                REQUIRED_SCOPES.forEach { scope ->
-                    requestScopes(scope)
+        logd("Setting up Google Sign In")
+        try {
+            val clientId = getString(R.string.google_oauth_client_id)
+            logd("Using client ID: ${clientId.take(10)}...")
+
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestProfile()
+                .requestId()
+                .requestServerAuthCode(clientId, true) // Force code refresh
+                .requestIdToken(clientId)
+                .apply {
+                    REQUIRED_SCOPES.forEach { scope ->
+                        logd("Adding scope: ${scope.scopeUri}")
+                        requestScopes(scope)
+                    }
                 }
-            }
-            .build()
+                .build()
 
-        googleSignInClient = GoogleSignIn.getClient(this, gso)
-    }
-
-    private fun checkGoogleSignIn() {
-        val account = GoogleSignIn.getLastSignedInAccount(this)
-        if (account != null && !account.isExpired) {
-            val hasRequiredScopes = GoogleSignIn.hasPermissions(account, *REQUIRED_SCOPES.toTypedArray())
-            if (hasRequiredScopes) {
-                setupPhotosLibraryClient(account.idToken)
-            } else {
+            googleSignInClient = GoogleSignIn.getClient(this, gso)
+            // Clear any existing sign-in state
+            googleSignInClient.signOut().addOnCompleteListener {
+                logd("Previous sign-in state cleared")
                 requestGoogleSignIn()
             }
-        } else {
-            requestGoogleSignIn()
+        } catch (e: Exception) {
+            loge("Error setting up Google Sign In", e)
+            throw e
         }
     }
 
     private fun requestGoogleSignIn() {
-        startActivityForResult(googleSignInClient.signInIntent, RC_SIGN_IN)
+        logd("Requesting Google Sign In")
+        try {
+            startActivityForResult(googleSignInClient.signInIntent, RC_SIGN_IN)
+        } catch (e: Exception) {
+            loge("Error starting sign in activity", e)
+            Toast.makeText(this, "Failed to start sign in: ${e.message}", Toast.LENGTH_SHORT).show()
+            finish()
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        logd("onActivityResult: requestCode=$requestCode, resultCode=$resultCode")
 
         if (requestCode == RC_SIGN_IN) {
-            try {
-                val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-                val account = task.getResult(ApiException::class.java)
-                setupPhotosLibraryClient(account?.idToken)
-            } catch (e: ApiException) {
-                Log.e(TAG, "Sign in failed: ${e.message}", e)
-                Toast.makeText(this, "Sign in failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                finish()
+            handleSignInIntent(data)
+        }
+    }
+
+    private fun handleSignInIntent(data: Intent?) {
+        try {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+            val account = task.getResult(ApiException::class.java)
+
+            logd("Sign in successful for: ${account.email}")
+            logd("Has ID token: ${account.idToken != null}")
+            logd("Has server auth code: ${account.serverAuthCode != null}")
+
+            if (account.idToken != null) {
+                handleSignInResult(account)
+            } else {
+                loge("No ID token available after sign in")
+                // Clear tokens and try again
+                googleSignInClient.signOut().addOnCompleteListener {
+                    setupGoogleSignIn() // Restart the whole process
+                }
+            }
+        } catch (e: ApiException) {
+            when (e.statusCode) {
+                GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> {
+                    logd("Sign in cancelled by user")
+                    finish()
+                }
+                GoogleSignInStatusCodes.SIGN_IN_FAILED -> {
+                    loge("Sign in failed", e)
+                    setupGoogleSignIn() // Retry
+                }
+                GoogleSignInStatusCodes.DEVELOPER_ERROR -> {
+                    loge("Developer error - check OAuth configuration", e)
+                    Toast.makeText(this,
+                        "Authentication configuration error. Please check setup.",
+                        Toast.LENGTH_LONG).show()
+                    finish()
+                }
+                else -> {
+                    loge("Sign in failed with status code: ${e.statusCode}", e)
+                    Toast.makeText(this,
+                        "Sign in failed: ${e.message}",
+                        Toast.LENGTH_SHORT).show()
+                    finish()
+                }
             }
         }
     }
 
-    private fun setupPhotosLibraryClient(idToken: String?) {
-        if (idToken == null) {
-            Log.e(TAG, "No ID token available")
-            Toast.makeText(this, "Authentication failed", Toast.LENGTH_SHORT).show()
-            finish()
+    private fun handleSignInResult(account: GoogleSignInAccount) {
+        logd("Handling sign in result for account: ${account.email}")
+
+        if (!GoogleSignIn.hasPermissions(account, *REQUIRED_SCOPES.toTypedArray())) {
+            logd("Requesting additional scopes")
+            GoogleSignIn.requestPermissions(
+                this,
+                RC_SIGN_IN,
+                account,
+                *REQUIRED_SCOPES.toTypedArray()
+            )
             return
         }
 
-        try {
-            val expirationDate = Date(System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1))
-            val accessToken = AccessToken.newBuilder()
-                .setTokenValue(idToken)
-                .setExpirationTime(expirationDate)
-                .build()
-
-            val credentials = OAuth2Credentials.create(accessToken)
-
-            val settings = PhotosLibrarySettings.newBuilder()
-                .setCredentialsProvider { credentials }
-                .build()
-
-            photosLibraryClient = PhotosLibraryClient.initialize(settings)
-            loadAlbums()
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting up Photos Library client", e)
-            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
-            finish()
+        account.idToken?.let { token ->
+            logd("Got ID token, setting up Photos Library Client")
+            setupPhotosLibraryClient(token)
+        } ?: run {
+            loge("No ID token available")
+            // Force another sign in attempt
+            googleSignInClient.signOut().addOnCompleteListener {
+                requestGoogleSignIn()
+            }
         }
     }
 
-    private fun loadAlbums() {
-        CoroutineScope(Dispatchers.IO).launch {
+    private fun setupPhotosLibraryClient(idToken: String) {
+        logd("Setting up Photos Library Client")
+        coroutineScope.launch(Dispatchers.IO) {
             try {
-                val albums = mutableListOf<Album>()
-                photosLibraryClient?.listAlbums()?.iterateAll()?.forEach { googleAlbum ->
-                    Log.d(TAG, "Found album: ${googleAlbum.title}")
-                    albums.add(Album(
-                        id = googleAlbum.id,
-                        title = googleAlbum.title,
-                        coverPhotoUrl = googleAlbum.coverPhotoBaseUrl,
-                        mediaItemsCount = googleAlbum.mediaItemsCount.toInt()
-                    ))
+                val account = GoogleSignIn.getLastSignedInAccount(this@AlbumSelectionActivity)
+                    ?: throw Exception("No signed in account found")
+
+                val serverAuthCode = account.serverAuthCode
+                    ?: throw Exception("No server auth code available")
+
+                logd("Using server auth code to create credentials")
+
+                // Exchange server auth code for access token
+                val tokenEndpoint = "https://oauth2.googleapis.com/token"
+                val clientId = getString(R.string.google_oauth_client_id)
+                val clientSecret = getString(R.string.google_oauth_client_secret)
+
+                val connection = URL(tokenEndpoint).openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+
+                val postData = "code=$serverAuthCode" +
+                        "&client_id=$clientId" +
+                        "&client_secret=$clientSecret" +
+                        "&grant_type=authorization_code" +
+                        "&redirect_uri=urn:ietf:wg:oauth:2.0:oob"
+
+                connection.outputStream.use { it.write(postData.toByteArray()) }
+
+                if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                    throw Exception("Failed to get access token: ${connection.responseMessage}")
                 }
 
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val jsonResponse = JSONObject(response)
+                val accessTokenString = jsonResponse.getString("access_token")
+                val expiresIn = jsonResponse.getLong("expires_in")
+
+                val accessToken = AccessToken.newBuilder()
+                    .setTokenValue(accessTokenString)
+                    .setExpirationTime(Date(System.currentTimeMillis() + (expiresIn * 1000)))
+                    .build()
+
+                val credentials = OAuth2Credentials.create(accessToken)
+                val settings = PhotosLibrarySettings.newBuilder()
+                    .setCredentialsProvider { credentials }
+                    .build()
+
                 withContext(Dispatchers.Main) {
+                    showLoading(true)
+                }
+
+                photosLibraryClient = PhotosLibraryClient.initialize(settings)
+                logd("Photos Library Client initialized successfully")
+                loadAlbums()
+            } catch (e: Exception) {
+                loge("Error setting up Photos Library client", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        this@AlbumSelectionActivity,
+                        "Error: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    finish()
+                }
+            }
+        }
+    }
+
+    private fun showLoading(show: Boolean) {
+        logd("Showing loading state: $show")
+        findViewById<View>(R.id.loadingProgress)?.visibility = if (show) View.VISIBLE else View.GONE
+        recyclerView.visibility = if (show) View.GONE else View.VISIBLE
+    }
+
+    private fun loadAlbums() {
+        logd("Starting to load albums")
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val albums = mutableListOf<Album>()
+                val selectedAlbums = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+                    .getStringSet("selected_albums", emptySet()) ?: emptySet()
+                logd("Retrieved ${selectedAlbums.size} previously selected albums")
+
+                photosLibraryClient?.let { client ->
+                    logd("Fetching albums from Photos Library")
+                    client.listAlbums().iterateAll().forEach { googleAlbum ->
+                        logd("Processing album: ${googleAlbum.title}")
+                        albums.add(Album(
+                            id = googleAlbum.id,
+                            title = googleAlbum.title,
+                            coverPhotoUrl = googleAlbum.coverPhotoBaseUrl,
+                            mediaItemsCount = googleAlbum.mediaItemsCount.toInt(),
+                            isSelected = selectedAlbums.contains(googleAlbum.id)
+                        ))
+                    }
+                } ?: throw IllegalStateException("PhotosLibraryClient is null")
+
+                withContext(Dispatchers.Main) {
+                    showLoading(false)
                     if (albums.isEmpty()) {
-                        Log.w(TAG, "No albums found")
                         Toast.makeText(this@AlbumSelectionActivity,
-                            "No albums found",
-                            Toast.LENGTH_SHORT).show()
+                            "No albums found", Toast.LENGTH_SHORT).show()
                     } else {
-                        Log.d(TAG, "Loaded ${albums.size} albums")
                         albumAdapter.submitList(albums)
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading albums", e)
+                loge("Error loading albums", e)
                 withContext(Dispatchers.Main) {
+                    showLoading(false)
                     Toast.makeText(this@AlbumSelectionActivity,
-                        "Error loading albums: ${e.message}",
-                        Toast.LENGTH_SHORT).show()
+                        "Error loading albums: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
     private fun toggleAlbumSelection(album: Album) {
+        logd("Toggling selection for album: ${album.title}")
         val prefs = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
         val selectedAlbums = prefs.getStringSet("selected_albums", mutableSetOf())?.toMutableSet()
             ?: mutableSetOf()
 
         if (selectedAlbums.contains(album.id)) {
-            Log.d(TAG, "Removing album from selection: ${album.title}")
+            logd("Removing album from selection: ${album.title}")
             selectedAlbums.remove(album.id)
         } else {
-            Log.d(TAG, "Adding album to selection: ${album.title}")
+            logd("Adding album to selection: ${album.title}")
             selectedAlbums.add(album.id)
         }
 
@@ -192,15 +355,23 @@ class AlbumSelectionActivity : AppCompatActivity() {
             .putStringSet("selected_albums", selectedAlbums)
             .apply()
 
+        album.isSelected = selectedAlbums.contains(album.id)
         albumAdapter.notifyItemChanged(albumAdapter.currentList.indexOf(album))
+        confirmButton.isEnabled = selectedAlbums.isNotEmpty()
 
-        val message = if (selectedAlbums.contains(album.id))
-            "Added ${album.title}" else "Removed ${album.title}"
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        Toast.makeText(this,
+            if (album.isSelected) "Added ${album.title}" else "Removed ${album.title}",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        logd("onDestroy called")
+        coroutineScope.cancel()
         photosLibraryClient?.shutdown()
+        super.onDestroy()
     }
+
+    private fun logd(message: String) = Log.d(TAG, message)
+    private fun loge(message: String, e: Throwable? = null) = Log.e(TAG, message, e)
 }

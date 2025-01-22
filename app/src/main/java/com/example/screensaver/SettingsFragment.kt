@@ -17,6 +17,8 @@ import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import java.security.MessageDigest
 import androidx.preference.Preference
+import android.content.pm.PackageInfo
+import android.os.Build
 
 class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
@@ -45,16 +47,33 @@ class SettingsFragment : PreferenceFragmentCompat() {
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.preferences, rootKey)
         setupGoogleSignIn()
+        setupGooglePhotos()
     }
 
     private fun setupGoogleSignIn() {
-        // Log SHA-1 and package info
+        // Log SHA-1 and package info using the new API
         try {
-            val packageInfo = requireContext().packageManager.getPackageInfo(
-                requireContext().packageName,
-                PackageManager.GET_SIGNATURES
-            )
-            packageInfo.signatures.forEach { signature ->
+            val packageInfo: PackageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                requireContext().packageManager.getPackageInfo(
+                    requireContext().packageName,
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                requireContext().packageManager.getPackageInfo(
+                    requireContext().packageName,
+                    PackageManager.GET_SIGNATURES
+                )
+            }
+
+            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.signingInfo.apkContentsSigners
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.signatures
+            }
+
+            signatures.forEach { signature ->
                 val md = MessageDigest.getInstance("SHA1")
                 md.update(signature.toByteArray())
                 val sha1 = bytesToHex(md.digest())
@@ -80,7 +99,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val account = GoogleSignIn.getLastSignedInAccount(requireContext())
             val hasRequiredScope = account?.grantedScopes?.contains(
                 Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
-            ) ?: false
+            ) == true // Changed from ?: false to == true
 
             isChecked = account != null && hasRequiredScope
             Log.d(TAG, "Current sign in status: ${if (account != null) "Signed in" else "Not signed in"}")
@@ -92,7 +111,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
                 .requestScopes(Scope("https://www.googleapis.com/auth/photoslibrary.readonly"))
-                .build()  // Remove .requestIdToken() for now
+                .build()
 
             Log.d(TAG, "Configuring Google Sign In")
             Log.d(TAG, "Requested scopes: ${gso.scopeArray.joinToString()}")
@@ -119,10 +138,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
             val hasRequiredScope = account.grantedScopes?.contains(
                 Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
-            ) ?: false
+            ) == true // Changed from ?: false to == true
 
             if (hasRequiredScope) {
-                // Save credentials
                 PreferenceManager.getDefaultSharedPreferences(requireContext())
                     .edit()
                     .putString("google_account", account.email)
@@ -140,7 +158,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         } catch (e: ApiException) {
             Log.e(TAG, "Sign in failed code=${e.statusCode}")
             Log.e(TAG, "Sign in error: ${e.message}")
-            Log.e(TAG, "Status message: ${e.statusMessage}")
             Toast.makeText(context, "Sign in failed: ${e.statusCode}", Toast.LENGTH_SHORT).show()
             updateGooglePhotosState(false)
         }
@@ -175,14 +192,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun bytesToHex(bytes: ByteArray): String {
-        val hexChars = CharArray(bytes.size * 3)
-        for (i in bytes.indices) {
-            val v = bytes[i].toInt() and 0xFF
-            hexChars[i * 3] = "0123456789ABCDEF"[v ushr 4]
-            hexChars[i * 3 + 1] = "0123456789ABCDEF"[v and 0x0F]
-            hexChars[i * 3 + 2] = ':'
-        }
-        return String(hexChars, 0, hexChars.size - 1)
+        return bytes.joinToString(":") { "%02X".format(it) }
     }
 
     companion object {
