@@ -211,7 +211,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     .append("&code=").append(authCode)
                     .append("&client_id=").append(clientId)
                     .append("&client_secret=").append(clientSecret)
-                    .append("&redirect_uri=").append("com.example.screensaver:/oauth2redirect")
+                    .append("&redirect_uri=").append("http://localhost") // Or your configured redirect URI
                     .toString()
 
                 connection.outputStream.use { it.write(postData.toByteArray()) }

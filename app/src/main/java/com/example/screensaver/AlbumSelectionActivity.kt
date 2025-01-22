@@ -175,8 +175,8 @@ class AlbumSelectionActivity : AppCompatActivity() {
             .requestEmail()
             .requestProfile()
             .requestId()
-            .requestServerAuthCode(clientId)  // Add this
-            .requestIdToken(clientId)         // Add this
+            .requestServerAuthCode(clientId, false)  // Changed force to false
+            .requestIdToken(clientId)
             .apply {
                 REQUIRED_SCOPES.forEach { scope ->
                     requestScopes(scope)
@@ -185,8 +185,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
             .build()
 
         googleSignInClient = GoogleSignIn.getClient(this, gso)
-
-        // Remove the automatic sign out
         checkGoogleSignIn()
     }
 
@@ -386,27 +384,41 @@ class AlbumSelectionActivity : AppCompatActivity() {
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
 
+        // Changed redirect_uri to match what we set in the OAuth console
         val postData = "code=$serverAuthCode" +
                 "&client_id=$clientId" +
                 "&client_secret=$clientSecret" +
                 "&grant_type=authorization_code" +
-                "&redirect_uri=urn:ietf:wg:oauth:2.0:oob"
+                "&redirect_uri=http://localhost"  // Changed from urn:ietf:wg:oauth:2.0:oob to http://localhost
 
-        connection.outputStream.use { it.write(postData.toByteArray()) }
+        try {
+            connection.outputStream.use { it.write(postData.toByteArray()) }
 
-        if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-            throw Exception("Failed to get access token: ${connection.responseMessage}")
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                val errorStream = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                loge("Token exchange failed: $errorStream")
+                throw Exception("Failed to get access token: ${connection.responseMessage}")
+            }
+
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            val jsonResponse = JSONObject(response)
+            val accessTokenString = jsonResponse.getString("access_token")
+            val expiresIn = jsonResponse.getLong("expires_in")
+
+            // Save the tokens for future use
+            getSharedPreferences("screensaver_prefs", MODE_PRIVATE).edit()
+                .putString("access_token", accessTokenString)
+                .putLong("token_expiration", System.currentTimeMillis() + (expiresIn * 1000))
+                .apply()
+
+            return AccessToken.newBuilder()
+                .setTokenValue(accessTokenString)
+                .setExpirationTime(Date(System.currentTimeMillis() + (expiresIn * 1000)))
+                .build()
+        } catch (e: Exception) {
+            loge("Error exchanging auth code for access token", e)
+            throw e
         }
-
-        val response = connection.inputStream.bufferedReader().use { it.readText() }
-        val jsonResponse = JSONObject(response)
-        val accessTokenString = jsonResponse.getString("access_token")
-        val expiresIn = jsonResponse.getLong("expires_in")
-
-        return AccessToken.newBuilder()
-            .setTokenValue(accessTokenString)
-            .setExpirationTime(Date(System.currentTimeMillis() + (expiresIn * 1000)))
-            .build()
     }
 
     private fun showLoading(show: Boolean) {
