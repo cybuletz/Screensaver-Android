@@ -381,12 +381,58 @@ class PhotoDreamService : DreamService() {
             throw IllegalStateException("No albums selected")
         }
     }
+    private suspend fun refreshTokenUsingRefreshToken() {
+        withContext(Dispatchers.IO) {
+            try {
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this@PhotoDreamService)
+                val refreshToken = prefs.getString("refresh_token", null)
+                    ?: throw Exception("No refresh token available")
+
+                val tokenEndpoint = "https://oauth2.googleapis.com/token"
+                val clientId = getString(R.string.google_oauth_client_id)
+                val clientSecret = getString(R.string.google_oauth_client_secret)
+
+                val connection = URL(tokenEndpoint).openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+
+                val postData = StringBuilder()
+                    .append("grant_type=refresh_token")
+                    .append("&refresh_token=").append(refreshToken)
+                    .append("&client_id=").append(clientId)
+                    .append("&client_secret=").append(clientSecret)
+                    .toString()
+
+                connection.outputStream.use { it.write(postData.toByteArray()) }
+
+                if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
+                    val jsonResponse = JSONObject(response)
+
+                    PreferenceManager.getDefaultSharedPreferences(this@PhotoDreamService)
+                        .edit()
+                        .putString("access_token", jsonResponse.getString("access_token"))
+                        .putLong("token_expiration", System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000))
+                        .apply()
+
+                    logDebugInfo("Successfully refreshed access token using refresh token")
+                } else {
+                    val error = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
+                    logDebugInfo("Failed to refresh token: $error")
+                    throw Exception("Token refresh failed: ${connection.responseMessage}")
+                }
+            } catch (e: Exception) {
+                logDebugInfo("Failed to refresh token: ${e.message}")
+                throw e
+            }
+        }
+    }
 
     private suspend fun getOrRefreshCredentials(): GoogleCredentials? = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Getting/refreshing credentials")
 
-            // Get the current Google account
             val account = GoogleAccountHolder.currentAccount
                 ?: GoogleSignIn.getLastSignedInAccount(this@PhotoDreamService)
 
@@ -395,23 +441,38 @@ class PhotoDreamService : DreamService() {
                 return@withContext null
             }
 
-            // Get the saved tokens
             val prefs = PreferenceManager.getDefaultSharedPreferences(this@PhotoDreamService)
-            val accessToken = prefs.getString("google_access_token", null)
+            val accessToken = prefs.getString("access_token", null)
+            val tokenExpiration = prefs.getLong("token_expiration", 0)
             val serverAuthCode = prefs.getString("google_server_auth_code", null)
+            val refreshToken = prefs.getString("refresh_token", null)
 
-            if (accessToken == null || serverAuthCode == null) {
-                Log.e(TAG, "Missing access token or server auth code")
-                return@withContext null
+            // If we have no tokens at all, start with server auth code
+            if (serverAuthCode != null && accessToken == null && refreshToken == null) {
+                refreshAccessToken(serverAuthCode)
+                return@withContext getOrRefreshCredentials() // Recursive call after initial exchange
             }
 
-            // Create an AccessToken instance with the current token
+            // If token is expired and we have a refresh token, use it
+            if (accessToken == null || System.currentTimeMillis() > tokenExpiration) {
+                if (refreshToken != null) {
+                    refreshTokenUsingRefreshToken()
+                    return@withContext getOrRefreshCredentials() // Recursive call after refresh
+                } else if (serverAuthCode != null) {
+                    // Fall back to server auth code if we somehow lost the refresh token
+                    refreshAccessToken(serverAuthCode)
+                    return@withContext getOrRefreshCredentials()
+                } else {
+                    throw Exception("No valid tokens available for refresh")
+                }
+            }
+
+            // Create credentials with the current access token
             val googleAccessToken = AccessToken(
                 accessToken,
-                Date(System.currentTimeMillis() + 3600000) // Token expires in 1 hour
+                Date(tokenExpiration)
             )
 
-            // Create and return the credentials
             return@withContext GoogleCredentials.create(googleAccessToken)
                 .createScoped(listOf("https://www.googleapis.com/auth/photoslibrary.readonly"))
 
@@ -464,28 +525,43 @@ class PhotoDreamService : DreamService() {
 
                 photosLibraryClient?.let { client ->
                     for (albumId in selectedAlbums) {
-                        try {
-                            logDebugInfo("Loading album: $albumId")
-                            val request = SearchMediaItemsRequest.newBuilder()
-                                .setAlbumId(albumId)
-                                .setPageSize(100)
-                                .build()
+                        var retryAttempt = 0
+                        while (retryAttempt < MAX_RETRIES) {
+                            try {
+                                logDebugInfo("Loading album: $albumId (attempt ${retryAttempt + 1})")
+                                val request = SearchMediaItemsRequest.newBuilder()
+                                    .setAlbumId(albumId)
+                                    .setPageSize(100)
+                                    .build()
 
-                            client.searchMediaItems(request).iterateAll().forEach { mediaItem ->
-                                if (mediaItem.mediaMetadata.hasPhoto()) {
-                                    mediaItem.baseUrl?.let { url ->
-                                        photoUrls.add("$url$PHOTO_QUALITY")
-                                        totalPhotos++
+                                client.searchMediaItems(request).iterateAll().forEach { mediaItem ->
+                                    if (mediaItem.mediaMetadata.hasPhoto()) {
+                                        mediaItem.baseUrl?.let { url ->
+                                            photoUrls.add("$url$PHOTO_QUALITY")
+                                            totalPhotos++
+                                        }
                                     }
                                 }
-                            }
-                            logDebugInfo("Found $totalPhotos photos in album $albumId")
-                        } catch (e: Exception) {
-                            errorCount++
-                            logDebugInfo("Error loading album $albumId: ${e.message}")
-                            if (e.message?.contains("UNAUTHENTICATED") == true) {
-                                // Try to refresh the token
-                                refreshAccessToken(GoogleAccountHolder.currentAccount?.serverAuthCode ?: "")
+                                logDebugInfo("Found $totalPhotos photos in album $albumId")
+                                break // Success, exit retry loop
+                            } catch (e: Exception) {
+                                errorCount++
+                                logDebugInfo("Error loading album $albumId: ${e.message}")
+                                if (e.message?.contains("UNAUTHENTICATED") == true) {
+                                    retryAttempt++
+                                    if (retryAttempt < MAX_RETRIES) {
+                                        val serverAuthCode = PreferenceManager
+                                            .getDefaultSharedPreferences(this@PhotoDreamService)
+                                            .getString("google_server_auth_code", null)
+
+                                        if (serverAuthCode != null) {
+                                            refreshAccessToken(serverAuthCode)
+                                            delay(1000) // Wait a bit before retrying
+                                            continue
+                                        }
+                                    }
+                                }
+                                break // Non-auth error or max retries reached
                             }
                         }
                     }
@@ -522,32 +598,34 @@ class PhotoDreamService : DreamService() {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
 
-                val postData = "code=$serverAuthCode" +
-                        "&client_id=$clientId" +
-                        "&client_secret=$clientSecret" +
-                        "&grant_type=authorization_code" +
-                        "&redirect_uri=urn:ietf:wg:oauth:2.0:oob"
+                // First, exchange the server auth code for tokens
+                val postData = StringBuilder()
+                    .append("grant_type=authorization_code")
+                    .append("&code=").append(serverAuthCode)
+                    .append("&client_id=").append(clientId)
+                    .append("&client_secret=").append(clientSecret)
+                    .append("&redirect_uri=").append("urn:ietf:wg:oauth:2.0:oob")
+                    .toString()
 
                 connection.outputStream.use { it.write(postData.toByteArray()) }
 
                 if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                     val response = connection.inputStream.bufferedReader().use { it.readText() }
                     val jsonResponse = JSONObject(response)
-                    val accessTokenString = jsonResponse.getString("access_token")
-                    val expiresIn = jsonResponse.getLong("expires_in")
-                    val expirationTime = System.currentTimeMillis() + (expiresIn * 1000)
 
-                    getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+                    // Save all tokens
+                    PreferenceManager.getDefaultSharedPreferences(this@PhotoDreamService)
                         .edit()
-                        .putString("access_token", accessTokenString)
-                        .putLong("token_expiration", expirationTime)
+                        .putString("access_token", jsonResponse.getString("access_token"))
+                        .putString("refresh_token", jsonResponse.getString("refresh_token"))
+                        .putLong("token_expiration", System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000))
                         .apply()
 
-                    logDebugInfo("Successfully refreshed access token")
+                    logDebugInfo("Successfully exchanged auth code for tokens")
                 } else {
                     val error = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
-                    logDebugInfo("Failed to refresh token: $error")
-                    throw Exception("Token refresh failed: ${connection.responseMessage}")
+                    logDebugInfo("Failed to exchange auth code: $error")
+                    throw Exception("Token exchange failed: ${connection.responseMessage}")
                 }
             } catch (e: Exception) {
                 logDebugInfo("Failed to refresh access token: ${e.message}")
