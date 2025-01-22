@@ -21,7 +21,20 @@
         <item>Zoom</item>
         <item>Blur</item>
     </string-array>
+    <!-- Add to your existing arrays -->
+    <string-array name="transition_entries">
+        <item>Fade</item>
+        <item>Slide</item>
+        <item>Zoom</item>
+        <item>Crossfade</item>
+    </string-array>
 
+    <string-array name="transition_values">
+        <item>fade</item>
+        <item>slide</item>
+        <item>zoom</item>
+        <item>crossfade</item>
+    </string-array>
     <string-array name="transition_effects_values">
         <item>fade</item>
         <item>slide</item>
@@ -67,5 +80,14 @@
         <item>3</item>
         <item>4</item>
         <item>5</item>
+    </string-array>
+    <string-array name="display_mode_entries">
+        <item>Screensaver (Dream Service)</item>
+        <item>Lock Screen</item>
+    </string-array>
+
+    <string-array name="display_mode_values">
+        <item>dream_service</item>
+        <item>lock_screen</item>
     </string-array>
 </resources>
