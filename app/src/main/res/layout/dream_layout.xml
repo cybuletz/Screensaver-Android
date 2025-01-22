@@ -2,16 +2,15 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/black">
+    android:background="#000000"
+    android:id="@+id/dream_root_layout">
 
     <ImageView
         android:id="@+id/primaryImageView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="centerCrop"
-        android:background="#333333"
-        android:contentDescription="Primary Image View"
-        android:visibility="visible" />
+        android:background="#333333" />
 
     <ImageView
         android:id="@+id/secondaryImageView"
@@ -19,20 +18,39 @@
         android:layout_height="match_parent"
         android:scaleType="centerCrop"
         android:background="#666666"
-        android:contentDescription="Secondary Image View"
-        android:visibility="visible"
         android:alpha="0" />
 
-    <!-- Debug overlay -->
-    <TextView
-        android:id="@+id/debugText"
+    <!-- Debug Info -->
+    <LinearLayout
+        android:id="@+id/debugOverlay"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
+        android:orientation="vertical"
         android:padding="16dp"
-        android:textColor="#FFFFFF"
-        android:textSize="14sp"
-        android:background="#80000000"
-        android:visibility="visible"/>
+        android:background="#80000000">
 
+        <TextView
+            android:id="@+id/debugStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/debugPhotoInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:layout_marginTop="8dp" />
+    </LinearLayout>
+
+    <!-- Loading Indicator -->
+    <ProgressBar
+        android:id="@+id/loadingIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="gone" />
 </FrameLayout>

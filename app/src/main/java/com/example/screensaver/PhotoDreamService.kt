@@ -27,10 +27,22 @@ import com.bumptech.glide.request.RequestOptions
 import android.animation.ObjectAnimator
 import android.view.animation.AccelerateDecelerateInterpolator
 import com.bumptech.glide.load.resource.bitmap.BitmapTransitionOptions
+import android.widget.TextView
+import android.widget.ProgressBar
+import android.widget.FrameLayout
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
+import android.graphics.drawable.Drawable
+import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.request.target.Target
 
 class PhotoDreamService : DreamService() {
     private lateinit var primaryImageView: ImageView
     private lateinit var secondaryImageView: ImageView
+    private lateinit var debugStatus: TextView
+    private lateinit var debugPhotoInfo: TextView
+    private lateinit var loadingIndicator: ProgressBar
+    private lateinit var rootLayout: FrameLayout
     private var currentImageView: ImageView? = null
     private var photosLibraryClient: PhotosLibraryClient? = null
     private val coroutineScope = CoroutineScope(Dispatchers.Main + Job())
@@ -72,31 +84,49 @@ class PhotoDreamService : DreamService() {
 
         try {
             setContentView(R.layout.dream_layout)
-            logDebugInfo("Content view set")
+
+            // Initialize debug views
+            rootLayout = findViewById(R.id.dream_root_layout)
+            debugStatus = findViewById(R.id.debugStatus)
+            debugPhotoInfo = findViewById(R.id.debugPhotoInfo)
+            loadingIndicator = findViewById(R.id.loadingIndicator)
 
             primaryImageView = findViewById(R.id.primaryImageView)
             secondaryImageView = findViewById(R.id.secondaryImageView)
             currentImageView = primaryImageView
 
-            logDebugInfo("ImageViews initialized")
+            // Show initial debug info
+            updateDebugStatus("Dream service initializing...")
 
-            // Initialize both ImageViews
-            primaryImageView.scaleType = ImageView.ScaleType.CENTER_CROP
-            secondaryImageView.scaleType = ImageView.ScaleType.CENTER_CROP
-            secondaryImageView.alpha = 0f
+            // Initialize ImageViews
+            setupImageViews()
 
-            // Set background colors for visibility
-            primaryImageView.setBackgroundColor(Color.BLUE)
-            secondaryImageView.setBackgroundColor(Color.RED)
-
-            logDebugInfo("Starting verification")
+            // Start the initialization process
             verifyAndInitialize()
         } catch (e: Exception) {
-            logDebugInfo("Setup error: ${e.message}")
-            throw e
+            updateDebugStatus("Setup error: ${e.message}")
+            handleError(e)
         }
     }
+    private fun setupImageViews() {
+        primaryImageView.scaleType = ImageView.ScaleType.CENTER_CROP
+        secondaryImageView.scaleType = ImageView.ScaleType.CENTER_CROP
+        secondaryImageView.alpha = 0f
 
+        // Set visible background colors
+        primaryImageView.setBackgroundColor(Color.BLUE)
+        secondaryImageView.setBackgroundColor(Color.RED)
+    }
+
+    private fun updateDebugStatus(status: String) {
+        debugStatus.text = status
+        logDebugInfo(status)
+    }
+
+    private fun updatePhotoInfo(info: String) {
+        debugPhotoInfo.text = info
+        logDebugInfo(info)
+    }
     private fun verifyAndInitialize() {
         coroutineScope.launch {
             try {
@@ -306,19 +336,41 @@ class PhotoDreamService : DreamService() {
 
     private fun displayNextPhoto() {
         if (photoUrls.isEmpty()) {
-            logDebugInfo("No photos to display")
+            updateDebugStatus("No photos to display")
             return
         }
 
         val nextImageView = if (currentImageView == primaryImageView) secondaryImageView else primaryImageView
         val url = photoUrls[currentPhotoIndex]
-        logDebugInfo("Loading photo $currentPhotoIndex: ${url.take(50)}...")
+        updatePhotoInfo("Loading photo ${currentPhotoIndex + 1}/${photoUrls.size}\n${url.take(50)}...")
 
         Glide.with(this)
             .load(url)
             .apply(RequestOptions()
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .error(android.R.drawable.ic_dialog_alert))
+            .listener(object : RequestListener<Drawable> {
+                override fun onLoadFailed(
+                    e: GlideException?,
+                    model: Any?,
+                    target: Target<Drawable>,
+                    isFirstResource: Boolean
+                ): Boolean {
+                    updateDebugStatus("Failed to load image: ${e?.message}")
+                    return false
+                }
+
+                override fun onResourceReady(
+                    resource: Drawable,
+                    model: Any,  // Changed from Any? to Any
+                    target: Target<Drawable>,
+                    dataSource: DataSource,
+                    isFirstResource: Boolean
+                ): Boolean {
+                    updateDebugStatus("Image loaded successfully")
+                    return false
+                }
+            })
             .into(nextImageView)
 
         // Crossfade transition
