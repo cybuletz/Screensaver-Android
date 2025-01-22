@@ -429,49 +429,69 @@ class PhotoDreamService : DreamService() {
         }
     }
 
+    private suspend fun refreshTokens() = withContext(Dispatchers.IO) {
+        try {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this@PhotoDreamService)
+            val refreshToken = prefs.getString("refresh_token", null)
+                ?: throw Exception("No refresh token available")
+            val clientId = getString(R.string.google_oauth_client_id)
+            val clientSecret = getString(R.string.google_oauth_client_secret)
+
+            val connection = URL("https://oauth2.googleapis.com/token").openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+
+            val postData = StringBuilder()
+                .append("grant_type=refresh_token")
+                .append("&refresh_token=").append(refreshToken)
+                .append("&client_id=").append(clientId)
+                .append("&client_secret=").append(clientSecret)
+                .toString()
+
+            connection.outputStream.use { it.write(postData.toByteArray()) }
+
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val jsonResponse = JSONObject(response)
+
+                PreferenceManager.getDefaultSharedPreferences(this@PhotoDreamService)
+                    .edit()
+                    .putString("access_token", jsonResponse.getString("access_token"))
+                    .putLong("token_expiration", System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000))
+                    .apply()
+
+                true
+            } else {
+                val error = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
+                Log.e(TAG, "Failed to refresh token: $error")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error refreshing token", e)
+            false
+        }
+    }
+
     private suspend fun getOrRefreshCredentials(): GoogleCredentials? = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "Getting/refreshing credentials")
-
-            val account = GoogleAccountHolder.currentAccount
-                ?: GoogleSignIn.getLastSignedInAccount(this@PhotoDreamService)
-
-            if (account == null) {
-                Log.e(TAG, "No Google account available")
-                return@withContext null
-            }
-
             val prefs = PreferenceManager.getDefaultSharedPreferences(this@PhotoDreamService)
             val accessToken = prefs.getString("access_token", null)
             val tokenExpiration = prefs.getLong("token_expiration", 0)
-            val serverAuthCode = prefs.getString("google_server_auth_code", null)
-            val refreshToken = prefs.getString("refresh_token", null)
 
-            // If we have no tokens at all, start with server auth code
-            if (serverAuthCode != null && accessToken == null && refreshToken == null) {
-                refreshAccessToken(serverAuthCode)
-                return@withContext getOrRefreshCredentials() // Recursive call after initial exchange
-            }
-
-            // If token is expired and we have a refresh token, use it
-            if (accessToken == null || System.currentTimeMillis() > tokenExpiration) {
-                if (refreshToken != null) {
-                    refreshTokenUsingRefreshToken()
-                    return@withContext getOrRefreshCredentials() // Recursive call after refresh
-                } else if (serverAuthCode != null) {
-                    // Fall back to server auth code if we somehow lost the refresh token
-                    refreshAccessToken(serverAuthCode)
-                    return@withContext getOrRefreshCredentials()
-                } else {
-                    throw Exception("No valid tokens available for refresh")
+            // Check if token is expired or about to expire in the next minute
+            if (accessToken == null || System.currentTimeMillis() > tokenExpiration - 60000) {
+                if (!refreshTokens()) {
+                    return@withContext null
                 }
             }
 
-            // Create credentials with the current access token
-            val googleAccessToken = AccessToken(
-                accessToken,
-                Date(tokenExpiration)
-            )
+            // Get the current access token
+            val currentToken = prefs.getString("access_token", null)
+                ?: throw Exception("No access token available")
+
+            val expirationTime = prefs.getLong("token_expiration", 0)
+            val googleAccessToken = AccessToken(currentToken, Date(expirationTime))
 
             return@withContext GoogleCredentials.create(googleAccessToken)
                 .createScoped(listOf("https://www.googleapis.com/auth/photoslibrary.readonly"))

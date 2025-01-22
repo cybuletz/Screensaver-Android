@@ -20,6 +20,13 @@ import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import java.security.MessageDigest
 import android.provider.Settings
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
@@ -102,9 +109,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
         try {
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
-                .requestServerAuthCode(getString(R.string.google_oauth_client_id), true)
                 .requestScopes(Scope("https://www.googleapis.com/auth/photoslibrary.readonly"))
-                .requestIdToken(getString(R.string.google_oauth_client_id))
+                .requestIdToken(getString(R.string.google_oauth_client_id))  // We need the ID token
+                .requestServerAuthCode(getString(R.string.google_oauth_client_id), true) // Force refresh token
                 .build()
 
             googleSignInClient = GoogleSignIn.getClient(requireActivity(), gso)
@@ -115,7 +122,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         showGoogleSignInPrompt()
                         false
                     } else {
-                        signOut()
+                        signOutCompletely() // Use complete sign out
                         true
                     }
                 }
@@ -165,25 +172,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
             Log.d(TAG, "Sign in successful for: ${account.email}")
             Log.d(TAG, "ID Token present: ${account.idToken != null}")
             Log.d(TAG, "Server Auth Code present: ${account.serverAuthCode != null}")
-            Log.d(TAG, "Granted scopes: ${account.grantedScopes?.joinToString()}")
 
             val hasRequiredScope = account.grantedScopes?.contains(
                 Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
             ) == true
 
             if (hasRequiredScope) {
-                PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    .edit()
-                    .putString("google_account", account.email)
-                    .putString("google_access_token", account.idToken)
-                    .putString("google_server_auth_code", account.serverAuthCode) // Add this line
-                    .apply()
-
-                // Save account to global state
-                GoogleAccountHolder.currentAccount = account
-
-                updateGooglePhotosState(true)
-                Toast.makeText(context, "Signed in as ${account.email}", Toast.LENGTH_SHORT).show()
+                // Pass both auth code and account email
+                exchangeAuthCode(account.serverAuthCode ?: "", account.email ?: "")
             } else {
                 Log.e(TAG, "Required scope not granted")
                 Toast.makeText(context, "Required permissions not granted", Toast.LENGTH_SHORT).show()
@@ -195,6 +191,63 @@ class SettingsFragment : PreferenceFragmentCompat() {
             Log.e(TAG, "Sign in error: ${e.message}")
             Toast.makeText(context, "Sign in failed: ${e.statusCode}", Toast.LENGTH_SHORT).show()
             updateGooglePhotosState(false)
+        }
+    }
+
+    private fun exchangeAuthCode(authCode: String, accountEmail: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val tokenEndpoint = "https://oauth2.googleapis.com/token"
+                val clientId = getString(R.string.google_oauth_client_id)
+                val clientSecret = getString(R.string.google_oauth_client_secret)
+
+                val connection = URL(tokenEndpoint).openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+
+                val postData = StringBuilder()
+                    .append("grant_type=authorization_code")
+                    .append("&code=").append(authCode)
+                    .append("&client_id=").append(clientId)
+                    .append("&client_secret=").append(clientSecret)
+                    .append("&redirect_uri=").append("com.example.screensaver:/oauth2redirect")
+                    .toString()
+
+                connection.outputStream.use { it.write(postData.toByteArray()) }
+
+                if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
+                    val jsonResponse = JSONObject(response)
+
+                    // Save all tokens
+                    PreferenceManager.getDefaultSharedPreferences(requireContext())
+                        .edit()
+                        .putString("access_token", jsonResponse.getString("access_token"))
+                        .putString("refresh_token", jsonResponse.getString("refresh_token"))
+                        .putLong("token_expiration", System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000))
+                        .putString("google_account", accountEmail)
+                        .apply()
+
+                    withContext(Dispatchers.Main) {
+                        updateGooglePhotosState(true)
+                        Toast.makeText(context, "Signed in as $accountEmail", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    val error = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
+                    Log.e(TAG, "Failed to exchange auth code: $error")
+                    withContext(Dispatchers.Main) {
+                        updateGooglePhotosState(false)
+                        Toast.makeText(context, "Failed to complete sign in", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error exchanging auth code", e)
+                withContext(Dispatchers.Main) {
+                    updateGooglePhotosState(false)
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 

@@ -109,4 +109,6 @@ dependencies {
     implementation("io.grpc:grpc-android:1.58.0") // Add this line
     implementation("io.grpc:grpc-protobuf:1.58.0") // Add this line
     implementation("io.grpc:grpc-stub:1.58.0")     // Add this line
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("org.json:json:20231013")
 }
