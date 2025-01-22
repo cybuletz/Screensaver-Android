@@ -1,5 +1,0 @@
-<resources>
-<string name="app_name">"Screensaver"</string>
-<!-- Add your OAuth 2.0 client ID from Google Cloud Console -->
-<string name="google_oauth_client_id">"197175025747-uqtrhqditaevdrr4shn289m5m86oqvqk.apps.googleusercontent.com"</string>
-</resources>
