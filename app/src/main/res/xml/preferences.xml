@@ -1,95 +1,206 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Display Mode Arrays -->
-    <string-array name="display_mode_entries">
-        <item>Screensaver</item>
-        <item>Lock Screen</item>
-    </string-array>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <string-array name="display_mode_values">
-        <item>dream_service</item>
-        <item>lock_screen</item>
-    </string-array>
+    <PreferenceCategory
+        android:title="Display Mode"
+        android:key="display_mode">
 
-    <!-- Transition Arrays -->
-    <string-array name="transition_entries">
-        <item>Fade</item>
-        <item>Slide</item>
-        <item>Zoom</item>
-        <item>Blur</item>
-    </string-array>
+        <ListPreference
+            android:key="display_mode_selection"
+            android:title="Select Display Mode"
+            android:summary="Choose how photos are displayed"
+            android:defaultValue="dream_service"
+            android:entries="@array/transition_effects"
+            android:entryValues="@array/transition_effects_values"/>
+    </PreferenceCategory>
 
-    <string-array name="transition_values">
-        <item>fade</item>
-        <item>slide</item>
-        <item>zoom</item>
-        <item>blur</item>
-    </string-array>
+    <PreferenceCategory
+        android:key="lock_screen_settings"
+        android:title="Lock Screen Settings"
+        android:dependency="display_mode_selection">
 
-    <!-- Photo Scale Arrays -->
-    <string-array name="photo_scale_options">
-        <item>Fit Screen</item>
-        <item>Fill Screen</item>
-        <item>Original Size</item>
-    </string-array>
+        <SwitchPreferenceCompat
+            android:key="lock_screen_clock"
+            android:title="Show Clock"
+            android:summary="Display time on lock screen"
+            android:defaultValue="true" />
 
-    <string-array name="photo_scale_values">
-        <item>fit</item>
-        <item>fill</item>
-        <item>original</item>
-    </string-array>
+        <SwitchPreferenceCompat
+            android:key="lock_screen_date"
+            android:summary="Display date on lock screen"
+            android:title="Show Date"
+            android:defaultValue="true" />
 
-    <!-- Orientation Arrays -->
-    <string-array name="orientation_entries">
-        <item>Auto</item>
-        <item>Portrait</item>
-        <item>Landscape</item>
-    </string-array>
+        <ListPreference
+            android:key="lock_screen_transition"
+            android:title="Photo Transition"
+            android:summary="Choose how photos change"
+            android:entries="@array/transition_effects"
+            android:entryValues="@array/transition_effects_values"
+            android:defaultValue="fade" />
 
-    <string-array name="orientation_values">
-        <item>auto</item>
-        <item>portrait</item>
-        <item>landscape</item>
-    </string-array>
+        <SeekBarPreference
+            android:key="lock_screen_interval"
+            android:title="Photo Change Interval"
+            android:summary="Time between photo changes"
+            android:max="60"
+            android:min="5"
+            android:defaultValue="10" />
 
-    <!-- Days of Week Arrays -->
-    <string-array name="days_of_week">
-        <item>Monday</item>
-        <item>Tuesday</item>
-        <item>Wednesday</item>
-        <item>Thursday</item>
-        <item>Friday</item>
-        <item>Saturday</item>
-        <item>Sunday</item>
-    </string-array>
+        <Preference
+            android:key="preview_lock_screen"
+            android:title="Preview Lock Screen"
+            android:summary="See how your lock screen will look" />
 
-    <string-array name="days_of_week_values">
-        <item>1</item>
-        <item>2</item>
-        <item>3</item>
-        <item>4</item>
-        <item>5</item>
-        <item>6</item>
-        <item>7</item>
-    </string-array>
+        <Preference
+            android:key="lock_screen_status"
+            android:title="Lock Screen Status"
+            android:selectable="false" />
+    </PreferenceCategory>
 
-    <!-- Refresh Intervals -->
-    <string-array name="refresh_intervals">
-        <item>1 minute</item>
-        <item>5 minutes</item>
-        <item>15 minutes</item>
-        <item>30 minutes</item>
-        <item>1 hour</item>
-    </string-array>
+    <PreferenceCategory
+        android:title="Photo Sources"
+        android:key="photo_sources">
 
-    <string-array name="refresh_interval_values">
-        <item>60</item>
-        <item>300</item>
-        <item>900</item>
-        <item>1800</item>
-        <item>3600</item>
-    </string-array>
+        <Preference
+            android:key="select_photos"
+            android:title="Select Photos"
+            android:summary="Choose photos from your device" />
 
-    <!-- Empty Array for Dynamic Content -->
-    <string-array name="empty_array"/>
-</resources>
+        <SwitchPreferenceCompat
+            android:key="random_order"
+            android:title="Random Order"
+            android:summary="Display photos in random order"
+            android:defaultValue="true" />
+
+        <ListPreference
+            android:key="photo_scale"
+            android:title="Photo Scale"
+            android:summary="How photos should fit the screen"
+            android:entries="@array/photo_scale_options"
+            android:entryValues="@array/photo_scale_values"
+            android:defaultValue="fill" />
+
+        <MultiSelectListPreference
+            android:key="photo_folders"
+            android:title="Photo Folders"
+            android:summary="Select folders to display photos from"
+            android:entries="@array/empty_array"
+            android:entryValues="@array/empty_array" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Screensaver Settings"
+        android:key="screensaver_settings">
+
+        <SwitchPreferenceCompat
+            android:key="screensaver_enabled"
+            android:title="Enable Screensaver"
+            android:summary="Activate photo slideshow as screensaver"
+            android:defaultValue="true" />
+
+        <SeekBarPreference
+            android:key="screensaver_delay"
+            android:title="Start Delay"
+            android:summary="Time before screensaver starts"
+            android:max="30"
+            android:min="1"
+            android:defaultValue="5" />
+
+        <ListPreference
+            android:key="transition_effect"
+            android:title="Transition Effect"
+            android:summary="Choose transition between photos"
+            android:entries="@array/transition_effects"
+            android:entryValues="@array/transition_effects_values"
+            android:defaultValue="fade"/>
+
+        <ListPreference
+            android:key="refresh_interval"
+            android:title="Photo Change Interval"
+            android:summary="Time between photo changes"
+            android:entries="@array/refresh_intervals"
+            android:entryValues="@array/refresh_interval_values"
+            android:defaultValue="300"/>
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Display Settings"
+        android:key="display_settings">
+
+        <SwitchPreferenceCompat
+            android:key="keep_screen_on"
+            android:title="Keep Screen On"
+            android:summary="Prevent screen from turning off"
+            android:defaultValue="false"/>
+
+        <SeekBarPreference
+            android:key="brightness"
+            android:title="Brightness"
+            android:summary="Adjust display brightness"
+            android:max="100"
+            android:min="0"
+            android:defaultValue="50"/>
+
+        <ListPreference
+            android:key="orientation"
+            android:title="Screen Orientation"
+            android:summary="Choose screen orientation"
+            android:entries="@array/orientation_options"
+            android:entryValues="@array/orientation_options_values"
+            android:defaultValue="auto" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Schedule"
+        android:key="schedule_settings">
+
+        <SwitchPreferenceCompat
+            android:key="schedule_enabled"
+            android:title="Enable Schedule"
+            android:summary="Set specific times for screensaver"
+            android:defaultValue="false"/>
+
+        <Preference
+            android:key="start_time"
+            android:title="Start Time"
+            android:dependency="schedule_enabled"/>
+
+        <Preference
+            android:key="end_time"
+            android:title="End Time"
+            android:dependency="schedule_enabled"/>
+
+        <MultiSelectListPreference
+            android:key="active_days"
+            android:title="Active Days"
+            android:summary="Select days when schedule is active"
+            android:entries="@array/days_of_week"
+            android:entryValues="@array/days_of_week_values"
+            android:dependency="schedule_enabled"/>
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Debug Options"
+        android:key="debug_settings">
+
+        <Preference
+            android:key="test_screensaver"
+            android:title="Test Screensaver"
+            android:summary="Start the screensaver manually"/>
+
+        <SwitchPreferenceCompat
+            android:key="debug_logging"
+            android:title="Debug Logging"
+            android:summary="Enable detailed logging"
+            android:defaultValue="false" />
+
+        <Preference
+            android:key="view_logs"
+            android:title="View Logs"
+            android:summary="Display debug logs" />
+    </PreferenceCategory>
+
+</PreferenceScreen>
