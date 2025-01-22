@@ -66,10 +66,8 @@
         <service
             android:name=".PhotoDreamService"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher"
-            android:label="@string/app_name"
             android:enabled="true"
-            android:description="@string/app_name"
+            android:label="@string/app_name"
             android:permission="android.permission.BIND_DREAM_SERVICE">
             <intent-filter>
                 <action android:name="android.service.dreams.DreamService" />
@@ -77,7 +75,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.service.dream"
-                android:resource="@xml/dream_settings" />
+                android:resource="@xml/dream_service" />
         </service>
 
     </application>

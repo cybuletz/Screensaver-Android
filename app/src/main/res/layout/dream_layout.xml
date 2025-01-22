@@ -27,7 +27,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:orientation="vertical"
-        android:padding="16dp"
+        android:padding="8dp"
         android:background="#80000000">
 
         <TextView
@@ -35,7 +35,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textColor="#FFFFFF"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            android:visibility="visible"/>
 
         <TextView
             android:id="@+id/debugPhotoInfo"
@@ -43,14 +44,14 @@
             android:layout_height="wrap_content"
             android:textColor="#FFFFFF"
             android:textSize="12sp"
-            android:layout_marginTop="8dp" />
+            android:layout_marginTop="8dp"
+            android:visibility="visible" />
     </LinearLayout>
 
-    <!-- Loading Indicator -->
     <ProgressBar
         android:id="@+id/loadingIndicator"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:visibility="gone" />
+        android:visibility="visible" />
 </FrameLayout>

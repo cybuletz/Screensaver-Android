@@ -26,7 +26,6 @@ import android.view.View
 import com.bumptech.glide.request.RequestOptions
 import android.animation.ObjectAnimator
 import android.view.animation.AccelerateDecelerateInterpolator
-import com.bumptech.glide.load.resource.bitmap.BitmapTransitionOptions
 import android.widget.TextView
 import android.widget.ProgressBar
 import android.widget.FrameLayout
@@ -35,6 +34,9 @@ import com.bumptech.glide.request.RequestListener
 import android.graphics.drawable.Drawable
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.request.target.Target
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 
 class PhotoDreamService : DreamService() {
     private lateinit var primaryImageView: ImageView
@@ -51,82 +53,301 @@ class PhotoDreamService : DreamService() {
     private var photoUrls = mutableListOf<String>()
     private var slideshowRunnable: Runnable? = null
     private var retryCount = 0
-
+    private val dreamStateReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            Log.e(TAG, "Dream state changed: ${intent?.action}")
+            dumpState()
+        }
+    }
     companion object {
         private const val TAG = "PhotoDreamService"
         private const val SLIDESHOW_DELAY = 10000L // 10 seconds
         private const val PHOTO_QUALITY = "=w2560-h1440" // 2K quality
         private const val MAX_RETRIES = 3
         private const val TRANSITION_DURATION = 1000L // 1 second transition
+        private const val RECEIVER_FLAGS = ContextCompat.RECEIVER_NOT_EXPORTED
+    }
+
+
+    init {
+        Log.e(TAG, "PhotoDreamService instance created")
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.e(TAG, "PhotoDreamService onCreate called")
+
+        // Register for dream state changes
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(DreamService.SERVICE_INTERFACE)
+        }
+        ContextCompat.registerReceiver(
+            this,
+            dreamStateReceiver,
+            filter,
+            RECEIVER_FLAGS
+        )
+    }
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(dreamStateReceiver)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unregistering receiver", e)
+        }
+        Log.e(TAG, "PhotoDreamService onDestroy called")
+    }
+
+    override fun onWakeUp() {
+        super.onWakeUp()
+        Log.e(TAG, "Dream wake up called")
     }
 
     private fun logDebugInfo(message: String) {
-        Log.e(TAG, message)  // Using Log.e for better visibility
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        Log.e(TAG, message)
+        coroutineScope.launch(Dispatchers.Main) {
+            try {
+                debugStatus?.let { status ->
+                    status.text = message
+                    status.visibility = View.VISIBLE
+                }
+                Toast.makeText(this@PhotoDreamService, message, Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error showing debug info", e)
+            }
+        }
+    }
+
+    private fun dumpState() {
+        coroutineScope.launch(Dispatchers.Main) {
+            try {
+                val prefs = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+                val selectedAlbums = prefs.getStringSet("selected_albums", emptySet())
+                val accessToken = prefs.getString("access_token", null)
+                val account = GoogleSignIn.getLastSignedInAccount(this@PhotoDreamService)
+
+                val stateInfo = """
+                State Dump:
+                Selected Albums: ${selectedAlbums?.size ?: 0}
+                Access Token exists: ${accessToken != null}
+                Google Account exists: ${account != null}
+                Photo URLs loaded: ${photoUrls.size}
+                Current Photo Index: $currentPhotoIndex
+                PhotosLibraryClient initialized: ${photosLibraryClient != null}
+                Loading Indicator visible: ${loadingIndicator.visibility == View.VISIBLE}
+                Debug Status visible: ${debugStatus.visibility == View.VISIBLE}
+                Primary ImageView visible: ${primaryImageView.visibility == View.VISIBLE}
+                Is Fullscreen: ${isFullscreen}
+                Is Interactive: ${isInteractive}
+            """.trimIndent()
+
+                Log.e(TAG, stateInfo)
+                debugPhotoInfo?.text = stateInfo
+            } catch (e: Exception) {
+                Log.e(TAG, "Error dumping state", e)
+            }
+        }
     }
 
     override fun onAttachedToWindow() {
+        Log.e(TAG, "PhotoDreamService onAttachedToWindow START")
         super.onAttachedToWindow()
-        logDebugInfo("onAttachedToWindow - Starting service setup")
         try {
+            isFullscreen = true
+            isInteractive = true
+            setScreenBright(true)
+            Log.e(TAG, "Dream service basic settings configured")
             setupDreamService()
+            Log.e(TAG, "PhotoDreamService setup completed")
+            dumpState()
         } catch (e: Exception) {
-            Log.e(TAG, "Error in onAttachedToWindow", e)
+            Log.e(TAG, "Critical error in onAttachedToWindow", e)
             handleError(e)
+        }
+        Log.e(TAG, "PhotoDreamService onAttachedToWindow END")
+    }
+
+    private fun precacheImages(count: Int) {
+        logDebugInfo("Pre-caching $count images")
+        for (i in 0 until minOf(count, photoUrls.size)) {
+            val index = (currentPhotoIndex + i) % photoUrls.size
+            Glide.with(this)
+                .load(photoUrls[index])
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                .preload()
+        }
+    }
+
+    private fun displayNextPhoto() {
+        if (photoUrls.isEmpty()) {
+            updateDebugStatus("No photos to display")
+            return
+        }
+
+        val nextImageView = if (currentImageView == primaryImageView) secondaryImageView else primaryImageView
+        val url = photoUrls[currentPhotoIndex]
+
+        logDebugInfo("""
+        Starting photo transition:
+        Current index: $currentPhotoIndex
+        Total photos: ${photoUrls.size}
+        Current view: ${if (currentImageView == primaryImageView) "primary" else "secondary"}
+        Next view: ${if (nextImageView == primaryImageView) "primary" else "secondary"}
+        Current view visibility: ${currentImageView?.visibility == View.VISIBLE}
+        Next view visibility: ${nextImageView.visibility == View.VISIBLE}
+    """.trimIndent())
+
+        Glide.with(this)
+            .load(url)
+            .apply(RequestOptions()
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                .error(android.R.drawable.ic_dialog_alert))
+            .listener(object : RequestListener<Drawable> {
+                override fun onLoadFailed(
+                    e: GlideException?,
+                    model: Any?,
+                    target: Target<Drawable>,
+                    isFirstResource: Boolean
+                ): Boolean {
+                    updateDebugStatus("Failed to load image: ${e?.message}")
+                    return false
+                }
+
+                override fun onResourceReady(
+                    resource: Drawable,
+                    model: Any,
+                    target: Target<Drawable>,
+                    dataSource: DataSource,
+                    isFirstResource: Boolean
+                ): Boolean {
+                    updateDebugStatus("Image loaded successfully")
+                    return false
+                }
+            })
+            .into(nextImageView)
+
+        // Crossfade transition
+        ObjectAnimator.ofFloat(nextImageView, View.ALPHA, 0f, 1f).apply {
+            duration = TRANSITION_DURATION
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+
+        currentImageView?.let { currentView ->
+            ObjectAnimator.ofFloat(currentView, View.ALPHA, 1f, 0f).apply {
+                duration = TRANSITION_DURATION
+                interpolator = AccelerateDecelerateInterpolator()
+                start()
+            }
+        }
+
+        currentImageView = nextImageView
+        currentPhotoIndex = (currentPhotoIndex + 1) % photoUrls.size
+
+        // Pre-cache next image
+        if (currentPhotoIndex < photoUrls.size - 1) {
+            Glide.with(this)
+                .load(photoUrls[(currentPhotoIndex + 1) % photoUrls.size])
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                .preload()
         }
     }
 
     private fun setupDreamService() {
-        logDebugInfo("Setting up dream service")
-        isFullscreen = true
-        isInteractive = true  // Set to true for debugging
-        setScreenBright(true)
-
+        Log.e(TAG, "Setting up dream service - Thread: ${Thread.currentThread().name}")
         try {
             setContentView(R.layout.dream_layout)
+            Log.e(TAG, "Content view set successfully")
 
-            // Initialize debug views
-            rootLayout = findViewById(R.id.dream_root_layout)
-            debugStatus = findViewById(R.id.debugStatus)
-            debugPhotoInfo = findViewById(R.id.debugPhotoInfo)
-            loadingIndicator = findViewById(R.id.loadingIndicator)
-
-            primaryImageView = findViewById(R.id.primaryImageView)
-            secondaryImageView = findViewById(R.id.secondaryImageView)
-            currentImageView = primaryImageView
-
-            // Show initial debug info
-            updateDebugStatus("Dream service initializing...")
-
-            // Initialize ImageViews
+            // Initialize views with detailed error checking
+            initializeViews()
             setupImageViews()
 
-            // Start the initialization process
-            verifyAndInitialize()
+            // Start dream sequence
+            startDreamSequence()
         } catch (e: Exception) {
-            updateDebugStatus("Setup error: ${e.message}")
+            Log.e(TAG, "Setup error: ${e.message}")
+            e.printStackTrace()
             handleError(e)
         }
     }
+
+    private fun initializeViews() {
+        Log.e(TAG, "Initializing views")
+
+        rootLayout = findViewById<FrameLayout>(R.id.dream_root_layout).also {
+            Log.e(TAG, "Root layout found and initialized")
+        } ?: throw IllegalStateException("Root layout not found")
+
+        debugStatus = findViewById<TextView>(R.id.debugStatus).also {
+            it.visibility = View.VISIBLE
+            Log.e(TAG, "Debug status view initialized and made visible")
+        } ?: throw IllegalStateException("Debug status view not found")
+
+        // Similar pattern for other views...
+        debugPhotoInfo = findViewById<TextView>(R.id.debugPhotoInfo).also {
+            it.visibility = View.VISIBLE
+        } ?: throw IllegalStateException("Debug photo info view not found")
+
+        loadingIndicator = findViewById<ProgressBar>(R.id.loadingIndicator).also {
+            it.visibility = View.VISIBLE
+        } ?: throw IllegalStateException("Loading indicator not found")
+
+        primaryImageView = findViewById<ImageView>(R.id.primaryImageView).also {
+            it.visibility = View.VISIBLE
+        } ?: throw IllegalStateException("Primary image view not found")
+
+        secondaryImageView = findViewById<ImageView>(R.id.secondaryImageView).also {
+            it.visibility = View.VISIBLE
+        } ?: throw IllegalStateException("Secondary image view not found")
+    }
+
+    private fun startDreamSequence() {
+        Log.e(TAG, "Starting dream sequence")
+        coroutineScope.launch {
+            try {
+                verifyAndInitialize()
+                Log.e(TAG, "Dream sequence started successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting dream sequence", e)
+                handleError(e)
+            }
+        }
+    }
+
     private fun setupImageViews() {
         primaryImageView.scaleType = ImageView.ScaleType.CENTER_CROP
         secondaryImageView.scaleType = ImageView.ScaleType.CENTER_CROP
         secondaryImageView.alpha = 0f
-
-        // Set visible background colors
-        primaryImageView.setBackgroundColor(Color.BLUE)
-        secondaryImageView.setBackgroundColor(Color.RED)
+        currentImageView = primaryImageView
     }
 
     private fun updateDebugStatus(status: String) {
-        debugStatus.text = status
-        logDebugInfo(status)
+        Log.e(TAG, status)
+        coroutineScope.launch(Dispatchers.Main) {
+            try {
+                debugStatus.text = status
+                debugStatus.visibility = View.VISIBLE
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating debug status", e)
+            }
+        }
     }
 
     private fun updatePhotoInfo(info: String) {
-        debugPhotoInfo.text = info
-        logDebugInfo(info)
+        Log.e(TAG, info)
+        coroutineScope.launch(Dispatchers.Main) {
+            try {
+                debugPhotoInfo.text = info
+                debugPhotoInfo.visibility = View.VISIBLE
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating photo info", e)
+            }
+        }
     }
+
     private fun verifyAndInitialize() {
         coroutineScope.launch {
             try {
@@ -323,115 +544,80 @@ class PhotoDreamService : DreamService() {
         handler.post(slideshowRunnable!!)
     }
 
-    private fun precacheImages(count: Int) {
-        logDebugInfo("Pre-caching $count images")
-        for (i in 0 until minOf(count, photoUrls.size)) {
-            val index = (currentPhotoIndex + i) % photoUrls.size
-            Glide.with(this)
-                .load(photoUrls[index])
-                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .preload()
-        }
-    }
-
-    private fun displayNextPhoto() {
-        if (photoUrls.isEmpty()) {
-            updateDebugStatus("No photos to display")
-            return
-        }
-
-        val nextImageView = if (currentImageView == primaryImageView) secondaryImageView else primaryImageView
-        val url = photoUrls[currentPhotoIndex]
-        updatePhotoInfo("Loading photo ${currentPhotoIndex + 1}/${photoUrls.size}\n${url.take(50)}...")
-
-        Glide.with(this)
-            .load(url)
-            .apply(RequestOptions()
-                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .error(android.R.drawable.ic_dialog_alert))
-            .listener(object : RequestListener<Drawable> {
-                override fun onLoadFailed(
-                    e: GlideException?,
-                    model: Any?,
-                    target: Target<Drawable>,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    updateDebugStatus("Failed to load image: ${e?.message}")
-                    return false
-                }
-
-                override fun onResourceReady(
-                    resource: Drawable,
-                    model: Any,  // Changed from Any? to Any
-                    target: Target<Drawable>,
-                    dataSource: DataSource,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    updateDebugStatus("Image loaded successfully")
-                    return false
-                }
-            })
-            .into(nextImageView)
-
-        // Crossfade transition
-        ObjectAnimator.ofFloat(nextImageView, View.ALPHA, 0f, 1f).apply {
-            duration = TRANSITION_DURATION
-            interpolator = AccelerateDecelerateInterpolator()
-            start()
-        }
-
-        ObjectAnimator.ofFloat(currentImageView!!, View.ALPHA, 1f, 0f).apply {
-            duration = TRANSITION_DURATION
-            interpolator = AccelerateDecelerateInterpolator()
-            start()
-        }
-
-        currentImageView = nextImageView
-        currentPhotoIndex = (currentPhotoIndex + 1) % photoUrls.size
-
-        // Pre-cache next image
-        if (currentPhotoIndex < photoUrls.size - 1) {
-            Glide.with(this)
-                .load(photoUrls[(currentPhotoIndex + 1) % photoUrls.size])
-                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .preload()
-        }
-    }
-
     private fun handleError(error: Exception) {
-        logDebugInfo("Error: ${error.message}")
+        val errorMessage = "Error: ${error.message}"
+        Log.e(TAG, errorMessage, error)
+
         coroutineScope.launch(Dispatchers.Main) {
-            Toast.makeText(
-                this@PhotoDreamService,
-                "Error: ${error.message}",
-                Toast.LENGTH_LONG
-            ).show()
+            try {
+                updateDebugStatus(errorMessage)
+                loadingIndicator.visibility = View.GONE
+                debugStatus.setTextColor(Color.RED)
+
+                Toast.makeText(
+                    this@PhotoDreamService,
+                    errorMessage,
+                    Toast.LENGTH_LONG
+                ).show()
+
+                if (retryCount < MAX_RETRIES) {
+                    handler.postDelayed({
+                        retryCount++
+                        verifyAndInitialize()
+                    }, 5000)
+                }
+
+                dumpState()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling error", e)
+            }
         }
     }
 
     override fun onDreamingStarted() {
+        Log.e(TAG, "PhotoDreamService onDreamingStarted BEGIN")
         super.onDreamingStarted()
-        logDebugInfo("onDreamingStarted")
+        try {
+            if (!::debugStatus.isInitialized) {
+                Log.e(TAG, "Debug status not initialized!")
+            }
+            if (!::primaryImageView.isInitialized) {
+                Log.e(TAG, "Primary image view not initialized!")
+            }
+            logDebugInfo("Dream started - checking state")
+            dumpState()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onDreamingStarted", e)
+        }
+        Log.e(TAG, "PhotoDreamService onDreamingStarted END")
     }
 
     override fun onDreamingStopped() {
+        Log.e(TAG, "PhotoDreamService onDreamingStopped BEGIN")
         super.onDreamingStopped()
         logDebugInfo("onDreamingStopped")
         cleanup()
+        Log.e(TAG, "PhotoDreamService onDreamingStopped END")
     }
 
     override fun onDetachedFromWindow() {
+        Log.e(TAG, "PhotoDreamService onDetachedFromWindow BEGIN")
         super.onDetachedFromWindow()
         logDebugInfo("onDetachedFromWindow")
         cleanup()
+        Log.e(TAG, "PhotoDreamService onDetachedFromWindow END")
     }
 
     private fun cleanup() {
+        Log.e(TAG, "Starting cleanup")
         logDebugInfo("Cleaning up resources")
         slideshowRunnable?.let {
             handler.removeCallbacks(it)
+            Log.e(TAG, "Removed slideshow callbacks")
         }
         coroutineScope.cancel()
+        Log.e(TAG, "Cancelled coroutine scope")
         photosLibraryClient?.shutdown()
+        Log.e(TAG, "Shut down photos library client")
     }
 }

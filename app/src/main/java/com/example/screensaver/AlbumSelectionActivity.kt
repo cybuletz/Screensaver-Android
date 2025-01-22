@@ -170,34 +170,81 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun setupGoogleSignIn() {
-        logd("Setting up Google Sign In")
-        try {
-            val clientId = getString(R.string.google_oauth_client_id)
-            logd("Using client ID: ${clientId.take(10)}...")
-
-            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestEmail()
-                .requestProfile()
-                .requestId()
-                .requestServerAuthCode(clientId, true)
-                .requestIdToken(clientId)
-                .apply {
-                    REQUIRED_SCOPES.forEach { scope ->
-                        logd("Adding scope: ${scope.scopeUri}")
-                        requestScopes(scope)
-                    }
+        val clientId = getString(R.string.google_oauth_client_id)
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestProfile()
+            .requestId()
+            .requestServerAuthCode(clientId)  // Add this
+            .requestIdToken(clientId)         // Add this
+            .apply {
+                REQUIRED_SCOPES.forEach { scope ->
+                    requestScopes(scope)
                 }
-                .build()
+            }
+            .build()
 
-            googleSignInClient = GoogleSignIn.getClient(this, gso)
-            googleSignInClient.signOut().addOnCompleteListener {
-                logd("Previous sign-in state cleared")
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
+
+        // Remove the automatic sign out
+        checkGoogleSignIn()
+    }
+
+    private fun checkGoogleSignIn() {
+        val account = loadPersistedSignInState()
+        if (account != null && !account.isExpired) {
+            val hasRequiredScopes = GoogleSignIn.hasPermissions(account, *REQUIRED_SCOPES.toTypedArray())
+            if (hasRequiredScopes) {
+                setupPhotosLibraryClient(account.idToken)  // idToken can be null
+            } else {
                 requestGoogleSignIn()
             }
-        } catch (e: Exception) {
-            loge("Error setting up Google Sign In", e)
-            throw e
+        } else {
+            requestGoogleSignIn()
         }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        logd("onActivityResult: requestCode=$requestCode, resultCode=$resultCode")
+
+        if (requestCode == RC_SIGN_IN) {
+            try {
+                val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+                val account = task.getResult(ApiException::class.java)
+                account?.let { acc ->
+                    persistSignInState(acc)
+                    acc.idToken?.let { token ->
+                        setupPhotosLibraryClient(token)
+                    } ?: run {
+                        loge("No ID token available")
+                        Toast.makeText(this, "Authentication failed: No token available", Toast.LENGTH_SHORT).show()
+                        requestGoogleSignIn()
+                    }
+                } ?: run {
+                    loge("Sign in failed: Account is null")
+                    Toast.makeText(this, "Sign in failed: Could not get account", Toast.LENGTH_SHORT).show()
+                    requestGoogleSignIn()
+                }
+            } catch (e: ApiException) {
+                loge("Sign in failed with error code: ${e.statusCode}", e)
+                handleSignInError(e)
+            }
+        }
+    }
+
+    private fun persistSignInState(account: GoogleSignInAccount) {
+        val prefs = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+        prefs.edit()
+            .putString("google_account_email", account.email)
+            .putString("google_account_id", account.id)
+            .putString("access_token", account.idToken)
+            .putString("server_auth_code", account.serverAuthCode)
+            .apply()
+    }
+
+    private fun loadPersistedSignInState(): GoogleSignInAccount? {
+        return GoogleSignIn.getLastSignedInAccount(this)
     }
 
     private fun requestGoogleSignIn() {
@@ -208,15 +255,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
             loge("Error starting sign in activity", e)
             Toast.makeText(this, "Failed to start sign in: ${e.message}", Toast.LENGTH_SHORT).show()
             finish()
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        logd("onActivityResult: requestCode=$requestCode, resultCode=$resultCode")
-
-        if (requestCode == RC_SIGN_IN) {
-            handleSignInIntent(data)
         }
     }
 
@@ -294,7 +332,14 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupPhotosLibraryClient(idToken: String) {
+    private fun setupPhotosLibraryClient(idToken: String?) {
+        if (idToken == null) {
+            loge("ID token is null")
+            Toast.makeText(this, "Authentication failed", Toast.LENGTH_SHORT).show()
+            requestGoogleSignIn()
+            return
+        }
+
         logd("Setting up Photos Library Client")
         coroutineScope.launch(Dispatchers.IO) {
             try {
