@@ -2,6 +2,7 @@ package com.example.screensaver
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -24,11 +25,14 @@ import com.google.auth.oauth2.AccessToken
 import com.google.auth.oauth2.OAuth2Credentials
 import kotlinx.coroutines.*
 import java.util.Date
-import java.util.concurrent.TimeUnit
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONObject
+import android.content.ComponentName
+import android.content.Context
+import com.example.screensaver.utils.DreamServiceHelper
+import com.example.screensaver.utils.DreamServiceStatus
 
 class AlbumSelectionActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
@@ -37,13 +41,14 @@ class AlbumSelectionActivity : AppCompatActivity() {
     private var photosLibraryClient: PhotosLibraryClient? = null
     private lateinit var googleSignInClient: GoogleSignInClient
     private val coroutineScope = CoroutineScope(Dispatchers.Main + Job())
+    private lateinit var dreamServiceHelper: DreamServiceHelper
 
     companion object {
         private const val TAG = "AlbumSelection"
         private const val RC_SIGN_IN = 9001
+
         private val REQUIRED_SCOPES = listOf(
             Scope("https://www.googleapis.com/auth/photoslibrary.readonly"),
-            // Add these scopes as well
             Scope("https://www.googleapis.com/auth/photoslibrary"),
             Scope("https://www.googleapis.com/auth/photoslibrary.sharing")
         )
@@ -54,14 +59,84 @@ class AlbumSelectionActivity : AppCompatActivity() {
         logd("onCreate called")
         setContentView(R.layout.activity_album_selection)
 
+        // Initialize DreamServiceHelper with the create method
+        dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
+
         try {
             setupRecyclerView()
             setupConfirmButton()
             setupGoogleSignIn()
+            checkDreamServiceRegistration()
         } catch (e: Exception) {
             loge("Error in onCreate", e)
             Toast.makeText(this, "Failed to initialize: ${e.message}", Toast.LENGTH_LONG).show()
             finish()
+        }
+    }
+
+    private fun checkDreamServiceRegistration() {
+        try {
+            logd("Checking Dream Service availability...")
+            when (dreamServiceHelper.getDreamServiceStatus()) {
+                DreamServiceStatus.API_UNAVAILABLE -> {
+                    loge("Dream API not available on this device")
+                    Toast.makeText(this, "Screensaver not supported on this device", Toast.LENGTH_LONG).show()
+                }
+                DreamServiceStatus.NOT_SELECTED -> {
+                    logd("Dream service not selected in system settings")
+                    Toast.makeText(this, "Please enable screensaver in system settings", Toast.LENGTH_LONG).show()
+                    dreamServiceHelper.openDreamSettings()
+                }
+                DreamServiceStatus.CONFIGURED -> {
+                    logd("Dream service is configured")
+                    addTestDreamButton()
+                }
+                DreamServiceStatus.ACTIVE -> {
+                    logd("Dream service is active")
+                    addTestDreamButton()
+                }
+                DreamServiceStatus.UNKNOWN -> {
+                    loge("Dream service status unknown")
+                }
+            }
+        } catch (e: Exception) {
+            loge("Error checking dream service", e)
+        }
+    }
+
+    private fun addTestDreamButton() {
+        val testButton = Button(this).apply {
+            text = "Test Dream Service"
+            setOnClickListener {
+                testDreamService()
+            }
+        }
+
+        findViewById<View>(R.id.root_layout)?.let { root ->
+            if (root is android.view.ViewGroup) {
+                root.addView(testButton)
+            }
+        }
+    }
+
+    private fun testDreamService() {
+        try {
+            when (dreamServiceHelper.getDreamServiceStatus()) {
+                DreamServiceStatus.API_UNAVAILABLE -> {
+                    Toast.makeText(this, "Screensaver not supported on this device", Toast.LENGTH_SHORT).show()
+                }
+                DreamServiceStatus.NOT_SELECTED -> {
+                    Toast.makeText(this, "Please enable screensaver in system settings", Toast.LENGTH_SHORT).show()
+                    dreamServiceHelper.openDreamSettings()
+                }
+                else -> {
+                    dreamServiceHelper.openDreamSettings()
+                    Toast.makeText(this, "Opening screensaver settings", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("DreamService", "Error starting dream", e)
+            Toast.makeText(this, "Error starting dream: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -104,7 +179,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 .requestEmail()
                 .requestProfile()
                 .requestId()
-                .requestServerAuthCode(clientId, true) // Force code refresh
+                .requestServerAuthCode(clientId, true)
                 .requestIdToken(clientId)
                 .apply {
                     REQUIRED_SCOPES.forEach { scope ->
@@ -115,7 +190,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 .build()
 
             googleSignInClient = GoogleSignIn.getClient(this, gso)
-            // Clear any existing sign-in state
             googleSignInClient.signOut().addOnCompleteListener {
                 logd("Previous sign-in state cleared")
                 requestGoogleSignIn()
@@ -159,35 +233,38 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 handleSignInResult(account)
             } else {
                 loge("No ID token available after sign in")
-                // Clear tokens and try again
                 googleSignInClient.signOut().addOnCompleteListener {
-                    setupGoogleSignIn() // Restart the whole process
+                    setupGoogleSignIn()
                 }
             }
         } catch (e: ApiException) {
-            when (e.statusCode) {
-                GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> {
-                    logd("Sign in cancelled by user")
-                    finish()
-                }
-                GoogleSignInStatusCodes.SIGN_IN_FAILED -> {
-                    loge("Sign in failed", e)
-                    setupGoogleSignIn() // Retry
-                }
-                GoogleSignInStatusCodes.DEVELOPER_ERROR -> {
-                    loge("Developer error - check OAuth configuration", e)
-                    Toast.makeText(this,
-                        "Authentication configuration error. Please check setup.",
-                        Toast.LENGTH_LONG).show()
-                    finish()
-                }
-                else -> {
-                    loge("Sign in failed with status code: ${e.statusCode}", e)
-                    Toast.makeText(this,
-                        "Sign in failed: ${e.message}",
-                        Toast.LENGTH_SHORT).show()
-                    finish()
-                }
+            handleSignInError(e)
+        }
+    }
+
+    private fun handleSignInError(e: ApiException) {
+        when (e.statusCode) {
+            GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> {
+                logd("Sign in cancelled by user")
+                finish()
+            }
+            GoogleSignInStatusCodes.SIGN_IN_FAILED -> {
+                loge("Sign in failed", e)
+                setupGoogleSignIn()
+            }
+            GoogleSignInStatusCodes.DEVELOPER_ERROR -> {
+                loge("Developer error - check OAuth configuration", e)
+                Toast.makeText(this,
+                    "Authentication configuration error. Please check setup.",
+                    Toast.LENGTH_LONG).show()
+                finish()
+            }
+            else -> {
+                loge("Sign in failed with status code: ${e.statusCode}", e)
+                Toast.makeText(this,
+                    "Sign in failed: ${e.message}",
+                    Toast.LENGTH_SHORT).show()
+                finish()
             }
         }
     }
@@ -211,7 +288,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
             setupPhotosLibraryClient(token)
         } ?: run {
             loge("No ID token available")
-            // Force another sign in attempt
             googleSignInClient.signOut().addOnCompleteListener {
                 requestGoogleSignIn()
             }
@@ -228,40 +304,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 val serverAuthCode = account.serverAuthCode
                     ?: throw Exception("No server auth code available")
 
-                logd("Using server auth code to create credentials")
-
-                // Exchange server auth code for access token
-                val tokenEndpoint = "https://oauth2.googleapis.com/token"
-                val clientId = getString(R.string.google_oauth_client_id)
-                val clientSecret = getString(R.string.google_oauth_client_secret)
-
-                val connection = URL(tokenEndpoint).openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-
-                val postData = "code=$serverAuthCode" +
-                        "&client_id=$clientId" +
-                        "&client_secret=$clientSecret" +
-                        "&grant_type=authorization_code" +
-                        "&redirect_uri=urn:ietf:wg:oauth:2.0:oob"
-
-                connection.outputStream.use { it.write(postData.toByteArray()) }
-
-                if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                    throw Exception("Failed to get access token: ${connection.responseMessage}")
-                }
-
-                val response = connection.inputStream.bufferedReader().use { it.readText() }
-                val jsonResponse = JSONObject(response)
-                val accessTokenString = jsonResponse.getString("access_token")
-                val expiresIn = jsonResponse.getLong("expires_in")
-
-                val accessToken = AccessToken.newBuilder()
-                    .setTokenValue(accessTokenString)
-                    .setExpirationTime(Date(System.currentTimeMillis() + (expiresIn * 1000)))
-                    .build()
-
+                val accessToken = exchangeAuthCodeForAccessToken(serverAuthCode)
                 val credentials = OAuth2Credentials.create(accessToken)
                 val settings = PhotosLibrarySettings.newBuilder()
                     .setCredentialsProvider { credentials }
@@ -286,6 +329,39 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun exchangeAuthCodeForAccessToken(serverAuthCode: String): AccessToken {
+        val tokenEndpoint = "https://oauth2.googleapis.com/token"
+        val clientId = getString(R.string.google_oauth_client_id)
+        val clientSecret = getString(R.string.google_oauth_client_secret)
+
+        val connection = URL(tokenEndpoint).openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+
+        val postData = "code=$serverAuthCode" +
+                "&client_id=$clientId" +
+                "&client_secret=$clientSecret" +
+                "&grant_type=authorization_code" +
+                "&redirect_uri=urn:ietf:wg:oauth:2.0:oob"
+
+        connection.outputStream.use { it.write(postData.toByteArray()) }
+
+        if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+            throw Exception("Failed to get access token: ${connection.responseMessage}")
+        }
+
+        val response = connection.inputStream.bufferedReader().use { it.readText() }
+        val jsonResponse = JSONObject(response)
+        val accessTokenString = jsonResponse.getString("access_token")
+        val expiresIn = jsonResponse.getLong("expires_in")
+
+        return AccessToken.newBuilder()
+            .setTokenValue(accessTokenString)
+            .setExpirationTime(Date(System.currentTimeMillis() + (expiresIn * 1000)))
+            .build()
     }
 
     private fun showLoading(show: Boolean) {
@@ -359,19 +435,24 @@ class AlbumSelectionActivity : AppCompatActivity() {
         albumAdapter.notifyItemChanged(albumAdapter.currentList.indexOf(album))
         confirmButton.isEnabled = selectedAlbums.isNotEmpty()
 
-        Toast.makeText(this,
+        Toast.makeText(
+            this,
             if (album.isSelected) "Added ${album.title}" else "Removed ${album.title}",
             Toast.LENGTH_SHORT
         ).show()
-    }
 
-    override fun onDestroy() {
-        logd("onDestroy called")
-        coroutineScope.cancel()
-        photosLibraryClient?.shutdown()
-        super.onDestroy()
+        // After toggling selection, check dream service status
+        checkDreamServiceRegistration()
     }
 
     private fun logd(message: String) = Log.d(TAG, message)
     private fun loge(message: String, e: Throwable? = null) = Log.e(TAG, message, e)
+
+    override fun onDestroy() {
+        super.onDestroy()
+        logd("onDestroy called")
+        checkDreamServiceRegistration()
+        coroutineScope.cancel()
+        photosLibraryClient?.shutdown()
+    }
 }

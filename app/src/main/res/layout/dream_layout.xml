@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <ImageView
+        android:id="@+id/primaryImageView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:background="#333333"
+        android:contentDescription="Primary Image View"
+        android:visibility="visible" />
+
+    <ImageView
+        android:id="@+id/secondaryImageView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:background="#666666"
+        android:contentDescription="Secondary Image View"
+        android:visibility="visible"
+        android:alpha="0" />
+
+    <!-- Debug overlay -->
+    <TextView
+        android:id="@+id/debugText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:padding="16dp"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:background="#80000000"
+        android:visibility="visible"/>
+
+</FrameLayout>
