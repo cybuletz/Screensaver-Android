@@ -27,6 +27,11 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import androidx.preference.ListPreference
+import androidx.preference.PreferenceCategory
+import com.example.screensaver.lock.PhotoLockActivity
+import com.example.screensaver.lock.PhotoLockScreenService
+import com.example.screensaver.lock.PhotoLockDeviceAdmin
 
 class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
@@ -53,21 +58,62 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        setPreferencesFromResource(R.xml.root_preferences, rootKey)
-
-        // Set up Google Sign-in
+        setPreferencesFromResource(R.xml.preferences, rootKey)
+        setupPreferences()
         setupGoogleSignIn()
+    }
 
-        // Set up Google Photos album selection
-        setupGooglePhotos()
+    private fun setupPreferences() {
+        setupDisplayModeSelection()
+        setupTestScreensaver()
+        setupGooglePhotosAction()
+    }
 
-        // Add a preference for manual trigger
-        findPreference<Preference>("test_screensaver")?.setOnPreferenceClickListener {
-            startScreensaver()
+    private fun setupDisplayModeSelection() {
+        findPreference<ListPreference>("display_mode_selection")?.setOnPreferenceChangeListener { _, newValue ->
+            when (newValue as String) {
+                "dream_service" -> {
+                    // Handle dream service selection
+                    startActivity(Intent(Settings.ACTION_DREAM_SETTINGS))
+                }
+                "lock_screen" -> {
+                    // Handle lock screen selection
+                    val intent = Intent(requireContext(), PhotoLockActivity::class.java)
+                    intent.putExtra("preview_mode", true)
+                    startActivity(intent)
+                }
+            }
             true
         }
     }
 
+    private fun setupTestScreensaver() {
+        findPreference<Preference>("test_screensaver")?.setOnPreferenceClickListener {
+            val displayMode = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getString("display_mode_selection", "dream_service")
+
+            when (displayMode) {
+                "dream_service" -> startScreensaver()
+                "lock_screen" -> {
+                    val intent = Intent(requireContext(), PhotoLockActivity::class.java)
+                    intent.putExtra("preview_mode", true)
+                    startActivity(intent)
+                }
+            }
+            true
+        }
+    }
+
+    private fun setupGooglePhotosAction() {
+        findPreference<Preference>("google_photos")?.setOnPreferenceClickListener {
+            if (GoogleSignIn.getLastSignedInAccount(requireContext()) != null) {
+                startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+            } else {
+                showGoogleSignInPrompt()
+            }
+            true
+        }
+    }
     private fun startScreensaver() {
         try {
             // Get the Dream (Screensaver) component name
