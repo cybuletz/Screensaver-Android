@@ -9,6 +9,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
 import androidx.preference.SwitchPreference
+import androidx.preference.Preference
+import android.content.pm.PackageInfo
+import android.os.Build
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -16,9 +19,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import java.security.MessageDigest
-import androidx.preference.Preference
-import android.content.pm.PackageInfo
-import android.os.Build
+import android.provider.Settings
 
 class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
@@ -45,9 +46,49 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        setPreferencesFromResource(R.xml.preferences, rootKey)
-        setupGoogleSignIn()
-        setupGooglePhotos()
+        setPreferencesFromResource(R.xml.root_preferences, rootKey)
+
+        // Add a preference for manual trigger
+        findPreference<Preference>("test_screensaver")?.setOnPreferenceClickListener {
+            startScreensaver()
+            true
+        }
+    }
+
+    private fun startScreensaver() {
+        try {
+            // Get the Dream (Screensaver) component name
+            val dreamComponent = requireContext().packageManager
+                .resolveService(
+                    Intent("android.service.dreams.DreamService")
+                        .setPackage(requireContext().packageName),
+                    PackageManager.MATCH_DEFAULT_ONLY
+                )?.serviceInfo?.name
+
+            if (dreamComponent != null) {
+                // Create an intent to start the screensaver
+                val intent = Intent(Settings.ACTION_DREAM_SETTINGS)
+                startActivity(intent)
+                Toast.makeText(
+                    requireContext(),
+                    "Please select and test the screensaver from system settings",
+                    Toast.LENGTH_LONG
+                ).show()
+            } else {
+                Toast.makeText(
+                    requireContext(),
+                    "Screensaver service not found",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start screensaver: ${e.message}")
+            Toast.makeText(
+                requireContext(),
+                "Failed to start screensaver: ${e.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     private fun setupGoogleSignIn() {

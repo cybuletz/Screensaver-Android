@@ -59,6 +59,11 @@ class PhotoDreamService : DreamService() {
             dumpState()
         }
     }
+
+    init {
+        Log.wtf(TAG, "PhotoDreamService instance created") // This will show up even with strict filtering
+    }
+
     companion object {
         private const val TAG = "PhotoDreamService"
         private const val SLIDESHOW_DELAY = 10000L // 10 seconds
@@ -75,7 +80,7 @@ class PhotoDreamService : DreamService() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.e(TAG, "PhotoDreamService onCreate called")
+        Log.wtf(TAG, "PhotoDreamService onCreate called") // Using wtf to ensure visibility
 
         // Register for dream state changes
         val filter = IntentFilter().apply {
