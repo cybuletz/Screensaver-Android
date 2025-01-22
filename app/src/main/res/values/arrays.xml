@@ -1,40 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string-array name="refresh_intervals">
-        <item>1 minute</item>
-        <item>5 minutes</item>
-        <item>15 minutes</item>
-        <item>30 minutes</item>
-        <item>1 hour</item>
-    </string-array>
-
-    <string-array name="refresh_interval_values">
-        <item>60</item>
-        <item>300</item>
-        <item>900</item>
-        <item>1800</item>
-        <item>3600</item>
-    </string-array>
+    <!-- Transition Effects -->
     <string-array name="transition_effects">
         <item>Fade</item>
         <item>Slide</item>
         <item>Zoom</item>
         <item>Blur</item>
     </string-array>
-    <!-- Add to your existing arrays -->
-    <string-array name="transition_entries">
-        <item>Fade</item>
-        <item>Slide</item>
-        <item>Zoom</item>
-        <item>Crossfade</item>
-    </string-array>
 
-    <string-array name="transition_values">
-        <item>fade</item>
-        <item>slide</item>
-        <item>zoom</item>
-        <item>crossfade</item>
-    </string-array>
     <string-array name="transition_effects_values">
         <item>fade</item>
         <item>slide</item>
@@ -42,6 +15,7 @@
         <item>blur</item>
     </string-array>
 
+    <!-- Photo Scale Options -->
     <string-array name="photo_scale_options">
         <item>Fit Screen</item>
         <item>Fill Screen</item>
@@ -54,6 +28,7 @@
         <item>original</item>
     </string-array>
 
+    <!-- Days of Week -->
     <string-array name="days_of_week">
         <item>Monday</item>
         <item>Tuesday</item>
@@ -74,6 +49,7 @@
         <item>7</item>
     </string-array>
 
+    <!-- Default Active Days (Monday-Friday) -->
     <string-array name="default_active_days">
         <item>1</item>
         <item>2</item>
@@ -81,13 +57,24 @@
         <item>4</item>
         <item>5</item>
     </string-array>
-    <string-array name="display_mode_entries">
-        <item>Screensaver (Dream Service)</item>
-        <item>Lock Screen</item>
+
+    <!-- Refresh Intervals -->
+    <string-array name="refresh_intervals">
+        <item>1 minute</item>
+        <item>5 minutes</item>
+        <item>15 minutes</item>
+        <item>30 minutes</item>
+        <item>1 hour</item>
     </string-array>
 
-    <string-array name="display_mode_values">
-        <item>dream_service</item>
-        <item>lock_screen</item>
+    <string-array name="refresh_interval_values">
+        <item>60</item>
+        <item>300</item>
+        <item>900</item>
+        <item>1800</item>
+        <item>3600</item>
     </string-array>
+
+    <!-- Empty Array for Dynamic Content -->
+    <string-array name="empty_array"/>
 </resources>
