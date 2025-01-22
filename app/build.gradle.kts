@@ -10,10 +10,11 @@ android {
 
     defaultConfig {
         applicationId = "com.example.screensaver"
-        minSdk = 24
+        minSdk = 23
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+        manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
     }
     signingConfigs {
         getByName("debug") {
@@ -81,11 +82,12 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
 
     // Google Photos Library API - corrected dependencies
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")
-    implementation("com.google.api-client:google-api-client-android:1.32.1")
-    implementation("com.google.http-client:google-http-client-gson:1.42.3")
+    implementation("com.google.api-client:google-api-client-android:2.2.0")
+    implementation("com.google.api-client:google-api-client-gson:2.2.0")
 
     // HTTP Client
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
@@ -95,7 +97,18 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.16.0")
     annotationProcessor("com.github.bumptech.glide:compiler:4.16.0")
 
+    // RecyclerView
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+
+    // Add these gRPC dependencies
+    implementation("io.grpc:grpc-okhttp:1.58.0")  // Add this line
+    implementation("io.grpc:grpc-android:1.58.0") // Add this line
+    implementation("io.grpc:grpc-protobuf:1.58.0") // Add this line
+    implementation("io.grpc:grpc-stub:1.58.0")     // Add this line
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("org.json:json:20231013")
 }
