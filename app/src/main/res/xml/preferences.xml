@@ -12,8 +12,8 @@
             android:title="Select Display Mode"
             android:summary="Choose how photos are displayed"
             android:defaultValue="dream_service"
-            android:entries="@array/transition_effects"
-            android:entryValues="@array/transition_effects_values"/>
+            android:entries="@array/display_mode_entries"
+            android:entryValues="@array/display_mode_values"/>
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -68,6 +68,11 @@
             android:key="select_photos"
             android:title="Select Photos"
             android:summary="Choose photos from your device" />
+
+        <Preference
+            android:key="google_photos"
+            android:title="Google Photos"
+            android:summary="Choose photos from your Google Photos account" />
 
         <SwitchPreferenceCompat
             android:key="random_order"
