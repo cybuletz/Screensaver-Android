@@ -10,7 +10,8 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="centerCrop"
-        android:background="#333333" />
+        android:background="#333333"
+        android:contentDescription="@string/primary_image_description" />
 
     <ImageView
         android:id="@+id/secondaryImageView"
@@ -18,7 +19,8 @@
         android:layout_height="match_parent"
         android:scaleType="centerCrop"
         android:background="#666666"
-        android:alpha="0" />
+        android:alpha="0"
+        android:contentDescription="@string/secondary_image_description" />
 
     <!-- Debug Info -->
     <LinearLayout
