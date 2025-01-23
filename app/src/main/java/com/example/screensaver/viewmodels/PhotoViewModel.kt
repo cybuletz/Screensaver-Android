@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import kotlin.random.Random
 import com.example.screensaver.utils.RetryActionListener
+import java.util.Date
 
 @HiltViewModel
 class PhotoViewModel @Inject constructor(
@@ -67,8 +68,21 @@ class PhotoViewModel @Inject constructor(
     private val _photoQuality = MutableLiveData<Int>()
     val photoQuality: LiveData<Int> = _photoQuality
 
+    private val _currentTime = MutableLiveData<Date>()
+    val currentTime: LiveData<Date> = _currentTime
+
+    private val _currentDate = MutableLiveData<Date>()
+    val currentDate: LiveData<Date> = _currentDate
+
+    // Add this to initialize time updates
+    private var timeUpdateJob: Job? = null
+
     init {
         _photoQuality.value = 2  // Set your default quality (HIGH)
+        // Initialize with current time/date
+        updateDateTime()
+        // Start periodic updates
+        startTimeUpdates()
     }
 
     private var mediaItems = mutableListOf<MediaItem>()
@@ -91,6 +105,21 @@ class PhotoViewModel @Inject constructor(
         // Handle the photo load completion
         // You can update loading state or trigger other actions here
         _isLoading.value = !success
+    }
+
+    private fun updateDateTime() {
+        val now = Date()
+        _currentTime.value = now
+        _currentDate.value = now
+    }
+
+    private fun startTimeUpdates() {
+        timeUpdateJob = viewModelScope.launch {
+            while (isActive.get()) {
+                updateDateTime()
+                delay(1000) // Update every second
+            }
+        }
     }
 
     fun initialize(albums: List<Album>) {
@@ -220,10 +249,12 @@ class PhotoViewModel @Inject constructor(
         _showOverlay.value = _showOverlay.value?.not()
     }
 
-    fun stop() {
+    override fun stop() {
         isActive.set(false)
         photoChangeJob?.cancel()
+        timeUpdateJob?.cancel()
         photoChangeJob = null
+        timeUpdateJob = null
     }
 
     override fun onCleared() {
