@@ -23,18 +23,11 @@ import java.util.Locale
 import com.example.screensaver.databinding.LayoutErrorBinding
 import com.example.screensaver.utils.RetryActionListener
 
-/**
- * Custom data binding adapters for the application's views
- */
 object PhotoBindingAdapters {
-
     private const val CROSSFADE_DURATION = 300
     private val dateFormat = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
-    /**
-     * Loads and displays a photo in an ImageView
-     */
     @JvmStatic
     @BindingAdapter(
         value = ["photoUrl", "placeholder", "errorPlaceholder", "quality", "onLoadingComplete"],
@@ -61,7 +54,6 @@ object PhotoBindingAdapters {
             .placeholder(placeholder)
             .error(errorPlaceholder ?: R.drawable.ic_error_placeholder)
 
-        // Apply quality settings
         quality?.let { q ->
             when (q) {
                 PhotoLoadingManager.QUALITY_LOW -> requestBuilder.override(720, 720)
@@ -94,9 +86,6 @@ object PhotoBindingAdapters {
         }).into(view)
     }
 
-    /**
-     * Loads and displays an album thumbnail
-     */
     @JvmStatic
     @BindingAdapter("albumThumbnail")
     fun loadAlbumThumbnail(view: ImageView, album: Album?) {
@@ -112,36 +101,24 @@ object PhotoBindingAdapters {
         } ?: view.setImageResource(R.drawable.ic_album_placeholder)
     }
 
-    /**
-     * Sets view visibility based on a boolean
-     */
     @JvmStatic
     @BindingAdapter("isVisible")
     fun setVisibility(view: View, isVisible: Boolean) {
         view.isVisible = isVisible
     }
 
-    /**
-     * Displays formatted date
-     */
     @JvmStatic
     @BindingAdapter("date")
     fun setDate(view: TextView, date: Date?) {
         view.text = date?.let { dateFormat.format(it) } ?: ""
     }
 
-    /**
-     * Displays formatted time
-     */
     @JvmStatic
     @BindingAdapter("time")
     fun setTime(view: TextView, date: Date?) {
         view.text = date?.let { timeFormat.format(it) } ?: ""
     }
 
-    /**
-     * Displays photo location
-     */
     @JvmStatic
     @BindingAdapter("photoLocation")
     fun setPhotoLocation(view: TextView, mediaItem: MediaItem?) {
@@ -149,18 +126,12 @@ object PhotoBindingAdapters {
         view.isVisible = !mediaItem?.location.isNullOrEmpty()
     }
 
-    /**
-     * Sets alpha based on transition progress
-     */
     @JvmStatic
     @BindingAdapter("transitionAlpha")
     fun setTransitionAlpha(view: View, progress: Float) {
         view.alpha = progress
     }
 
-    /**
-     * Displays album photo count
-     */
     @JvmStatic
     @BindingAdapter("photoCount")
     fun setPhotoCount(view: TextView, count: Int) {
@@ -171,9 +142,6 @@ object PhotoBindingAdapters {
         )
     }
 
-    /**
-     * Sets selected state with animation
-     */
     @JvmStatic
     @BindingAdapter("selectedWithAnim")
     fun setSelectedWithAnimation(view: View, selected: Boolean) {
@@ -188,9 +156,6 @@ object PhotoBindingAdapters {
         }
     }
 
-    /**
-     * Displays error state
-     */
     @JvmStatic
     @BindingAdapter("showError")
     fun showError(view: View, hasError: Boolean) {
@@ -208,6 +173,7 @@ object PhotoBindingAdapters {
                 .start()
         }
     }
+
     @JvmStatic
     @BindingAdapter("onRetry")
     fun setOnRetryClickListener(view: View, onRetry: RetryActionListener?) {
