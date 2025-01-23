@@ -7,19 +7,17 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
-import com.bumptech.glide.load.DataSource
-import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
-import com.bumptech.glide.request.RequestListener
-import com.bumptech.glide.request.target.Target
-import com.example.screensaver.R
-import com.example.screensaver.models.Album
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
+import com.example.screensaver.R
+import com.example.screensaver.models.Album
 
 class AlbumAdapter(
     private val onAlbumClick: (Album) -> Unit
@@ -27,12 +25,17 @@ class AlbumAdapter(
 
     companion object {
         private const val TAG = "AlbumAdapter"
+        private const val ANIMATION_DURATION = 200L
+        private const val CLICK_DELAY = 100L
+        private const val OVERLAY_ALPHA = 0.5f
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AlbumViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_album, parent, false)
-        return AlbumViewHolder(view, onAlbumClick)
+        return AlbumViewHolder(
+            LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_album, parent, false),
+            onAlbumClick
+        )
     }
 
     override fun onBindViewHolder(holder: AlbumViewHolder, position: Int) {
@@ -49,79 +52,119 @@ class AlbumAdapter(
         private val selectedOverlay: View = itemView.findViewById(R.id.selectedOverlay)
         private val checkmarkIcon: ImageView = itemView.findViewById(R.id.checkmark)
 
+        private var currentLoadingJob: Any? = null
+
         fun bind(album: Album) {
             titleTextView.text = album.title
-            countTextView.text = itemView.context.resources.getQuantityString(
-                R.plurals.photo_count,
-                album.mediaItemsCount,
-                album.mediaItemsCount
-            )
-
+            setPhotoCount(album.mediaItemsCount)
             loadAlbumCover(album)
             updateSelectionState(album)
             setupClickListener(album)
         }
 
+        private fun setPhotoCount(count: Int) {
+            countTextView.text = itemView.context.resources.getQuantityString(
+                R.plurals.photo_count,
+                count,
+                count
+            )
+        }
+
         private fun loadAlbumCover(album: Album) {
-            Log.d(TAG, "Loading cover for album: ${album.title}")
-            Glide.with(itemView.context)
+            cancelCurrentLoading()
+
+            currentLoadingJob = Glide.with(itemView.context)
                 .load(album.coverPhotoUrl)
                 .transition(DrawableTransitionOptions.withCrossFade())
                 .placeholder(R.drawable.placeholder_album)
                 .error(R.drawable.placeholder_album)
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .centerCrop()
                 .into(object : CustomTarget<Drawable>() {
-                    override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
-                        coverImageView.setImageDrawable(resource)
-                        Log.d(TAG, "Successfully loaded cover for album: ${album.title}")
+                    override fun onResourceReady(
+                        resource: Drawable,
+                        transition: Transition<in Drawable>?
+                    ) {
+                        if (adapterPosition != RecyclerView.NO_POSITION) {
+                            coverImageView.setImageDrawable(resource)
+                            Log.d(TAG, "Cover loaded for ${album.title}")
+                        }
+                        currentLoadingJob = null
                     }
 
                     override fun onLoadCleared(placeholder: Drawable?) {
-                        coverImageView.setImageDrawable(placeholder)
+                        if (adapterPosition != RecyclerView.NO_POSITION) {
+                            coverImageView.setImageDrawable(placeholder)
+                        }
+                        currentLoadingJob = null
                     }
 
                     override fun onLoadFailed(errorDrawable: Drawable?) {
-                        coverImageView.setImageDrawable(errorDrawable)
-                        Log.e(TAG, "Failed to load cover for album: ${album.title}")
+                        if (adapterPosition != RecyclerView.NO_POSITION) {
+                            coverImageView.setImageDrawable(errorDrawable)
+                            Log.e(TAG, "Failed to load cover for ${album.title}")
+                        }
+                        currentLoadingJob = null
                     }
                 })
         }
 
+        private fun cancelCurrentLoading() {
+            currentLoadingJob?.let {
+                Glide.with(itemView.context).clear(coverImageView)
+                currentLoadingJob = null
+            }
+        }
+
         private fun updateSelectionState(album: Album) {
-            val isSelected = itemView.context.getSharedPreferences("screensaver_prefs", 0)
+            val isSelected = getIsSelected(album)
+            animateSelectionState(isSelected)
+            updateElevation(isSelected)
+        }
+
+        private fun getIsSelected(album: Album): Boolean {
+            return itemView.context.getSharedPreferences("screensaver_prefs", 0)
                 .getStringSet("selected_albums", setOf())
                 ?.contains(album.id) == true
+        }
 
+        private fun animateSelectionState(isSelected: Boolean) {
             selectedOverlay.apply {
-                alpha = if (isSelected) 0.5f else 0f
                 visibility = View.VISIBLE
                 animate()
-                    .alpha(if (isSelected) 0.5f else 0f)
-                    .setDuration(200)
+                    .alpha(if (isSelected) OVERLAY_ALPHA else 0f)
+                    .setDuration(ANIMATION_DURATION)
                     .start()
             }
 
             checkmarkIcon.apply {
-                alpha = if (isSelected) 1f else 0f
                 visibility = View.VISIBLE
                 animate()
                     .alpha(if (isSelected) 1f else 0f)
-                    .setDuration(200)
+                    .setDuration(ANIMATION_DURATION)
                     .start()
             }
+        }
 
+        private fun updateElevation(isSelected: Boolean) {
+            val resources = itemView.resources
             itemView.elevation = if (isSelected) {
-                itemView.resources.getDimension(R.dimen.card_elevation_selected)
+                resources.getDimension(R.dimen.card_elevation_selected)
             } else {
-                itemView.resources.getDimension(R.dimen.card_elevation_normal)
+                resources.getDimension(R.dimen.card_elevation_normal)
             }
         }
 
         private fun setupClickListener(album: Album) {
-            itemView.setOnClickListener {
-                it.isPressed = true
-                it.postDelayed({ it.isPressed = false }, 100)
+            itemView.setOnClickListener { view ->
+                view.isEnabled = false
+                view.isPressed = true
                 onAlbumClick(album)
+
+                view.postDelayed({
+                    view.isPressed = false
+                    view.isEnabled = true
+                }, CLICK_DELAY)
             }
         }
     }
