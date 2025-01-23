@@ -7,6 +7,11 @@ plugins {
     id("kotlin-kapt")
 }
 
+kapt {
+    correctErrorTypes = true
+    includeCompileClasspath = false
+}
+
 android {
     namespace = "com.example.screensaver"
     compileSdk = 34
@@ -79,6 +84,8 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+
 }
 
 dependencies {
