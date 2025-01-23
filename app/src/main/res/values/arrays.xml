@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Photo Sources -->
+    <string-array name="photo_source_entries">
+        <item>Local Photos</item>
+        <item>Google Photos</item>
+    </string-array>
+
+    <string-array name="photo_source_values">
+        <item>local</item>
+        <item>google_photos</item>
+    </string-array>
+
+    <string-array name="default_photo_sources">
+        <item>local</item>
+    </string-array>
+
     <!-- Transition Effects -->
     <string-array name="transition_effects">
         <item>Fade</item>

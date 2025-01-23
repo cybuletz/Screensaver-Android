@@ -64,36 +64,68 @@
         android:title="Photo Sources"
         android:key="photo_sources">
 
-        <Preference
-            android:key="select_photos"
-            android:title="Select Photos"
-            android:summary="Choose photos from your device" />
-
-        <Preference
-            android:key="google_photos"
-            android:title="Google Photos"
-            android:summary="Choose photos from your Google Photos account" />
-
-        <SwitchPreferenceCompat
-            android:key="random_order"
-            android:title="Random Order"
-            android:summary="Display photos in random order"
-            android:defaultValue="true" />
-
-        <ListPreference
-            android:key="photo_scale"
-            android:title="Photo Scale"
-            android:summary="How photos should fit the screen"
-            android:entries="@array/photo_scale_options"
-            android:entryValues="@array/photo_scale_values"
-            android:defaultValue="fill" />
-
         <MultiSelectListPreference
-            android:key="photo_folders"
-            android:title="Photo Folders"
-            android:summary="Select folders to display photos from"
-            android:entries="@array/empty_array"
-            android:entryValues="@array/empty_array" />
+            android:key="photo_source_selection"
+            android:title="Photo Sources"
+            android:summary="Choose where to get photos from"
+            android:entries="@array/photo_source_entries"
+            android:entryValues="@array/photo_source_values"
+            android:defaultValue="@array/default_photo_sources" />
+
+        <PreferenceCategory
+            android:title="Google Photos Settings"
+            android:key="google_photos_settings"
+            android:dependency="photo_source_selection">
+
+            <SwitchPreferenceCompat
+                android:key="use_google_photos"
+                android:title="Sign in to Google Photos"
+                android:summary="Connect to your Google Photos account"
+                android:defaultValue="false" />
+
+            <Preference
+                android:key="select_albums"
+                android:title="Select Google Photos Albums"
+                android:summary="Choose which albums to display"
+                android:dependency="use_google_photos" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:title="Local Photos Settings"
+            android:key="local_photos_settings"
+            android:dependency="photo_source_selection">
+
+            <Preference
+                android:key="select_local_photos"
+                android:title="Select Local Photos"
+                android:summary="Choose photos from your device" />
+
+            <MultiSelectListPreference
+                android:key="photo_folders"
+                android:title="Photo Folders"
+                android:summary="Select folders to display photos from"
+                android:entries="@array/empty_array"
+                android:entryValues="@array/empty_array" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:title="Common Settings"
+            android:key="common_photo_settings">
+
+            <SwitchPreferenceCompat
+                android:key="random_order"
+                android:title="Random Order"
+                android:summary="Display photos in random order"
+                android:defaultValue="true" />
+
+            <ListPreference
+                android:key="photo_scale"
+                android:title="Photo Scale"
+                android:summary="How photos should fit the screen"
+                android:entries="@array/photo_scale_options"
+                android:entryValues="@array/photo_scale_values"
+                android:defaultValue="fill" />
+        </PreferenceCategory>
     </PreferenceCategory>
 
     <PreferenceCategory
