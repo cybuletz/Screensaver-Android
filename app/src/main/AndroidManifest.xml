@@ -60,7 +60,7 @@
         <activity
             android:name=".SettingsActivity"
             android:theme="@style/Theme.Screensaver"
-            android:label="Settings"
+            android:label="@string/settings_title"
             android:exported="true"
             android:parentActivityName=".MainActivity">
             <intent-filter>
@@ -76,7 +76,7 @@
         <!-- Album Selection Activity -->
         <activity
             android:name=".AlbumSelectionActivity"
-            android:label="Select Albums"
+            android:label="@string/album_selection_title"
             android:exported="true"
             android:parentActivityName=".SettingsActivity">
             <meta-data
