@@ -35,11 +35,15 @@ import com.example.screensaver.lock.PhotoLockActivity
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.lock.PhotoLockDeviceAdmin
 import com.example.screensaver.AlbumSelectionActivity
+import kotlinx.coroutines.coroutineScope
+import com.example.screensaver.shared.GooglePhotosManager
 
 class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
     private val photoManager by lazy { GooglePhotosManager.getInstance(requireContext()) }
-
+    private val googlePhotosManager: GooglePhotosManager by lazy {
+        GooglePhotosManager.getInstance(requireContext())
+    }
     private val signInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
