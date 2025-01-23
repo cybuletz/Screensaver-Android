@@ -27,6 +27,9 @@ class PhotoViewModel @Inject constructor(
     private val photosManager: GooglePhotosManager
 ) : AndroidViewModel(application), RetryActionListener {
 
+    private val _photoQuality = MutableLiveData<Int>()
+    val photoQuality: LiveData<Int> = _photoQuality
+
     private val _currentPhoto = MutableLiveData<MediaItem>()
     val currentPhoto: LiveData<MediaItem> = _currentPhoto
 
@@ -61,6 +64,13 @@ class PhotoViewModel @Inject constructor(
     private val _showLocation = MutableLiveData(true)
     val showLocation: LiveData<Boolean> = _showLocation
 
+    private val _photoQuality = MutableLiveData<Int>()
+    val photoQuality: LiveData<Int> = _photoQuality
+
+    init {
+        _photoQuality.value = 2  // Set your default quality (HIGH)
+    }
+
     private var mediaItems = mutableListOf<MediaItem>()
     private var currentIndex = -1
     private var photoChangeJob: Job? = null
@@ -75,6 +85,12 @@ class PhotoViewModel @Inject constructor(
         private const val PHOTO_CHANGE_INTERVAL = 30_000L // 30 seconds
         private const val RETRY_DELAY = 5_000L // 5 seconds
         private const val MAX_RETRY_ATTEMPTS = 3
+    }
+
+    fun onPhotoLoadComplete(success: Boolean) {
+        // Handle the photo load completion
+        // You can update loading state or trigger other actions here
+        _isLoading.value = !success
     }
 
     fun initialize(albums: List<Album>) {
