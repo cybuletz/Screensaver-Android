@@ -1,5 +1,4 @@
-package com.example.screensaver
-
+import com.example.screensaver.R
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -18,6 +17,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
+import com.google.android.gms.tasks.Task  // Add this import
 import java.security.MessageDigest
 import android.provider.Settings
 import androidx.lifecycle.lifecycleScope
@@ -29,11 +29,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceCategory
+import androidx.preference.MultiSelectListPreference
+import androidx.preference.SwitchPreferenceCompat
 import com.example.screensaver.lock.PhotoLockActivity
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.lock.PhotoLockDeviceAdmin
-import androidx.preference.MultiSelectListPreference
-import androidx.preference.SwitchPreferenceCompat
+import com.example.screensaver.AlbumSelectionActivity
 
 class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
@@ -57,6 +58,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 updateGooglePhotosState(false)
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "SettingsFragment"
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -184,108 +189,119 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
     private fun setupPhotoSourcePreferences() {
-        // Initial setup - hide dependent preferences
-        findPreference<SwitchPreferenceCompat>("use_google_photos")?.isVisible = false
-        findPreference<Preference>("select_albums")?.isVisible = false
-        findPreference<Preference>("select_local_photos")?.isVisible = false
+        val photoSourceSelection = findPreference<MultiSelectListPreference>("photo_source_selection")
+        val googlePhotosCategory = findPreference<PreferenceCategory>("google_photos_settings")
+        val useGooglePhotos = findPreference<SwitchPreferenceCompat>("use_google_photos")
+        val selectAlbums = findPreference<Preference>("select_albums")
 
-        // Handle photo source selection changes
-        findPreference<MultiSelectListPreference>("photo_source_selection")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                @Suppress("UNCHECKED_CAST")
-                val selectedSources = newValue as Set<String>
+        Log.d(TAG, "Setting up photo source preferences")
 
-                // Update visibility based on selection
-                findPreference<SwitchPreferenceCompat>("use_google_photos")?.isVisible =
-                    selectedSources.contains("google_photos")
-                findPreference<Preference>("select_albums")?.isVisible =
-                    selectedSources.contains("google_photos") &&
-                            findPreference<SwitchPreferenceCompat>("use_google_photos")?.isChecked == true
-                findPreference<Preference>("select_local_photos")?.isVisible =
-                    selectedSources.contains("local")
+        // Debug current state
+        val currentSources = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
+        Log.d(TAG, "Current photo sources: $currentSources")
 
+        // Update UI based on current state
+        googlePhotosCategory?.isVisible = currentSources.contains("google_photos")
+        Log.d(TAG, "Google Photos category visibility: ${googlePhotosCategory?.isVisible}")
+
+        useGooglePhotos?.setOnPreferenceChangeListener { _, newValue ->
+            val enabled = newValue as Boolean
+            Log.d(TAG, "Google Photos switch toggled: $enabled")
+            if (enabled) {
+                try {
+                    Log.d(TAG, "Attempting to show Google Sign In prompt")
+                    showGoogleSignInPrompt()
+                    false // Don't update switch yet
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error showing Google Sign In prompt", e)
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    false
+                }
+            } else {
+                signOutCompletely()
                 true
             }
         }
 
-        // Handle Google Photos sign in
-        findPreference<SwitchPreferenceCompat>("use_google_photos")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                if (newValue as Boolean) {
-                    showGoogleSignInPrompt()
-                    false // Don't change the preference value yet
-                } else {
-                    signOutCompletely()
-                    findPreference<Preference>("select_albums")?.isVisible = false
-                    true
-                }
-            }
-        }
-
-        // Handle album selection
-        findPreference<Preference>("select_albums")?.apply {
-            setOnPreferenceClickListener {
+        selectAlbums?.setOnPreferenceClickListener {
+            try {
                 val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+                Log.d(TAG, "Select albums clicked, account: ${account?.email}")
+
                 if (account != null) {
-                    startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+                    val intent = Intent(requireContext(), AlbumSelectionActivity::class.java)
+                    Log.d(TAG, "Starting AlbumSelectionActivity")
+                    startActivity(intent)
+                    Log.d(TAG, "AlbumSelectionActivity started successfully")
                     true
                 } else {
+                    Log.w(TAG, "No Google account found")
                     Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
                     false
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error launching album selection", e)
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                false
             }
         }
 
-        // Handle local photos selection
-        findPreference<Preference>("select_local_photos")?.setOnPreferenceClickListener {
-            // Launch local photo picker
-            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "image/*"
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        photoSourceSelection?.setOnPreferenceChangeListener { _, newValue ->
+            @Suppress("UNCHECKED_CAST")
+            val selectedSources = newValue as Set<String>
+            Log.d(TAG, "Photo sources changed to: $selectedSources")
+
+            googlePhotosCategory?.isVisible = selectedSources.contains("google_photos")
+            if (!selectedSources.contains("google_photos") && currentSources.contains("google_photos")) {
+                signOutCompletely()
             }
-            startActivity(Intent.createChooser(intent, "Select Photos"))
             true
         }
     }
 
+
     private fun showGoogleSignInPrompt() {
         try {
+            Log.d(TAG, "Configuring Google Sign In")
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
                 .requestScopes(Scope("https://www.googleapis.com/auth/photoslibrary.readonly"))
-                .requestServerAuthCode(getString(R.string.google_oauth_client_id), true) // Add this line
-                .requestIdToken(getString(R.string.google_oauth_client_id))             // Add this line
+                .requestServerAuthCode(getString(R.string.google_oauth_client_id), true)
+                .requestIdToken(getString(R.string.google_oauth_client_id))
                 .build()
 
-            Log.d(TAG, "Configuring Google Sign In")
-            Log.d(TAG, "Requested scopes: ${gso.scopeArray.joinToString()}")
+            googleSignInClient = GoogleSignIn.getClient(requireActivity(), gso)
 
-            googleSignInClient = GoogleSignIn.getClient(requireActivity(), gso).also { client ->
-                client.signOut().addOnCompleteListener {
-                    Log.d(TAG, "Previous sign in state cleared")
-                    signInLauncher.launch(client.signInIntent)
+            Log.d(TAG, "Clearing existing sign in state")
+            googleSignInClient?.signOut()?.addOnCompleteListener { signOutTask ->
+                if (signOutTask.isSuccessful) {
+                    Log.d(TAG, "Previous sign in state cleared, launching sign in")
+                    signInLauncher.launch(googleSignInClient?.signInIntent)
+                } else {
+                    Log.e(TAG, "Error clearing previous sign in", signOutTask.exception)
+                    Toast.makeText(context, "Error preparing sign in", Toast.LENGTH_SHORT).show()
+                    updateGooglePhotosState(false)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting Google Sign In", e)
+            Log.e(TAG, "Error in showGoogleSignInPrompt", e)
             Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             updateGooglePhotosState(false)
         }
     }
 
-    private fun handleSignInResult(completedTask: com.google.android.gms.tasks.Task<GoogleSignInAccount>) {
+    private fun handleSignInResult(completedTask: Task<GoogleSignInAccount>) {
         try {
             val account = completedTask.getResult(ApiException::class.java)
             Log.d(TAG, "Sign in successful for: ${account.email}")
-            Log.d(TAG, "ID Token present: ${account.idToken != null}")
-            Log.d(TAG, "Server Auth Code present: ${account.serverAuthCode != null}")
 
             val hasRequiredScope = account.grantedScopes?.contains(
                 Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
             ) == true
 
             if (hasRequiredScope) {
-                // Pass both auth code and account email
+                Log.d(TAG, "Required scope granted, exchanging auth code")
                 exchangeAuthCode(account.serverAuthCode ?: "", account.email ?: "")
             } else {
                 Log.e(TAG, "Required scope not granted")
@@ -294,9 +310,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 signOut()
             }
         } catch (e: ApiException) {
-            Log.e(TAG, "Sign in failed code=${e.statusCode}")
-            Log.e(TAG, "Sign in error: ${e.message}")
-            Toast.makeText(context, "Sign in failed: ${e.statusCode}", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "Sign in failed", e)
+            Toast.makeText(context, "Sign in failed: ${e.message}", Toast.LENGTH_SHORT).show()
             updateGooglePhotosState(false)
         }
     }
@@ -408,15 +423,19 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun updateGooglePhotosState(enabled: Boolean) {
-        findPreference<SwitchPreferenceCompat>("use_google_photos")?.isChecked = enabled
-        findPreference<Preference>("select_albums")?.isVisible = enabled
+        Log.d(TAG, "Updating Google Photos state: enabled=$enabled")
+        findPreference<SwitchPreferenceCompat>("use_google_photos")?.apply {
+            isChecked = enabled
+            Log.d(TAG, "Updated use_google_photos switch to: $isChecked")
+        }
+        findPreference<Preference>("select_albums")?.apply {
+            isVisible = enabled
+            Log.d(TAG, "Updated select_albums visibility to: $isVisible")
+        }
     }
 
     private fun bytesToHex(bytes: ByteArray): String {
         return bytes.joinToString(":") { "%02X".format(it) }
     }
 
-    companion object {
-        private const val TAG = "SettingsFragment"
-    }
 }
