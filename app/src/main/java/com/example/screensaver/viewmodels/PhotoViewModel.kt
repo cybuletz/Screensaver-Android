@@ -19,12 +19,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import com.example.screensaver.utils.RetryActionListener
 import java.util.Date
+import com.example.screensaver.utils.OnPhotoLoadListener
 
 @HiltViewModel
 class PhotoViewModel @Inject constructor(
     application: Application,
     private val photosManager: GooglePhotosManager
-) : AndroidViewModel(application), RetryActionListener {
+) : AndroidViewModel(application), RetryActionListener, OnPhotoLoadListener {
 
     private val _currentPhoto = MutableLiveData<MediaItem>()
     val currentPhoto: LiveData<MediaItem> = _currentPhoto
@@ -96,7 +97,8 @@ class PhotoViewModel @Inject constructor(
         startTimeUpdates()
     }
 
-    fun onPhotoLoadComplete(success: Boolean) {
+
+    override fun onPhotoLoadComplete(success: Boolean) {
         viewModelScope.launch {
             if (success) {
                 _hasError.value = false

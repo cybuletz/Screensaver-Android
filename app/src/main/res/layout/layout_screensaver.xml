@@ -4,8 +4,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <data>
-        <import type="com.example.screensaver.model.MediaItem"/>
-        <!-- Change from models to model package -->
+        <import type="com.example.screensaver.models.MediaItem"/>  <!-- Make sure this matches your actual package -->
+        <import type="com.example.screensaver.utils.OnPhotoLoadListener"/>
         <variable
             name="viewModel"
             type="com.example.screensaver.viewmodels.PhotoViewModel" />
@@ -25,7 +25,7 @@
             android:scaleType="centerCrop"
             app:photoUrl="@{viewModel.currentPhoto.url}"
             app:quality="@{viewModel.photoQuality}"
-            app:onLoadingComplete="@{viewModel::onPhotoLoadComplete}"
+            app:onLoadingComplete="@{viewModel}"
             android:contentDescription="@string/photo_content_description"
             tools:src="@tools:sample/backgrounds/scenic" />
 
