@@ -60,6 +60,7 @@
             android:visibility="@{viewModel.showOverlay}"
             app:layout_constraintBottom_toBottomOf="parent">
 
+            <!-- Clock -->
             <TextView
                 android:id="@+id/textViewTime"
                 android:layout_width="wrap_content"
@@ -67,12 +68,13 @@
                 android:textColor="@color/white"
                 android:textSize="48sp"
                 android:fontFamily="@font/roboto_light"
-                android:visibility="@{viewModel.showClock}"
+                android:visibility="@{viewModel.showClock ? View.VISIBLE : View.GONE}"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintBottom_toTopOf="@id/textViewDate"
                 android:text="@{viewModel.currentTime}"
                 tools:text="08:55" />
 
+            <!-- Date -->
             <TextView
                 android:id="@+id/textViewDate"
                 android:layout_width="wrap_content"
@@ -80,7 +82,7 @@
                 android:textColor="@color/white"
                 android:textSize="18sp"
                 android:fontFamily="@font/roboto_regular"
-                android:visibility="@{viewModel.showDate}"
+                android:visibility="@{viewModel.showDate ? View.VISIBLE : View.GONE}"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintBottom_toTopOf="@id/textViewLocation"
                 android:text="@{viewModel.currentDate}"

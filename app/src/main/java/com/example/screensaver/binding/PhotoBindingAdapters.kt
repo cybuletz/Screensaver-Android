@@ -23,6 +23,8 @@ import java.util.Date
 import java.util.Locale
 import com.example.screensaver.utils.PhotoLoadingManager
 import com.example.screensaver.utils.OnPhotoLoadListener
+import android.view.View
+
 
 object PhotoBindingAdapters {
     private const val CROSSFADE_DURATION = 300
@@ -62,7 +64,6 @@ object PhotoBindingAdapters {
                     target: Target<Drawable>,
                     isFirstResource: Boolean
                 ): Boolean {
-                    mediaItem.updateLoadState(MediaItem.LoadState.ERROR)
                     listener?.onPhotoLoadComplete(false)
                     return false
                 }
@@ -74,7 +75,6 @@ object PhotoBindingAdapters {
                     dataSource: DataSource?,
                     isFirstResource: Boolean
                 ): Boolean {
-                    mediaItem.updateLoadState(MediaItem.LoadState.LOADED)
                     listener?.onPhotoLoadComplete(true)
                     return false
                 }
@@ -168,11 +168,13 @@ object PhotoBindingAdapters {
                 .load(url)
                 .transition(DrawableTransitionOptions.withCrossFade(CROSSFADE_DURATION))
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .placeholder(R.drawable.ic_album_placeholder)
-                .error(R.drawable.ic_error_placeholder)
+                .placeholder(R.drawable.ic_photo_placeholder)
+                .error(R.drawable.ic_error)
                 .override(300, 300)
                 .into(view)
-        } ?: view.setImageResource(R.drawable.ic_album_placeholder)
+        } ?: run {
+            view.setImageResource(R.drawable.ic_photo_placeholder)
+        }
     }
 
     @JvmStatic
@@ -182,15 +184,17 @@ object PhotoBindingAdapters {
     }
 
     @JvmStatic
-    @BindingAdapter("date")
-    fun setDate(view: TextView, date: Date?) {
-        view.text = date?.let { dateFormat.format(it) } ?: ""
-    }
-
-    @JvmStatic
-    @BindingAdapter("time")
-    fun setTime(view: TextView, date: Date?) {
-        view.text = date?.let { timeFormat.format(it) } ?: ""
+    @BindingAdapter("android:text")
+    fun setText(view: TextView, date: LiveData<Date>?) {
+        if (date?.value != null) {
+            when (view.id) {
+                R.id.textViewTime -> view.text = timeFormat.format(date.value!!)
+                R.id.textViewDate -> view.text = dateFormat.format(date.value!!)
+                else -> view.text = dateFormat.format(date.value!!)
+            }
+        } else {
+            view.text = ""
+        }
     }
 
     @JvmStatic

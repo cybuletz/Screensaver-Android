@@ -96,6 +96,7 @@ dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.databinding:databinding-runtime:8.1.4")
 
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
