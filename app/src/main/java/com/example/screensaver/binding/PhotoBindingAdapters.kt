@@ -30,23 +30,20 @@ object PhotoBindingAdapters {
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     @JvmStatic
-    @BindingAdapter("onLoadingComplete")
-    fun setOnLoadingCompleteListener(view: View, listener: ((Boolean) -> Unit)?) {
-        // This binding adapter is just for declaring the event
+    @BindingAdapter(value = ["onLoadingComplete"])
+    fun setOnLoadingCompleteListener(view: View, listener: Function1<Boolean, Unit>?) {
+        // Just declare the binding adapter
     }
 
     @JvmStatic
-    @BindingAdapter(value = ["photoUrl", "placeholder", "errorPlaceholder", "quality", "onLoadingComplete"], requireAll = false)
+    @BindingAdapter(value = ["photoUrl", "quality", "onLoadingComplete"], requireAll = false)
     fun loadPhoto(
         view: ImageView,
         photoUrl: String?,
-        placeholder: Drawable?,
-        errorPlaceholder: Drawable?,
         quality: Int?,
-        onLoadingComplete: ((Boolean) -> Unit)?
+        onLoadingComplete: Function1<Boolean, Unit>?
     ) {
         if (photoUrl == null) {
-            view.setImageDrawable(errorPlaceholder)
             onLoadingComplete?.invoke(false)
             return
         }
@@ -55,8 +52,6 @@ object PhotoBindingAdapters {
             .load(photoUrl)
             .transition(DrawableTransitionOptions.withCrossFade(CROSSFADE_DURATION))
             .diskCacheStrategy(DiskCacheStrategy.ALL)
-            .placeholder(placeholder)
-            .error(errorPlaceholder ?: R.drawable.ic_error_placeholder)
 
         quality?.let { q ->
             when (q) {

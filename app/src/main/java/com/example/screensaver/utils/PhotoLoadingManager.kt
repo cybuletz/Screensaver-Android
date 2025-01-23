@@ -1,11 +1,8 @@
-package com.example.screensaver.loading
+package com.example.screensaver.utils
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.widget.ImageView
-import androidx.collection.LruCache
 import coil.ImageLoader
-import coil.load
 import coil.memory.MemoryCache
 import coil.request.ImageRequest
 import coil.size.Scale
@@ -17,7 +14,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.math.max
 
 /**
  * Manages photo loading, caching, and memory management for the application.

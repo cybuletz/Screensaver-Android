@@ -23,7 +23,7 @@
             android:scaleType="centerCrop"
             app:photoUrl="@{viewModel.currentPhoto.url}"
             app:quality="@{viewModel.photoQuality}"
-            app:onLoadingComplete="@{(success) -> viewModel.onPhotoLoadComplete(success)}"
+            app:onLoadingComplete="@{(success) -> viewModel.onPhotoLoadComplete((Boolean)success)}"
             android:contentDescription="@string/photo_content_description"
             tools:src="@tools:sample/backgrounds/scenic" />
 
