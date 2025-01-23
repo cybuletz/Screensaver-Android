@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import kotlin.random.Random
+import com.example.screensaver.utils.RetryActionListener
 
 @HiltViewModel
 class PhotoViewModel @Inject constructor(

@@ -3,8 +3,6 @@ package com.example.screensaver.models
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 import java.util.UUID
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
 
 /**
  * Represents a media item (photo) in the application.
@@ -33,15 +31,15 @@ data class MediaItem(
     var loadState: LoadState = LoadState.IDLE
 ) : Parcelable {
 
-    /**
-     * Represents the loading state of a media item
-     */
     enum class LoadState {
         IDLE,
         LOADING,
         LOADED,
         ERROR
     }
+
+    val url: String
+        get() = getFullQualityUrl()
 
     companion object {
         private const val DEFAULT_QUALITY = 100
