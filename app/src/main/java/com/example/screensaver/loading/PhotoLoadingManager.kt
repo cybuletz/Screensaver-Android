@@ -38,6 +38,10 @@ class PhotoLoadingManager(
         private const val DISK_CACHE_SIZE = 250L * 1024 * 1024 // 250MB
         private const val CORNER_RADIUS = 8f
         private const val CROSSFADE_DURATION = 300
+        // Add these quality constants
+        const val QUALITY_LOW = 1
+        const val QUALITY_MEDIUM = 2
+        const val QUALITY_HIGH = 3
     }
 
     init {
