@@ -20,6 +20,8 @@ import com.example.screensaver.utils.PhotoLoadingManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.screensaver.databinding.LayoutErrorBinding
+import com.example.screensaver.utils.RetryActionListener
 
 /**
  * Custom data binding adapters for the application's views
@@ -204,6 +206,23 @@ object PhotoBindingAdapters {
                 .alpha(1.0f)
                 .setDuration(200)
                 .start()
+        }
+    }
+    @JvmStatic
+    @BindingAdapter("onRetry")
+    fun setOnRetryClickListener(view: View, onRetry: RetryActionListener?) {
+        if (view.id == R.id.errorView) {
+            val binding = LayoutErrorBinding.bind(view)
+            binding.retryButton.setOnClickListener { onRetry?.onRetry() }
+        }
+    }
+
+    @JvmStatic
+    @BindingAdapter("errorMessage")
+    fun setErrorMessage(view: View, message: String?) {
+        if (view.id == R.id.errorView) {
+            val binding = LayoutErrorBinding.bind(view)
+            binding.errorMessageText.text = message
         }
     }
 }

@@ -3,6 +3,7 @@ package com.example.screensaver.utils
 import android.view.View
 import androidx.databinding.BindingAdapter
 import com.example.screensaver.databinding.LayoutErrorBinding
+import com.example.screensaver.utils.RetryActionListener
 
 object BindingAdapters {
     @JvmStatic
