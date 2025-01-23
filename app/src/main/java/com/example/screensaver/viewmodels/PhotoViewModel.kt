@@ -28,9 +28,6 @@ class PhotoViewModel @Inject constructor(
     private val photosManager: GooglePhotosManager
 ) : AndroidViewModel(application), RetryActionListener {
 
-    private val _photoQuality = MutableLiveData<Int>()
-    val photoQuality: LiveData<Int> = _photoQuality
-
     private val _currentPhoto = MutableLiveData<MediaItem>()
     val currentPhoto: LiveData<MediaItem> = _currentPhoto
 
@@ -68,6 +65,10 @@ class PhotoViewModel @Inject constructor(
     private val _photoQuality = MutableLiveData<Int>()
     val photoQuality: LiveData<Int> = _photoQuality
 
+    init {
+        _photoQuality.value = PhotoLoadingManager.QUALITY_HIGH
+    }
+
     private val _currentTime = MutableLiveData<Date>()
     val currentTime: LiveData<Date> = _currentTime
 
@@ -78,8 +79,6 @@ class PhotoViewModel @Inject constructor(
     private var timeUpdateJob: Job? = null
 
     init {
-        _photoQuality.value = 2  // Set your default quality (HIGH)
-        // Initialize with current time/date
         updateDateTime()
         // Start periodic updates
         startTimeUpdates()
@@ -105,12 +104,16 @@ class PhotoViewModel @Inject constructor(
         private const val MAX_RETRY_ATTEMPTS = 3
     }
 
+    @JvmName("onPhotoLoadComplete")
     fun onPhotoLoadComplete(success: Boolean) {
-        if (success) {
-            _hasError.value = false
-            retryCount = 0
-        } else {
-            retryLoadingWithBackoff()
+        viewModelScope.launch {
+            if (success) {
+                _hasError.value = false
+                retryCount = 0
+                _isLoading.value = false
+            } else {
+                retryLoadingWithBackoff()
+            }
         }
     }
 
@@ -220,18 +223,6 @@ class PhotoViewModel @Inject constructor(
                 handleError("Retry failed: ${e.message}", e)
             } finally {
                 _isLoading.value = false
-            }
-        }
-    }
-
-    fun onPhotoLoadComplete(success: Boolean) {
-        viewModelScope.launch {
-            if (success) {
-                _hasError.value = false
-                retryCount = 0
-                _isLoading.value = false
-            } else {
-                retryLoadingWithBackoff()
             }
         }
     }
