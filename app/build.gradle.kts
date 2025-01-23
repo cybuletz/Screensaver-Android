@@ -60,7 +60,7 @@ android {
     }
 
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -84,8 +84,6 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-
-
 }
 
 dependencies {
@@ -101,6 +99,7 @@ dependencies {
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
     kapt("com.google.dagger:hilt-compiler:2.48")
+    kapt("androidx.hilt:hilt-compiler:1.0.0")
 
     // Lifecycle
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
@@ -153,8 +152,4 @@ dependencies {
 
     // JSON
     implementation("org.json:json:20231013")
-}
-
-kapt {
-    correctErrorTypes = true
 }

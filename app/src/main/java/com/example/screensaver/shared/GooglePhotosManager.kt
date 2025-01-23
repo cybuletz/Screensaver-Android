@@ -1,5 +1,3 @@
-// File: app/src/main/java/com/example/screensaver/shared/GooglePhotosManager.kt
-
 package com.example.screensaver.shared
 
 import android.content.Context
@@ -10,13 +8,19 @@ import com.google.auth.oauth2.GoogleCredentials
 import com.google.photos.library.v1.PhotosLibraryClient
 import com.google.photos.library.v1.PhotosLibrarySettings
 import com.google.photos.library.v1.proto.SearchMediaItemsRequest
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.*
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class GooglePhotosManager private constructor(private val context: Context) {
+@Singleton
+class GooglePhotosManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
     private var photosLibraryClient: PhotosLibraryClient? = null
     private val photoUrls = mutableListOf<String>()
     private val coroutineScope = CoroutineScope(Dispatchers.Main + Job())
@@ -25,15 +29,6 @@ class GooglePhotosManager private constructor(private val context: Context) {
         private const val TAG = "GooglePhotosManager"
         private const val PHOTO_QUALITY = "=w2560-h1440" // 2K quality
         private const val MAX_RETRIES = 3
-
-        @Volatile
-        private var instance: GooglePhotosManager? = null
-
-        fun getInstance(context: Context): GooglePhotosManager {
-            return instance ?: synchronized(this) {
-                instance ?: GooglePhotosManager(context.applicationContext).also { instance = it }
-            }
-        }
     }
 
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
