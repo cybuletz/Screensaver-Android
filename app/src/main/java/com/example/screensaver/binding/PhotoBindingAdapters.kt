@@ -29,6 +29,13 @@ object PhotoBindingAdapters {
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     @JvmStatic
+    @BindingAdapter("onLoadingComplete")
+    fun setOnLoadingCompleteListener(view: View, onLoadingComplete: ((Boolean) -> Unit)?) {
+        // This adapter just helps bind the function
+        // The actual callback is used in the loadPhoto adapter
+    }
+
+    @JvmStatic
     @BindingAdapter(
         value = ["photoUrl", "placeholder", "errorPlaceholder", "quality", "onLoadingComplete"],
         requireAll = false
