@@ -2,9 +2,10 @@
 <layout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Ensure there are no extra characters or spaces before this line -->
+
     <data>
-        <import type="com.example.screensaver.models.MediaItem"/>
+        <import type="com.example.screensaver.model.MediaItem"/>
+        <!-- Change from models to model package -->
         <variable
             name="viewModel"
             type="com.example.screensaver.viewmodels.PhotoViewModel" />
@@ -24,7 +25,7 @@
             android:scaleType="centerCrop"
             app:photoUrl="@{viewModel.currentPhoto.url}"
             app:quality="@{viewModel.photoQuality}"
-            app:onLoadingComplete="@{success -> viewModel.onPhotoLoadComplete(success)}"
+            app:onLoadingComplete="@{viewModel::onPhotoLoadComplete}"
             android:contentDescription="@string/photo_content_description"
             tools:src="@tools:sample/backgrounds/scenic" />
 
