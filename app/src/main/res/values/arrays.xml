@@ -2,8 +2,8 @@
 <resources>
     <!-- Photo Sources -->
     <string-array name="photo_source_entries">
-        <item>Local Photos</item>
-        <item>Google Photos</item>
+        <item>@string/photo_source_local</item>
+        <item>@string/photo_source_google</item>
     </string-array>
 
     <string-array name="photo_source_values">
@@ -17,10 +17,10 @@
 
     <!-- Transition Effects -->
     <string-array name="transition_effects">
-        <item>Fade</item>
-        <item>Slide</item>
-        <item>Zoom</item>
-        <item>Blur</item>
+        <item>@string/transition_fade</item>
+        <item>@string/transition_slide</item>
+        <item>@string/transition_zoom</item>
+        <item>@string/transition_blur</item>
     </string-array>
 
     <string-array name="transition_effects_values">
@@ -32,9 +32,9 @@
 
     <!-- Photo Scale Options -->
     <string-array name="photo_scale_options">
-        <item>Fit Screen</item>
-        <item>Fill Screen</item>
-        <item>Original Size</item>
+        <item>@string/photo_scale_fit</item>
+        <item>@string/photo_scale_fill</item>
+        <item>@string/photo_scale_original</item>
     </string-array>
 
     <string-array name="photo_scale_values">
@@ -45,13 +45,13 @@
 
     <!-- Days of Week -->
     <string-array name="days_of_week">
-        <item>Monday</item>
-        <item>Tuesday</item>
-        <item>Wednesday</item>
-        <item>Thursday</item>
-        <item>Friday</item>
-        <item>Saturday</item>
-        <item>Sunday</item>
+        <item>@string/day_monday</item>
+        <item>@string/day_tuesday</item>
+        <item>@string/day_wednesday</item>
+        <item>@string/day_thursday</item>
+        <item>@string/day_friday</item>
+        <item>@string/day_saturday</item>
+        <item>@string/day_sunday</item>
     </string-array>
 
     <string-array name="days_of_week_values">
@@ -75,11 +75,11 @@
 
     <!-- Refresh Intervals -->
     <string-array name="refresh_intervals">
-        <item>1 minute</item>
-        <item>5 minutes</item>
-        <item>15 minutes</item>
-        <item>30 minutes</item>
-        <item>1 hour</item>
+        <item>@string/refresh_interval_1m</item>
+        <item>@string/refresh_interval_5m</item>
+        <item>@string/refresh_interval_15m</item>
+        <item>@string/refresh_interval_30m</item>
+        <item>@string/refresh_interval_1h</item>
     </string-array>
 
     <string-array name="refresh_interval_values">
@@ -91,9 +91,9 @@
     </string-array>
 
     <string-array name="orientation_options">
-        <item>Auto</item>
-        <item>Portrait</item>
-        <item>Landscape</item>
+        <item>@string/orientation_auto</item>
+        <item>@string/orientation_portrait</item>
+        <item>@string/orientation_landscape</item>
     </string-array>
 
     <string-array name="orientation_options_values">
@@ -104,8 +104,8 @@
 
     <!-- Display Mode Arrays -->
     <string-array name="display_mode_entries">
-        <item>Screensaver</item>
-        <item>Lock Screen</item>
+        <item>@string/display_mode_screensaver</item>
+        <item>@string/display_mode_lockscreen</item>
     </string-array>
 
     <string-array name="display_mode_values">

@@ -29,7 +29,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Sign in to access your Google Photos albums"
+            android:text="@string/sign_in_message"
             android:textAlignment="center"
             android:layout_marginBottom="16dp"/>
 
@@ -62,21 +62,21 @@
             android:id="@+id/testDreamButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Test Dream Service"
+            android:text="@string/test_dream_service"
             android:layout_marginBottom="8dp" />
 
         <Button
             android:id="@+id/confirmButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Confirm Selection"
+            android:text="@string/confirm_selection"
             android:enabled="false" />
 
         <Button
             android:id="@+id/retryButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Retry"
+            android:text="@string/retry"
             android:visibility="gone"
             android:layout_gravity="center"/>
 
