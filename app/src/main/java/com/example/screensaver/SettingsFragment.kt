@@ -38,6 +38,7 @@ import com.example.screensaver.AlbumSelectionActivity
 
 class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
+    private val photoManager by lazy { GooglePhotosManager.getInstance(requireContext()) }
 
     private val signInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -429,13 +430,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun setupGooglePhotos() {
-        findPreference<Preference>("select_albums")?.setOnPreferenceClickListener {
-            if (GoogleSignIn.getLastSignedInAccount(requireContext()) != null) {
-                startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
-                true
-            } else {
-                Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
-                false
+        findPreference<SwitchPreferenceCompat>("use_google_photos")?.apply {
+            coroutineScope.launch {
+                isChecked = photoManager.initialize()
+                setOnPreferenceChangeListener { _, newValue ->
+                    if (newValue as Boolean) {
+                        launchGooglePhotosSetup()
+                    } else {
+                        photoManager.cleanup()
+                    }
+                    true
+                }
             }
         }
     }

@@ -8,8 +8,10 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -19,11 +21,11 @@ import com.example.screensaver.lock.PhotoLockDeviceAdmin
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.launch
 
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         if (savedInstanceState == null) {
             supportFragmentManager
                 .beginTransaction()
@@ -33,112 +35,163 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
+        private var devicePolicyManager: DevicePolicyManager? = null
+        private lateinit var adminComponentName: ComponentName
+
+        private val deviceAdminLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            updateLockScreenStatus()
+            if (isDeviceAdminActive()) {
+                startLockScreenService()
+            } else {
+                showFeedback(R.string.lock_screen_admin_denied)
+                resetDisplayModePreference()
+            }
+        }
+
         companion object {
             private const val TAG = "SettingsFragment"
+            private const val DEFAULT_DISPLAY_MODE = "dream_service"
+            private const val LOCK_SCREEN_MODE = "lock_screen"
         }
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.preferences, rootKey)
+            initializeComponents()
             setupPreferences()
+        }
+
+        override fun onResume() {
+            super.onResume()
+            updateLockScreenStatus()
+        }
+
+        private fun initializeComponents() {
+            devicePolicyManager = requireContext().getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+            adminComponentName = ComponentName(requireContext(), PhotoLockDeviceAdmin::class.java)
         }
 
         private fun setupPreferences() {
             setupDisplayModePreference()
             setupLockScreenPreview()
             setupLockScreenStatus()
-            updateLockScreenStatus()
+            setupIntervalPreference()
+            setupTransitionPreference()
         }
 
         private fun setupDisplayModePreference() {
             findPreference<ListPreference>("display_mode_selection")?.apply {
                 setOnPreferenceChangeListener { _, newValue ->
-                    when (newValue as String) {
-                        "dream_service" -> {
-                            disableLockScreenMode()
-                            enableDreamService()
-                        }
-                        "lock_screen" -> {
-                            enableLockScreenMode()
-                            disableDreamService()
-                        }
-                    }
-                    true
+                    handleDisplayModeChange(newValue as String)
                 }
             }
         }
 
-        private fun enableLockScreenMode() {
-            try {
-                val deviceManager = requireContext().getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val componentName = ComponentName(requireContext(), PhotoLockDeviceAdmin::class.java)
-
-                if (!deviceManager.isAdminActive(componentName)) {
-                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, componentName)
-                        putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                            getString(R.string.device_admin_explanation))
+        private fun handleDisplayModeChange(newMode: String): Boolean {
+            return when (newMode) {
+                DEFAULT_DISPLAY_MODE -> {
+                    lifecycleScope.launch {
+                        disableLockScreenMode()
+                        enableDreamService()
                     }
-                    startActivity(intent)
+                    true
                 }
+                LOCK_SCREEN_MODE -> {
+                    lifecycleScope.launch {
+                        if (enableLockScreenMode()) {
+                            disableDreamService()
+                        } else {
+                            resetDisplayModePreference()
+                        }
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
 
+        private fun enableLockScreenMode(): Boolean {
+            return try {
+                if (!isDeviceAdminActive()) {
+                    requestDeviceAdmin()
+                } else {
+                    startLockScreenService()
+                    true
+                }
+            } catch (e: Exception) {
+                handleError("Error enabling lock screen mode", e)
+                false
+            }
+        }
+
+        private fun requestDeviceAdmin() {
+            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
+                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    getString(R.string.device_admin_explanation))
+            }
+            deviceAdminLauncher.launch(intent)
+        }
+
+        private fun disableLockScreenMode() {
+            try {
+                if (isDeviceAdminActive()) {
+                    devicePolicyManager?.removeActiveAdmin(adminComponentName)
+                }
+                stopLockScreenService()
+                showFeedback(R.string.lock_screen_disabled)
+            } catch (e: Exception) {
+                handleError("Error disabling lock screen mode", e)
+            }
+        }
+
+        private fun startLockScreenService() {
+            try {
                 Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
                     requireContext().startService(intent)
                     showFeedback(R.string.lock_screen_enabled)
                 }
             } catch (e: Exception) {
-                showError(R.string.lock_screen_enable_error, e)
-            } finally {
-                updateLockScreenStatus()
+                handleError("Error starting lock screen service", e)
             }
         }
 
-        private fun disableLockScreenMode() {
-            val deviceManager = requireContext().getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-            val componentName = ComponentName(requireContext(), PhotoLockDeviceAdmin::class.java)
-
-            if (deviceManager.isAdminActive(componentName)) {
-                deviceManager.removeActiveAdmin(componentName)
-            }
-
-            Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
-                requireContext().stopService(intent)
+        private fun stopLockScreenService() {
+            try {
+                Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
+                    requireContext().stopService(intent)
+                }
+            } catch (e: Exception) {
+                handleError("Error stopping lock screen service", e)
             }
         }
 
         private fun enableDreamService() {
             try {
-                val dreamComponent = ComponentName(requireContext(), PhotoDreamService::class.java)
-
-                // Open system dream settings
-                val intent = Intent(Settings.ACTION_DREAM_SETTINGS).apply {
+                startActivity(Intent(Settings.ACTION_DREAM_SETTINGS).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                startActivity(intent)
-
+                })
                 showFeedback(R.string.dream_service_settings)
             } catch (e: Exception) {
-                Log.e(TAG, "Error enabling dream service", e)
-                showError(R.string.dream_service_error, e)
+                handleError("Error enabling dream service", e)
             }
         }
 
         private fun disableDreamService() {
             try {
-                // Open system dream settings to let user disable it
-                val intent = Intent(Settings.ACTION_DREAM_SETTINGS).apply {
+                startActivity(Intent(Settings.ACTION_DREAM_SETTINGS).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                startActivity(intent)
-
+                })
                 showFeedback(R.string.dream_service_disable)
             } catch (e: Exception) {
-                Log.e(TAG, "Error disabling dream service", e)
-                showError(R.string.dream_service_error, e)
+                handleError("Error disabling dream service", e)
             }
         }
 
         private fun setupLockScreenPreview() {
             findPreference<Preference>("preview_lock_screen")?.apply {
+                isVisible = isLockScreenModeSelected()
                 setOnPreferenceClickListener {
                     showLockScreenPreview()
                     true
@@ -147,55 +200,59 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         private fun showLockScreenPreview() {
-            Intent(requireContext(), PhotoLockActivity::class.java).apply {
-                putExtra("preview_mode", true)
-                startActivity(this)
+            try {
+                Intent(requireContext(), PhotoLockActivity::class.java).apply {
+                    putExtra("preview_mode", true)
+                    startActivity(this)
+                }
+            } catch (e: Exception) {
+                handleError("Error showing preview", e)
             }
         }
 
         private fun setupLockScreenStatus() {
-            findPreference<Preference>("lock_screen_status")?.let { pref ->
-                pref.isVisible = isLockScreenModeSelected()
-            }
+            findPreference<Preference>("lock_screen_status")?.isVisible = isLockScreenModeSelected()
         }
 
         private fun updateLockScreenStatus() {
-            findPreference<Preference>("lock_screen_status")?.let { pref ->
-                val deviceManager = requireContext().getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val componentName = ComponentName(requireContext(), PhotoLockDeviceAdmin::class.java)
-                val isAdminActive = deviceManager.isAdminActive(componentName)
-                val isServiceRunning = isServiceRunning(PhotoLockScreenService::class.java)
-
-                when {
+            findPreference<Preference>("lock_screen_status")?.apply {
+                val status = when {
                     !isLockScreenModeSelected() -> {
-                        pref.summary = getString(R.string.lock_screen_not_selected)
-                        pref.isVisible = false
+                        isVisible = false
+                        R.string.lock_screen_not_selected
                     }
-                    !isAdminActive -> {
-                        pref.summary = getString(R.string.lock_screen_admin_required)
-                        pref.isVisible = true
+                    !isDeviceAdminActive() -> {
+                        isVisible = true
+                        R.string.lock_screen_admin_required
                     }
-                    !isServiceRunning -> {
-                        pref.summary = getString(R.string.lock_screen_service_not_running)
-                        pref.isVisible = true
+                    !isServiceRunning() -> {
+                        isVisible = true
+                        R.string.lock_screen_service_not_running
                     }
                     else -> {
-                        pref.summary = getString(R.string.lock_screen_active)
-                        pref.isVisible = true
+                        isVisible = true
+                        R.string.lock_screen_active
                     }
                 }
+                summary = getString(status)
             }
         }
 
-        private fun isLockScreenModeSelected(): Boolean {
-            return PreferenceManager.getDefaultSharedPreferences(requireContext())
-                .getString("display_mode_selection", "dream_service") == "lock_screen"
-        }
+        private fun isDeviceAdminActive(): Boolean =
+            devicePolicyManager?.isAdminActive(adminComponentName) == true
 
-        private fun isServiceRunning(serviceClass: Class<*>): Boolean {
+        private fun isServiceRunning(): Boolean {
             val manager = requireContext().getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             return manager.getRunningServices(Integer.MAX_VALUE)
-                .any { it.service.className == serviceClass.name }
+                .any { it.service.className == PhotoLockScreenService::class.java.name }
+        }
+
+        private fun isLockScreenModeSelected(): Boolean =
+            PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getString("display_mode_selection", DEFAULT_DISPLAY_MODE) == LOCK_SCREEN_MODE
+
+        private fun resetDisplayModePreference() {
+            findPreference<ListPreference>("display_mode_selection")?.value = DEFAULT_DISPLAY_MODE
         }
 
         private fun showFeedback(@StringRes messageResId: Int) {
@@ -204,14 +261,13 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        private fun showError(@StringRes messageResId: Int, error: Exception) {
-            Log.e(TAG, "Error: ${error.message}", error)
+        private fun handleError(message: String, error: Exception) {
+            Log.e(TAG, "$message: ${error.message}", error)
             view?.let { v ->
-                Snackbar.make(
-                    v,
-                    getString(messageResId) + ": " + error.localizedMessage,
+                Snackbar.make(v,
+                    getString(R.string.generic_error, error.localizedMessage),
                     Snackbar.LENGTH_LONG
-                ).setAction("Details") {
+                ).setAction(R.string.details) {
                     showErrorDialog(error)
                 }.show()
             }
@@ -223,6 +279,14 @@ class SettingsActivity : AppCompatActivity() {
                 .setMessage(error.stackTraceToString())
                 .setPositiveButton(android.R.string.ok, null)
                 .show()
+        }
+
+        private fun setupIntervalPreference() {
+            // Add interval preference setup here
+        }
+
+        private fun setupTransitionPreference() {
+            // Add transition preference setup here
         }
     }
 }

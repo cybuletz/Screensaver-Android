@@ -1,14 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Required Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
-    <!-- Dream service feature -->
+    <!-- Dream service features -->
     <uses-feature
         android:name="android.software.dream"
         android:required="true" />
@@ -20,33 +24,39 @@
         android:required="false" />
 
     <application
+        android:name=".ScreensaverApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Screensaver">
+        android:theme="@style/Theme.Screensaver"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true">
 
         <meta-data
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
 
-        <!-- Add Google Sign In Activity -->
+        <!-- Google Sign In Activity -->
         <activity
             android:name="com.google.android.gms.auth.api.signin.internal.SignInHubActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- Settings Activity -->
         <activity
             android:name=".SettingsActivity"
             android:theme="@style/Theme.Screensaver"
@@ -63,6 +73,7 @@
             </intent-filter>
         </activity>
 
+        <!-- Album Selection Activity -->
         <activity
             android:name=".AlbumSelectionActivity"
             android:label="Select Albums"
@@ -73,7 +84,7 @@
                 android:value=".SettingsActivity" />
         </activity>
 
-        <!-- Add the Lock Screen Activity -->
+        <!-- Lock Screen Activity -->
         <activity
             android:name=".lock.PhotoLockActivity"
             android:excludeFromRecents="true"
@@ -88,19 +99,19 @@
             </intent-filter>
         </activity>
 
+        <!-- Dream Service -->
         <service
             android:name=".PhotoDreamService"
             android:exported="true"
-            android:enabled="true"
             android:label="@string/app_name"
-            android:permission="android.permission.BIND_DREAM_SERVICE">
+            android:permission="android:permission.BIND_DREAM_SERVICE">
             <intent-filter>
                 <action android:name="android.service.dreams.DreamService" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <meta-data
                 android:name="android.service.dream"
-                android:resource="@xml/dream_service" />
+                android:resource="@xml/dream_info" />
         </service>
 
         <!-- Device Admin Receiver -->
@@ -122,12 +133,24 @@
         <service
             android:name=".lock.PhotoLockScreenService"
             android:enabled="true"
-            android:exported="false">
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
             <intent-filter>
                 <action android:name="android.intent.action.SCREEN_OFF" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </service>
+
+        <!-- FileProvider -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 </manifest>

@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
+    id("kotlin-kapt")  // Add for data binding
+    id("dagger.hilt.android.plugin")  // Add for Hilt
 }
 
 android {
@@ -16,6 +18,8 @@ android {
         versionName = "1.0"
         manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
     }
+
+    // Keep your existing signingConfigs
     signingConfigs {
         getByName("debug") {
             storeFile = file("${projectDir}/debug.keystore")
@@ -24,6 +28,8 @@ android {
             keyPassword = "android"
         }
     }
+
+    // Keep your existing sourceSets
     sourceSets {
         getByName("main") {
             assets {
@@ -31,6 +37,8 @@ android {
             }
         }
     }
+
+    // Keep your existing packaging
     packaging {
         resources {
             excludes += listOf(
@@ -47,21 +55,30 @@ android {
             )
         }
     }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true  // Enable minification
+            isShrinkResources = true  // Enable resource shrinking
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+
+    buildFeatures {
+        dataBinding = true
+        viewBinding = true
     }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17  // Update to 17
+        targetCompatibility = JavaVersion.VERSION_17  // Update to 17
+    }
+
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"  // Update to 17
     }
 }
 
@@ -75,6 +92,17 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     annotationProcessor("com.github.bumptech.glide:compiler:4.16.0")
+
+    // Add Hilt dependencies
+    implementation("com.google.dagger:hilt-android:2.48")
+    kapt("com.google.dagger:hilt-compiler:2.48")
+
+    // Add Lifecycle components if not already present
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.6.2")
+
+    // Add Timber for logging
+    implementation("com.jakewharton.timber:timber:5.0.1")
 
     // AndroidX Test
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
@@ -120,4 +148,9 @@ dependencies {
     implementation("io.grpc:grpc-stub:1.58.0")     // Add this line
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
     implementation("org.json:json:20231013")
+
+    // Allow references to generated code
+    kapt {
+        correctErrorTypes = true
+    }
 }

@@ -1,0 +1,193 @@
+package com.example.screensaver.utils
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.core.content.edit
+import androidx.preference.PreferenceManager
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * Manages application preferences and settings.
+ * Handles persistence and provides type-safe access to user preferences.
+ */
+class AppPreferences(context: Context) {
+
+    private val prefs: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+    private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            PREF_DISPLAY_MODE -> _displayModeFlow.value = getDisplayMode()
+            PREF_TRANSITION_INTERVAL -> _transitionIntervalFlow.value = getTransitionInterval()
+            PREF_TRANSITION_ANIMATION -> _transitionAnimationFlow.value = getTransitionAnimation()
+            PREF_SHOW_PHOTO_INFO -> _showPhotoInfoFlow.value = isShowPhotoInfo()
+            PREF_SHOW_CLOCK -> _showClockFlow.value = isShowClock()
+            PREF_CLOCK_FORMAT -> _clockFormatFlow.value = getClockFormat()
+            PREF_SELECTED_ALBUMS -> _selectedAlbumsFlow.value = getSelectedAlbumIds()
+        }
+    }
+
+    // StateFlows for reactive preferences
+    private val _displayModeFlow = MutableStateFlow(getDisplayMode())
+    private val _transitionIntervalFlow = MutableStateFlow(getTransitionInterval())
+    private val _transitionAnimationFlow = MutableStateFlow(getTransitionAnimation())
+    private val _showPhotoInfoFlow = MutableStateFlow(isShowPhotoInfo())
+    private val _showClockFlow = MutableStateFlow(isShowClock())
+    private val _clockFormatFlow = MutableStateFlow(getClockFormat())
+    private val _selectedAlbumsFlow = MutableStateFlow(getSelectedAlbumIds())
+
+    // Public flows
+    val displayModeFlow = _displayModeFlow.asStateFlow()
+    val transitionIntervalFlow = _transitionIntervalFlow.asStateFlow()
+    val transitionAnimationFlow = _transitionAnimationFlow.asStateFlow()
+    val showPhotoInfoFlow = _showPhotoInfoFlow.asStateFlow()
+    val showClockFlow = _showClockFlow.asStateFlow()
+    val clockFormatFlow = _clockFormatFlow.asStateFlow()
+    val selectedAlbumsFlow = _selectedAlbumsFlow.asStateFlow()
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
+    }
+
+    companion object {
+        // Preference keys
+        private const val PREF_DISPLAY_MODE = "display_mode_selection"
+        private const val PREF_TRANSITION_INTERVAL = "transition_interval"
+        private const val PREF_TRANSITION_ANIMATION = "transition_animation"
+        private const val PREF_SHOW_PHOTO_INFO = "show_photo_info"
+        private const val PREF_SHOW_CLOCK = "show_clock"
+        private const val PREF_CLOCK_FORMAT = "clock_format"
+        private const val PREF_SELECTED_ALBUMS = "selected_albums"
+        private const val PREF_LAST_SYNC = "last_sync_timestamp"
+
+        // Default values
+        private const val DEFAULT_DISPLAY_MODE = "dream_service"
+        private const val DEFAULT_TRANSITION_INTERVAL = 30 // seconds
+        private const val DEFAULT_TRANSITION_ANIMATION = "fade"
+        private const val DEFAULT_CLOCK_FORMAT = "24h"
+    }
+
+    enum class DisplayMode {
+        DREAM_SERVICE, LOCK_SCREEN
+    }
+
+    enum class TransitionAnimation {
+        FADE, SLIDE, ZOOM
+    }
+
+    enum class ClockFormat {
+        FORMAT_12H, FORMAT_24H
+    }
+
+    // Display Mode
+    fun getDisplayMode(): DisplayMode = when(prefs.getString(PREF_DISPLAY_MODE, DEFAULT_DISPLAY_MODE)) {
+        "lock_screen" -> DisplayMode.LOCK_SCREEN
+        else -> DisplayMode.DREAM_SERVICE
+    }
+
+    fun setDisplayMode(mode: DisplayMode) {
+        prefs.edit {
+            putString(PREF_DISPLAY_MODE, when(mode) {
+                DisplayMode.LOCK_SCREEN -> "lock_screen"
+                DisplayMode.DREAM_SERVICE -> "dream_service"
+            })
+        }
+    }
+
+    // Transition Interval
+    fun getTransitionInterval(): Int =
+        prefs.getInt(PREF_TRANSITION_INTERVAL, DEFAULT_TRANSITION_INTERVAL)
+
+    fun setTransitionInterval(seconds: Int) {
+        prefs.edit { putInt(PREF_TRANSITION_INTERVAL, seconds) }
+    }
+
+    // Transition Animation
+    fun getTransitionAnimation(): TransitionAnimation =
+        TransitionAnimation.valueOf(
+            prefs.getString(PREF_TRANSITION_ANIMATION, DEFAULT_TRANSITION_ANIMATION)!!.uppercase()
+        )
+
+    fun setTransitionAnimation(animation: TransitionAnimation) {
+        prefs.edit { putString(PREF_TRANSITION_ANIMATION, animation.name.lowercase()) }
+    }
+
+    // Photo Info Display
+    fun isShowPhotoInfo(): Boolean = prefs.getBoolean(PREF_SHOW_PHOTO_INFO, true)
+
+    fun setShowPhotoInfo(show: Boolean) {
+        prefs.edit { putBoolean(PREF_SHOW_PHOTO_INFO, show) }
+    }
+
+    // Clock Display
+    fun isShowClock(): Boolean = prefs.getBoolean(PREF_SHOW_CLOCK, true)
+
+    fun setShowClock(show: Boolean) {
+        prefs.edit { putBoolean(PREF_SHOW_CLOCK, show) }
+    }
+
+    // Clock Format
+    fun getClockFormat(): ClockFormat = when(prefs.getString(PREF_CLOCK_FORMAT, DEFAULT_CLOCK_FORMAT)) {
+        "12h" -> ClockFormat.FORMAT_12H
+        else -> ClockFormat.FORMAT_24H
+    }
+
+    fun setClockFormat(format: ClockFormat) {
+        prefs.edit {
+            putString(PREF_CLOCK_FORMAT, when(format) {
+                ClockFormat.FORMAT_12H -> "12h"
+                ClockFormat.FORMAT_24H -> "24h"
+            })
+        }
+    }
+
+    // Selected Albums
+    fun getSelectedAlbumIds(): Set<String> =
+        prefs.getStringSet(PREF_SELECTED_ALBUMS, emptySet()) ?: emptySet()
+
+    fun setSelectedAlbumIds(albumIds: Set<String>) {
+        prefs.edit { putStringSet(PREF_SELECTED_ALBUMS, albumIds) }
+    }
+
+    fun addSelectedAlbumId(albumId: String) {
+        val currentIds = getSelectedAlbumIds().toMutableSet()
+        currentIds.add(albumId)
+        setSelectedAlbumIds(currentIds)
+    }
+
+    fun removeSelectedAlbumId(albumId: String) {
+        val currentIds = getSelectedAlbumIds().toMutableSet()
+        currentIds.remove(albumId)
+        setSelectedAlbumIds(currentIds)
+    }
+
+    // Last Sync Time
+    fun getLastSyncTimestamp(): Long = prefs.getLong(PREF_LAST_SYNC, 0)
+
+    fun updateLastSyncTimestamp() {
+        prefs.edit { putLong(PREF_LAST_SYNC, System.currentTimeMillis()) }
+    }
+
+    /**
+     * Resets all preferences to their default values
+     */
+    fun resetToDefaults() {
+        prefs.edit {
+            putString(PREF_DISPLAY_MODE, DEFAULT_DISPLAY_MODE)
+            putInt(PREF_TRANSITION_INTERVAL, DEFAULT_TRANSITION_INTERVAL)
+            putString(PREF_TRANSITION_ANIMATION, DEFAULT_TRANSITION_ANIMATION)
+            putBoolean(PREF_SHOW_PHOTO_INFO, true)
+            putBoolean(PREF_SHOW_CLOCK, true)
+            putString(PREF_CLOCK_FORMAT, DEFAULT_CLOCK_FORMAT)
+            putStringSet(PREF_SELECTED_ALBUMS, emptySet())
+            putLong(PREF_LAST_SYNC, 0)
+        }
+    }
+
+    /**
+     * Cleans up resources
+     */
+    fun cleanup() {
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsChangeListener)
+    }
+}

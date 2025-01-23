@@ -7,12 +7,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.Uri  // Added Uri import
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
-import android.util.DisplayMetrics
 import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -22,6 +20,7 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
 import android.widget.TextClock
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.GestureDetectorCompat
 import androidx.lifecycle.lifecycleScope
@@ -38,10 +37,7 @@ import java.util.Locale
 import kotlin.math.abs
 
 class PhotoLockActivity : AppCompatActivity() {
-    companion object {
-        private const val TAG = "PhotoLockActivity"
-    }
-
+    // UI Components
     private lateinit var backgroundImageView: ImageView
     private lateinit var overlayImageView: ImageView
     private lateinit var clockView: TextClock
@@ -49,12 +45,27 @@ class PhotoLockActivity : AppCompatActivity() {
     private lateinit var previewNotice: TextView
     private lateinit var gestureDetector: GestureDetectorCompat
 
+    // Managers and Handlers
+    private val photoManager by lazy { GooglePhotosManager.getInstance(this) }
     private val handler = Handler(Looper.getMainLooper())
+
+    // State Variables
     private var isPreviewMode = false
     private var currentPhotoIndex = 0
     private var isPowerSaving = false
     private var isActivityVisible = false
     private var screenWidth: Int = 0
+    private var isInitialized = false
+
+    companion object {
+        private const val TAG = "PhotoLockActivity"
+        private const val SWIPE_THRESHOLD = 100
+        private const val SWIPE_VELOCITY_THRESHOLD = 100
+        private const val DEFAULT_INTERVAL = 10000L // 10 seconds
+        private const val POWER_SAVING_SCALE = 2L // Double the interval in power saving mode
+        private const val TRANSITION_DURATION_NORMAL = 1000L
+        private const val TRANSITION_DURATION_POWER_SAVING = 500L
+    }
 
     private val powerSavingReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -66,7 +77,7 @@ class PhotoLockActivity : AppCompatActivity() {
 
     private val photoChangeRunnable = object : Runnable {
         override fun run() {
-            if (isActivityVisible) {
+            if (isActivityVisible && isInitialized) {
                 lifecycleScope.launch {
                     transitionToNextPhoto()
                     scheduleNextPhotoChange()
@@ -75,39 +86,26 @@ class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
+    // Lifecycle Methods
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         isPreviewMode = intent.getBooleanExtra("preview_mode", false)
 
-        val displayMetrics = DisplayMetrics()
-        windowManager.defaultDisplay.getMetrics(displayMetrics)
-        screenWidth = displayMetrics.widthPixels
-
-        if (!isPreviewMode) {
-            setupSecureWindow()
-        }
-
+        setupWindow()
         setContentView(R.layout.activity_photo_lock)
+
         initializeViews()
-        PhotoManager.getInstance(this).loadPhotos()
         setupGestureDetection()
         registerPowerSavingReceiver()
-
-        // Initialize PhotoManager
-        PhotoManager.getInstance(this).loadPhotos()
-
-        // Load first photo after a short delay to ensure PhotoManager is ready
-        handler.postDelayed({
-            lifecycleScope.launch {
-                startPhotoDisplay()
-            }
-        }, 500)
+        initializePhotos()
     }
 
     override fun onStart() {
         super.onStart()
         isActivityVisible = true
-        startPhotoDisplay()
+        if (isInitialized) {
+            startPhotoDisplay()
+        }
     }
 
     override fun onStop() {
@@ -116,65 +114,25 @@ class PhotoLockActivity : AppCompatActivity() {
         handler.removeCallbacks(photoChangeRunnable)
     }
 
-    private fun setupSecureWindow() {
+    override fun onDestroy() {
+        super.onDestroy()
+        cleanup()
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
+    }
+
+    // Setup Methods
+    private fun setupWindow() {
+        screenWidth = resources.displayMetrics.widthPixels
         window.apply {
             addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
                     or WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
                     or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                     or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
-
-            if (isPowerSaving) {
-                clearFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
-            } else {
-                addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
-            }
         }
-    }
-
-    private fun registerPowerSavingReceiver() {
-        val filter = IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
-        registerReceiver(powerSavingReceiver, filter)
         updatePowerSavingMode()
-    }
-
-    private fun updatePowerSavingMode() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        isPowerSaving = powerManager.isPowerSaveMode
-
-        if (isPowerSaving) {
-            enablePowerSaving()
-        } else {
-            disablePowerSaving()
-        }
-    }
-
-    private fun enablePowerSaving() {
-        window.clearFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
-        clockView.alpha = 0.7f
-        dateView.alpha = 0.7f
-        setupImageLoadingQuality(lowQuality = true)
-        scheduleNextPhotoChange()
-    }
-
-    private fun disablePowerSaving() {
-        window.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
-        clockView.alpha = 1.0f
-        dateView.alpha = 1.0f
-        setupImageLoadingQuality(lowQuality = false)
-        scheduleNextPhotoChange()
-    }
-
-    private fun setupImageLoadingQuality(lowQuality: Boolean) {
-        val requestOptions = RequestOptions().apply {
-            if (lowQuality) {
-                format(DecodeFormat.PREFER_RGB_565)
-                override(800, 800)
-            } else {
-                format(DecodeFormat.PREFER_ARGB_8888)
-            }
-            diskCacheStrategy(DiskCacheStrategy.ALL)
-        }
-        Glide.with(this).setDefaultRequestOptions(requestOptions)
     }
 
     private fun initializeViews() {
@@ -200,9 +158,6 @@ class PhotoLockActivity : AppCompatActivity() {
 
     private fun setupGestureDetection() {
         gestureDetector = GestureDetectorCompat(this, object : GestureDetector.SimpleOnGestureListener() {
-            private val SWIPE_THRESHOLD = 100
-            private val SWIPE_VELOCITY_THRESHOLD = 100
-
             override fun onDown(e: MotionEvent): Boolean = true
 
             override fun onFling(
@@ -224,69 +179,58 @@ class PhotoLockActivity : AppCompatActivity() {
         })
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
-    }
-
-    private fun handleUnlock() {
-        if (isPreviewMode) {
-            finish()
-        } else {
-            finish()
-            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+    // Photo Management Methods
+    private fun initializePhotos() {
+        lifecycleScope.launch {
+            try {
+                if (photoManager.initialize() && photoManager.loadPhotos()) {
+                    isInitialized = true
+                    startPhotoDisplay()
+                } else {
+                    showError("Failed to load photos")
+                }
+            } catch (e: Exception) {
+                showError("Error initializing photos: ${e.message}")
+            }
         }
     }
 
     private fun startPhotoDisplay() {
+        if (!isInitialized) return
         loadPhoto(currentPhotoIndex, backgroundImageView)
         scheduleNextPhotoChange()
     }
 
-    private fun scheduleNextPhotoChange() {
-        handler.removeCallbacks(photoChangeRunnable)
-
-        if (isActivityVisible) {
-            val baseInterval = PreferenceManager.getDefaultSharedPreferences(this)
-                .getInt("lock_screen_interval", 10) * 1000L
-            val interval = if (isPowerSaving) baseInterval * 2 else baseInterval
-            handler.postDelayed(photoChangeRunnable, interval)
-        }
-    }
-
     private fun loadPhoto(index: Int, imageView: ImageView) {
-        try {
-            PhotoManager.getInstance(this).getPhotoUrl(index)?.let { url ->
-                val requestOptions = RequestOptions()
-                    .error(R.drawable.default_background)
-                    .diskCacheStrategy(DiskCacheStrategy.ALL)
-                    .format(if (isPowerSaving) DecodeFormat.PREFER_RGB_565 else DecodeFormat.PREFER_ARGB_8888)
-                    .apply {
-                        if (isPowerSaving) {
-                            override(800, 800)
-                        }
-                    }
+        if (!isInitialized) return
 
+        try {
+            photoManager.getPhotoUrl(index)?.let { url ->
                 Glide.with(this)
                     .load(url)
-                    .apply(requestOptions)
+                    .apply(createGlideOptions())
                     .into(imageView)
-            }
+            } ?: loadDefaultBackground(imageView)
         } catch (e: Exception) {
             Log.e(TAG, "Error loading photo: ${e.message}")
-            Glide.with(this)
-                .load(R.drawable.default_background)
-                .into(imageView)
+            loadDefaultBackground(imageView)
         }
     }
 
+    private fun loadDefaultBackground(imageView: ImageView) {
+        Glide.with(this)
+            .load(R.drawable.default_background)
+            .into(imageView)
+    }
+
+    // Transition Methods
     private fun transitionToNextPhoto() {
         if (!isActivityVisible) return
 
-        currentPhotoIndex = (currentPhotoIndex + 1) % PhotoManager.getInstance(this).getPhotoCount()
+        currentPhotoIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
 
         lifecycleScope.launch {
-            PhotoManager.getInstance(this@PhotoLockActivity)
-                .preloadNextPhoto((currentPhotoIndex + 1) % PhotoManager.getInstance(this@PhotoLockActivity).getPhotoCount())
+            photoManager.preloadNextPhoto((currentPhotoIndex + 1) % photoManager.getPhotoCount())
         }
 
         val transitionType = PreferenceManager.getDefaultSharedPreferences(this)
@@ -306,7 +250,7 @@ class PhotoLockActivity : AppCompatActivity() {
         overlayImageView.visibility = View.VISIBLE
 
         ObjectAnimator.ofFloat(overlayImageView, "alpha", 0f, 1f).apply {
-            duration = if (isPowerSaving) 500L else 1000L
+            duration = if (isPowerSaving) TRANSITION_DURATION_POWER_SAVING else TRANSITION_DURATION_NORMAL
             interpolator = AccelerateDecelerateInterpolator()
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
@@ -323,24 +267,27 @@ class PhotoLockActivity : AppCompatActivity() {
         overlayImageView.translationX = screenWidth.toFloat()
         overlayImageView.visibility = View.VISIBLE
 
+        val duration = if (isPowerSaving) TRANSITION_DURATION_POWER_SAVING else TRANSITION_DURATION_NORMAL
+
         val slideIn = ObjectAnimator.ofFloat(
             overlayImageView,
             "translationX",
             screenWidth.toFloat(),
             0f
-        )
+        ).apply {
+            this.duration = duration
+            interpolator = AccelerateDecelerateInterpolator()
+        }
+
         val slideOut = ObjectAnimator.ofFloat(
             backgroundImageView,
             "translationX",
             0f,
             -screenWidth.toFloat()
-        )
-
-        val duration = if (isPowerSaving) 250L else 500L
-        slideIn.duration = duration
-        slideOut.duration = duration
-        slideIn.interpolator = AccelerateDecelerateInterpolator()
-        slideOut.interpolator = AccelerateDecelerateInterpolator()
+        ).apply {
+            this.duration = duration
+            interpolator = AccelerateDecelerateInterpolator()
+        }
 
         slideIn.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
@@ -361,37 +308,117 @@ class PhotoLockActivity : AppCompatActivity() {
         overlayImageView.alpha = 0f
         overlayImageView.visibility = View.VISIBLE
 
-        val duration = if (isPowerSaving) 250L else 500L
+        val duration = if (isPowerSaving) TRANSITION_DURATION_POWER_SAVING else TRANSITION_DURATION_NORMAL
 
-        val zoomIn = ObjectAnimator.ofFloat(overlayImageView, "alpha", 0f, 1f)
-        val scaleDownX = ObjectAnimator.ofFloat(overlayImageView, "scaleX", 1.5f, 1f)
-        val scaleDownY = ObjectAnimator.ofFloat(overlayImageView, "scaleY", 1.5f, 1f)
+        ObjectAnimator.ofFloat(overlayImageView, "alpha", 0f, 1f).apply {
+            this.duration = duration
+            start()
+        }
 
-        zoomIn.duration = duration
-        scaleDownX.duration = duration
-        scaleDownY.duration = duration
+        ObjectAnimator.ofFloat(overlayImageView, "scaleX", 1.5f, 1f).apply {
+            this.duration = duration
+            start()
+        }
 
-        zoomIn.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                backgroundImageView.setImageDrawable(overlayImageView.drawable)
-                overlayImageView.visibility = View.GONE
-            }
-        })
-
-        zoomIn.start()
-        scaleDownX.start()
-        scaleDownY.start()
+        ObjectAnimator.ofFloat(overlayImageView, "scaleY", 1.5f, 1f).apply {
+            this.duration = duration
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    backgroundImageView.setImageDrawable(overlayImageView.drawable)
+                    overlayImageView.visibility = View.GONE
+                }
+            })
+            start()
+        }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    // Power Saving Methods
+    private fun registerPowerSavingReceiver() {
+        val filter = IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+        registerReceiver(powerSavingReceiver, filter)
+        updatePowerSavingMode()
+    }
+
+    private fun updatePowerSavingMode() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        isPowerSaving = powerManager.isPowerSaveMode
+
+        window.apply {
+            if (isPowerSaving) {
+                clearFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
+            } else {
+                addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
+            }
+        }
+
+        updateViewsForPowerMode()
+        setupImageLoadingQuality()
+        scheduleNextPhotoChange()
+    }
+
+    private fun updateViewsForPowerMode() {
+        val alpha = if (isPowerSaving) 0.7f else 1.0f
+        clockView.alpha = alpha
+        dateView.alpha = alpha
+    }
+
+    private fun setupImageLoadingQuality() {
+        Glide.with(this).setDefaultRequestOptions(createGlideOptions())
+    }
+
+    // Utility Methods
+    private fun showError(message: String) {
+        Log.e(TAG, message)
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        if (!isPreviewMode) {
+            finish()
+        }
+    }
+
+    private fun handleUnlock() {
+        if (isPreviewMode) {
+            finish()
+        } else {
+            finish()
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        }
+    }
+
+    private fun scheduleNextPhotoChange() {
+        handler.removeCallbacks(photoChangeRunnable)
+
+        if (isActivityVisible && isInitialized) {
+            val baseInterval = PreferenceManager.getDefaultSharedPreferences(this)
+                .getInt("lock_screen_interval", 10) * 1000L
+            val interval = if (isPowerSaving) baseInterval * POWER_SAVING_SCALE else baseInterval
+            handler.postDelayed(photoChangeRunnable, interval)
+        }
+    }
+
+    private fun createGlideOptions() = RequestOptions()
+        .error(R.drawable.default_background)
+        .diskCacheStrategy(DiskCacheStrategy.ALL)
+        .format(if (isPowerSaving) DecodeFormat.PREFER_RGB_565 else DecodeFormat.PREFER_ARGB_8888)
+        .apply {
+            if (isPowerSaving) {
+                override(800, 800)
+            }
+        }
+
+    private fun cleanup() {
         try {
             unregisterReceiver(powerSavingReceiver)
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering receiver: ${e.message}")
         }
+
         handler.removeCallbacks(photoChangeRunnable)
-        Glide.with(this).clear(backgroundImageView)
-        Glide.with(this).clear(overlayImageView)
+
+        Glide.with(this).apply {
+            clear(backgroundImageView)
+            clear(overlayImageView)
+        }
+
+        isInitialized = false
     }
 }

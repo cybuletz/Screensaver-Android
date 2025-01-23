@@ -1,37 +1,42 @@
-// File: app/src/main/java/com/example/screensaver/utils/PhotoManager.kt
+// File: app/src/main/java/com/example/screensaver/shared/GooglePhotosManager.kt
 
-package com.example.screensaver.utils
+package com.example.screensaver.shared
 
 import android.content.Context
 import android.util.Log
 import androidx.preference.PreferenceManager
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.auth.oauth2.AccessToken
 import com.google.auth.oauth2.GoogleCredentials
 import com.google.photos.library.v1.PhotosLibraryClient
 import com.google.photos.library.v1.PhotosLibrarySettings
 import com.google.photos.library.v1.proto.SearchMediaItemsRequest
 import kotlinx.coroutines.*
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.*
 
-class PhotoManager private constructor(private val context: Context) {
+class GooglePhotosManager private constructor(private val context: Context) {
     private var photosLibraryClient: PhotosLibraryClient? = null
     private val photoUrls = mutableListOf<String>()
     private val coroutineScope = CoroutineScope(Dispatchers.Main + Job())
 
     companion object {
-        private const val TAG = "PhotoManager"
+        private const val TAG = "GooglePhotosManager"
         private const val PHOTO_QUALITY = "=w2560-h1440" // 2K quality
-        @Volatile private var instance: PhotoManager? = null
+        private const val MAX_RETRIES = 3
 
-        fun getInstance(context: Context): PhotoManager {
+        @Volatile
+        private var instance: GooglePhotosManager? = null
+
+        fun getInstance(context: Context): GooglePhotosManager {
             return instance ?: synchronized(this) {
-                instance ?: PhotoManager(context.applicationContext).also { instance = it }
+                instance ?: GooglePhotosManager(context.applicationContext).also { instance = it }
             }
         }
     }
 
-    suspend fun initializeGooglePhotos() = withContext(Dispatchers.IO) {
+    suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
             val credentials = getOrRefreshCredentials() ?: return@withContext false
             val settings = PhotosLibrarySettings.newBuilder()
@@ -46,9 +51,9 @@ class PhotoManager private constructor(private val context: Context) {
         }
     }
 
-    suspend fun loadGooglePhotos(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun loadPhotos(): Boolean = withContext(Dispatchers.IO) {
         try {
-            if (!initializeGooglePhotos()) {
+            if (!initialize()) {
                 return@withContext false
             }
 
@@ -61,67 +66,62 @@ class PhotoManager private constructor(private val context: Context) {
             }
 
             val newUrls = mutableListOf<String>()
+            var retryCount = 0
 
-            photosLibraryClient?.let { client ->
-                for (albumId in selectedAlbums) {
-                    try {
-                        val request = SearchMediaItemsRequest.newBuilder()
-                            .setAlbumId(albumId)
-                            .setPageSize(100)
-                            .build()
+            while (retryCount < MAX_RETRIES) {
+                try {
+                    photosLibraryClient?.let { client ->
+                        for (albumId in selectedAlbums) {
+                            val request = SearchMediaItemsRequest.newBuilder()
+                                .setAlbumId(albumId)
+                                .setPageSize(100)
+                                .build()
 
-                        client.searchMediaItems(request).iterateAll().forEach { mediaItem ->
-                            if (mediaItem.mediaMetadata.hasPhoto()) {
-                                mediaItem.baseUrl?.let { url ->
-                                    newUrls.add("$url$PHOTO_QUALITY")
+                            client.searchMediaItems(request).iterateAll().forEach { mediaItem ->
+                                if (mediaItem.mediaMetadata.hasPhoto()) {
+                                    mediaItem.baseUrl?.let { url ->
+                                        newUrls.add("$url$PHOTO_QUALITY")
+                                    }
                                 }
                             }
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error loading album $albumId: ${e.message}")
                     }
+
+                    if (newUrls.isNotEmpty()) {
+                        synchronized(photoUrls) {
+                            photoUrls.clear()
+                            photoUrls.addAll(newUrls)
+                            photoUrls.shuffle()
+                        }
+                        return@withContext true
+                    }
+                    break
+                } catch (e: Exception) {
+                    if (e.message?.contains("UNAUTHENTICATED") == true && retryCount < MAX_RETRIES - 1) {
+                        retryCount++
+                        refreshTokens()
+                        delay(1000)
+                        continue
+                    }
+                    throw e
                 }
             }
-
-            if (newUrls.isNotEmpty()) {
-                photoUrls.clear()
-                photoUrls.addAll(newUrls)
-                photoUrls.shuffle()
-                Log.d(TAG, "Loaded ${photoUrls.size} photos from Google Photos")
-                true
-            } else {
-                Log.d(TAG, "No photos found in selected albums")
-                false
-            }
+            false
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading Google Photos: ${e.message}")
+            Log.e(TAG, "Error loading photos: ${e.message}")
             false
         }
     }
 
     fun getPhotoUrl(index: Int): String? {
-        return if (photoUrls.isNotEmpty()) {
-            photoUrls[index % photoUrls.size]
-        } else null
-    }
-
-    fun getPhotoCount(): Int = photoUrls.size
-
-    suspend fun preloadNextPhoto(index: Int) {
-        if (photoUrls.isEmpty()) return
-
-        withContext(Dispatchers.IO) {
-            try {
-                val url = photoUrls[index % photoUrls.size]
-                Glide.with(context)
-                    .load(url)
-                    .diskCacheStrategy(DiskCacheStrategy.ALL)
-                    .preload()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error preloading photo: ${e.message}")
-            }
+        return synchronized(photoUrls) {
+            if (photoUrls.isNotEmpty()) {
+                photoUrls[index % photoUrls.size]
+            } else null
         }
     }
+
+    fun getPhotoCount(): Int = synchronized(photoUrls) { photoUrls.size }
 
     private suspend fun getOrRefreshCredentials(): GoogleCredentials? = withContext(Dispatchers.IO) {
         try {
@@ -141,7 +141,6 @@ class PhotoManager private constructor(private val context: Context) {
             val expirationTime = prefs.getLong("token_expiration", 0)
             GoogleCredentials.create(AccessToken(currentToken, Date(expirationTime)))
                 .createScoped(listOf("https://www.googleapis.com/auth/photoslibrary.readonly"))
-
         } catch (e: Exception) {
             Log.e(TAG, "Error getting/refreshing credentials: ${e.message}")
             null
@@ -195,6 +194,5 @@ class PhotoManager private constructor(private val context: Context) {
         coroutineScope.cancel()
         photosLibraryClient?.shutdown()
         photosLibraryClient = null
-        instance = null
     }
 }

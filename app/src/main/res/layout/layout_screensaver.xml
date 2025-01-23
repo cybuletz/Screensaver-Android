@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <data>
+        <variable
+            name="viewModel"
+            type="com.example.screensaver.viewmodels.PhotoViewModel" />
+        <variable
+            name="currentPhoto"
+            type="com.example.screensaver.model.MediaItem" />
+    </data>
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/screensaverRoot"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/black">
+
+        <!-- Main Photo View -->
+        <ImageView
+            android:id="@+id/imageViewCurrent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            app:photoUrl="@{currentPhoto.url}"
+            app:quality="@{viewModel.photoQuality}"
+            app:onLoadingComplete="@{viewModel::onPhotoLoadComplete}"
+            android:contentDescription="@string/photo_content_description"
+            tools:src="@tools:sample/backgrounds/scenic" />
+
+        <!-- Next Photo View (for transitions) -->
+        <ImageView
+            android:id="@+id/imageViewNext"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:alpha="0"
+            app:photoUrl="@{viewModel.nextPhoto.url}"
+            app:quality="@{viewModel.photoQuality}"
+            android:contentDescription="@string/next_photo_content_description"
+            tools:src="@tools:sample/backgrounds/scenic" />
+
+        <!-- Overlay Information -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/overlayContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/gradient_overlay"
+            android:padding="16dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:isVisible="@{viewModel.showOverlay}">
+
+            <!-- Clock -->
+            <TextView
+                android:id="@+id/textViewTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/white"
+                android:textSize="48sp"
+                android:fontFamily="@font/roboto_light"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintBottom_toTopOf="@id/textViewDate"
+                app:time="@{viewModel.currentTime}"
+                app:isVisible="@{viewModel.showClock}"
+                tools:text="08:55" />
+
+            <!-- Date -->
+            <TextView
+                android:id="@+id/textViewDate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/white"
+                android:textSize="18sp"
+                android:fontFamily="@font/roboto_regular"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintBottom_toTopOf="@id/textViewLocation"
+                app:date="@{viewModel.currentDate}"
+                app:isVisible="@{viewModel.showDate}"
+                tools:text="January 23, 2025" />
+
+            <!-- Location -->
+            <TextView
+                android:id="@+id/textViewLocation"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/white"
+                android:textSize="16sp"
+                android:fontFamily="@font/roboto_regular"
+                android:drawableStart="@drawable/ic_location"
+                android:drawablePadding="8dp"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:photoLocation="@{currentPhoto}"
+                app:isVisible="@{viewModel.showLocation}"
+                tools:text="San Francisco, CA" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <!-- Loading Indicator -->
+        <ProgressBar
+            android:id="@+id/loadingIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:indeterminateTint="@color/white"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:isVisible="@{viewModel.isLoading}" />
+
+        <!-- Error View -->
+        <include
+            android:id="@+id/errorView"
+            layout="@layout/layout_error"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            app:isVisible="@{viewModel.hasError}"
+            app:errorMessage="@{viewModel.errorMessage}"
+            app:onRetry="@{() -> viewModel.retry()}" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</layout>
