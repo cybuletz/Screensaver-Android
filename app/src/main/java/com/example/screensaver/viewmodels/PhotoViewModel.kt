@@ -95,12 +95,12 @@ class PhotoViewModel @Inject constructor(
     }
 
     companion object {
-        const val QUALITY_LOW = 0
-        const val QUALITY_MEDIUM = 1
-        const val QUALITY_HIGH = 2
+        const val QUALITY_LOW = 1
+        const val QUALITY_MEDIUM = 2
+        const val QUALITY_HIGH = 3  // Changed from 2 to 3 to match PhotoLoadingManager
 
-        private const val PHOTO_CHANGE_INTERVAL = 30_000L // 30 seconds
-        private const val RETRY_DELAY = 5_000L // 5 seconds
+        private const val PHOTO_CHANGE_INTERVAL = 30_000L
+        private const val RETRY_DELAY = 5_000L
         private const val MAX_RETRY_ATTEMPTS = 3
     }
 
