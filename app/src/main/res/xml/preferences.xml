@@ -4,13 +4,13 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
-        android:title="Display Mode"
+        android:title="@string/pref_category_display_mode"
         android:key="display_mode">
 
         <ListPreference
             android:key="display_mode_selection"
-            android:title="Select Display Mode"
-            android:summary="Choose how photos are displayed"
+            android:title="@string/pref_display_mode_title"
+            android:summary="@string/pref_display_mode_summary"
             android:defaultValue="dream_service"
             android:entries="@array/display_mode_entries"
             android:entryValues="@array/display_mode_values"/>
@@ -18,110 +18,110 @@
 
     <PreferenceCategory
         android:key="lock_screen_settings"
-        android:title="Lock Screen Settings"
+        android:title="@string/pref_category_lock_screen"
         android:dependency="display_mode_selection">
 
         <SwitchPreferenceCompat
             android:key="lock_screen_clock"
-            android:title="Show Clock"
-            android:summary="Display time on lock screen"
+            android:title="@string/pref_lock_screen_clock_title"
+            android:summary="@string/pref_lock_screen_clock_summary"
             android:defaultValue="true" />
 
         <SwitchPreferenceCompat
             android:key="lock_screen_date"
-            android:summary="Display date on lock screen"
-            android:title="Show Date"
+            android:summary="@string/pref_lock_screen_date_summary"
+            android:title="@string/pref_lock_screen_date_title"
             android:defaultValue="true" />
 
         <ListPreference
             android:key="lock_screen_transition"
-            android:title="Photo Transition"
-            android:summary="Choose how photos change"
+            android:title="@string/pref_lock_screen_transition_title"
+            android:summary="@string/pref_lock_screen_transition_summary"
             android:entries="@array/transition_effects"
             android:entryValues="@array/transition_effects_values"
             android:defaultValue="fade" />
 
         <SeekBarPreference
             android:key="lock_screen_interval"
-            android:title="Photo Change Interval"
-            android:summary="Time between photo changes"
+            android:title="@string/pref_lock_screen_interval_title"
+            android:summary="@string/pref_lock_screen_interval_summary"
             android:max="60"
             android:min="5"
             android:defaultValue="10" />
 
         <Preference
             android:key="preview_lock_screen"
-            android:title="Preview Lock Screen"
-            android:summary="See how your lock screen will look" />
+            android:title="@string/pref_preview_lock_screen_title"
+            android:summary="@string/pref_preview_lock_screen_summary" />
 
         <Preference
             android:key="lock_screen_status"
-            android:title="Lock Screen Status"
+            android:title="@string/pref_lock_screen_status_title"
             android:selectable="false" />
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="Photo Sources"
+        android:title="@string/pref_category_photo_sources"
         android:key="photo_sources">
 
         <MultiSelectListPreference
             android:key="photo_source_selection"
-            android:title="Photo Sources"
-            android:summary="Choose where to get photos from"
+            android:title="@string/pref_photo_sources_title"
+            android:summary="@string/pref_photo_sources_summary"
             android:entries="@array/photo_source_entries"
             android:entryValues="@array/photo_source_values"
             android:defaultValue="@array/default_photo_sources" />
 
         <PreferenceCategory
-            android:title="Google Photos Settings"
+            android:title="@string/pref_category_google_photos"
             android:key="google_photos_settings"
             android:dependency="photo_source_selection">
 
             <SwitchPreferenceCompat
                 android:key="use_google_photos"
-                android:title="Sign in to Google Photos"
-                android:summary="Connect to your Google Photos account"
+                android:title="@string/pref_google_photos_signin_title"
+                android:summary="@string/pref_google_photos_signin_summary"
                 android:defaultValue="false" />
 
             <Preference
                 android:key="select_albums"
-                android:title="Select Google Photos Albums"
-                android:summary="Choose which albums to display"
+                android:title="@string/pref_select_albums_title"
+                android:summary="@string/pref_select_albums_summary"
                 android:dependency="use_google_photos" />
         </PreferenceCategory>
 
         <PreferenceCategory
-            android:title="Local Photos Settings"
+            android:title="@string/pref_category_local_photos"
             android:key="local_photos_settings"
             android:dependency="photo_source_selection">
 
             <Preference
                 android:key="select_local_photos"
-                android:title="Select Local Photos"
-                android:summary="Choose photos from your device" />
+                android:title="@string/pref_select_local_photos_title"
+                android:summary="@string/pref_select_local_photos_summary" />
 
             <MultiSelectListPreference
                 android:key="photo_folders"
-                android:title="Photo Folders"
-                android:summary="Select folders to display photos from"
+                android:title="@string/pref_photo_folders_title"
+                android:summary="@string/pref_photo_folders_summary"
                 android:entries="@array/empty_array"
                 android:entryValues="@array/empty_array" />
         </PreferenceCategory>
 
         <PreferenceCategory
-            android:title="Common Settings"
+            android:title="@string/pref_category_common"
             android:key="common_photo_settings">
 
             <SwitchPreferenceCompat
                 android:key="random_order"
-                android:title="Random Order"
-                android:summary="Display photos in random order"
+                android:title="@string/pref_random_order_title"
+                android:summary="@string/pref_random_order_summary"
                 android:defaultValue="true" />
 
             <ListPreference
                 android:key="photo_scale"
-                android:title="Photo Scale"
-                android:summary="How photos should fit the screen"
+                android:title="@string/pref_photo_scale_title"
+                android:summary="@string/pref_photo_scale_summary"
                 android:entries="@array/photo_scale_options"
                 android:entryValues="@array/photo_scale_values"
                 android:defaultValue="fill" />
@@ -129,115 +129,115 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="Screensaver Settings"
+        android:title="@string/pref_category_screensaver"
         android:key="screensaver_settings">
 
         <SwitchPreferenceCompat
             android:key="screensaver_enabled"
-            android:title="Enable Screensaver"
-            android:summary="Activate photo slideshow as screensaver"
+            android:title="@string/pref_screensaver_enabled_title"
+            android:summary="@string/pref_screensaver_enabled_summary"
             android:defaultValue="true" />
 
         <SeekBarPreference
             android:key="screensaver_delay"
-            android:title="Start Delay"
-            android:summary="Time before screensaver starts"
+            android:title="@string/pref_screensaver_delay_title"
+            android:summary="@string/pref_screensaver_delay_summary"
             android:max="30"
             android:min="1"
             android:defaultValue="5" />
 
         <ListPreference
             android:key="transition_effect"
-            android:title="Transition Effect"
-            android:summary="Choose transition between photos"
+            android:title="@string/pref_transition_effect_title"
+            android:summary="@string/pref_transition_effect_summary"
             android:entries="@array/transition_effects"
             android:entryValues="@array/transition_effects_values"
             android:defaultValue="fade"/>
 
         <ListPreference
             android:key="refresh_interval"
-            android:title="Photo Change Interval"
-            android:summary="Time between photo changes"
+            android:title="@string/pref_refresh_interval_title"
+            android:summary="@string/pref_refresh_interval_summary"
             android:entries="@array/refresh_intervals"
             android:entryValues="@array/refresh_interval_values"
             android:defaultValue="300"/>
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="Display Settings"
+        android:title="@string/pref_category_display"
         android:key="display_settings">
 
         <SwitchPreferenceCompat
             android:key="keep_screen_on"
-            android:title="Keep Screen On"
-            android:summary="Prevent screen from turning off"
+            android:title="@string/pref_keep_screen_on_title"
+            android:summary="@string/pref_keep_screen_on_summary"
             android:defaultValue="false"/>
 
         <SeekBarPreference
             android:key="brightness"
-            android:title="Brightness"
-            android:summary="Adjust display brightness"
+            android:title="@string/pref_brightness_title"
+            android:summary="@string/pref_brightness_summary"
             android:max="100"
             android:min="0"
             android:defaultValue="50"/>
 
         <ListPreference
             android:key="orientation"
-            android:title="Screen Orientation"
-            android:summary="Choose screen orientation"
+            android:title="@string/pref_orientation_title"
+            android:summary="@string/pref_orientation_summary"
             android:entries="@array/orientation_options"
             android:entryValues="@array/orientation_options_values"
             android:defaultValue="auto" />
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="Schedule"
+        android:title="@string/pref_category_schedule"
         android:key="schedule_settings">
 
         <SwitchPreferenceCompat
             android:key="schedule_enabled"
-            android:title="Enable Schedule"
-            android:summary="Set specific times for screensaver"
+            android:title="@string/pref_schedule_enabled_title"
+            android:summary="@string/pref_schedule_enabled_summary"
             android:defaultValue="false"/>
 
         <Preference
             android:key="start_time"
-            android:title="Start Time"
+            android:title="@string/pref_start_time_title"
             android:dependency="schedule_enabled"/>
 
         <Preference
             android:key="end_time"
-            android:title="End Time"
+            android:title="@string/pref_end_time_title"
             android:dependency="schedule_enabled"/>
 
         <MultiSelectListPreference
             android:key="active_days"
-            android:title="Active Days"
-            android:summary="Select days when schedule is active"
+            android:title="@string/pref_active_days_title"
+            android:summary="@string/pref_active_days_summary"
             android:entries="@array/days_of_week"
             android:entryValues="@array/days_of_week_values"
             android:dependency="schedule_enabled"/>
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="Debug Options"
+        android:title="@string/pref_category_debug"
         android:key="debug_settings">
 
         <Preference
             android:key="test_screensaver"
-            android:title="Test Screensaver"
-            android:summary="Start the screensaver manually"/>
+            android:title="@string/pref_test_screensaver_title"
+            android:summary="@string/pref_test_screensaver_summary"/>
 
         <SwitchPreferenceCompat
             android:key="debug_logging"
-            android:title="Debug Logging"
-            android:summary="Enable detailed logging"
+            android:title="@string/pref_debug_logging_title"
+            android:summary="@string/pref_debug_logging_summary"
             android:defaultValue="false" />
 
         <Preference
             android:key="view_logs"
-            android:title="View Logs"
-            android:summary="Display debug logs" />
+            android:title="@string/pref_view_logs_title"
+            android:summary="@string/pref_view_logs_summary" />
     </PreferenceCategory>
 
 </PreferenceScreen>
