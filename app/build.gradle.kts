@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
     id("kotlin-kapt")  // Add for data binding
-    id("dagger.hilt.android.plugin")  // Add for Hilt
+    id("com.google.dagger.hilt.android")// Add for Hilt
 }
 
 android {
@@ -149,8 +149,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
     implementation("org.json:json:20231013")
 
-    // Allow references to generated code
-    kapt {
-        correctErrorTypes = true
-    }
+}
+
+// Add this after your dependencies block
+kapt {
+    correctErrorTypes = true
 }
