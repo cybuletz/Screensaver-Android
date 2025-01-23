@@ -32,6 +32,8 @@ import androidx.preference.PreferenceCategory
 import com.example.screensaver.lock.PhotoLockActivity
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.lock.PhotoLockDeviceAdmin
+import androidx.preference.MultiSelectListPreference
+import androidx.preference.SwitchPreferenceCompat
 
 class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
@@ -59,14 +61,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.preferences, rootKey)
-        setupPreferences()
+        setupPhotoSourcePreferences()
         setupGoogleSignIn()
-    }
-
-    private fun setupPreferences() {
-        setupDisplayModeSelection()
         setupTestScreensaver()
-        setupGooglePhotosAction()
     }
 
     private fun setupDisplayModeSelection() {
@@ -184,6 +181,70 @@ class SettingsFragment : PreferenceFragmentCompat() {
         } catch (e: Exception) {
             Log.e(TAG, "Error in setupGoogleSignIn", e)
             Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    private fun setupPhotoSourcePreferences() {
+        // Initial setup - hide dependent preferences
+        findPreference<SwitchPreferenceCompat>("use_google_photos")?.isVisible = false
+        findPreference<Preference>("select_albums")?.isVisible = false
+        findPreference<Preference>("select_local_photos")?.isVisible = false
+
+        // Handle photo source selection changes
+        findPreference<MultiSelectListPreference>("photo_source_selection")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                @Suppress("UNCHECKED_CAST")
+                val selectedSources = newValue as Set<String>
+
+                // Update visibility based on selection
+                findPreference<SwitchPreferenceCompat>("use_google_photos")?.isVisible =
+                    selectedSources.contains("google_photos")
+                findPreference<Preference>("select_albums")?.isVisible =
+                    selectedSources.contains("google_photos") &&
+                            findPreference<SwitchPreferenceCompat>("use_google_photos")?.isChecked == true
+                findPreference<Preference>("select_local_photos")?.isVisible =
+                    selectedSources.contains("local")
+
+                true
+            }
+        }
+
+        // Handle Google Photos sign in
+        findPreference<SwitchPreferenceCompat>("use_google_photos")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                if (newValue as Boolean) {
+                    showGoogleSignInPrompt()
+                    false // Don't change the preference value yet
+                } else {
+                    signOutCompletely()
+                    findPreference<Preference>("select_albums")?.isVisible = false
+                    true
+                }
+            }
+        }
+
+        // Handle album selection
+        findPreference<Preference>("select_albums")?.apply {
+            setOnPreferenceClickListener {
+                val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+                if (account != null) {
+                    startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+                    true
+                } else {
+                    Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
+                    false
+                }
+            }
+        }
+
+        // Handle local photos selection
+        findPreference<Preference>("select_local_photos")?.setOnPreferenceClickListener {
+            // Launch local photo picker
+            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+            startActivity(Intent.createChooser(intent, "Select Photos"))
+            true
         }
     }
 
@@ -347,7 +408,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun updateGooglePhotosState(enabled: Boolean) {
-        findPreference<SwitchPreference>("use_google_photos")?.isChecked = enabled
+        findPreference<SwitchPreferenceCompat>("use_google_photos")?.isChecked = enabled
+        findPreference<Preference>("select_albums")?.isVisible = enabled
     }
 
     private fun bytesToHex(bytes: ByteArray): String {
