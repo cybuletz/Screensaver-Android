@@ -4,8 +4,11 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <data>
-        <import type="com.example.screensaver.models.MediaItem"/>  <!-- Make sure this matches your actual package -->
+        <import type="android.view.View"/>
+        <import type="com.example.screensaver.model.MediaItem"/>
         <import type="com.example.screensaver.utils.OnPhotoLoadListener"/>
+        <import type="java.util.Date"/>
+
         <variable
             name="viewModel"
             type="com.example.screensaver.viewmodels.PhotoViewModel" />
@@ -25,7 +28,7 @@
             android:scaleType="centerCrop"
             app:photoUrl="@{viewModel.currentPhoto.url}"
             app:quality="@{viewModel.photoQuality}"
-            app:onLoadingComplete="@{viewModel}"
+            app:onLoadingComplete="@{(success) -> viewModel.onPhotoLoadComplete(success)}"
             android:contentDescription="@string/photo_content_description"
             tools:src="@tools:sample/backgrounds/scenic" />
 
@@ -49,7 +52,7 @@
             android:background="@drawable/gradient_overlay"
             android:padding="16dp"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:isVisible="@{viewModel.showOverlay}">
+            android:visibility="@{viewModel.showOverlay ? View.VISIBLE : View.GONE}">
 
             <!-- Clock -->
             <TextView
@@ -62,7 +65,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintBottom_toTopOf="@id/textViewDate"
                 app:time="@{viewModel.currentTime}"
-                app:isVisible="@{viewModel.showClock}"
+                android:visibility="@{viewModel.showClock ? View.VISIBLE : View.GONE}"
                 tools:text="08:55" />
 
             <!-- Date -->
@@ -76,7 +79,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintBottom_toTopOf="@id/textViewLocation"
                 app:date="@{viewModel.currentDate}"
-                app:isVisible="@{viewModel.showDate}"
+                android:visibility="@{viewModel.showDate ? View.VISIBLE : View.GONE}"
                 tools:text="January 23, 2025" />
 
             <!-- Location -->
@@ -92,7 +95,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:photoLocation="@{viewModel.currentPhoto}"
-                app:isVisible="@{viewModel.showLocation}"
+                android:visibility="@{viewModel.showLocation ? View.VISIBLE : View.GONE}"
                 tools:text="San Francisco, CA" />
         </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -106,7 +109,7 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:isVisible="@{viewModel.isLoading}" />
+            android:visibility="@{viewModel.isLoading ? View.VISIBLE : View.GONE}" />
 
         <!-- Error View -->
         <include
@@ -118,9 +121,9 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:isVisible="@{viewModel.hasError}"
+            android:visibility="@{viewModel.hasError ? View.VISIBLE : View.GONE}"
             app:errorMessage="@{viewModel.errorMessage}"
-            app:onRetry="@{viewModel}" />
+            app:onRetry="@{() -> viewModel.onRetry()}" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </layout>
