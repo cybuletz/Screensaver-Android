@@ -98,16 +98,11 @@ class PhotoViewModel @Inject constructor(
     }
 
 
-    override fun onPhotoLoadComplete(success: Boolean) {
-        viewModelScope.launch {
-            if (success) {
-                _hasError.value = false
-                retryCount = 0
-                _isLoading.value = false
-                _loadingState.value = LoadingState.SUCCESS
-            } else {
-                retryLoadingWithBackoff()
-            }
+    fun onPhotoLoadComplete(success: Boolean) {
+        _isLoading.value = false
+        if (!success) {
+            _hasError.value = true
+            _errorMessage.value = "Failed to load photo"
         }
     }
 
@@ -231,20 +226,9 @@ class PhotoViewModel @Inject constructor(
         _showOverlay.value = _showOverlay.value?.not()
     }
 
-    override fun onRetry() {
-        viewModelScope.launch {
-            _hasError.value = false
-            _errorMessage.value = null
-            _isLoading.value = true
-            try {
-                loadMediaItems()
-                showNextPhoto()
-            } catch (e: Exception) {
-                handleError("Retry failed: ${e.message}", e)
-            } finally {
-                _isLoading.value = false
-            }
-        }
+    fun onRetry() {
+        _hasError.value = false
+        loadPhotos() // or whatever your reload method is
     }
 
     fun stop() {
