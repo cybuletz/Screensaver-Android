@@ -30,13 +30,7 @@ object PhotoBindingAdapters {
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     @JvmStatic
-    @BindingAdapter(value = ["onLoadingComplete"])
-    fun setOnLoadingCompleteListener(view: View, listener: Function1<Boolean, Unit>?) {
-        // Just declare the binding adapter
-    }
-
-    @JvmStatic
-    @BindingAdapter(value = ["photoUrl", "quality", "onLoadingComplete"], requireAll = false)
+    @BindingAdapter("photoUrl", "quality", "onLoadingComplete", requireAll = false)
     fun loadPhoto(
         view: ImageView,
         photoUrl: String?,
@@ -121,8 +115,8 @@ object PhotoBindingAdapters {
     @JvmStatic
     @BindingAdapter("photoLocation")
     fun setPhotoLocation(view: TextView, mediaItem: MediaItem?) {
-        view.text = mediaItem?.location ?: ""
-        view.isVisible = !mediaItem?.location.isNullOrEmpty()
+        view.text = mediaItem?.description ?: ""
+        view.isVisible = !mediaItem?.description.isNullOrEmpty()
     }
 
     @JvmStatic

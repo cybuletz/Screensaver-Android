@@ -5,10 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import com.example.screensaver.managers.GooglePhotosManager
+import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.models.Album
 import com.example.screensaver.models.MediaItem
-import com.example.screensaver.utils.SingleLiveEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -18,7 +17,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
-import kotlin.random.Random
 import com.example.screensaver.utils.RetryActionListener
 import java.util.Date
 
@@ -65,25 +63,13 @@ class PhotoViewModel @Inject constructor(
     private val _photoQuality = MutableLiveData<Int>()
     val photoQuality: LiveData<Int> = _photoQuality
 
-    init {
-        _photoQuality.value = PhotoLoadingManager.QUALITY_HIGH
-    }
-
     private val _currentTime = MutableLiveData<Date>()
     val currentTime: LiveData<Date> = _currentTime
 
     private val _currentDate = MutableLiveData<Date>()
     val currentDate: LiveData<Date> = _currentDate
 
-    // Add this to initialize time updates
     private var timeUpdateJob: Job? = null
-
-    init {
-        updateDateTime()
-        // Start periodic updates
-        startTimeUpdates()
-    }
-
     private var mediaItems = mutableListOf<MediaItem>()
     private var currentIndex = -1
     private var photoChangeJob: Job? = null
@@ -97,20 +83,26 @@ class PhotoViewModel @Inject constructor(
     companion object {
         const val QUALITY_LOW = 1
         const val QUALITY_MEDIUM = 2
-        const val QUALITY_HIGH = 3  // Changed from 2 to 3 to match PhotoLoadingManager
+        const val QUALITY_HIGH = 3
 
         private const val PHOTO_CHANGE_INTERVAL = 30_000L
         private const val RETRY_DELAY = 5_000L
         private const val MAX_RETRY_ATTEMPTS = 3
     }
 
-    @JvmName("onPhotoLoadComplete")
+    init {
+        _photoQuality.value = QUALITY_HIGH
+        updateDateTime()
+        startTimeUpdates()
+    }
+
     fun onPhotoLoadComplete(success: Boolean) {
         viewModelScope.launch {
             if (success) {
                 _hasError.value = false
                 retryCount = 0
                 _isLoading.value = false
+                _loadingState.value = LoadingState.SUCCESS
             } else {
                 retryLoadingWithBackoff()
             }
@@ -211,26 +203,11 @@ class PhotoViewModel @Inject constructor(
         }
     }
 
-    fun retry() {
-        viewModelScope.launch {
-            _hasError.value = false
-            _errorMessage.value = null
-            _isLoading.value = true
-            try {
-                loadMediaItems()
-                showNextPhoto()
-            } catch (e: Exception) {
-                handleError("Retry failed: ${e.message}", e)
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-
     private fun retryLoadingWithBackoff() {
         viewModelScope.launch {
             if (retryCount < MAX_RETRY_ATTEMPTS) {
                 retryCount++
+                _isLoading.value = true
                 delay(RETRY_DELAY * retryCount)
                 showNextPhoto()
             } else {
@@ -245,27 +222,13 @@ class PhotoViewModel @Inject constructor(
         _hasError.value = true
         _errorMessage.value = message
         _isLoading.value = false
-        error?.let {
-            // Log the error or handle it according to your needs
-        }
+        error?.printStackTrace()
     }
 
     fun toggleOverlay() {
         _showOverlay.value = _showOverlay.value?.not()
     }
 
-    override fun stop() {
-        isActive.set(false)
-        photoChangeJob?.cancel()
-        timeUpdateJob?.cancel()
-        photoChangeJob = null
-        timeUpdateJob = null
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        stop()
-    }
     override fun onRetry() {
         viewModelScope.launch {
             _hasError.value = false
@@ -280,5 +243,18 @@ class PhotoViewModel @Inject constructor(
                 _isLoading.value = false
             }
         }
+    }
+
+    fun stop() {
+        isActive.set(false)
+        photoChangeJob?.cancel()
+        timeUpdateJob?.cancel()
+        photoChangeJob = null
+        timeUpdateJob = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stop()
     }
 }
