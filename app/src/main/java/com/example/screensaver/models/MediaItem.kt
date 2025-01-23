@@ -3,6 +3,8 @@ package com.example.screensaver.models
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 import java.util.UUID
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
 
 /**
  * Represents a media item (photo) in the application.

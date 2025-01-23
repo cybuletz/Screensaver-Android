@@ -2,8 +2,9 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
-    id("kotlin-kapt")  // Add for data binding
-    id("com.google.dagger.hilt.android")// Add for Hilt
+    id("com.google.dagger.hilt.android")
+    id("kotlin-parcelize")
+    id("kotlin-kapt")
 }
 
 android {
@@ -19,7 +20,6 @@ android {
         manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
     }
 
-    // Keep your existing signingConfigs
     signingConfigs {
         getByName("debug") {
             storeFile = file("${projectDir}/debug.keystore")
@@ -29,7 +29,6 @@ android {
         }
     }
 
-    // Keep your existing sourceSets
     sourceSets {
         getByName("main") {
             assets {
@@ -38,7 +37,6 @@ android {
         }
     }
 
-    // Keep your existing packaging
     packaging {
         resources {
             excludes += listOf(
@@ -58,8 +56,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true  // Enable minification
-            isShrinkResources = true  // Enable resource shrinking
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -70,20 +68,21 @@ android {
     buildFeatures {
         dataBinding = true
         viewBinding = true
+        buildConfig = true
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17  // Update to 17
-        targetCompatibility = JavaVersion.VERSION_17  // Update to 17
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = "17"  // Update to 17
+        jvmTarget = "17"
     }
 }
 
 dependencies {
-    // Keep your existing AndroidX and other dependencies
+    // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
@@ -91,48 +90,46 @@ dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    annotationProcessor("com.github.bumptech.glide:compiler:4.16.0")
 
-    // Add Hilt dependencies
+    // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
     kapt("com.google.dagger:hilt-compiler:2.48")
 
-    // Add Lifecycle components if not already present
+    // Lifecycle
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
 
-    // Add Timber for logging
+    // Timber
     implementation("com.jakewharton.timber:timber:5.0.1")
 
-    // AndroidX Test
+    // Testing
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-
-    // JUnit (for unit tests, optional)
     testImplementation("junit:junit:4.13.2")
 
     // Material Design
     implementation("com.google.android.material:material:1.11.0")
 
-    // Google Sign In and Auth
+    // Google Services
     implementation("com.google.android.gms:play-services-base:18.2.0")
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
 
-    // Google Photos Library API - corrected dependencies
+    // Google Photos Library
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")
     implementation("com.google.api-client:google-api-client-android:2.2.0")
     implementation("com.google.api-client:google-api-client-gson:2.2.0")
 
-    // HTTP Client
+    // Retrofit
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
-    // Glide for image loading
+    // Glide
     implementation("com.github.bumptech.glide:glide:4.16.0")
-    annotationProcessor("com.github.bumptech.glide:compiler:4.16.0")
+    kapt("com.github.bumptech.glide:compiler:4.16.0")
 
     // RecyclerView
     implementation("androidx.recyclerview:recyclerview:1.3.2")
@@ -141,17 +138,16 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
-    // Add these gRPC dependencies
-    implementation("io.grpc:grpc-okhttp:1.58.0")  // Add this line
-    implementation("io.grpc:grpc-android:1.58.0") // Add this line
-    implementation("io.grpc:grpc-protobuf:1.58.0") // Add this line
-    implementation("io.grpc:grpc-stub:1.58.0")     // Add this line
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("org.json:json:20231013")
+    // gRPC
+    implementation("io.grpc:grpc-okhttp:1.58.0")
+    implementation("io.grpc:grpc-android:1.58.0")
+    implementation("io.grpc:grpc-protobuf:1.58.0")
+    implementation("io.grpc:grpc-stub:1.58.0")
 
+    // JSON
+    implementation("org.json:json:20231013")
 }
 
-// Add this after your dependencies block
 kapt {
     correctErrorTypes = true
 }
