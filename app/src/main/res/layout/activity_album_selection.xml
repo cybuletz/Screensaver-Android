@@ -11,8 +11,34 @@
         android:layout_height="0dp"
         android:padding="8dp"
         android:clipToPadding="false"
+        android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toTopOf="@id/buttonsContainer" />
+
+    <!-- Add Sign In Container -->
+    <LinearLayout
+        android:id="@+id/signInContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:gravity="center"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sign in to access your Google Photos albums"
+            android:textAlignment="center"
+            android:layout_marginBottom="16dp"/>
+
+        <com.google.android.gms.common.SignInButton
+            android:id="@+id/signInButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+    </LinearLayout>
 
     <ProgressBar
         android:id="@+id/loadingProgress"

@@ -16,7 +16,6 @@
         private val scope = CoroutineScope(Dispatchers.IO)
 
         init {
-            // Initialize with some default photos or load from preferences
             loadPhotos()
         }
 
@@ -34,12 +33,9 @@
         fun getPhotoCount(): Int = photos.size
 
         fun getPhotoUrl(index: Int): String? {
-            return if (photos.isNotEmpty() && index < photos.size) {
-                photos[index]
-            } else {
-                // Return a default photo URL or null
-                null
-            }
+            return if (photos.isNotEmpty()) {
+                photos[index % photos.size]
+            } else null
         }
 
         fun preloadNextPhoto(index: Int) {
@@ -59,16 +55,18 @@
 
         fun loadPhotos() {
             scope.launch {
-                // For now, let's use a dummy list of photos
-                // Replace this with your actual photo loading logic
-                photos = mutableListOf(
-                    "https://picsum.photos/1080/1920",
-                    "https://picsum.photos/1080/1920?random=1",
-                    "https://picsum.photos/1080/1920?random=2",
-                    "https://picsum.photos/1080/1920?random=3",
-                    "https://picsum.photos/1080/1920?random=4"
-                )
-                photos.shuffle() // Randomize the order
+                // Get photos from your existing PhotosManager
+                val photosManager = com.example.screensaver.utils.PhotoManager.getInstance(context)
+
+                // Get the photos based on selected albums
+                val selectedAlbums = context.getSharedPreferences("screensaver_prefs", Context.MODE_PRIVATE)
+                    .getStringSet("selected_albums", emptySet()) ?: emptySet()
+
+                if (selectedAlbums.isNotEmpty()) {
+                    // Use the existing photos from your PhotosManager
+                    photos = photosManager.getPhotoUrls().toMutableList()
+                    photos.shuffle() // Randomize the order
+                }
             }
         }
 

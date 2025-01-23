@@ -89,6 +89,7 @@ class PhotoLockActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_photo_lock)
         initializeViews()
+        PhotoManager.getInstance(this).loadPhotos()
         setupGestureDetection()
         registerPowerSavingReceiver()
 
@@ -266,12 +267,8 @@ class PhotoLockActivity : AppCompatActivity() {
                     }
 
                 Glide.with(this)
-                    .load(url)  // Changed from uri to url
+                    .load(url)
                     .apply(requestOptions)
-                    .into(imageView)
-            } ?: run {
-                Glide.with(this)
-                    .load(R.drawable.default_background)
                     .into(imageView)
             }
         } catch (e: Exception) {

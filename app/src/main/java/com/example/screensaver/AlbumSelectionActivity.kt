@@ -33,6 +33,8 @@ import android.content.ComponentName
 import android.content.Context
 import com.example.screensaver.utils.DreamServiceHelper
 import com.example.screensaver.utils.DreamServiceStatus
+private lateinit var signInButton: SignInButton
+private lateinit var signInContainer: LinearLayout
 
 class AlbumSelectionActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
@@ -63,6 +65,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
 
         try {
+            initializeViews()  // New method
             setupRecyclerView()
             setupConfirmButton()
             setupGoogleSignIn()
@@ -72,6 +75,22 @@ class AlbumSelectionActivity : AppCompatActivity() {
             Toast.makeText(this, "Failed to initialize: ${e.message}", Toast.LENGTH_LONG).show()
             finish()
         }
+    }
+
+    private fun initializeViews() {
+        signInButton = findViewById(R.id.signInButton)
+        signInContainer = findViewById(R.id.signInContainer)
+
+        // Setup sign in button
+        signInButton.setSize(SignInButton.SIZE_WIDE)
+        signInButton.setOnClickListener {
+            requestGoogleSignIn()
+        }
+    }
+
+    private fun updateUIState(isSignedIn: Boolean) {
+        signInContainer.visibility = if (isSignedIn) View.GONE else View.VISIBLE
+        recyclerView.visibility = if (isSignedIn) View.VISIBLE else View.GONE
     }
 
     private fun checkDreamServiceRegistration() {
@@ -193,11 +212,14 @@ class AlbumSelectionActivity : AppCompatActivity() {
         if (account != null && !account.isExpired) {
             val hasRequiredScopes = GoogleSignIn.hasPermissions(account, *REQUIRED_SCOPES.toTypedArray())
             if (hasRequiredScopes) {
-                setupPhotosLibraryClient(account.idToken)  // idToken can be null
+                updateUIState(true)
+                setupPhotosLibraryClient(account.idToken)
             } else {
+                updateUIState(false)
                 requestGoogleSignIn()
             }
         } else {
+            updateUIState(false)
             requestGoogleSignIn()
         }
     }

@@ -155,39 +155,50 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     private fun setupGoogleSignIn() {
         try {
+            Log.d(TAG, "Setting up Google Sign In")
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
                 .requestScopes(Scope("https://www.googleapis.com/auth/photoslibrary.readonly"))
-                .requestIdToken(getString(R.string.google_oauth_client_id))  // We need the ID token
-                .requestServerAuthCode(getString(R.string.google_oauth_client_id), true) // Force refresh token
+                .requestIdToken(getString(R.string.google_oauth_client_id))
+                .requestServerAuthCode(getString(R.string.google_oauth_client_id), true)
                 .build()
 
+            Log.d(TAG, "GoogleSignInOptions built successfully")
             googleSignInClient = GoogleSignIn.getClient(requireActivity(), gso)
+            Log.d(TAG, "GoogleSignInClient created")
 
             findPreference<SwitchPreference>("use_google_photos")?.apply {
+                Log.d(TAG, "Found use_google_photos preference")
+
                 setOnPreferenceChangeListener { _, newValue ->
+                    Log.d(TAG, "use_google_photos preference changed to: $newValue")
                     if (newValue as Boolean) {
                         showGoogleSignInPrompt()
                         false
                     } else {
-                        signOutCompletely() // Use complete sign out
+                        signOutCompletely()
                         true
                     }
                 }
 
                 // Check if already signed in
                 val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+                Log.d(TAG, "Current Google account: ${account?.email}")
+
                 val hasRequiredScope = account?.grantedScopes?.contains(
                     Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
                 ) == true
+                Log.d(TAG, "Has required scope: $hasRequiredScope")
 
                 isChecked = account != null && hasRequiredScope
+                Log.d(TAG, "Set use_google_photos switch to: $isChecked")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in setupGoogleSignIn", e)
             Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
+
     private fun setupPhotoSourcePreferences() {
         val photoSourceSelection = findPreference<MultiSelectListPreference>("photo_source_selection")
         val googlePhotosCategory = findPreference<PreferenceCategory>("google_photos_settings")
@@ -271,13 +282,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 .requestIdToken(getString(R.string.google_oauth_client_id))
                 .build()
 
+            Log.d(TAG, "Client ID being used: ${getString(R.string.google_oauth_client_id).take(10)}...")
+
             googleSignInClient = GoogleSignIn.getClient(requireActivity(), gso)
+
+            Log.d(TAG, "Created GoogleSignInClient successfully")
+
+            // Check if we already have a signed in account
+            val currentAccount = GoogleSignIn.getLastSignedInAccount(requireContext())
+            Log.d(TAG, "Current account before sign out: ${currentAccount?.email}")
 
             Log.d(TAG, "Clearing existing sign in state")
             googleSignInClient?.signOut()?.addOnCompleteListener { signOutTask ->
                 if (signOutTask.isSuccessful) {
                     Log.d(TAG, "Previous sign in state cleared, launching sign in")
-                    signInLauncher.launch(googleSignInClient?.signInIntent)
+                    val signInIntent = googleSignInClient?.signInIntent
+                    Log.d(TAG, "Sign in intent created: ${signInIntent != null}")
+                    signInLauncher.launch(signInIntent)
                 } else {
                     Log.e(TAG, "Error clearing previous sign in", signOutTask.exception)
                     Toast.makeText(context, "Error preparing sign in", Toast.LENGTH_SHORT).show()
@@ -400,11 +421,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 .edit()
                 .remove("google_account")
                 .remove("google_access_token")
-                .remove("google_server_auth_code")  // Add this line
+                .remove("google_server_auth_code")
                 .apply()
-
-            // Clear the current account
-            GoogleAccountHolder.currentAccount = null
 
             Toast.makeText(context, "Signed out", Toast.LENGTH_SHORT).show()
         }
