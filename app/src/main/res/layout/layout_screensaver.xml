@@ -7,9 +7,6 @@
         <variable
             name="viewModel"
             type="com.example.screensaver.viewmodels.PhotoViewModel" />
-        <variable
-            name="currentPhoto"
-            type="com.example.screensaver.model.MediaItem" />
     </data>
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -24,7 +21,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
-            app:photoUrl="@{currentPhoto.url}"
+            app:photoUrl="@{viewModel.currentPhoto.url}"
             app:quality="@{viewModel.photoQuality}"
             app:onLoadingComplete="@{viewModel::onPhotoLoadComplete}"
             android:contentDescription="@string/photo_content_description"
@@ -92,7 +89,7 @@
                 android:drawablePadding="8dp"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent"
-                app:photoLocation="@{currentPhoto}"
+                app:photoLocation="@{viewModel.currentPhoto}"
                 app:isVisible="@{viewModel.showLocation}"
                 tools:text="San Francisco, CA" />
         </androidx.constraintlayout.widget.ConstraintLayout>
@@ -115,9 +112,13 @@
             layout="@layout/layout_error"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
             app:isVisible="@{viewModel.hasError}"
             app:errorMessage="@{viewModel.errorMessage}"
-            app:onRetry="@{() -> viewModel.retry()}" />
+            app:onRetry="@{viewModel}" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </layout>

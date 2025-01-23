@@ -9,6 +9,7 @@ import com.example.screensaver.managers.GooglePhotosManager
 import com.example.screensaver.models.Album
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.utils.SingleLiveEvent
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -16,33 +17,54 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
 import kotlin.random.Random
 
-/**
- * ViewModel for managing photo-related data and operations.
- * Handles photo loading, caching, and display logic for both screensaver and lock screen.
- */
-class PhotoViewModel(
+@HiltViewModel
+class PhotoViewModel @Inject constructor(
     application: Application,
     private val photosManager: GooglePhotosManager
-) : AndroidViewModel(application) {
+) : AndroidViewModel(application), RetryActionListener {
 
     private val _currentPhoto = MutableLiveData<MediaItem>()
     val currentPhoto: LiveData<MediaItem> = _currentPhoto
 
+    private val _nextPhoto = MutableLiveData<MediaItem>()
+    val nextPhoto: LiveData<MediaItem> = _nextPhoto
+
     private val _loadingState = MutableStateFlow(LoadingState.IDLE)
     val loadingState: StateFlow<LoadingState> = _loadingState
 
-    private val _error = SingleLiveEvent<String>()
-    val error: LiveData<String> = _error
+    private val _hasError = MutableLiveData<Boolean>()
+    val hasError: LiveData<Boolean> = _hasError
+
+    private val _errorMessage = MutableLiveData<String>()
+    val errorMessage: LiveData<String> = _errorMessage
+
+    private val _isLoading = MutableLiveData<Boolean>()
+    val isLoading: LiveData<Boolean> = _isLoading
 
     private val _selectedAlbums = MutableLiveData<List<Album>>()
     val selectedAlbums: LiveData<List<Album>> = _selectedAlbums
+
+    // UI State for overlay information
+    private val _showOverlay = MutableLiveData(true)
+    val showOverlay: LiveData<Boolean> = _showOverlay
+
+    private val _showClock = MutableLiveData(true)
+    val showClock: LiveData<Boolean> = _showClock
+
+    private val _showDate = MutableLiveData(true)
+    val showDate: LiveData<Boolean> = _showDate
+
+    private val _showLocation = MutableLiveData(true)
+    val showLocation: LiveData<Boolean> = _showLocation
 
     private var mediaItems = mutableListOf<MediaItem>()
     private var currentIndex = -1
     private var photoChangeJob: Job? = null
     private val isActive = AtomicBoolean(false)
+    private var retryCount = 0
 
     enum class LoadingState {
         IDLE, LOADING, SUCCESS, ERROR
@@ -54,42 +76,41 @@ class PhotoViewModel(
         private const val MAX_RETRY_ATTEMPTS = 3
     }
 
-    /**
-     * Initializes the photo display with selected albums
-     */
     fun initialize(albums: List<Album>) {
         viewModelScope.launch {
             try {
+                _isLoading.value = true
+                _hasError.value = false
                 _loadingState.value = LoadingState.LOADING
                 _selectedAlbums.value = albums
                 loadMediaItems()
                 startPhotoChanging()
                 _loadingState.value = LoadingState.SUCCESS
             } catch (e: Exception) {
-                handleError("Failed to initialize photos", e)
+                handleError("Failed to initialize photos: ${e.message}", e)
+            } finally {
+                _isLoading.value = false
             }
         }
     }
 
-    /**
-     * Loads media items from selected albums
-     */
     private suspend fun loadMediaItems() {
         try {
+            _isLoading.value = true
             mediaItems.clear()
             _selectedAlbums.value?.forEach { album ->
                 val items = photosManager.getMediaItems(album.id)
                 mediaItems.addAll(items)
             }
             mediaItems.shuffle()
+            _hasError.value = false
         } catch (e: Exception) {
-            handleError("Failed to load media items", e)
+            handleError("Failed to load media items: ${e.message}", e)
+        } finally {
+            _isLoading.value = false
         }
     }
 
-    /**
-     * Starts the automatic photo changing process
-     */
     private fun startPhotoChanging() {
         if (isActive.compareAndSet(false, true)) {
             photoChangeJob = viewModelScope.launch {
@@ -107,9 +128,6 @@ class PhotoViewModel(
         }
     }
 
-    /**
-     * Shows the next photo in the sequence
-     */
     fun showNextPhoto() {
         viewModelScope.launch {
             try {
@@ -122,107 +140,69 @@ class PhotoViewModel(
                     _currentPhoto.value = mediaItems[currentIndex].apply {
                         updateLoadState(MediaItem.LoadState.LOADING)
                     }
+                    // Preload next photo
+                    val nextIndex = (currentIndex + 1) % mediaItems.size
+                    _nextPhoto.value = mediaItems[nextIndex]
                 }
+                _hasError.value = false
             } catch (e: Exception) {
                 handleError("Failed to show next photo", e)
             }
         }
     }
 
-    /**
-     * Shows the previous photo in the sequence
-     */
-    fun showPreviousPhoto() {
+    fun retry() {
         viewModelScope.launch {
+            _hasError.value = false
+            _errorMessage.value = null
+            _isLoading.value = true
             try {
-                if (mediaItems.isNotEmpty()) {
-                    currentIndex = if (currentIndex <= 0) mediaItems.size - 1 else currentIndex - 1
-                    _currentPhoto.value = mediaItems[currentIndex].apply {
-                        updateLoadState(MediaItem.LoadState.LOADING)
-                    }
-                }
-            } catch (e: Exception) {
-                handleError("Failed to show previous photo", e)
-            }
-        }
-    }
-
-    /**
-     * Shows a random photo from the collection
-     */
-    fun showRandomPhoto() {
-        viewModelScope.launch {
-            try {
-                if (mediaItems.isNotEmpty()) {
-                    currentIndex = Random.nextInt(mediaItems.size)
-                    _currentPhoto.value = mediaItems[currentIndex].apply {
-                        updateLoadState(MediaItem.LoadState.LOADING)
-                    }
-                }
-            } catch (e: Exception) {
-                handleError("Failed to show random photo", e)
-            }
-        }
-    }
-
-    /**
-     * Handles photo loading completion
-     */
-    fun onPhotoLoaded(mediaItem: MediaItem) {
-        mediaItem.updateLoadState(MediaItem.LoadState.LOADED)
-    }
-
-    /**
-     * Handles photo loading errors
-     */
-    fun onPhotoLoadError(mediaItem: MediaItem) {
-        mediaItem.updateLoadState(MediaItem.LoadState.ERROR)
-        retryLoadingWithBackoff(mediaItem)
-    }
-
-    /**
-     * Retries loading a photo with exponential backoff
-     */
-    private fun retryLoadingWithBackoff(mediaItem: MediaItem, attempt: Int = 0) {
-        viewModelScope.launch {
-            if (attempt < MAX_RETRY_ATTEMPTS) {
-                delay(RETRY_DELAY * (attempt + 1))
-                mediaItem.updateLoadState(MediaItem.LoadState.LOADING)
-                _currentPhoto.value = mediaItem
-            } else {
-                handleError("Failed to load photo after $MAX_RETRY_ATTEMPTS attempts", null)
-                showNextPhoto()
-            }
-        }
-    }
-
-    /**
-     * Refreshes the media items from the selected albums
-     */
-    fun refresh() {
-        viewModelScope.launch {
-            try {
-                _loadingState.value = LoadingState.LOADING
                 loadMediaItems()
                 showNextPhoto()
-                _loadingState.value = LoadingState.SUCCESS
             } catch (e: Exception) {
-                handleError("Failed to refresh photos", e)
+                handleError("Retry failed: ${e.message}", e)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun onPhotoLoadComplete(success: Boolean) {
+        if (success) {
+            _hasError.value = false
+            retryCount = 0
+        } else {
+            retryLoadingWithBackoff()
+        }
+    }
+
+    private fun retryLoadingWithBackoff() {
+        viewModelScope.launch {
+            if (retryCount < MAX_RETRY_ATTEMPTS) {
+                retryCount++
+                delay(RETRY_DELAY * retryCount)
+                showNextPhoto()
+            } else {
+                handleError("Failed to load photo after $MAX_RETRY_ATTEMPTS attempts", null)
+                retryCount = 0
             }
         }
     }
 
     private fun handleError(message: String, error: Exception?) {
         _loadingState.value = LoadingState.ERROR
-        _error.value = message
+        _hasError.value = true
+        _errorMessage.value = message
+        _isLoading.value = false
         error?.let {
             // Log the error or handle it according to your needs
         }
     }
 
-    /**
-     * Stops photo changing and cleans up resources
-     */
+    fun toggleOverlay() {
+        _showOverlay.value = _showOverlay.value?.not()
+    }
+
     fun stop() {
         isActive.set(false)
         photoChangeJob?.cancel()
@@ -232,5 +212,20 @@ class PhotoViewModel(
     override fun onCleared() {
         super.onCleared()
         stop()
+    }
+    override fun onRetry() {
+        viewModelScope.launch {
+            _hasError.value = false
+            _errorMessage.value = null
+            _isLoading.value = true
+            try {
+                loadMediaItems()
+                showNextPhoto()
+            } catch (e: Exception) {
+                handleError("Retry failed: ${e.message}", e)
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 }
