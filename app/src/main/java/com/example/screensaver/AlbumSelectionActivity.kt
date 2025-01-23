@@ -21,7 +21,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
-import com.example.screensaver.model.Album
 
 class AlbumSelectionActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView

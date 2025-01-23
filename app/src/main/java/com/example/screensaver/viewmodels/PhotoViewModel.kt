@@ -244,6 +244,6 @@ class PhotoViewModel @Inject constructor(
 
     override fun onRetry() {
         _hasError.value = false
-        showNextPhoto() // Change from loadPhotos() to showNextPhoto()
+        showNextPhoto()
     }
 }

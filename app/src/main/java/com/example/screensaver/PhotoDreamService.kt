@@ -13,7 +13,7 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -21,6 +21,7 @@ import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.Target
+import com.example.screensaver.shared.GooglePhotosManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -85,25 +86,25 @@ class PhotoDreamService : DreamService() {
         rootLayout = findViewById(R.id.dream_root_layout)
             ?: throw IllegalStateException("Root layout not found")
 
-        debugStatus = findViewById(R.id.debugStatus)?.apply {
-            visibility = View.VISIBLE
-        } ?: throw IllegalStateException("Debug status view not found")
+        debugStatus = findViewById<TextView>(R.id.debugStatus).apply {
+            isVisible = true
+        }
 
-        debugPhotoInfo = findViewById(R.id.debugPhotoInfo)?.apply {
-            visibility = View.VISIBLE
-        } ?: throw IllegalStateException("Debug photo info view not found")
+        debugPhotoInfo = findViewById<TextView>(R.id.debugPhotoInfo).apply {
+            isVisible = true
+        }
 
-        loadingIndicator = findViewById(R.id.loadingIndicator)?.apply {
-            visibility = View.VISIBLE
-        } ?: throw IllegalStateException("Loading indicator not found")
+        loadingIndicator = findViewById<ProgressBar>(R.id.loadingIndicator).apply {
+            isVisible = true
+        }
 
-        primaryImageView = findViewById(R.id.primaryImageView)?.apply {
-            visibility = View.VISIBLE
-        } ?: throw IllegalStateException("Primary image view not found")
+        primaryImageView = findViewById<ImageView>(R.id.primaryImageView).apply {
+            isVisible = true
+        }
 
-        secondaryImageView = findViewById(R.id.secondaryImageView)?.apply {
-            visibility = View.VISIBLE
-        } ?: throw IllegalStateException("Secondary image view not found")
+        secondaryImageView = findViewById<ImageView>(R.id.secondaryImageView).apply {
+            isVisible = true
+        }
     }
 
     private fun setupImageViews() {
@@ -116,7 +117,7 @@ class PhotoDreamService : DreamService() {
     private fun startDreamSequence() {
         coroutineScope.launch {
             try {
-                loadingIndicator.visibility = View.VISIBLE
+                loadingIndicator.isVisible = true
                 if (photoManager.initialize() && verifySelectedAlbums()) {
                     loadPhotos()
                 } else {
@@ -176,7 +177,7 @@ class PhotoDreamService : DreamService() {
         val url = photoManager.getPhotoUrl(currentPhotoIndex)
 
         Glide.with(this)
-            .load(url)
+            .load(url as String)
             .apply(RequestOptions()
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .error(android.R.drawable.ic_dialog_alert))
@@ -233,7 +234,7 @@ class PhotoDreamService : DreamService() {
             val index = (currentPhotoIndex + i) % photoManager.getPhotoCount()
             photoManager.getPhotoUrl(index)?.let { url ->
                 Glide.with(this)
-                    .load(url)
+                    .load(url as String)
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .preload()
             }
@@ -243,7 +244,7 @@ class PhotoDreamService : DreamService() {
     private fun precacheNextPhoto() {
         photoManager.getPhotoUrl((currentPhotoIndex + 1) % photoManager.getPhotoCount())?.let { nextUrl ->
             Glide.with(this)
-                .load(nextUrl)
+                .load(nextUrl as String)
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .preload()
         }
@@ -254,7 +255,7 @@ class PhotoDreamService : DreamService() {
         coroutineScope.launch(Dispatchers.Main) {
             try {
                 debugStatus.text = status
-                debugStatus.visibility = View.VISIBLE
+                debugStatus.isVisible = true
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating debug status", e)
             }
@@ -268,7 +269,7 @@ class PhotoDreamService : DreamService() {
         coroutineScope.launch(Dispatchers.Main) {
             try {
                 updateDebugStatus(errorMessage)
-                loadingIndicator.visibility = View.GONE
+                loadingIndicator.isVisible = false
                 Toast.makeText(this@PhotoDreamService, errorMessage, Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling error", e)
