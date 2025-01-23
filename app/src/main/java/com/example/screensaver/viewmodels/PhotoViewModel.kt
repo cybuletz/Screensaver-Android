@@ -96,15 +96,22 @@ class PhotoViewModel @Inject constructor(
     }
 
     companion object {
+        const val QUALITY_LOW = 0
+        const val QUALITY_MEDIUM = 1
+        const val QUALITY_HIGH = 2
+
         private const val PHOTO_CHANGE_INTERVAL = 30_000L // 30 seconds
         private const val RETRY_DELAY = 5_000L // 5 seconds
         private const val MAX_RETRY_ATTEMPTS = 3
     }
 
     fun onPhotoLoadComplete(success: Boolean) {
-        // Handle the photo load completion
-        // You can update loading state or trigger other actions here
-        _isLoading.value = !success
+        if (success) {
+            _hasError.value = false
+            retryCount = 0
+        } else {
+            retryLoadingWithBackoff()
+        }
     }
 
     private fun updateDateTime() {
@@ -155,6 +162,10 @@ class PhotoViewModel @Inject constructor(
         } finally {
             _isLoading.value = false
         }
+    }
+
+    fun setPhotoQuality(quality: Int) {
+        _photoQuality.value = quality
     }
 
     private fun startPhotoChanging() {
@@ -214,11 +225,14 @@ class PhotoViewModel @Inject constructor(
     }
 
     fun onPhotoLoadComplete(success: Boolean) {
-        if (success) {
-            _hasError.value = false
-            retryCount = 0
-        } else {
-            retryLoadingWithBackoff()
+        viewModelScope.launch {
+            if (success) {
+                _hasError.value = false
+                retryCount = 0
+                _isLoading.value = false
+            } else {
+                retryLoadingWithBackoff()
+            }
         }
     }
 
