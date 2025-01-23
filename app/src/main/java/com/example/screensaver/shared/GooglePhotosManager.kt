@@ -243,7 +243,7 @@ class GooglePhotosManager @Inject constructor(
     fun cleanup() {
         coroutineScope.cancel()
         photosLibraryClient?.shutdown()
-        photosLibrinaryClient = null
+        photosLibraryClient = null // Fixed typo from photosLibrinaryClient
         synchronized(photoUrls) {
             photoUrls.clear()
         }

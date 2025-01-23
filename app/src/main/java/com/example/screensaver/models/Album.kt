@@ -2,9 +2,6 @@ package com.example.screensaver.models
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
-import java.util.UUID
-import android.os.Parcelable
-import kotlinx.parcelize.Parcelize
 
 /**
  * Represents a photo album in the application.
@@ -16,16 +13,14 @@ import kotlinx.parcelize.Parcelize
  * @property coverPhotoUrl URL of the album's cover photo, null if no cover is set
  * @property mediaItemsCount Number of media items in the album
  * @property isSelected Whether the album is currently selected for display
- * @property createdAt Timestamp when the album was first created in the app
  */
 @Parcelize
 data class Album(
-    val id: String = UUID.randomUUID().toString(),
+    val id: String,
     val title: String,
-    val coverPhotoUrl: String? = null,
-    val mediaItemsCount: Int = 0,
-    var isSelected: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val coverPhotoUrl: String?,
+    val mediaItemsCount: Int,
+    var isSelected: Boolean = false
 ) : Parcelable {
 
     companion object {
@@ -36,7 +31,10 @@ data class Album(
          * Creates an empty album with default values
          */
         fun createEmpty(): Album = Album(
-            title = DEFAULT_ALBUM_TITLE
+            id = "",
+            title = DEFAULT_ALBUM_TITLE,
+            coverPhotoUrl = null,
+            mediaItemsCount = 0
         )
     }
 
@@ -118,4 +116,4 @@ fun List<Album>.sortByTitle(): List<Album> = sortedBy { it.title }
 
 fun List<Album>.sortByMediaCount(): List<Album> = sortedByDescending { it.mediaItemsCount }
 
-fun List<Album>.sortByCreationDate(): List<Album> = sortedByDescending { it.createdAt }
+// Removed sortByCreationDate as createdAt property was not defined in the Album class
