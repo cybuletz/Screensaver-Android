@@ -98,7 +98,7 @@ class PhotoViewModel @Inject constructor(
     }
 
 
-    fun onPhotoLoadComplete(success: Boolean) {
+    override fun onPhotoLoadComplete(success: Boolean) {
         _isLoading.value = false
         if (!success) {
             _hasError.value = true
@@ -226,10 +226,8 @@ class PhotoViewModel @Inject constructor(
         _showOverlay.value = _showOverlay.value?.not()
     }
 
-    fun onRetry() {
-        _hasError.value = false
-        loadPhotos() // or whatever your reload method is
-    }
+
+
 
     fun stop() {
         isActive.set(false)
@@ -242,5 +240,10 @@ class PhotoViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         stop()
+    }
+
+    override fun onRetry() {
+        _hasError.value = false
+        showNextPhoto() // Change from loadPhotos() to showNextPhoto()
     }
 }
