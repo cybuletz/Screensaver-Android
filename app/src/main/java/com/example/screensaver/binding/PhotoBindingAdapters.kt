@@ -10,39 +10,51 @@ import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
+import androidx.core.view.isVisible
+import androidx.lifecycle.LiveData
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.example.screensaver.R
+import com.example.screensaver.databinding.LayoutErrorBinding
+import com.example.screensaver.models.Album
+import com.example.screensaver.models.MediaItem
+import com.example.screensaver.utils.RetryActionListener
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.example.screensaver.utils.PhotoLoadingManager
 import com.example.screensaver.utils.OnPhotoLoadListener
 
 object PhotoBindingAdapters {
     private const val CROSSFADE_DURATION = 300
-
-    @JvmStatic
-    @BindingAdapter("photoUrl")
-    fun setPhotoUrl(imageView: ImageView, url: String?) {
-        if (url != null) {
-            Glide.with(imageView.context)
-                .load(url)
-                .transition(DrawableTransitionOptions.withCrossFade(CROSSFADE_DURATION))
-                .into(imageView)
-        }
-    }
+    private val dateFormat = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
+    private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     @JvmStatic
     @BindingAdapter("photoUrl", "quality", "onLoadingComplete", requireAll = false)
     fun loadPhoto(
-        imageView: ImageView,
-        url: String?,
+        view: ImageView,
+        mediaItem: MediaItem?,
         quality: Int?,
         listener: OnPhotoLoadListener?
     ) {
-        if (url == null) {
+        if (mediaItem == null) {
             listener?.onPhotoLoadComplete(false)
             return
         }
 
-        val requestBuilder = Glide.with(imageView.context)
+        val url = when (quality) {
+            PhotoLoadingManager.QUALITY_LOW -> mediaItem.getPreviewUrl(720)
+            PhotoLoadingManager.QUALITY_MEDIUM -> mediaItem.getPreviewUrl(1080)
+            PhotoLoadingManager.QUALITY_HIGH -> mediaItem.getFullQualityUrl()
+            else -> mediaItem.getFullQualityUrl()
+        }
+
+        mediaItem.updateLoadState(MediaItem.LoadState.LOADING)
+
+        val requestBuilder = Glide.with(view.context)
             .load(url)
             .transition(DrawableTransitionOptions.withCrossFade(CROSSFADE_DURATION))
+            .diskCacheStrategy(DiskCacheStrategy.ALL)
             .listener(object : RequestListener<Drawable> {
                 override fun onLoadFailed(
                     e: GlideException?,
@@ -50,6 +62,7 @@ object PhotoBindingAdapters {
                     target: Target<Drawable>,
                     isFirstResource: Boolean
                 ): Boolean {
+                    mediaItem.updateLoadState(MediaItem.LoadState.ERROR)
                     listener?.onPhotoLoadComplete(false)
                     return false
                 }
@@ -61,19 +74,13 @@ object PhotoBindingAdapters {
                     dataSource: DataSource?,
                     isFirstResource: Boolean
                 ): Boolean {
+                    mediaItem.updateLoadState(MediaItem.LoadState.LOADED)
                     listener?.onPhotoLoadComplete(true)
                     return false
                 }
             })
 
-        when (quality) {
-            PhotoLoadingManager.QUALITY_LOW -> requestBuilder.override(720, 720)
-            PhotoLoadingManager.QUALITY_MEDIUM -> requestBuilder.override(1080, 1080)
-            PhotoLoadingManager.QUALITY_HIGH -> requestBuilder.override(Target.SIZE_ORIGINAL)
-            else -> requestBuilder.override(Target.SIZE_ORIGINAL)
-        }
-
-        requestBuilder.into(imageView)
+        requestBuilder.into(view)
     }
 
 

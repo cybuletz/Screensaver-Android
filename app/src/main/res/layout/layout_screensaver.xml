@@ -5,10 +5,8 @@
 
     <data>
         <import type="android.view.View"/>
-        <import type="com.example.screensaver.model.MediaItem"/>
-        <import type="com.example.screensaver.utils.OnPhotoLoadListener"/>
+        <import type="com.example.screensaver.models.MediaItem"/>
         <import type="java.util.Date"/>
-
         <variable
             name="viewModel"
             type="com.example.screensaver.viewmodels.PhotoViewModel" />
@@ -28,11 +26,15 @@
             android:scaleType="centerCrop"
             app:photoUrl="@{viewModel.currentPhoto.url}"
             app:quality="@{viewModel.photoQuality}"
-            app:onLoadingComplete="@{(success) -> viewModel.onPhotoLoadComplete(success)}"
+            app:onLoadingComplete="@{viewModel}"
             android:contentDescription="@string/photo_content_description"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
             tools:src="@tools:sample/backgrounds/scenic" />
 
-        <!-- Next Photo View (for transitions) -->
+        <!-- Next Photo View -->
         <ImageView
             android:id="@+id/imageViewNext"
             android:layout_width="match_parent"
@@ -42,19 +44,22 @@
             app:photoUrl="@{viewModel.nextPhoto.url}"
             app:quality="@{viewModel.photoQuality}"
             android:contentDescription="@string/next_photo_content_description"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
             tools:src="@tools:sample/backgrounds/scenic" />
 
-        <!-- Overlay Information -->
+        <!-- Overlay -->
         <androidx.constraintlayout.widget.ConstraintLayout
             android:id="@+id/overlayContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@drawable/gradient_overlay"
             android:padding="16dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            android:visibility="@{viewModel.showOverlay ? View.VISIBLE : View.GONE}">
+            android:visibility="@{viewModel.showOverlay}"
+            app:layout_constraintBottom_toBottomOf="parent">
 
-            <!-- Clock -->
             <TextView
                 android:id="@+id/textViewTime"
                 android:layout_width="wrap_content"
@@ -62,13 +67,12 @@
                 android:textColor="@color/white"
                 android:textSize="48sp"
                 android:fontFamily="@font/roboto_light"
+                android:visibility="@{viewModel.showClock}"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintBottom_toTopOf="@id/textViewDate"
-                app:time="@{viewModel.currentTime}"
-                android:visibility="@{viewModel.showClock ? View.VISIBLE : View.GONE}"
+                android:text="@{viewModel.currentTime}"
                 tools:text="08:55" />
 
-            <!-- Date -->
             <TextView
                 android:id="@+id/textViewDate"
                 android:layout_width="wrap_content"
@@ -76,13 +80,12 @@
                 android:textColor="@color/white"
                 android:textSize="18sp"
                 android:fontFamily="@font/roboto_regular"
+                android:visibility="@{viewModel.showDate}"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintBottom_toTopOf="@id/textViewLocation"
-                app:date="@{viewModel.currentDate}"
-                android:visibility="@{viewModel.showDate ? View.VISIBLE : View.GONE}"
+                android:text="@{viewModel.currentDate}"
                 tools:text="January 23, 2025" />
 
-            <!-- Location -->
             <TextView
                 android:id="@+id/textViewLocation"
                 android:layout_width="wrap_content"
@@ -92,11 +95,12 @@
                 android:fontFamily="@font/roboto_regular"
                 android:drawableStart="@drawable/ic_location"
                 android:drawablePadding="8dp"
+                android:visibility="@{viewModel.showLocation}"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent"
-                app:photoLocation="@{viewModel.currentPhoto}"
-                android:visibility="@{viewModel.showLocation ? View.VISIBLE : View.GONE}"
+                android:text="@{viewModel.currentPhoto.description}"
                 tools:text="San Francisco, CA" />
+
         </androidx.constraintlayout.widget.ConstraintLayout>
 
         <!-- Loading Indicator -->
@@ -105,11 +109,11 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:indeterminateTint="@color/white"
+            android:visibility="@{viewModel.isLoading}"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            android:visibility="@{viewModel.isLoading ? View.VISIBLE : View.GONE}" />
+            app:layout_constraintEnd_toEndOf="parent" />
 
         <!-- Error View -->
         <include
@@ -117,13 +121,13 @@
             layout="@layout/layout_error"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:visibility="@{viewModel.hasError}"
+            app:errorMessage="@{viewModel.errorMessage}"
+            app:onRetry="@{viewModel}"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            android:visibility="@{viewModel.hasError ? View.VISIBLE : View.GONE}"
-            app:errorMessage="@{viewModel.errorMessage}"
-            app:onRetry="@{() -> viewModel.onRetry()}" />
+            app:layout_constraintEnd_toEndOf="parent" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </layout>
