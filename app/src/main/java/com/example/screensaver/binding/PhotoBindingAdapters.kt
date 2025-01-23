@@ -22,18 +22,21 @@ import java.util.Date
 import java.util.Locale
 import com.example.screensaver.databinding.LayoutErrorBinding
 import com.example.screensaver.utils.RetryActionListener
+import kotlin.jvm.functions.Function1
 
 object PhotoBindingAdapters {
     private const val CROSSFADE_DURATION = 300
     private val dateFormat = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
-    // Note: We don't need a separate binding adapter for onLoadingComplete
     @JvmStatic
-    @BindingAdapter(
-        value = ["photoUrl", "placeholder", "errorPlaceholder", "quality", "onLoadingComplete"],
-        requireAll = false
-    )
+    @BindingAdapter("onLoadingComplete")
+    fun setOnLoadingCompleteListener(view: View, listener: ((Boolean) -> Unit)?) {
+        // This binding adapter is just for declaring the event
+    }
+
+    @JvmStatic
+    @BindingAdapter(value = ["photoUrl", "placeholder", "errorPlaceholder", "quality", "onLoadingComplete"], requireAll = false)
     fun loadPhoto(
         view: ImageView,
         photoUrl: String?,
