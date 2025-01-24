@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import com.example.screensaver.PhotoDreamService
 
 @AndroidEntryPoint
 class AlbumSelectionActivity : AppCompatActivity() {
@@ -58,8 +59,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         binding = ActivityAlbumSelectionBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Initialize dreamServiceHelper first
-        dreamServiceHelper = DreamServiceHelper(this)
+        dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
 
         setupRecyclerView()
         setupConfirmButton()
