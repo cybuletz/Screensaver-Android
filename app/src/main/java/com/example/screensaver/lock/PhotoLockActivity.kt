@@ -92,15 +92,13 @@ class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
-    // Lifecycle Methods
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         isPreviewMode = intent.getBooleanExtra("preview_mode", false)
-
-        setupWindow()
-        setContentView(R.layout.activity_photo_lock)
-
+        setContentView(R.layout.activity_photo_lock) 
         initializeViews()
+        setupWindow()
         setupGestureDetection()
         registerPowerSavingReceiver()
         initializePhotos()
@@ -357,6 +355,8 @@ class PhotoLockActivity : AppCompatActivity() {
     }
 
     private fun updatePowerSavingMode() {
+        if (!::clockView.isInitialized) return  // Early return if views aren't initialized
+
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         isPowerSaving = powerManager.isPowerSaveMode
 
@@ -374,6 +374,8 @@ class PhotoLockActivity : AppCompatActivity() {
     }
 
     private fun updateViewsForPowerMode() {
+        if (!::clockView.isInitialized || !::dateView.isInitialized) return
+
         val alpha = if (isPowerSaving) 0.7f else 1.0f
         clockView.alpha = alpha
         dateView.alpha = alpha

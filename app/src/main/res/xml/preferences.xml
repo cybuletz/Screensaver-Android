@@ -19,7 +19,7 @@
     <PreferenceCategory
         android:key="lock_screen_settings"
         android:title="@string/pref_category_lock_screen"
-        android:dependency="display_mode_selection">
+        app:dependency="display_mode_selection">
 
         <SwitchPreferenceCompat
             android:key="lock_screen_clock"
@@ -45,8 +45,8 @@
             android:key="lock_screen_interval"
             android:title="@string/pref_lock_screen_interval_title"
             android:summary="@string/pref_lock_screen_interval_summary"
+            app:min="5"
             android:max="60"
-            android:min="5"
             android:defaultValue="10" />
 
         <Preference
@@ -75,10 +75,10 @@
         <PreferenceCategory
             android:title="@string/pref_category_google_photos"
             android:key="google_photos_settings"
-            android:dependency="photo_source_selection">
+            app:dependency="photo_source_selection">
 
             <SwitchPreferenceCompat
-                android:key="use_google_photos"
+                android:key="google_photos_enabled"
                 android:title="@string/pref_google_photos_signin_title"
                 android:summary="@string/pref_google_photos_signin_summary"
                 android:defaultValue="false" />
@@ -87,13 +87,13 @@
                 android:key="select_albums"
                 android:title="@string/pref_select_albums_title"
                 android:summary="@string/pref_select_albums_summary"
-                android:dependency="use_google_photos" />
+                app:dependency="google_photos_enabled" />
         </PreferenceCategory>
 
         <PreferenceCategory
             android:title="@string/pref_category_local_photos"
             android:key="local_photos_settings"
-            android:dependency="photo_source_selection">
+            app:dependency="photo_source_selection">
 
             <Preference
                 android:key="select_local_photos"
@@ -142,8 +142,8 @@
             android:key="screensaver_delay"
             android:title="@string/pref_screensaver_delay_title"
             android:summary="@string/pref_screensaver_delay_summary"
+            app:min="1"
             android:max="30"
-            android:min="1"
             android:defaultValue="5" />
 
         <ListPreference
@@ -177,8 +177,8 @@
             android:key="brightness"
             android:title="@string/pref_brightness_title"
             android:summary="@string/pref_brightness_summary"
+            app:min="0"
             android:max="100"
-            android:min="0"
             android:defaultValue="50"/>
 
         <ListPreference
@@ -203,12 +203,12 @@
         <Preference
             android:key="start_time"
             android:title="@string/pref_start_time_title"
-            android:dependency="schedule_enabled"/>
+            app:dependency="schedule_enabled"/>
 
         <Preference
             android:key="end_time"
             android:title="@string/pref_end_time_title"
-            android:dependency="schedule_enabled"/>
+            app:dependency="schedule_enabled"/>
 
         <MultiSelectListPreference
             android:key="active_days"
@@ -216,7 +216,7 @@
             android:summary="@string/pref_active_days_summary"
             android:entries="@array/days_of_week"
             android:entryValues="@array/days_of_week_values"
-            android:dependency="schedule_enabled"/>
+            app:dependency="schedule_enabled"/>
     </PreferenceCategory>
 
     <PreferenceCategory

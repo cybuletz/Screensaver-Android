@@ -56,44 +56,19 @@ class PhotoLoadingManager @Inject constructor(
         }
     }
 
-    fun loadPhoto(
-        mediaItem: MediaItem,
-        imageView: ImageView,
-        preload: Boolean = false,
-        onSuccess: () -> Unit = {},
-        onError: () -> Unit = {}
-    ) {
-        cancelLoadingForView(imageView)
-
-        val job = scope.launch {
-            try {
-                currentLoadingItem = mediaItem
-
-                withContext(Dispatchers.Main) {
-                    if (!preload) {
-                        mediaItem.updateLoadState(MediaItem.LoadState.LOADING)
-                    }
-
-                    glideRequestManager
-                        .load(mediaItem.baseUrl as String)
-                        .apply(getRequestOptions())
-                        .listener(createRequestListener(mediaItem, onSuccess, onError))
-                        .into(imageView)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    mediaItem.updateLoadState(MediaItem.LoadState.ERROR)
-                    onError()
-                }
-            } finally {
-                if (currentLoadingItem == mediaItem) {
-                    currentLoadingItem = null
-                }
-                loadingJobs.remove(mediaItem.id)
+    fun loadPhoto(mediaItem: MediaItem, imageView: ImageView) {
+        try {
+            if (mediaItem.baseUrl.startsWith("http")) {
+                Glide.with(imageView.context)
+                    .load(mediaItem.baseUrl)
+                    .apply(getRequestOptions())
+                    .into(imageView)
+            } else {
+                imageView.setImageResource(R.drawable.ic_error)
             }
+        } catch (e: Exception) {
+            imageView.setImageResource(R.drawable.ic_error)
         }
-
-        loadingJobs[mediaItem.id] = job
     }
 
     data class PhotoData(
