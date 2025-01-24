@@ -14,6 +14,11 @@ class KioskService : Service() {
     @Inject
     lateinit var notificationHelper: NotificationHelper
 
+    private fun createServiceNotification() = notificationHelper.createKioskNotification(
+        getString(R.string.kiosk_mode_active),
+        getString(R.string.kiosk_mode_running)
+    )
+
     @Inject
     lateinit var kioskPolicyManager: KioskPolicyManager
 

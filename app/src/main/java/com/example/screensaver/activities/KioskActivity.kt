@@ -55,6 +55,7 @@ class KioskActivity : PhotoLockActivity() {
     }
 
     private fun setupWindow() {
+        super.setupWindow()
         window.addFlags(
             WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                     WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
@@ -101,6 +102,22 @@ class KioskActivity : PhotoLockActivity() {
 
         // Initial state
         hideControls()
+    }
+
+    protected fun showNextPhoto() {
+        currentPhotoIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
+        loadPhoto(currentPhotoIndex, backgroundImageView)
+    }
+
+    protected fun showPreviousPhoto() {
+        currentPhotoIndex = if (currentPhotoIndex > 0) currentPhotoIndex - 1
+        else photoManager.getPhotoCount() - 1
+        loadPhoto(currentPhotoIndex, backgroundImageView)
+    }
+
+    override fun onPhotoLoaded(mediaItem: MediaItem) {
+        super.onPhotoLoaded(mediaItem)
+        showControlsTemporarily()
     }
 
     private fun initializeKioskMode() {

@@ -12,12 +12,14 @@ import com.example.screensaver.R
 import com.example.screensaver.utils.PreferenceKeys
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import com.example.screensaver.lock.PhotoLockScreenService
 
 /**
  * Device administrator receiver for handling lock screen permissions and management.
  */
-@AndroidEntryPoint
 class PhotoLockDeviceAdmin : DeviceAdminReceiver() {
+    @Inject
+    lateinit var kioskPolicyManager: KioskPolicyManager
 
     companion object {
         private const val TAG = "PhotoLockDeviceAdmin"

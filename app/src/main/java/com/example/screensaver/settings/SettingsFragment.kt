@@ -41,6 +41,8 @@ import java.net.URLEncoder
 import android.os.Build
 import android.app.NotificationManager
 import android.app.NotificationChannel
+import com.example.screensaver.activities.KioskActivity
+import com.example.screensaver.R
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -713,4 +715,19 @@ class SettingsFragment : PreferenceFragmentCompat() {
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
+
+    private fun showKioskModeConfirmationDialog() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.kiosk_mode_confirmation)
+            .setMessage(getString(R.string.kiosk_mode_confirmation_message))
+            .setPositiveButton(getString(R.string.confirm)) { dialog, _ ->
+                enableKioskMode()
+                dialog.dismiss()
+            }
+            .setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
 }

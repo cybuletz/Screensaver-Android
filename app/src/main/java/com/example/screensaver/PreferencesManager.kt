@@ -6,6 +6,9 @@ import androidx.preference.PreferenceManager
 class PreferencesManager(context: Context) {
     private val prefs = PreferenceManager.getDefaultSharedPreferences(context)
 
+    private val sharedPreferences: SharedPreferences =
+        PreferenceManager.getDefaultSharedPreferences(context)
+
     fun getServerUrl(): String {
         return prefs.getString("server_url", "http://localhost:3000") ?: "http://localhost:3000"
     }
