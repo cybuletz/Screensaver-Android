@@ -33,6 +33,16 @@ class MainFragment : Fragment() {
         fun newInstance() = MainFragment()
     }
 
+    private var errorToastCount = 0
+    private val MAX_TOAST_COUNT = 3
+
+    private fun showErrorToast(message: String) {
+        if (errorToastCount < MAX_TOAST_COUNT) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            errorToastCount++
+        }
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -49,9 +59,8 @@ class MainFragment : Fragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        // Only access binding if it's not null
         _binding?.let {
-            // Your save instance state code here
+            binding.webView.saveState(outState)
         }
     }
 
@@ -67,7 +76,7 @@ class MainFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        _binding = null  // Clear the binding when view is destroyed
+        _binding = null
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -121,18 +130,15 @@ class MainFragment : Fragment() {
 
     private fun setupWebViewClient() {
         binding.webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                Log.d(TAG, "Page loaded: $url")
-            }
-
             override fun onReceivedError(
                 view: WebView?,
                 request: WebResourceRequest?,
                 error: WebResourceError?
             ) {
+                super.onReceivedError(view, request, error)
                 Log.e(TAG, "WebView error: ${error?.description}")
-                handleWebViewError()
+                view?.loadUrl(ERROR_PAGE)
+                showErrorToast("Error loading page: ${error?.description}")
             }
 
             override fun shouldOverrideUrlLoading(
@@ -141,7 +147,6 @@ class MainFragment : Fragment() {
             ): Boolean {
                 request?.url?.let { uri ->
                     if (uri.scheme in listOf("http", "https")) {
-                        // Handle external URLs
                         startActivity(Intent(Intent.ACTION_VIEW, uri))
                         return true
                     }
@@ -182,7 +187,7 @@ class MainFragment : Fragment() {
     }
 
     private fun showError(message: String) {
-        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+        showErrorToast(message)
     }
 
     fun clearWebViewData() {
