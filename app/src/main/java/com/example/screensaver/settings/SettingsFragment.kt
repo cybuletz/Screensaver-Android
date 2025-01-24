@@ -244,6 +244,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     private fun showGoogleSignInPrompt() {
         try {
+            Log.d(TAG, "Starting Google Sign-in prompt")
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
                 .requestScopes(Scope("https://www.googleapis.com/auth/photoslibrary.readonly"))
@@ -253,8 +254,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
             googleSignInClient = GoogleSignIn.getClient(requireActivity(), gso)
 
+            Log.d(TAG, "Signing out previous account")
             googleSignInClient?.signOut()?.addOnCompleteListener { signOutTask ->
                 if (signOutTask.isSuccessful) {
+                    Log.d(TAG, "Previous sign-out successful, launching sign-in")
                     val signInIntent = googleSignInClient?.signInIntent
                     signInLauncher.launch(signInIntent)
                 } else {
@@ -315,26 +318,33 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     val response = connection.inputStream.bufferedReader().use { it.readText() }
                     val jsonResponse = JSONObject(response)
 
+                    // Save tokens with correct keys
                     PreferenceManager.getDefaultSharedPreferences(requireContext())
                         .edit()
                         .putString("access_token", jsonResponse.getString("access_token"))
-                        .putString("refresh_token", jsonResponse.getString("refresh_token"))
+                        .putString("refresh_token", jsonResponse.getString("refresh_token")) // Make sure this key matches
                         .putLong("token_expiration", System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000))
                         .putString("google_account", accountEmail)
                         .apply()
 
                     updateGooglePhotosState(true)
-                    Toast.makeText(context, "Signed in as $accountEmail", Toast.LENGTH_SHORT).show()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Signed in as $accountEmail", Toast.LENGTH_SHORT).show()
+                    }
                 } else {
                     val error = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
                     Log.e(TAG, "Failed to exchange auth code: $error")
                     updateGooglePhotosState(false)
-                    Toast.makeText(context, "Failed to complete sign in", Toast.LENGTH_SHORT).show()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Failed to complete sign in", Toast.LENGTH_SHORT).show()
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error exchanging auth code", e)
                 updateGooglePhotosState(false)
-                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -344,8 +354,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
             PreferenceManager.getDefaultSharedPreferences(requireContext())
                 .edit()
                 .remove("google_account")
-                .remove("google_access_token")
-                .remove("refresh_token")
+                .remove("access_token")
+                .remove("refresh_token")  // Make sure this key matches
+                .remove("token_expiration")
                 .apply()
 
             val account = GoogleSignIn.getLastSignedInAccount(requireContext())

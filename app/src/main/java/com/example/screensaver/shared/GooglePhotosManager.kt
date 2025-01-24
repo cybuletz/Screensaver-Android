@@ -52,6 +52,13 @@ class GooglePhotosManager @Inject constructor(
                 return@withContext true
             }
 
+            // Check if we have tokens before trying to authenticate
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            if (!prefs.contains("access_token") || !prefs.contains("refresh_token")) {
+                Log.d(TAG, "No tokens available, skipping initialization")
+                return@withContext false
+            }
+
             _loadingState.value = LoadingState.LOADING
             val credentials = getOrRefreshCredentials() ?: return@withContext false
             val settings = PhotosLibrarySettings.newBuilder()
@@ -221,9 +228,18 @@ class GooglePhotosManager @Inject constructor(
         try {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
             val accessToken = prefs.getString("access_token", null)
+            val refreshToken = prefs.getString("refresh_token", null)
             val tokenExpiration = prefs.getLong("token_expiration", 0)
 
-            if (accessToken == null || System.currentTimeMillis() > tokenExpiration - TOKEN_EXPIRY_BUFFER) {
+            Log.d(TAG, "Checking credentials - Access Token: ${accessToken != null}, Refresh Token: ${refreshToken != null}")
+
+            if (accessToken == null || refreshToken == null) {
+                Log.d(TAG, "Missing tokens")
+                return@withContext null
+            }
+
+            if (System.currentTimeMillis() > tokenExpiration - TOKEN_EXPIRY_BUFFER) {
+                Log.d(TAG, "Token expired, refreshing")
                 if (!refreshTokens()) {
                     return@withContext null
                 }
