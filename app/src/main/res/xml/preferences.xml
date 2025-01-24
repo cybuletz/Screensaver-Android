@@ -86,7 +86,7 @@
                 android:key="select_albums"
                 android:title="@string/pref_select_albums_title"
                 android:summary="@string/pref_select_albums_summary"
-                android:enabled="true" />
+                android:enabled="false" />
         </PreferenceCategory>
 
         <PreferenceCategory

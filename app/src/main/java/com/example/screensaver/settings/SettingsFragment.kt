@@ -174,7 +174,19 @@ class SettingsFragment : PreferenceFragmentCompat() {
             .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
         Log.d(TAG, "Current photo sources: $currentSources")
 
+        // Get current Google sign-in state
+        val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+        val hasRequiredScope = account?.grantedScopes?.contains(
+            Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
+        ) == true
+
+        // Update UI states
         googlePhotosCategory?.isVisible = currentSources.contains("google_photos")
+        useGooglePhotos?.isChecked = account != null && hasRequiredScope
+        selectAlbums?.apply {
+            isEnabled = account != null && hasRequiredScope
+            isVisible = true
+        }
 
         // Handle changes to photo source selection
         photoSourceSelection?.setOnPreferenceChangeListener { _, newValue ->
@@ -205,10 +217,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
         selectAlbums?.setOnPreferenceClickListener {
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
-                    val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+                    val currentAccount = GoogleSignIn.getLastSignedInAccount(requireContext())
                     withContext(Dispatchers.Main) {
-                        if (account != null) {
-                            startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+                        if (currentAccount != null) {
+                            if (googlePhotosManager.initialize()) {
+                                startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+                            } else {
+                                Toast.makeText(context, "Failed to initialize Google Photos", Toast.LENGTH_SHORT).show()
+                            }
                         } else {
                             Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
                         }
@@ -221,11 +237,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
             true
         }
-
-        // Update initial state of Google Photos options
-        val account = GoogleSignIn.getLastSignedInAccount(requireContext())
-        useGooglePhotos?.isChecked = account != null
-        selectAlbums?.isEnabled = account != null
     }
 
     private fun setupGoogleSignIn() {
@@ -293,6 +304,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun handleSignInResult(completedTask: Task<GoogleSignInAccount>) {
         try {
             val account = completedTask.getResult(ApiException::class.java)
+            Log.d(TAG, "Sign in result received: ${completedTask.result.id}")
+
+            // First update UI state
+            updateGooglePhotosState(true)
+
+            // Then handle auth code exchange
             account?.serverAuthCode?.let { authCode ->
                 account.email?.let { email ->
                     exchangeAuthCode(authCode, email)
@@ -335,31 +352,31 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     val response = connection.inputStream.bufferedReader().use { it.readText() }
                     val jsonResponse = JSONObject(response)
 
-                    // Save tokens with correct keys
+                    // Save tokens
                     PreferenceManager.getDefaultSharedPreferences(requireContext())
                         .edit()
                         .putString("access_token", jsonResponse.getString("access_token"))
-                        .putString("refresh_token", jsonResponse.getString("refresh_token")) // Make sure this key matches
+                        .putString("refresh_token", jsonResponse.getString("refresh_token"))
                         .putLong("token_expiration", System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000))
                         .putString("google_account", accountEmail)
                         .apply()
 
-                    updateGooglePhotosState(true)
                     withContext(Dispatchers.Main) {
+                        updateGooglePhotosState(true)
                         Toast.makeText(context, "Signed in as $accountEmail", Toast.LENGTH_SHORT).show()
                     }
                 } else {
                     val error = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
                     Log.e(TAG, "Failed to exchange auth code: $error")
-                    updateGooglePhotosState(false)
                     withContext(Dispatchers.Main) {
+                        updateGooglePhotosState(false)
                         Toast.makeText(context, "Failed to complete sign in", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error exchanging auth code", e)
-                updateGooglePhotosState(false)
                 withContext(Dispatchers.Main) {
+                    updateGooglePhotosState(false)
                     Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -389,7 +406,16 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun updateGooglePhotosState(enabled: Boolean) {
         Log.d(TAG, "Updating Google Photos state to: $enabled")
         findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = enabled
-        findPreference<Preference>("select_albums")?.isVisible = enabled
+        findPreference<Preference>("select_albums")?.apply {
+            isEnabled = enabled
+            isVisible = true
+        }
+
+        // Also update visibility of the Google Photos category based on photo source selection
+        val currentSources = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
+        findPreference<PreferenceCategory>("google_photos_settings")?.isVisible =
+            currentSources.contains("google_photos")
     }
 
     // Lock Screen Related Methods
