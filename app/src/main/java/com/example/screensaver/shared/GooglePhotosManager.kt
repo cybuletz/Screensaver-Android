@@ -11,7 +11,6 @@ import com.example.screensaver.models.Album
 import com.example.screensaver.models.MediaItem
 import com.google.photos.library.v1.proto.SearchMediaItemsRequest
 import com.example.screensaver.R
-import com.example.screensaver.models.MediaItemModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +21,7 @@ import java.net.URL
 import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.concurrent.TimeUnit
 
 @Singleton
 class GooglePhotosManager @Inject constructor(
@@ -47,19 +47,16 @@ class GooglePhotosManager @Inject constructor(
     }
 
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
+        cleanup() // Ensure any existing client is properly cleaned up
+
+        if (!hasValidTokens()) {
+            Log.d(TAG, "No tokens available, skipping initialization")
+            return@withContext false
+        }
+
         try {
-            if (photosLibraryClient != null) {
-                return@withContext true
-            }
-
-            // Check if we have tokens before trying to authenticate
-            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            if (!prefs.contains("access_token") || !prefs.contains("refresh_token")) {
-                Log.d(TAG, "No tokens available, skipping initialization")
-                return@withContext false
-            }
-
             _loadingState.value = LoadingState.LOADING
+
             val credentials = getOrRefreshCredentials() ?: return@withContext false
             val settings = PhotosLibrarySettings.newBuilder()
                 .setCredentialsProvider { credentials }
@@ -71,6 +68,7 @@ class GooglePhotosManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing Google Photos", e)
             _loadingState.value = LoadingState.ERROR
+            cleanup() // Clean up if initialization fails
             false
         }
     }
@@ -86,7 +84,6 @@ class GooglePhotosManager @Inject constructor(
             val albums = photosLibraryClient?.listAlbums()?.iterateAll()?.map { googleAlbum ->
                 Log.d(TAG, "Found album: ${googleAlbum.title} with ${googleAlbum.mediaItemsCount} items")
 
-                // Get the cover photo URL if we have a cover photo media item ID
                 val coverPhotoUrl = if (!googleAlbum.coverPhotoMediaItemId.isNullOrEmpty()) {
                     photosLibraryClient?.getMediaItem(googleAlbum.coverPhotoMediaItemId)?.baseUrl + PHOTO_QUALITY
                 } else {
@@ -109,22 +106,54 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
-    suspend fun loadPhotos(): Boolean {
-        return try {
-            val photos = fetchPhotos()
-            val success = photos != null && photos.isNotEmpty()
-            if (success) {
-                mediaItems.clear()
-                photos?.let { mediaItems.addAll(it) }
-            }
-            success
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading photos", e)
-            false
+    fun getPhotoCount(): Int = mediaItems.size
+
+    fun getPhotoUrl(index: Int): String? {
+        return if (index in 0 until mediaItems.size) {
+            mediaItems[index].baseUrl
+        } else {
+            null
         }
     }
 
-    suspend fun loadPhotos(albumId: String): List<MediaItem>? = withContext(Dispatchers.IO) {
+    suspend fun loadPhotos(): List<MediaItem>? = withContext(Dispatchers.IO) {
+        try {
+            if (!initialize()) {
+                Log.e(TAG, "Failed to initialize Google Photos client")
+                return@withContext null
+            }
+
+            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(context)
+                .getStringSet("selected_albums", emptySet()) ?: emptySet()
+
+            if (selectedAlbumIds.isEmpty()) {
+                Log.d(TAG, "No albums selected")
+                return@withContext null
+            }
+
+            val allPhotos = mutableListOf<MediaItem>()
+
+            selectedAlbumIds.forEach { albumId ->
+                try {
+                    val albumPhotos = loadAlbumPhotos(albumId)
+                    if (albumPhotos != null) {
+                        allPhotos.addAll(albumPhotos)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading photos for album $albumId", e)
+                }
+            }
+
+            mediaItems.clear()
+            mediaItems.addAll(allPhotos)
+            allPhotos
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching photos", e)
+            null
+        }
+    }
+
+    private suspend fun loadAlbumPhotos(albumId: String): List<MediaItem>? = withContext(Dispatchers.IO) {
         try {
             if (!initialize()) {
                 Log.e(TAG, "Failed to initialize Google Photos client")
@@ -157,53 +186,6 @@ class GooglePhotosManager @Inject constructor(
             null
         } catch (e: Exception) {
             Log.e(TAG, "Error loading photos", e)
-            null
-        }
-    }
-
-    fun getPhotoCount(): Int = mediaItems.size
-
-    fun getPhotoUrl(index: Int): String? {
-        return if (index in 0 until mediaItems.size) {
-            mediaItems[index].baseUrl
-        } else {
-            null
-        }
-    }
-
-    suspend fun fetchPhotos(): List<MediaItem>? = withContext(Dispatchers.IO) {
-        try {
-            if (!initialize()) {
-                Log.e(TAG, "Failed to initialize Google Photos client")
-                return@withContext null
-            }
-
-            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(context)
-                .getStringSet("selected_albums", emptySet()) ?: emptySet()
-
-            if (selectedAlbumIds.isEmpty()) {
-                Log.d(TAG, "No albums selected")
-                return@withContext null
-            }
-
-            val allPhotos = mutableListOf<MediaItem>()
-
-            selectedAlbumIds.forEach { albumId ->
-                try {
-                    val albumPhotos = loadPhotos(albumId)
-                    if (albumPhotos != null) {
-                        allPhotos.addAll(albumPhotos)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error loading photos for album $albumId", e)
-                }
-            }
-
-            mediaItems.clear()
-            mediaItems.addAll(allPhotos)
-            allPhotos
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching photos", e)
             null
         }
     }
@@ -271,6 +253,13 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
+    fun hasValidTokens(): Boolean {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val accessToken = prefs.getString("access_token", null)
+        val tokenExpiration = prefs.getLong("token_expiration", 0)
+        return accessToken != null && tokenExpiration > System.currentTimeMillis()
+    }
+
     private suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         try {
@@ -334,9 +323,27 @@ class GooglePhotosManager @Inject constructor(
     }
 
     fun cleanup() {
-        coroutineScope.cancel()
-        photosLibraryClient?.shutdown()
-        photosLibraryClient = null
-        mediaItems.clear()
+        try {
+            photosLibraryClient?.let { client ->
+                try {
+                    client.close()
+                    client.javaClass.getDeclaredMethod("shutdownNow").apply {
+                        isAccessible = true
+                        invoke(client)
+                    }
+                    client.javaClass.getDeclaredMethod("awaitTermination", Long::class.java, TimeUnit::class.java).apply {
+                        isAccessible = true
+                        invoke(client, 30L, TimeUnit.SECONDS)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during client shutdown", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during cleanup", e)
+        } finally {
+            photosLibraryClient = null
+            mediaItems.clear()
+        }
     }
 }
