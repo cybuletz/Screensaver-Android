@@ -1,4 +1,4 @@
-package com.example.screensaver.activities.kiosk
+package com.example.screensaver.activities
 
 import android.app.ActivityManager
 import android.content.Context
@@ -14,6 +14,7 @@ import androidx.preference.PreferenceManager
 import com.example.screensaver.R
 import com.example.screensaver.databinding.ActivityKioskBinding
 import com.example.screensaver.lock.PhotoLockActivity
+import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.models.MediaItem
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
