@@ -34,6 +34,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
+import android.content.pm.PackageManager
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {

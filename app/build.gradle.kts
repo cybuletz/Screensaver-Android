@@ -181,4 +181,11 @@ dependencies {
 
     // JSON
     implementation("org.json:json:20231013")
+
+    // Add these dependencies if you're using them
+    implementation("org.slf4j:slf4j-api:1.7.36")
+    implementation("org.slf4j:slf4j-simple:1.7.36")
+
+    // If you need the Jetty ALPN boot library
+    implementation("org.eclipse.jetty.alpn:alpn-api:1.1.3.v20160715")
 }
