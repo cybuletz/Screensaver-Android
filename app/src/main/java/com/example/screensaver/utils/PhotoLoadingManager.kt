@@ -31,7 +31,7 @@ class PhotoLoadingManager @Inject constructor(
 ) {
 
     private val glideRequestManager: RequestManager = Glide.with(context)
-    private val diskCache: File
+    private lateinit var diskCache: File
     private val loadingJobs = mutableMapOf<String, Job>()
     private var currentLoadingItem: MediaItem? = null
 
@@ -48,8 +48,11 @@ class PhotoLoadingManager @Inject constructor(
     }
 
     init {
-        diskCache = File(context.cacheDir, "photo_cache").apply {
-            if (!exists()) mkdirs()
+        // Move disk operations to a background thread
+        scope.launch(Dispatchers.IO) {
+            diskCache = File(context.cacheDir, "photo_cache").apply {
+                if (!exists()) mkdirs()
+            }
         }
     }
 

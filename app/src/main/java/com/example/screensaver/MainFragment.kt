@@ -49,7 +49,10 @@ class MainFragment : Fragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        binding.webView.saveState(outState)
+        // Only access binding if it's not null
+        _binding?.let {
+            // Your save instance state code here
+        }
     }
 
     override fun onResume() {
@@ -63,13 +66,8 @@ class MainFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        binding.webView.apply {
-            stopLoading()
-            removeJavascriptInterface("SmartTimerClient")
-            destroy()
-        }
-        _binding = null
         super.onDestroyView()
+        _binding = null  // Clear the binding when view is destroyed
     }
 
     @SuppressLint("SetJavaScriptEnabled")
