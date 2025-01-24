@@ -77,11 +77,14 @@ class GooglePhotosManager @Inject constructor(
 
     suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
         try {
+            Log.d(TAG, "Getting albums...")
             if (!initialize()) {
+                Log.e(TAG, "Failed to initialize before getting albums")
                 return@withContext emptyList()
             }
 
-            photosLibraryClient?.listAlbums()?.iterateAll()?.map { googleAlbum ->
+            val albums = photosLibraryClient?.listAlbums()?.iterateAll()?.map { googleAlbum ->
+                Log.d(TAG, "Found album: ${googleAlbum.title} with ${googleAlbum.mediaItemsCount} items")
                 Album(
                     id = googleAlbum.id,
                     title = googleAlbum.title,
@@ -89,6 +92,9 @@ class GooglePhotosManager @Inject constructor(
                     mediaItemsCount = googleAlbum.mediaItemsCount.toInt()
                 )
             }?.toList() ?: emptyList()
+
+            Log.d(TAG, "Retrieved ${albums.size} albums")
+            albums
         } catch (e: Exception) {
             Log.e(TAG, "Error getting albums", e)
             emptyList()

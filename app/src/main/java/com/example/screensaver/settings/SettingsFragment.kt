@@ -162,9 +162,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun setupPhotoSourcePreferences() {
-        val photoSourceSelection = findPreference<MultiSelectListPreference>("photo_source_selection")
+        val photoSourceSelection =
+            findPreference<MultiSelectListPreference>("photo_source_selection")
         val googlePhotosCategory = findPreference<PreferenceCategory>("google_photos_settings")
-        val useGooglePhotos = findPreference<SwitchPreferenceCompat>("google_photos_enabled")  // Changed from "use_google_photos"
+        val useGooglePhotos =
+            findPreference<SwitchPreferenceCompat>("google_photos_enabled")  // Changed from "use_google_photos"
         val selectAlbums = findPreference<Preference>("select_albums")
 
         Log.d(TAG, "Setting up photo source preferences")
@@ -193,9 +195,27 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     val account = GoogleSignIn.getLastSignedInAccount(requireContext())
                     withContext(Dispatchers.Main) {
                         if (account != null) {
-                            startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+                            // Initialize Google Photos Manager before starting activity
+                            if (googlePhotosManager.initialize()) {
+                                startActivity(
+                                    Intent(
+                                        requireContext(),
+                                        AlbumSelectionActivity::class.java
+                                    )
+                                )
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Failed to initialize Google Photos",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         } else {
-                            Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                "Please sign in with Google first",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                 } catch (e: Exception) {
@@ -207,15 +227,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
             true
         }
 
-        photoSourceSelection?.setOnPreferenceChangeListener { _, newValue ->
-            @Suppress("UNCHECKED_CAST")
-            val selectedSources = newValue as Set<String>
-            googlePhotosCategory?.isVisible = selectedSources.contains("google_photos")
-            if (!selectedSources.contains("google_photos")) {
-                signOutCompletely()
-            }
-            true
-        }
+        val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+        findPreference<Preference>("select_albums")?.isVisible = account != null
     }
 
     private fun setupGoogleSignIn() {

@@ -87,7 +87,7 @@
                 android:key="select_albums"
                 android:title="@string/pref_select_albums_title"
                 android:summary="@string/pref_select_albums_summary"
-                app:dependency="google_photos_enabled" />
+                android:enabled="true" />
         </PreferenceCategory>
 
         <PreferenceCategory

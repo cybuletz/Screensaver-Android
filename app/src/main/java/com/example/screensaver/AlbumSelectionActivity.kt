@@ -30,6 +30,7 @@ import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
 import com.example.screensaver.PhotoDreamService
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.collect
+import androidx.preference.PreferenceManager
 
 
 @AndroidEntryPoint
@@ -114,7 +115,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         try {
             setLoading(true)
             val albums = photoManager.getAlbums()
-            val selectedAlbumIds = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(this)
                 .getStringSet("selected_albums", emptySet()) ?: emptySet()
 
             withContext(Dispatchers.Main) {
@@ -206,7 +207,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
             .map { it.id }
             .toSet()
 
-        getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+        PreferenceManager.getDefaultSharedPreferences(this)
             .edit()
             .putStringSet("selected_albums", selectedAlbums)
             .apply()
