@@ -109,6 +109,9 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.databinding:databinding-runtime:8.1.4")
 
+    kapt("com.google.auto.value:auto-value:1.9")
+    implementation("com.google.auto.value:auto-value-annotations:1.9")
+
     // Navigation
     implementation("androidx.navigation:navigation-fragment-ktx:$navVersion")
     implementation("androidx.navigation:navigation-ui-ktx:$navVersion")
