@@ -254,11 +254,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 }
                 DreamServiceStatus.CONFIGURED -> {
                     logd("Dream service is configured")
-                    addTestDreamButton()
                 }
                 DreamServiceStatus.ACTIVE -> {
                     logd("Dream service is active")
-                    addTestDreamButton()
                 }
                 DreamServiceStatus.UNKNOWN -> {
                     loge("Dream service status unknown")
@@ -266,36 +264,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             loge("Error checking dream service", e)
-        }
-    }
-
-    private fun addTestDreamButton() {
-        binding.testDreamButton.apply {
-            visibility = View.VISIBLE
-            setOnClickListener {
-                testDreamService()
-            }
-        }
-    }
-
-    private fun testDreamService() {
-        try {
-            when (dreamServiceHelper.getDreamServiceStatus()) {
-                DreamServiceStatus.API_UNAVAILABLE -> {
-                    Toast.makeText(this, "Screensaver not supported on this device", Toast.LENGTH_SHORT).show()
-                }
-                DreamServiceStatus.NOT_SELECTED -> {
-                    Toast.makeText(this, "Please enable screensaver in system settings", Toast.LENGTH_SHORT).show()
-                    dreamServiceHelper.openDreamSettings()
-                }
-                else -> {
-                    dreamServiceHelper.openDreamSettings()
-                    Toast.makeText(this, "Opening screensaver settings", Toast.LENGTH_SHORT).show()
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting dream", e)
-            Toast.makeText(this, "Error starting dream: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
