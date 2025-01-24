@@ -17,6 +17,7 @@ class GooglePhotosManager(private val context: Context) {
     private var photosLibraryClient: PhotosLibraryClient? = null
     private var isInitialized = false
 
+
     companion object {
         private const val TAG = "GooglePhotosManager"
         private val REQUIRED_SCOPES = listOf(

@@ -5,10 +5,9 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.CheckBox  // Added this import
+import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -26,8 +25,6 @@ class AlbumAdapter(
 
     companion object {
         private const val TAG = "AlbumAdapter"
-        private const val ANIMATION_DURATION = 200L
-        private const val CLICK_DELAY = 100L
         private const val OVERLAY_ALPHA = 0.5f
     }
 
@@ -56,12 +53,23 @@ class AlbumAdapter(
 
         private var currentLoadingJob: Any? = null
 
+        init {
+            itemView.setOnClickListener {
+                val position = bindingAdapterPosition
+                if (position != RecyclerView.NO_POSITION) {
+                    val album = getItem(position)
+                    checkbox.isChecked = !checkbox.isChecked
+                    onAlbumClick(album.copy(isSelected = checkbox.isChecked))
+                }
+            }
+        }
+
         fun bind(album: Album) {
             titleTextView.text = album.title
             setPhotoCount(album.mediaItemsCount)
             loadAlbumCover(album)
             updateSelectionState(album)
-            setupCheckbox(album)  // Changed from setupClickListener to setupCheckbox
+            checkbox.isChecked = album.isSelected
         }
 
         private fun setPhotoCount(count: Int) {
@@ -88,25 +96,20 @@ class AlbumAdapter(
                         resource: Drawable,
                         transition: Transition<in Drawable>?
                     ) {
-                        if (adapterPosition != RecyclerView.NO_POSITION) {
+                        if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
                             coverImageView.setImageDrawable(resource)
-                            Log.d(TAG, "Cover loaded for ${album.title}")
                         }
                         currentLoadingJob = null
                     }
 
                     override fun onLoadCleared(placeholder: Drawable?) {
-                        if (adapterPosition != RecyclerView.NO_POSITION) {
-                            coverImageView.setImageDrawable(placeholder)
-                        }
+                        coverImageView.setImageDrawable(placeholder)
                         currentLoadingJob = null
                     }
 
                     override fun onLoadFailed(errorDrawable: Drawable?) {
-                        if (adapterPosition != RecyclerView.NO_POSITION) {
-                            coverImageView.setImageDrawable(errorDrawable)
-                            Log.e(TAG, "Failed to load cover for ${album.title}")
-                        }
+                        coverImageView.setImageDrawable(errorDrawable)
+                        Log.e(TAG, "Failed to load cover for ${album.title}")
                         currentLoadingJob = null
                     }
                 })
@@ -120,36 +123,31 @@ class AlbumAdapter(
         }
 
         private fun updateSelectionState(album: Album) {
-            checkbox.isChecked = album.isSelected  // Update checkbox state
-            selectedOverlay.alpha = if (album.isSelected) OVERLAY_ALPHA else 0f
-            checkmarkIcon.alpha = if (album.isSelected) 1f else 0f
+            checkbox.isChecked = album.isSelected
+            selectedOverlay.visibility = if (album.isSelected) View.VISIBLE else View.GONE
+            checkmarkIcon.visibility = if (album.isSelected) View.VISIBLE else View.GONE
             updateElevation(album.isSelected)
         }
 
         private fun updateElevation(isSelected: Boolean) {
-            val resources = itemView.resources
-            itemView.elevation = if (isSelected) {
-                resources.getDimension(R.dimen.card_elevation_selected)
-            } else {
-                resources.getDimension(R.dimen.card_elevation_normal)
-            }
+            itemView.elevation = itemView.resources.getDimension(
+                if (isSelected) R.dimen.card_elevation_selected
+                else R.dimen.card_elevation_normal
+            )
         }
 
-        private fun setupCheckbox(album: Album) {
-            // Remove click listener from itemView since we're using checkbox
-            checkbox.setOnCheckedChangeListener { _, isChecked ->
-                if (adapterPosition != RecyclerView.NO_POSITION) {
-                    onAlbumClick(album.copy(isSelected = isChecked))
-                }
-            }
+        private fun getItem(position: Int): Album {
+            return (itemView.parent as RecyclerView).adapter?.let {
+                (it as AlbumAdapter).getItem(position)
+            } ?: throw IllegalStateException("Adapter not found")
         }
     }
 
     private class AlbumDiffCallback : DiffUtil.ItemCallback<Album>() {
-        override fun areItemsTheSame(oldItem: Album, newItem: Album): Boolean =
+        override fun areItemsTheSame(oldItem: Album, newItem: Album) =
             oldItem.id == newItem.id
 
-        override fun areContentsTheSame(oldItem: Album, newItem: Album): Boolean =
+        override fun areContentsTheSame(oldItem: Album, newItem: Album) =
             oldItem == newItem && oldItem.isSelected == newItem.isSelected
     }
 }
