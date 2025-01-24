@@ -87,14 +87,22 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        setPreferencesFromResource(R.xml.preferences, rootKey)
-        initializeDeviceAdmin()
-        setupPhotoSourcePreferences()
-        setupGoogleSignIn()
-        setupTestScreensaver()
-        setupDisplayModeSelection()
-        setupLockScreenPreview()
-        setupLockScreenStatus()
+        lifecycleScope.launch(Dispatchers.IO) {
+            // Load preferences in background
+            withContext(Dispatchers.IO) {
+                setPreferencesFromResource(R.xml.preferences, rootKey)
+            }
+            // Setup UI on main thread
+            withContext(Dispatchers.Main) {
+                initializeDeviceAdmin()
+                setupPhotoSourcePreferences()
+                setupGoogleSignIn()
+                setupTestScreensaver()
+                setupDisplayModeSelection()
+                setupLockScreenPreview()
+                setupLockScreenStatus()
+            }
+        }
     }
 
     override fun onResume() {
@@ -177,19 +185,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
 
         selectAlbums?.setOnPreferenceClickListener {
-            try {
-                val account = GoogleSignIn.getLastSignedInAccount(requireContext())
-                if (account != null) {
-                    startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
-                    true
-                } else {
-                    Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
-                    false
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+                    withContext(Dispatchers.Main) {
+                        if (account != null) {
+                            startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+                        } else {
+                            Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        handleError("Error launching album selection", e)
+                    }
                 }
-            } catch (e: Exception) {
-                handleError("Error launching album selection", e)
-                false
             }
+            true
         }
 
         photoSourceSelection?.setOnPreferenceChangeListener { _, newValue ->
