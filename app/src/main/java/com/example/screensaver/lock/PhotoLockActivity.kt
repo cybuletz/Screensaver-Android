@@ -40,7 +40,7 @@ import javax.inject.Inject
 import kotlin.math.abs
 
 @AndroidEntryPoint
-class PhotoLockActivity : AppCompatActivity() {
+open class PhotoLockActivity : AppCompatActivity() {
     // UI Components
     private lateinit var backgroundImageView: ImageView
     private lateinit var overlayImageView: ImageView
@@ -53,15 +53,15 @@ class PhotoLockActivity : AppCompatActivity() {
     @Inject
     lateinit var photoManager: GooglePhotosManager
 
-    private val handler = Handler(Looper.getMainLooper())
+    protected val handler = Handler(Looper.getMainLooper())
 
     // State Variables
     private var isPreviewMode = false
-    private var currentPhotoIndex = 0
-    private var isPowerSaving = false
-    private var isActivityVisible = false
+    protected var currentPhotoIndex = 0
+    protected var isPowerSaving = false
+    protected var isActivityVisible = false
     private var screenWidth: Int = 0
-    private var isInitialized = false
+    protected var isInitialized = false
 
     companion object {
         private const val TAG = "PhotoLockActivity"
@@ -128,7 +128,7 @@ class PhotoLockActivity : AppCompatActivity() {
     }
 
     // Setup Methods
-    private fun setupWindow() {
+    protected open fun setupWindow() {
         screenWidth = resources.displayMetrics.widthPixels
         window.apply {
             addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
@@ -139,7 +139,7 @@ class PhotoLockActivity : AppCompatActivity() {
         updatePowerSavingMode()
     }
 
-    private fun initializeViews() {
+    protected open fun initializeViews() {
         backgroundImageView = findViewById(R.id.backgroundImageView)
         overlayImageView = findViewById(R.id.overlayImageView)
         clockView = findViewById(R.id.lockScreenClock)
@@ -394,7 +394,7 @@ class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleUnlock() {
+    protected open fun handleUnlock() {
         if (isPreviewMode) {
             finish()
         } else {
@@ -423,7 +423,7 @@ class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
-    private fun cleanup() {
+    protected open fun cleanup() {
         try {
             unregisterReceiver(powerSavingReceiver)
         } catch (e: Exception) {
