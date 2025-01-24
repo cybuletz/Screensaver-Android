@@ -15,12 +15,14 @@ import retrofit2.HttpException
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
-
+import javax.inject.Inject
+import javax.inject.Singleton
 /**
  * Centralized error handling for the application.
  * Manages error reporting, user feedback, and error recovery.
  */
-class ErrorHandler(
+@Singleton
+class ErrorHandler @Inject constructor(
     private val context: Context,
     private val analytics: PhotoAnalytics
 ) {
@@ -75,13 +77,13 @@ class ErrorHandler(
         analytics.trackNetworkError(error, NetworkUtils(context).networkState.value.connectionType.name)
         errorChannel.send(ErrorEvent.NetworkError(error))
 
-        val message = when (error) {
-            is UnknownHostException -> R.string.error_no_internet
-            is SocketTimeoutException -> R.string.error_timeout
+        val messageRes = when (error) {
+            is UnknownHostException -> R.string.error_network_connection
+            is SocketTimeoutException -> R.string.error_network_timeout
             else -> R.string.error_network_general
         }
 
-        showError(message, view)
+        showError(messageRes, view)
     }
 
     /**
@@ -91,16 +93,16 @@ class ErrorHandler(
         val errorMessage = error.response()?.errorBody()?.string()
         errorChannel.send(ErrorEvent.ApiError(error.code(), errorMessage))
 
-        val message = when (error.code()) {
-            401 -> R.string.error_unauthorized
-            403 -> R.string.error_forbidden
+        val messageRes = when (error.code()) {
+            401 -> R.string.error_auth_unauthorized
+            403 -> R.string.error_auth_forbidden
             404 -> R.string.error_not_found
             429 -> R.string.error_rate_limit
             500, 502, 503, 504 -> R.string.error_server
             else -> R.string.error_api_general
         }
 
-        showError(message, view)
+        showError(messageRes, view)
     }
 
     /**
@@ -110,13 +112,13 @@ class ErrorHandler(
         analytics.trackPhotoLoadError(error, photoUrl)
         errorChannel.send(ErrorEvent.PhotoLoadError(error, photoUrl))
 
-        val message = when (error) {
-            is OutOfMemoryError -> R.string.error_out_of_memory
+        val messageRes = when (error) {
+            is OutOfMemoryError -> R.string.error_memory
             is IOException -> R.string.error_photo_load
             else -> R.string.error_photo_general
         }
 
-        showError(message, view)
+        showError(messageRes, view)
     }
 
     /**
@@ -125,14 +127,14 @@ class ErrorHandler(
     suspend fun handlePermissionError(permission: String, view: View?) {
         errorChannel.send(ErrorEvent.PermissionError(permission))
 
-        val message = when (permission) {
+        val messageRes = when (permission) {
             android.Manifest.permission.READ_EXTERNAL_STORAGE,
-            android.Manifest.permission.READ_MEDIA_IMAGES -> R.string.error_storage_permission
-            android.Manifest.permission.POST_NOTIFICATIONS -> R.string.error_notification_permission
+            android.Manifest.permission.READ_MEDIA_IMAGES -> R.string.error_permission_storage
+            android.Manifest.permission.POST_NOTIFICATIONS -> R.string.error_permission_notification
             else -> R.string.error_permission_general
         }
 
-        showError(message, view, true)
+        showError(messageRes, view, true)
     }
 
     /**
@@ -141,13 +143,13 @@ class ErrorHandler(
     suspend fun handleStorageError(error: Throwable, view: View?) {
         errorChannel.send(ErrorEvent.StorageError(error))
 
-        val message = when (error) {
+        val messageRes = when (error) {
             is IOException -> R.string.error_storage_access
             is SecurityException -> R.string.error_storage_permission
             else -> R.string.error_storage_general
         }
 
-        showError(message, view)
+        showError(messageRes, view)
     }
 
     /**
@@ -181,7 +183,7 @@ class ErrorHandler(
             message,
             if (isLongDuration) Snackbar.LENGTH_LONG else DEFAULT_SNACKBAR_DURATION
         ).apply {
-            setAction(R.string.action_dismiss) { dismiss() }
+            setAction(android.R.string.ok) { dismiss() }
             show()
         }
     }

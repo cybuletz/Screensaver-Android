@@ -11,13 +11,18 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.screensaver.R
 import com.example.screensaver.databinding.FragmentDreamSettingsBinding
+import com.example.screensaver.interfaces.ThemeUpdateListener
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.utils.ErrorHandler
 import com.example.screensaver.viewmodels.PhotoViewModel
-import com.google.android.material.slider.Slider
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.google.android.material.slider.Slider
+import com.google.android.material.switchmaterial.SwitchMaterial
+import android.content.Intent
+import com.example.screensaver.AlbumSelectionActivity
+import com.example.screensaver.lock.PhotoLockActivity
 
 /**
  * Fragment for configuring screensaver settings
@@ -44,6 +49,8 @@ class DreamSettingsFragment : Fragment() {
         private const val MIN_PHOTO_QUALITY = 0 // low
         private const val MAX_PHOTO_QUALITY = 2 // high
         private const val DEFAULT_PHOTO_QUALITY = 1 // medium
+
+        fun newInstance() = DreamSettingsFragment()
     }
 
     override fun onCreateView(
@@ -63,38 +70,40 @@ class DreamSettingsFragment : Fragment() {
     }
 
     private fun setupUI() {
-        // Setup transition duration slider
-        binding.sliderTransitionDuration.apply {
-            valueFrom = MIN_TRANSITION_DURATION.toFloat()
-            valueTo = MAX_TRANSITION_DURATION.toFloat()
-            value = preferences.getTransitionDuration().toFloat()
-            setLabelFormatter { value -> "${value.toInt()} seconds" }
+        val currentSettings = viewModel.getCurrentSettings()
+
+        binding.apply {
+            sliderTransitionDuration.apply {
+                valueFrom = MIN_TRANSITION_DURATION.toFloat()
+                valueTo = MAX_TRANSITION_DURATION.toFloat()
+                value = currentSettings.transitionDuration.toFloat()
+                setLabelFormatter { "${it.toInt()} seconds" }
+            }
+
+            radioGroupQuality.check(when (currentSettings.photoQuality) {
+                MIN_PHOTO_QUALITY -> R.id.radioLowQuality
+                MAX_PHOTO_QUALITY -> R.id.radioHighQuality
+                else -> R.id.radioMediumQuality
+            })
+
+            switchRandomOrder.isChecked = currentSettings.randomOrder
+            switchShowClock.isChecked = currentSettings.showClock
+            switchShowLocation.isChecked = currentSettings.showLocation
+            switchShowDate.isChecked = currentSettings.showDate
+            switchEnableTransitions.isChecked = currentSettings.enableTransitions
+            switchDarkMode.isChecked = currentSettings.darkMode
+
+            sliderTransitionDuration.isEnabled = currentSettings.enableTransitions
         }
-
-        // Setup photo quality selector
-        binding.radioGroupQuality.check(when (preferences.getPhotoQuality()) {
-            0 -> R.id.radioLowQuality
-            1 -> R.id.radioMediumQuality
-            2 -> R.id.radioHighQuality
-            else -> R.id.radioMediumQuality
-        })
-
-        // Setup switches
-        binding.switchRandomOrder.isChecked = preferences.getRandomOrder()
-        binding.switchShowClock.isChecked = preferences.getShowClock()
-        binding.switchShowLocation.isChecked = preferences.getShowLocation()
-        binding.switchShowDate.isChecked = preferences.getShowDate()
-        binding.switchEnableTransitions.isChecked = preferences.getEnableTransitions()
-        binding.switchDarkMode.isChecked = preferences.getDarkMode()
     }
 
     private fun observeSettings() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                // Observe selected albums
                 viewModel.selectedAlbums.collect { albums ->
-                    binding.textSelectedAlbums.text = getString(
-                        R.string.selected_albums_count,
+                    binding.textSelectedAlbums.text = requireContext().resources.getQuantityString(
+                        R.plurals.selected_albums_count,
+                        albums.size,
                         albums.size
                     )
                 }
@@ -103,121 +112,107 @@ class DreamSettingsFragment : Fragment() {
     }
 
     private fun setupListeners() {
-        // Transition duration changes
-        binding.sliderTransitionDuration.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
-                preferences.setTransitionDuration(value.toInt())
+        binding.apply {
+            sliderTransitionDuration.addOnChangeListener { _, value, fromUser ->
+                if (fromUser) {
+                    updatePreview()
+                }
+            }
+
+            radioGroupQuality.setOnCheckedChangeListener { _, _ ->
                 updatePreview()
             }
-        }
 
-        // Photo quality changes
-        binding.radioGroupQuality.setOnCheckedChangeListener { _, checkedId ->
-            val quality = when (checkedId) {
-                R.id.radioLowQuality -> 0
-                R.id.radioMediumQuality -> 1
-                R.id.radioHighQuality -> 2
-                else -> DEFAULT_PHOTO_QUALITY
+            switchRandomOrder.setOnCheckedChangeListener { _, _ ->
+                updatePreview()
             }
-            preferences.setPhotoQuality(quality)
-            updatePreview()
-        }
 
-        // Switch listeners
-        binding.switchRandomOrder.setOnCheckedChangeListener { _, isChecked ->
-            preferences.setRandomOrder(isChecked)
-            updatePreview()
-        }
+            switchShowClock.setOnCheckedChangeListener { _, _ ->
+                updatePreview()
+            }
 
-        binding.switchShowClock.setOnCheckedChangeListener { _, isChecked ->
-            preferences.setShowClock(isChecked)
-            updatePreview()
-        }
+            switchShowLocation.setOnCheckedChangeListener { _, _ ->
+                updatePreview()
+            }
 
-        binding.switchShowLocation.setOnCheckedChangeListener { _, isChecked ->
-            preferences.setShowLocation(isChecked)
-            updatePreview()
-        }
+            switchShowDate.setOnCheckedChangeListener { _, _ ->
+                updatePreview()
+            }
 
-        binding.switchShowDate.setOnCheckedChangeListener { _, isChecked ->
-            preferences.setShowDate(isChecked)
-            updatePreview()
-        }
+            switchEnableTransitions.setOnCheckedChangeListener { _, isChecked ->
+                sliderTransitionDuration.isEnabled = isChecked
+                updatePreview()
+            }
 
-        binding.switchEnableTransitions.setOnCheckedChangeListener { _, isChecked ->
-            preferences.setEnableTransitions(isChecked)
-            binding.sliderTransitionDuration.isEnabled = isChecked
-            updatePreview()
-        }
+            switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
+                updateTheme(isChecked)
+                updatePreview()
+            }
 
-        binding.switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
-            preferences.setDarkMode(isChecked)
-            updateTheme(isChecked)
-        }
+            buttonSelectAlbums.setOnClickListener {
+                startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+            }
 
-        // Album selection
-        binding.buttonSelectAlbums.setOnClickListener {
-            viewModel.navigateToAlbumSelection()
-        }
+            buttonPreview.setOnClickListener {
+                startActivity(Intent(requireContext(), PhotoLockActivity::class.java).apply {
+                    putExtra("preview_mode", true)
+                })
+            }
 
-        // Reset settings
-        binding.buttonResetSettings.setOnClickListener {
-            resetSettings()
-        }
-
-        // Preview
-        binding.buttonPreview.setOnClickListener {
-            viewModel.startPreview()
+            buttonResetSettings.setOnClickListener {
+                resetSettings()
+            }
         }
     }
 
     private fun updatePreview() {
-        viewModel.updatePreviewSettings(
-            transitionDuration = binding.sliderTransitionDuration.value.toInt(),
-            photoQuality = when (binding.radioGroupQuality.checkedRadioButtonId) {
-                R.id.radioLowQuality -> 0
-                R.id.radioMediumQuality -> 1
-                R.id.radioHighQuality -> 2
-                else -> DEFAULT_PHOTO_QUALITY
-            },
-            randomOrder = binding.switchRandomOrder.isChecked,
-            showClock = binding.switchShowClock.isChecked,
-            showLocation = binding.switchShowLocation.isChecked,
-            showDate = binding.switchShowDate.isChecked,
-            enableTransitions = binding.switchEnableTransitions.isChecked
-        )
+        binding.apply {
+            viewModel.updatePreviewSettings(
+                transitionDuration = sliderTransitionDuration.value.toInt(),
+                photoQuality = when (radioGroupQuality.checkedRadioButtonId) {
+                    R.id.radioLowQuality -> MIN_PHOTO_QUALITY
+                    R.id.radioHighQuality -> MAX_PHOTO_QUALITY
+                    else -> DEFAULT_PHOTO_QUALITY
+                },
+                randomOrder = switchRandomOrder.isChecked,
+                showClock = switchShowClock.isChecked,
+                showLocation = switchShowLocation.isChecked,
+                showDate = switchShowDate.isChecked,
+                enableTransitions = switchEnableTransitions.isChecked,
+                darkMode = switchDarkMode.isChecked
+            )
+        }
     }
 
-    private fun resetSettings() {
-        // Reset all settings to defaults
-        binding.sliderTransitionDuration.value = DEFAULT_TRANSITION_DURATION.toFloat()
-        binding.radioGroupQuality.check(R.id.radioMediumQuality)
-        binding.switchRandomOrder.isChecked = true
-        binding.switchShowClock.isChecked = true
-        binding.switchShowLocation.isChecked = false
-        binding.switchShowDate.isChecked = true
-        binding.switchEnableTransitions.isChecked = true
-        binding.switchDarkMode.isChecked = false
 
-        // Update preferences
-        preferences.apply {
-            setTransitionDuration(DEFAULT_TRANSITION_DURATION)
-            setPhotoQuality(DEFAULT_PHOTO_QUALITY)
-            setRandomOrder(true)
-            setShowClock(true)
-            setShowLocation(false)
-            setShowDate(true)
-            setEnableTransitions(true)
-            setDarkMode(false)
+    private fun resetSettings() {
+        binding.apply {
+            sliderTransitionDuration.value = DEFAULT_TRANSITION_DURATION.toFloat()
+            radioGroupQuality.check(R.id.radioMediumQuality)
+            switchRandomOrder.isChecked = true
+            switchShowClock.isChecked = true
+            switchShowLocation.isChecked = false
+            switchShowDate.isChecked = true
+            switchEnableTransitions.isChecked = true
+            switchDarkMode.isChecked = false
         }
 
-        updatePreview()
+        viewModel.updatePreviewSettings(
+            transitionDuration = DEFAULT_TRANSITION_DURATION,
+            photoQuality = DEFAULT_PHOTO_QUALITY,
+            randomOrder = true,
+            showClock = true,
+            showLocation = false,
+            showDate = true,
+            enableTransitions = true,
+            darkMode = false
+        )
+
         updateTheme(false)
     }
 
     private fun updateTheme(isDarkMode: Boolean) {
-        // Delegate theme change to activity
-        (activity as? SettingsActivity)?.updateTheme(isDarkMode)
+        (activity as? ThemeUpdateListener)?.onThemeChanged(isDarkMode)
     }
 
     override fun onDestroyView() {

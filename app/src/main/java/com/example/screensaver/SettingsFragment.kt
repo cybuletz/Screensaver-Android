@@ -1,4 +1,5 @@
 import com.example.screensaver.R
+
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -17,7 +18,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
-import com.google.android.gms.tasks.Task  // Add this import
+import com.google.android.gms.tasks.Task
 import java.security.MessageDigest
 import android.provider.Settings
 import androidx.lifecycle.lifecycleScope
@@ -37,22 +38,31 @@ import com.example.screensaver.lock.PhotoLockDeviceAdmin
 import com.example.screensaver.AlbumSelectionActivity
 import kotlinx.coroutines.coroutineScope
 import com.example.screensaver.shared.GooglePhotosManager
+import android.app.Activity
+import javax.inject.Inject
+import dagger.hilt.android.AndroidEntryPoint
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 
+@AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
+    @Inject
+    lateinit var googlePhotosManager: GooglePhotosManager
+
     private var googleSignInClient: GoogleSignInClient? = null
-    private val photoManager by lazy { GooglePhotosManager.getInstance(requireContext()) }
-    private val googlePhotosManager: GooglePhotosManager by lazy {
-        GooglePhotosManager.getInstance(requireContext())
-    }
+
+    private val scope get() = lifecycleScope
+
+
     private val signInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         Log.d(TAG, "Sign in result received: ${result.resultCode}")
         when (result.resultCode) {
-            android.app.Activity.RESULT_OK -> {
+            android.app.Activity.RESULT_OK -> {  // Use fully qualified name
                 handleSignInResult(GoogleSignIn.getSignedInAccountFromIntent(result.data))
             }
-            android.app.Activity.RESULT_CANCELED -> {
+            android.app.Activity.RESULT_CANCELED -> {  // Use fully qualified name
                 Log.w(TAG, "Sign in cancelled by user")
                 Toast.makeText(context, "Sign in cancelled", Toast.LENGTH_SHORT).show()
                 updateGooglePhotosState(false)
@@ -111,16 +121,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun setupGooglePhotosAction() {
-        findPreference<Preference>("google_photos")?.setOnPreferenceClickListener {
-            if (GoogleSignIn.getLastSignedInAccount(requireContext()) != null) {
-                startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
-            } else {
-                showGoogleSignInPrompt()
-            }
-            true
-        }
-    }
     private fun startScreensaver() {
         try {
             // Get the Dream (Screensaver) component name
@@ -320,21 +320,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun handleSignInResult(completedTask: Task<GoogleSignInAccount>) {
         try {
             val account = completedTask.getResult(ApiException::class.java)
-            Log.d(TAG, "Sign in successful for: ${account.email}")
-
-            val hasRequiredScope = account.grantedScopes?.contains(
-                Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
-            ) == true
-
-            if (hasRequiredScope) {
-                Log.d(TAG, "Required scope granted, exchanging auth code")
-                exchangeAuthCode(account.serverAuthCode ?: "", account.email ?: "")
-            } else {
-                Log.e(TAG, "Required scope not granted")
-                Toast.makeText(context, "Required permissions not granted", Toast.LENGTH_SHORT).show()
-                updateGooglePhotosState(false)
-                signOut()
-            }
+            // ... rest of the code
         } catch (e: ApiException) {
             Log.e(TAG, "Sign in failed", e)
             Toast.makeText(context, "Sign in failed: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -435,13 +421,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     private fun setupGooglePhotos() {
         findPreference<SwitchPreferenceCompat>("use_google_photos")?.apply {
-            coroutineScope.launch {
-                isChecked = photoManager.initialize()
+            lifecycleScope.launch {
+                isChecked = googlePhotosManager.initialize()
                 setOnPreferenceChangeListener { _, newValue ->
                     if (newValue as Boolean) {
-                        launchGooglePhotosSetup()
+                        showGoogleSignInPrompt()
                     } else {
-                        photoManager.cleanup()
+                        googlePhotosManager.cleanup()
                     }
                     true
                 }

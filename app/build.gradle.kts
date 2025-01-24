@@ -10,6 +10,8 @@ plugins {
 
 kapt {
     correctErrorTypes = true
+    arguments {
+        arg("dagger.hilt.android.internal.disableAndroidSuperclassValidation", "true")}
     includeCompileClasspath = false
 }
 
@@ -88,6 +90,9 @@ android {
 }
 
 dependencies {
+
+    val hiltVersion = rootProject.extra["hilt_version"] as String
+
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
@@ -97,16 +102,22 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.databinding:databinding-runtime:8.1.4")
+    implementation("androidx.hilt:hilt-navigation-fragment:1.1.0")
 
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
     kapt("com.google.dagger:hilt-compiler:2.48")
     kapt("androidx.hilt:hilt-compiler:1.0.0")
+    implementation("androidx.hilt:hilt-navigation-compose:1.0.0")
+    implementation("androidx.hilt:hilt-navigation-fragment:1.0.0")
 
     // Lifecycle
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.6.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+
+    implementation("androidx.work:work-runtime-ktx:2.8.1")
+    implementation("androidx.work:work-runtime:2.8.1")
 
     // Timber
     implementation("com.jakewharton.timber:timber:5.0.1")

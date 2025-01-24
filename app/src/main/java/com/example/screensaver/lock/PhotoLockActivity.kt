@@ -30,12 +30,16 @@ import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
 import com.example.screensaver.R
+import com.example.screensaver.shared.GooglePhotosManager
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import javax.inject.Inject
 import kotlin.math.abs
 
+@AndroidEntryPoint
 class PhotoLockActivity : AppCompatActivity() {
     // UI Components
     private lateinit var backgroundImageView: ImageView
@@ -46,7 +50,9 @@ class PhotoLockActivity : AppCompatActivity() {
     private lateinit var gestureDetector: GestureDetectorCompat
 
     // Managers and Handlers
-    private val photoManager by lazy { GooglePhotosManager.getInstance(this) }
+    @Inject
+    lateinit var photoManager: GooglePhotosManager
+
     private val handler = Handler(Looper.getMainLooper())
 
     // State Variables
@@ -205,12 +211,15 @@ class PhotoLockActivity : AppCompatActivity() {
         if (!isInitialized) return
 
         try {
-            photoManager.getPhotoUrl(index)?.let { url ->
+            val url = photoManager.getPhotoUrl(index)
+            if (url != null) {
                 Glide.with(this)
-                    .load(url)
+                    .load(url as String)  // Explicit cast to resolve overload ambiguity
                     .apply(createGlideOptions())
                     .into(imageView)
-            } ?: loadDefaultBackground(imageView)
+            } else {
+                loadDefaultBackground(imageView)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading photo: ${e.message}")
             loadDefaultBackground(imageView)
@@ -229,8 +238,16 @@ class PhotoLockActivity : AppCompatActivity() {
 
         currentPhotoIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
 
+        // Replace the preloadNextPhoto call with direct photoManager call
         lifecycleScope.launch {
-            photoManager.preloadNextPhoto((currentPhotoIndex + 1) % photoManager.getPhotoCount())
+            val nextIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
+            photoManager.getPhotoUrl(nextIndex)?.let { url ->
+                // Use Glide's preload functionality directly
+                Glide.with(this@PhotoLockActivity)
+                    .load(url)
+                    .apply(createGlideOptions())
+                    .preload()
+            }
         }
 
         val transitionType = PreferenceManager.getDefaultSharedPreferences(this)
@@ -395,15 +412,14 @@ class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
-    private fun createGlideOptions() = RequestOptions()
-        .error(R.drawable.default_background)
-        .diskCacheStrategy(DiskCacheStrategy.ALL)
-        .format(if (isPowerSaving) DecodeFormat.PREFER_RGB_565 else DecodeFormat.PREFER_ARGB_8888)
-        .apply {
-            if (isPowerSaving) {
-                override(800, 800)
-            }
+    private fun createGlideOptions() = RequestOptions().apply {
+        error(R.drawable.default_background)
+        diskCacheStrategy(DiskCacheStrategy.ALL)
+        format(if (isPowerSaving) DecodeFormat.PREFER_RGB_565 else DecodeFormat.PREFER_ARGB_8888)
+        if (isPowerSaving) {
+            override(800, 800)
         }
+    }
 
     private fun cleanup() {
         try {

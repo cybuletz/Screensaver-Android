@@ -7,12 +7,17 @@ import androidx.preference.PreferenceManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Manages application preferences and settings.
  * Handles persistence and provides type-safe access to user preferences.
  */
-class AppPreferences(context: Context) {
+
+
+@Singleton
+class AppPreferences @Inject constructor(context: Context) {
 
     private val prefs: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
     private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -65,6 +70,14 @@ class AppPreferences(context: Context) {
         private const val DEFAULT_TRANSITION_INTERVAL = 30 // seconds
         private const val DEFAULT_TRANSITION_ANIMATION = "fade"
         private const val DEFAULT_CLOCK_FORMAT = "24h"
+
+        private const val PREF_TRANSITION_DURATION = "transition_duration"
+        private const val PREF_PHOTO_QUALITY = "photo_quality"
+        private const val PREF_RANDOM_ORDER = "random_order"
+        private const val PREF_SHOW_LOCATION = "show_location"
+        private const val PREF_SHOW_DATE = "show_date"
+        private const val PREF_ENABLE_TRANSITIONS = "enable_transitions"
+        private const val PREF_DARK_MODE = "dark_mode"
     }
 
     enum class DisplayMode {
@@ -92,6 +105,55 @@ class AppPreferences(context: Context) {
                 DisplayMode.DREAM_SERVICE -> "dream_service"
             })
         }
+    }
+
+    fun getTransitionDuration(): Int =
+        prefs.getInt(PREF_TRANSITION_DURATION, 30)
+
+    fun setTransitionDuration(duration: Int) {
+        prefs.edit { putInt(PREF_TRANSITION_DURATION, duration) }
+    }
+
+    fun getPhotoQuality(): Int =
+        prefs.getInt(PREF_PHOTO_QUALITY, 1)
+
+    fun setPhotoQuality(quality: Int) {
+        prefs.edit { putInt(PREF_PHOTO_QUALITY, quality) }
+    }
+
+    fun getRandomOrder(): Boolean =
+        prefs.getBoolean(PREF_RANDOM_ORDER, true)
+
+    fun setRandomOrder(enabled: Boolean) {
+        prefs.edit { putBoolean(PREF_RANDOM_ORDER, enabled) }
+    }
+
+    fun getShowLocation(): Boolean =
+        prefs.getBoolean(PREF_SHOW_LOCATION, false)
+
+    fun setShowLocation(enabled: Boolean) {
+        prefs.edit { putBoolean(PREF_SHOW_LOCATION, enabled) }
+    }
+
+    fun getShowDate(): Boolean =
+        prefs.getBoolean(PREF_SHOW_DATE, true)
+
+    fun setShowDate(enabled: Boolean) {
+        prefs.edit { putBoolean(PREF_SHOW_DATE, enabled) }
+    }
+
+    fun getEnableTransitions(): Boolean =
+        prefs.getBoolean(PREF_ENABLE_TRANSITIONS, true)
+
+    fun setEnableTransitions(enabled: Boolean) {
+        prefs.edit { putBoolean(PREF_ENABLE_TRANSITIONS, enabled) }
+    }
+
+    fun getDarkMode(): Boolean =
+        prefs.getBoolean(PREF_DARK_MODE, false)
+
+    fun setDarkMode(enabled: Boolean) {
+        prefs.edit { putBoolean(PREF_DARK_MODE, enabled) }
     }
 
     // Transition Interval
@@ -173,14 +235,14 @@ class AppPreferences(context: Context) {
      */
     fun resetToDefaults() {
         prefs.edit {
-            putString(PREF_DISPLAY_MODE, DEFAULT_DISPLAY_MODE)
-            putInt(PREF_TRANSITION_INTERVAL, DEFAULT_TRANSITION_INTERVAL)
-            putString(PREF_TRANSITION_ANIMATION, DEFAULT_TRANSITION_ANIMATION)
-            putBoolean(PREF_SHOW_PHOTO_INFO, true)
-            putBoolean(PREF_SHOW_CLOCK, true)
-            putString(PREF_CLOCK_FORMAT, DEFAULT_CLOCK_FORMAT)
-            putStringSet(PREF_SELECTED_ALBUMS, emptySet())
-            putLong(PREF_LAST_SYNC, 0)
+            // ... existing reset preferences ...
+            putInt(PREF_TRANSITION_DURATION, 30)
+            putInt(PREF_PHOTO_QUALITY, 1)
+            putBoolean(PREF_RANDOM_ORDER, true)
+            putBoolean(PREF_SHOW_LOCATION, false)
+            putBoolean(PREF_SHOW_DATE, true)
+            putBoolean(PREF_ENABLE_TRANSITIONS, true)
+            putBoolean(PREF_DARK_MODE, false)
         }
     }
 

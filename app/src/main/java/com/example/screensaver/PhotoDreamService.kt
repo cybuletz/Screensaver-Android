@@ -22,14 +22,24 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.Target
 import com.example.screensaver.shared.GooglePhotosManager
+import com.example.screensaver.utils.PhotoLoadingManager
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import android.net.Uri
+import com.example.screensaver.R
 
+@AndroidEntryPoint
 class PhotoDreamService : DreamService() {
+
+    @Inject
+    lateinit var photoLoadingManager: PhotoLoadingManager
+
     private lateinit var primaryImageView: ImageView
     private lateinit var secondaryImageView: ImageView
     private lateinit var debugStatus: TextView
@@ -41,14 +51,15 @@ class PhotoDreamService : DreamService() {
     private var currentPhotoIndex = 0
     private var slideshowRunnable: Runnable? = null
 
-    private val coroutineScope = CoroutineScope(Dispatchers.Main + Job())
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
-    private val photoManager by lazy { GooglePhotosManager.getInstance(this) }
+    private val photoManager by lazy { GooglePhotosManager.getInstance(applicationContext) }
 
     companion object {
         private const val TAG = "PhotoDreamService"
         private const val SLIDESHOW_DELAY = 10000L // 10 seconds
         private const val TRANSITION_DURATION = 1000L // 1 second transition
+        private const val PRECACHE_COUNT = 5
     }
 
     override fun onCreate() {
@@ -70,16 +81,28 @@ class PhotoDreamService : DreamService() {
         }
     }
 
-    private fun setupDreamService() {
-        try {
-            setContentView(R.layout.dream_layout)
-            initializeViews()
-            setupImageViews()
-            startDreamSequence()
-        } catch (e: Exception) {
-            Log.e(TAG, "Setup error", e)
-            handleError(e)
+    // ... rest of your original code ...
+
+    private fun startDreamSequence() {
+        serviceScope.launch {
+            try {
+                loadingIndicator.isVisible = true
+                if (photoManager.initialize() && verifySelectedAlbums()) {
+                    loadPhotos()
+                } else {
+                    handleError(Exception("Failed to initialize photo service"))
+                }
+            } catch (e: Exception) {
+                handleError(e)
+            }
         }
+    }
+
+    private fun setupDreamService() {
+        setContentView(R.layout.dream_layout)
+        initializeViews()
+        setupImageViews()
+        startDreamSequence()
     }
 
     private fun initializeViews() {
@@ -112,21 +135,6 @@ class PhotoDreamService : DreamService() {
         secondaryImageView.scaleType = ImageView.ScaleType.CENTER_CROP
         secondaryImageView.alpha = 0f
         currentImageView = primaryImageView
-    }
-
-    private fun startDreamSequence() {
-        coroutineScope.launch {
-            try {
-                loadingIndicator.isVisible = true
-                if (photoManager.initialize() && verifySelectedAlbums()) {
-                    loadPhotos()
-                } else {
-                    handleError(Exception("Failed to initialize photo service"))
-                }
-            } catch (e: Exception) {
-                handleError(e)
-            }
-        }
     }
 
     private fun verifySelectedAlbums(): Boolean {
@@ -176,18 +184,22 @@ class PhotoDreamService : DreamService() {
         val nextImageView = if (currentImageView == primaryImageView) secondaryImageView else primaryImageView
         val url = photoManager.getPhotoUrl(currentPhotoIndex)
 
-        Glide.with(this)
-            .load(url as String)
-            .apply(RequestOptions()
-                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .error(android.R.drawable.ic_dialog_alert))
-            .listener(createGlideListener())
-            .into(nextImageView)
+        if (url != null) {
+            Glide.with(applicationContext)
+                .load(url.toString()) // Explicitly convert to String
+                .apply(RequestOptions()
+                    .diskCacheStrategy(DiskCacheStrategy.ALL)
+                    .error(android.R.drawable.ic_dialog_alert))
+                .listener(createGlideListener())
+                .into(nextImageView)
 
-        animateTransition(nextImageView)
-        currentImageView = nextImageView
-        currentPhotoIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
-        precacheNextPhoto()
+            animateTransition(nextImageView)
+            currentImageView = nextImageView
+            currentPhotoIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
+            precacheNextPhoto()
+        } else {
+            handleError(Exception("Invalid photo URL"))
+        }
     }
 
     private fun createGlideListener() = object : RequestListener<Drawable> {
@@ -234,7 +246,7 @@ class PhotoDreamService : DreamService() {
             val index = (currentPhotoIndex + i) % photoManager.getPhotoCount()
             photoManager.getPhotoUrl(index)?.let { url ->
                 Glide.with(this)
-                    .load(url as String)
+                    .load(url.toString()) // Explicitly convert to String
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .preload()
             }
@@ -244,7 +256,7 @@ class PhotoDreamService : DreamService() {
     private fun precacheNextPhoto() {
         photoManager.getPhotoUrl((currentPhotoIndex + 1) % photoManager.getPhotoCount())?.let { nextUrl ->
             Glide.with(this)
-                .load(nextUrl as String)
+                .load(nextUrl.toString()) // Explicitly convert to String
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .preload()
         }
@@ -252,7 +264,7 @@ class PhotoDreamService : DreamService() {
 
     private fun updateDebugStatus(status: String) {
         Log.d(TAG, status)
-        coroutineScope.launch(Dispatchers.Main) {
+        serviceScope.launch(Dispatchers.Main) {
             try {
                 debugStatus.text = status
                 debugStatus.isVisible = true
@@ -266,11 +278,11 @@ class PhotoDreamService : DreamService() {
         val errorMessage = "Error: ${error.message}"
         Log.e(TAG, errorMessage, error)
 
-        coroutineScope.launch(Dispatchers.Main) {
+        serviceScope.launch(Dispatchers.Main) {
             try {
                 updateDebugStatus(errorMessage)
                 loadingIndicator.isVisible = false
-                Toast.makeText(this@PhotoDreamService, errorMessage, Toast.LENGTH_LONG).show()
+                Toast.makeText(applicationContext, errorMessage, Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling error", e)
             }
@@ -295,10 +307,15 @@ class PhotoDreamService : DreamService() {
     }
 
     private fun cleanup() {
-        slideshowRunnable?.let {
-            handler.removeCallbacks(it)
+        try {
+            slideshowRunnable?.let {
+                handler.removeCallbacks(it)
+            }
+            serviceScope.cancel()
+            photoManager.cleanup()
+            Glide.get(applicationContext).clearMemory()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during cleanup", e)
         }
-        coroutineScope.cancel()
-        photoManager.cleanup()
     }
 }

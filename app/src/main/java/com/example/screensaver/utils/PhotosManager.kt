@@ -1,5 +1,3 @@
-// File: app/src/main/java/com/example/screensaver/utils/PhotoManager.kt
-
 package com.example.screensaver.utils
 
 import android.content.Context
@@ -13,6 +11,11 @@ import com.google.photos.library.v1.PhotosLibraryClient
 import com.google.photos.library.v1.PhotosLibrarySettings
 import com.google.photos.library.v1.proto.SearchMediaItemsRequest
 import kotlinx.coroutines.*
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.Date
+import com.example.screensaver.R
 
 class PhotoManager private constructor(private val context: Context) {
     private var photosLibraryClient: PhotosLibraryClient? = null

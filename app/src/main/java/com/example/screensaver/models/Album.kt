@@ -2,6 +2,8 @@ package com.example.screensaver.models
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
+import com.example.screensaver.models.Album
+import com.example.screensaver.models.MediaItem
 
 /**
  * Represents a photo album in the application.

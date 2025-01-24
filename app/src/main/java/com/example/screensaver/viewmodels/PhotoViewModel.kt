@@ -6,8 +6,6 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.example.screensaver.shared.GooglePhotosManager
-import com.example.screensaver.models.Album
-import com.example.screensaver.models.MediaItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -18,13 +16,20 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import com.example.screensaver.utils.RetryActionListener
-import java.util.Date
 import com.example.screensaver.utils.OnPhotoLoadListener
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import com.example.screensaver.models.Album
+import com.example.screensaver.models.MediaItem
+import com.example.screensaver.models.MediaItemModel
+import com.example.screensaver.utils.AppPreferences
 
 @HiltViewModel
 class PhotoViewModel @Inject constructor(
     application: Application,
-    private val photosManager: GooglePhotosManager
+    private val photosManager: GooglePhotosManager,
+    private val preferences: AppPreferences // Make sure AppPreferences is properly imported
 ) : AndroidViewModel(application), RetryActionListener, OnPhotoLoadListener {
 
     private val _currentPhoto = MutableLiveData<MediaItem>()
@@ -45,10 +50,10 @@ class PhotoViewModel @Inject constructor(
     private val _isLoading = MutableLiveData<Boolean>()
     val isLoading: LiveData<Boolean> = _isLoading
 
-    private val _selectedAlbums = MutableLiveData<List<Album>>()
-    val selectedAlbums: LiveData<List<Album>> = _selectedAlbums
+    private val _selectedAlbums = MutableStateFlow<List<Album>>(emptyList())
+    val selectedAlbums: StateFlow<List<Album>> = _selectedAlbums
 
-    // UI State for overlay information
+    // UI State
     private val _showOverlay = MutableLiveData(true)
     val showOverlay: LiveData<Boolean> = _showOverlay
 
@@ -58,28 +63,51 @@ class PhotoViewModel @Inject constructor(
     private val _showDate = MutableLiveData(true)
     val showDate: LiveData<Boolean> = _showDate
 
-    private val _showLocation = MutableLiveData(true)
+    private val _showLocation = MutableLiveData(false)
     val showLocation: LiveData<Boolean> = _showLocation
 
-    private val _photoQuality = MutableLiveData<Int>()
+    private val _photoQuality = MutableLiveData(QUALITY_HIGH)
     val photoQuality: LiveData<Int> = _photoQuality
 
-    private val _currentTime = MutableLiveData<Date>()
-    val currentTime: LiveData<Date> = _currentTime
+    private val _currentDateTime = MutableLiveData<LocalDateTime>()
+    val currentDateTime: LiveData<LocalDateTime> = _currentDateTime
 
-    private val _currentDate = MutableLiveData<Date>()
-    val currentDate: LiveData<Date> = _currentDate
+    private val _currentTime = MutableLiveData<String>()
+    val currentTime: LiveData<String> = _currentTime
+
+    private val _currentDate = MutableLiveData<String>()
+    val currentDate: LiveData<String> = _currentDate
+
+    private val _transitionDuration = MutableStateFlow(preferences.getTransitionDuration())
+    val transitionDuration: StateFlow<Int> = _transitionDuration
+
+    private val _enableTransitions = MutableStateFlow(preferences.getEnableTransitions())
+    val enableTransitions: StateFlow<Boolean> = _enableTransitions
+
+    private val _darkMode = MutableStateFlow(preferences.getDarkMode())
+    val darkMode: StateFlow<Boolean> = _darkMode
 
     private var timeUpdateJob: Job? = null
-    private var mediaItems = mutableListOf<MediaItem>()
-    private var currentIndex = -1
     private var photoChangeJob: Job? = null
+    private val mediaItems = mutableListOf<MediaItem>()
+    private var currentIndex = -1
     private val isActive = AtomicBoolean(false)
     private var retryCount = 0
 
     enum class LoadingState {
         IDLE, LOADING, SUCCESS, ERROR
     }
+
+    data class Settings(
+        val transitionDuration: Int,
+        val photoQuality: Int,
+        val randomOrder: Boolean,
+        val showClock: Boolean,
+        val showLocation: Boolean,
+        val showDate: Boolean,
+        val enableTransitions: Boolean,
+        val darkMode: Boolean
+    )
 
     companion object {
         const val QUALITY_LOW = 1
@@ -92,11 +120,65 @@ class PhotoViewModel @Inject constructor(
     }
 
     init {
-        _photoQuality.value = QUALITY_HIGH
         updateDateTime()
         startTimeUpdates()
     }
 
+    fun getCurrentSettings() = Settings(
+        transitionDuration = preferences.getTransitionDuration(),
+        photoQuality = preferences.getPhotoQuality(),
+        randomOrder = preferences.getRandomOrder(),
+        showClock = preferences.isShowClock(),
+        showLocation = preferences.getShowLocation(),
+        showDate = preferences.getShowDate(),
+        enableTransitions = preferences.getEnableTransitions(),
+        darkMode = preferences.getDarkMode()
+    )
+
+    fun updatePreviewSettings(
+        transitionDuration: Int,
+        photoQuality: Int,
+        randomOrder: Boolean,
+        showClock: Boolean,
+        showLocation: Boolean,
+        showDate: Boolean,
+        enableTransitions: Boolean,
+        darkMode: Boolean
+    ) {
+        preferences.apply {
+            setTransitionDuration(transitionDuration)
+            setPhotoQuality(photoQuality)
+            setRandomOrder(randomOrder)
+            setShowClock(showClock)
+            setShowLocation(showLocation)
+            setShowDate(showDate)
+            setEnableTransitions(enableTransitions)
+            setDarkMode(darkMode)
+        }
+
+        // Update local state
+        _transitionDuration.value = transitionDuration
+        _photoQuality.value = photoQuality
+        _showClock.value = showClock
+        _showLocation.value = showLocation
+        _showDate.value = showDate
+        _enableTransitions.value = enableTransitions
+        _darkMode.value = darkMode
+
+        // Adjust photo changing interval if needed
+        if (isActive.get()) {
+            photoChangeJob?.cancel()
+            startPhotoChanging()
+        }
+    }
+
+    fun navigateToAlbumSelection() {
+        // This will be handled by the Fragment
+    }
+
+    fun startPreview() {
+        // This will be handled by the Fragment
+    }
 
     override fun onPhotoLoadComplete(success: Boolean) {
         _isLoading.value = false
@@ -107,9 +189,10 @@ class PhotoViewModel @Inject constructor(
     }
 
     private fun updateDateTime() {
-        val now = Date()
-        _currentTime.value = now
-        _currentDate.value = now
+        val now = LocalDateTime.now(ZoneId.systemDefault())
+        _currentDateTime.value = now
+        _currentTime.value = now.format(DateTimeFormatter.ofPattern("HH:mm"))
+        _currentDate.value = now.format(DateTimeFormatter.ofPattern("MMMM d, yyyy"))
     }
 
     private fun startTimeUpdates() {
@@ -128,9 +211,14 @@ class PhotoViewModel @Inject constructor(
                 _hasError.value = false
                 _loadingState.value = LoadingState.LOADING
                 _selectedAlbums.value = albums
-                loadMediaItems()
-                startPhotoChanging()
-                _loadingState.value = LoadingState.SUCCESS
+
+                if (photosManager.initialize()) {
+                    loadMediaItems()
+                    startPhotoChanging()
+                    _loadingState.value = LoadingState.SUCCESS
+                } else {
+                    handleError("Failed to initialize photo manager", null)
+                }
             } catch (e: Exception) {
                 handleError("Failed to initialize photos: ${e.message}", e)
             } finally {
@@ -143,12 +231,20 @@ class PhotoViewModel @Inject constructor(
         try {
             _isLoading.value = true
             mediaItems.clear()
-            _selectedAlbums.value?.forEach { album ->
-                val items = photosManager.getMediaItems(album.id)
-                mediaItems.addAll(items)
+
+            _selectedAlbums.value.forEach { album ->
+                photosManager.loadPhotos(album.id)?.let { items ->
+                    // The items are already MediaItem objects, no conversion needed
+                    mediaItems.addAll(items)
+                }
             }
-            mediaItems.shuffle()
-            _hasError.value = false
+
+            if (mediaItems.isNotEmpty()) {
+                mediaItems.shuffle()
+                _hasError.value = false
+            } else {
+                handleError("No photos found in selected albums", null)
+            }
         } catch (e: Exception) {
             handleError("Failed to load media items: ${e.message}", e)
         } finally {
@@ -157,7 +253,9 @@ class PhotoViewModel @Inject constructor(
     }
 
     fun setPhotoQuality(quality: Int) {
-        _photoQuality.value = quality
+        if (quality in QUALITY_LOW..QUALITY_HIGH) {
+            _photoQuality.value = quality
+        }
     }
 
     private fun startPhotoChanging() {
@@ -166,7 +264,8 @@ class PhotoViewModel @Inject constructor(
                 try {
                     while (isActive.get()) {
                         showNextPhoto()
-                        delay(PHOTO_CHANGE_INTERVAL)
+                        // Use transition duration from preferences
+                        delay(preferences.getTransitionDuration() * 1000L)
                     }
                 } catch (e: CancellationException) {
                     // Normal cancellation, ignore
@@ -189,6 +288,7 @@ class PhotoViewModel @Inject constructor(
                     _currentPhoto.value = mediaItems[currentIndex].apply {
                         updateLoadState(MediaItem.LoadState.LOADING)
                     }
+
                     // Preload next photo
                     val nextIndex = (currentIndex + 1) % mediaItems.size
                     _nextPhoto.value = mediaItems[nextIndex]
@@ -226,8 +326,9 @@ class PhotoViewModel @Inject constructor(
         _showOverlay.value = _showOverlay.value?.not()
     }
 
-
-
+    fun setOverlayVisibility(show: Boolean) {
+        _showOverlay.value = show
+    }
 
     fun stop() {
         isActive.set(false)
@@ -244,6 +345,7 @@ class PhotoViewModel @Inject constructor(
 
     override fun onRetry() {
         _hasError.value = false
+        retryCount = 0
         showNextPhoto()
     }
 }

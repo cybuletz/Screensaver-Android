@@ -1,20 +1,24 @@
 package com.example.screensaver
 
 import android.app.Application
+import android.os.Bundle
 import android.os.StrictMode
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.screensaver.utils.AppPreferences
+import com.example.screensaver.work.CacheCleanupWorker
+import com.example.screensaver.work.PhotoRefreshWorker
 import com.google.firebase.analytics.FirebaseAnalytics
-import com.google.firebase.analytics.ktx.analytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
-import com.google.firebase.ktx.Firebase
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 /**
@@ -27,32 +31,36 @@ class ScreensaverApplication : Application() {
     lateinit var preferences: AppPreferences
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private lateinit var firebaseAnalytics: FirebaseAnalytics
 
     companion object {
         private const val VERSION_NAME = BuildConfig.VERSION_NAME
         private const val VERSION_CODE = BuildConfig.VERSION_CODE
+        private const val CACHE_CLEANUP_WORK = "cache_cleanup_work"
+        private const val PHOTO_REFRESH_WORK = "photo_refresh_work"
+        private const val CACHE_CLEANUP_INTERVAL_HOURS = 24L
+        private const val PHOTO_REFRESH_INTERVAL_HOURS = 6L
     }
 
     override fun onCreate() {
         super.onCreate()
+        initializeApp()
+    }
 
-        // Initialize logging
+    private fun initializeApp() {
         if (BuildConfig.DEBUG) {
-            Timber.plant(Timber.DebugTree())
-            enableStrictMode()
+            initializeDebugMode()
         }
 
-        // Initialize Firebase services
         initializeFirebase()
-
-        // Initialize theme
         initializeTheme()
-
-        // Initialize work manager for background tasks
         initializeWorkManager()
-
-        // Log application start
         logApplicationStart()
+    }
+
+    private fun initializeDebugMode() {
+        Timber.plant(Timber.DebugTree())
+        enableStrictMode()
     }
 
     private fun enableStrictMode() {
@@ -77,13 +85,11 @@ class ScreensaverApplication : Application() {
     }
 
     private fun initializeFirebase() {
-        // Initialize Firebase Analytics
-        FirebaseAnalytics.getInstance(this).apply {
+        firebaseAnalytics = FirebaseAnalytics.getInstance(this).apply {
             setAnalyticsCollectionEnabled(!BuildConfig.DEBUG)
             setUserProperty("app_version", VERSION_NAME)
         }
 
-        // Initialize Firebase Crashlytics
         FirebaseCrashlytics.getInstance().apply {
             setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)
             setCustomKey("version_code", VERSION_CODE)
@@ -93,24 +99,23 @@ class ScreensaverApplication : Application() {
 
     private fun initializeTheme() {
         applicationScope.launch {
-            val isDarkMode = preferences.getDarkModeFlow().first()
-            AppCompatDelegate.setDefaultNightMode(
-                if (isDarkMode) {
-                    AppCompatDelegate.MODE_NIGHT_YES
-                } else {
-                    AppCompatDelegate.MODE_NIGHT_NO
-                }
-            )
+            try {
+                val isDarkMode = preferences.getDarkMode()
+                AppCompatDelegate.setDefaultNightMode(
+                    if (isDarkMode) AppCompatDelegate.MODE_NIGHT_YES
+                    else AppCompatDelegate.MODE_NIGHT_NO
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize theme")
+                FirebaseCrashlytics.getInstance().recordException(e)
+            }
         }
     }
 
     private fun initializeWorkManager() {
         applicationScope.launch {
             try {
-                // Setup periodic work for cache cleanup
                 setupCacheCleanupWork()
-
-                // Setup periodic work for photo refresh
                 setupPhotoRefreshWork()
             } catch (e: Exception) {
                 Timber.e(e, "Failed to initialize WorkManager")
@@ -120,30 +125,45 @@ class ScreensaverApplication : Application() {
     }
 
     private fun setupCacheCleanupWork() {
-        // Implementation for cache cleanup periodic work
-        // This will run daily to clean up old cached photos
+        val cacheCleanupRequest = PeriodicWorkRequestBuilder<CacheCleanupWorker>(
+            CACHE_CLEANUP_INTERVAL_HOURS, TimeUnit.HOURS
+        ).build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            CACHE_CLEANUP_WORK,
+            ExistingPeriodicWorkPolicy.KEEP,
+            cacheCleanupRequest
+        )
     }
 
     private fun setupPhotoRefreshWork() {
-        // Implementation for photo refresh periodic work
-        // This will run periodically to refresh photo lists
+        val photoRefreshRequest = PeriodicWorkRequestBuilder<PhotoRefreshWorker>(
+            PHOTO_REFRESH_INTERVAL_HOURS, TimeUnit.HOURS
+        ).build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            PHOTO_REFRESH_WORK,
+            ExistingPeriodicWorkPolicy.KEEP,
+            photoRefreshRequest
+        )
     }
 
     private fun logApplicationStart() {
-        Firebase.analytics.logEvent("app_start") {
-            param("version_name", VERSION_NAME)
-            param("version_code", VERSION_CODE.toString())
-            param("build_type", BuildConfig.BUILD_TYPE)
-            param("debug_mode", BuildConfig.DEBUG.toString())
+        val params = Bundle().apply {
+            putString("version_name", VERSION_NAME)
+            putInt("version_code", VERSION_CODE)
+            putString("build_type", BuildConfig.BUILD_TYPE)
+            putBoolean("debug_mode", BuildConfig.DEBUG)
         }
 
+        firebaseAnalytics.logEvent("app_start", params)
         Timber.i("Application started: v$VERSION_NAME ($VERSION_CODE)")
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        // Clear non-essential caches
         Timber.w("Low memory condition detected")
+        clearNonEssentialCaches()
     }
 
     override fun onTrimMemory(level: Int) {
@@ -151,14 +171,22 @@ class ScreensaverApplication : Application() {
         when (level) {
             TRIM_MEMORY_RUNNING_CRITICAL,
             TRIM_MEMORY_COMPLETE -> {
-                // Clear all caches
                 Timber.w("Critical memory condition detected")
+                clearAllCaches()
             }
             TRIM_MEMORY_RUNNING_LOW,
             TRIM_MEMORY_RUNNING_MODERATE -> {
-                // Clear non-essential caches
                 Timber.w("Moderate memory condition detected")
+                clearNonEssentialCaches()
             }
         }
+    }
+
+    private fun clearAllCaches() {
+        // Implementation for clearing all caches
+    }
+
+    private fun clearNonEssentialCaches() {
+        // Implementation for clearing non-essential caches
     }
 }

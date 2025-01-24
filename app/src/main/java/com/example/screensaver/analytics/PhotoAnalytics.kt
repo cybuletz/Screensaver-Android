@@ -11,12 +11,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Manages analytics tracking and reporting for the application.
  * Handles event logging, performance monitoring, and error tracking.
  */
-class PhotoAnalytics(private val context: Context) {
+@Singleton
+class PhotoAnalytics @Inject constructor(
+    private val context: Context
+) {
 
     private val firebaseAnalytics: FirebaseAnalytics = Firebase.analytics
     private val crashlytics: FirebaseCrashlytics = FirebaseCrashlytics.getInstance()
