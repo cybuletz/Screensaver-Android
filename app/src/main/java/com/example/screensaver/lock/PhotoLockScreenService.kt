@@ -22,6 +22,7 @@ import com.example.screensaver.models.MediaItem
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -144,10 +145,13 @@ class PhotoLockScreenService : Service() {
                     }
                 }
             } catch (e: Exception) {
-                if (e is JobCancellationException) {
-                    Log.d(TAG, "Initialization job was cancelled")
-                } else {
-                    Log.e(TAG, "Error initializing service", e)
+                when (e) {
+                    is CancellationException -> {
+                        Log.d(TAG, "Initialization job was cancelled")
+                    }
+                    else -> {
+                        Log.e(TAG, "Error initializing service", e)
+                    }
                 }
                 isInitialized = false
             }

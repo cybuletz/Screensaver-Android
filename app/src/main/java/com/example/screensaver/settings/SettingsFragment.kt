@@ -38,6 +38,9 @@ import android.content.pm.PackageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
+import android.os.Build
+import android.app.NotificationManager
+import android.app.NotificationChannel
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -317,11 +320,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     // Notify service of authentication update
                     Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
                         intent.action = "AUTH_UPDATED"
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            requireContext().startForegroundService(intent)
-                        } else {
-                            requireContext().startService(intent)
-                        }
+                        requireContext().startService(intent)
                     }
                 }
             } ?: run {

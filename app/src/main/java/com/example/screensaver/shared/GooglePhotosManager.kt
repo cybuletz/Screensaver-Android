@@ -22,6 +22,8 @@ import java.net.URL
 import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Singleton
 class GooglePhotosManager @Inject constructor(
@@ -46,13 +48,14 @@ class GooglePhotosManager @Inject constructor(
         private const val TOKEN_EXPIRY_BUFFER = 60000L // 1 minute buffer
     }
 
-    suspend fun initialize(): Boolean {
+    suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         if (!hasValidTokens()) {
             Log.d(TAG, "No tokens available, skipping initialization")
-            return false
+            return@withContext false
         }
 
-        return try {
+        try {
+            _loadingState.value = LoadingState.LOADING
 
             // Check if we have tokens before trying to authenticate
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
@@ -61,7 +64,6 @@ class GooglePhotosManager @Inject constructor(
                 return@withContext false
             }
 
-            _loadingState.value = LoadingState.LOADING
             val credentials = getOrRefreshCredentials() ?: return@withContext false
             val settings = PhotosLibrarySettings.newBuilder()
                 .setCredentialsProvider { credentials }
@@ -73,9 +75,6 @@ class GooglePhotosManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing Google Photos", e)
             _loadingState.value = LoadingState.ERROR
-            false
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during initialization", e)
             false
         }
     }
