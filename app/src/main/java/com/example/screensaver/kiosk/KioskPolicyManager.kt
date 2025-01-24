@@ -8,6 +8,8 @@ import com.example.screensaver.lock.PhotoLockDeviceAdmin
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import android.os.Build
+
 
 @Singleton
 class KioskPolicyManager @Inject constructor(
@@ -74,7 +76,21 @@ class KioskPolicyManager @Inject constructor(
 
     fun isKioskModeAllowed(): Boolean {
         return devicePolicyManager.isAdminActive(adminComponent) &&
-                devicePolicyManager.getLockTaskPackages(adminComponent).contains(context.packageName)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    devicePolicyManager.getLockTaskPackages(adminComponent).contains(context.packageName)
+                } else {
+                    devicePolicyManager.isLockTaskPermitted(context.packageName)
+                }
+    }
+
+    private fun isLockTaskPermitted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // For API 26 and above
+            devicePolicyManager.getLockTaskPackages(adminComponent).contains(context.packageName)
+        } else {
+            // For API 23-25
+            devicePolicyManager.isLockTaskPermitted(context.packageName)
+        }
     }
 
     fun isDeviceOwner(): Boolean {

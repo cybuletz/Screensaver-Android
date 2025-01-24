@@ -75,6 +75,10 @@ android {
         }
     }
 
+    lint {
+        baseline = file("lint-baseline.xml")
+    }
+
     buildFeatures {
         dataBinding = true
         viewBinding = true

@@ -2,6 +2,7 @@ package com.example.screensaver
 
 import android.content.Context
 import androidx.preference.PreferenceManager
+import android.content.SharedPreferences
 
 class PreferencesManager(context: Context) {
     private val prefs = PreferenceManager.getDefaultSharedPreferences(context)

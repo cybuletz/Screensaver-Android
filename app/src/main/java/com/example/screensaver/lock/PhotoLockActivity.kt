@@ -42,7 +42,7 @@ import kotlin.math.abs
 @AndroidEntryPoint
 open class PhotoLockActivity : AppCompatActivity() {
     // UI Components
-    private lateinit var backgroundImageView: ImageView
+    protected lateinit var backgroundImageView: ImageView
     private lateinit var overlayImageView: ImageView
     private lateinit var clockView: TextClock
     private lateinit var dateView: TextView
@@ -205,7 +205,7 @@ open class PhotoLockActivity : AppCompatActivity() {
         scheduleNextPhotoChange()
     }
 
-    private fun loadPhoto(index: Int, imageView: ImageView) {
+    protected fun loadPhoto(index: Int, imageView: ImageView) {  // Added curly brace here
         if (!isInitialized) return
 
         try {

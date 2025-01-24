@@ -17,6 +17,8 @@ import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.models.MediaItem
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import android.annotation.SuppressLint
+
 
 @AndroidEntryPoint
 class KioskActivity : PhotoLockActivity() {
@@ -54,8 +56,8 @@ class KioskActivity : PhotoLockActivity() {
         initializeKioskMode()
     }
 
-    private fun setupWindow() {
-        super.setupWindow()
+    override fun setupWindow() {
+        super.setupWindow()  // This is correct since setupWindow() is already protected in PhotoLockActivity
         window.addFlags(
             WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                     WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
@@ -125,11 +127,6 @@ class KioskActivity : PhotoLockActivity() {
         }
     }
 
-    override fun onPhotoLoaded(mediaItem: MediaItem) {
-        super.onPhotoLoaded(mediaItem)
-        showControlsTemporarily()
-    }
-
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
@@ -169,7 +166,7 @@ class KioskActivity : PhotoLockActivity() {
         params.screenBrightness = brightness / 100f
         window.attributes = params
     }
-
+    @SuppressLint("MissingSuperCall")
     override fun onBackPressed() {
         val currentTime = System.currentTimeMillis()
         if (currentTime - backPressedTime > exitDelay * 1000) {

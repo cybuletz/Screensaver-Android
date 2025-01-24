@@ -8,6 +8,8 @@ import androidx.preference.PreferenceManager
 import com.example.screensaver.utils.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import com.example.screensaver.R
+
 
 @AndroidEntryPoint
 class KioskService : Service() {
@@ -34,7 +36,7 @@ class KioskService : Service() {
         registerKioskReceiver()
         startForeground(
             NOTIFICATION_ID,
-            notificationHelper.createServiceNotification("Kiosk Mode Active", "App is running in kiosk mode")
+            notificationHelper.createKioskNotification("Kiosk Mode Active", "App is running in kiosk mode")
         )
     }
 
