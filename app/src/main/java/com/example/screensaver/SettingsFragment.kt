@@ -328,7 +328,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun handleSignInResult(completedTask: Task<GoogleSignInAccount>) {
         try {
             val account = completedTask.getResult(ApiException::class.java)
-            // ... rest of the code
+            account?.serverAuthCode?.let { authCode ->
+                account.email?.let { email ->
+                    exchangeAuthCode(authCode, email)
+                }
+            } ?: run {
+                Log.e(TAG, "No server auth code received")
+                Toast.makeText(context, "Failed to get auth code", Toast.LENGTH_SHORT).show()
+                updateGooglePhotosState(false)
+            }
         } catch (e: ApiException) {
             Log.e(TAG, "Sign in failed", e)
             Toast.makeText(context, "Sign in failed: ${e.message}", Toast.LENGTH_SHORT).show()
