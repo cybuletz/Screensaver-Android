@@ -77,8 +77,9 @@ class AlbumAdapter(
                 .load(album.coverPhotoUrl)
                 .transition(DrawableTransitionOptions.withCrossFade())
                 .placeholder(R.drawable.placeholder_album)
-                .error(R.drawable.placeholder_album)
+                .error(R.drawable.placeholder_album_error) // Add a specific error placeholder
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
+                .timeout(10000) // Add a timeout of 10 seconds
                 .centerCrop()
                 .into(object : CustomTarget<Drawable>() {
                     override fun onResourceReady(

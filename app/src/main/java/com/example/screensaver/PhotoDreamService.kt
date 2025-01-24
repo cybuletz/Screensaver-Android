@@ -26,12 +26,10 @@ import com.example.screensaver.utils.PhotoLoadingManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import android.net.Uri
 import com.example.screensaver.R
 
 @AndroidEntryPoint
@@ -39,6 +37,9 @@ class PhotoDreamService : DreamService() {
 
     @Inject
     lateinit var photoLoadingManager: PhotoLoadingManager
+
+    @Inject
+    lateinit var photoManager: GooglePhotosManager
 
     private lateinit var primaryImageView: ImageView
     private lateinit var secondaryImageView: ImageView
@@ -53,7 +54,6 @@ class PhotoDreamService : DreamService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
-    private val photoManager by lazy { GooglePhotosManager.getInstance(applicationContext) }
 
     companion object {
         private const val TAG = "PhotoDreamService"
@@ -80,8 +80,6 @@ class PhotoDreamService : DreamService() {
             handleError(e)
         }
     }
-
-    // ... rest of your original code ...
 
     private fun startDreamSequence() {
         serviceScope.launch {
@@ -186,7 +184,7 @@ class PhotoDreamService : DreamService() {
 
         if (url != null) {
             Glide.with(applicationContext)
-                .load(url.toString()) // Explicitly convert to String
+                .load(url)
                 .apply(RequestOptions()
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .error(android.R.drawable.ic_dialog_alert))
@@ -246,7 +244,7 @@ class PhotoDreamService : DreamService() {
             val index = (currentPhotoIndex + i) % photoManager.getPhotoCount()
             photoManager.getPhotoUrl(index)?.let { url ->
                 Glide.with(this)
-                    .load(url.toString()) // Explicitly convert to String
+                    .load(url)
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .preload()
             }
@@ -256,7 +254,7 @@ class PhotoDreamService : DreamService() {
     private fun precacheNextPhoto() {
         photoManager.getPhotoUrl((currentPhotoIndex + 1) % photoManager.getPhotoCount())?.let { nextUrl ->
             Glide.with(this)
-                .load(nextUrl.toString()) // Explicitly convert to String
+                .load(nextUrl)
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .preload()
         }

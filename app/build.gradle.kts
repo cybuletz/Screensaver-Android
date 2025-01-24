@@ -6,12 +6,14 @@ plugins {
     id("com.google.dagger.hilt.android")
     id("kotlin-parcelize")
     id("kotlin-kapt")
+    id("androidx.navigation.safeargs.kotlin") // Add Safe Args plugin
 }
 
 kapt {
     correctErrorTypes = true
     arguments {
-        arg("dagger.hilt.android.internal.disableAndroidSuperclassValidation", "true")}
+        arg("dagger.hilt.android.internal.disableAndroidSuperclassValidation", "true")
+    }
     includeCompileClasspath = false
 }
 
@@ -80,6 +82,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -90,8 +93,12 @@ android {
 }
 
 dependencies {
-
-    val hiltVersion = rootProject.extra["hilt_version"] as String
+    // Version constants
+    val navVersion = "2.7.6"
+    val lifecycleVersion = "2.6.2"
+    val hiltVersion = "2.48"
+    val coroutinesVersion = "1.7.3"
+    val grpcVersion = "1.58.0"
 
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
@@ -102,20 +109,32 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.databinding:databinding-runtime:8.1.4")
-    implementation("androidx.hilt:hilt-navigation-fragment:1.1.0")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
+    kapt("com.google.auto.value:auto-value:1.9")
+    implementation("com.google.auto.value:auto-value-annotations:1.9")
+
+    // Navigation
+    implementation("androidx.navigation:navigation-fragment-ktx:$navVersion")
+    implementation("androidx.navigation:navigation-ui-ktx:$navVersion")
+    implementation("androidx.navigation:navigation-dynamic-features-fragment:$navVersion")
+    androidTestImplementation("androidx.navigation:navigation-testing:$navVersion")
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.48")
-    kapt("com.google.dagger:hilt-compiler:2.48")
+    implementation("com.google.dagger:hilt-android:$hiltVersion")
+    kapt("com.google.dagger:hilt-android-compiler:2.48")
+    kapt("com.google.dagger:hilt-compiler:$hiltVersion")
     kapt("androidx.hilt:hilt-compiler:1.0.0")
-    implementation("androidx.hilt:hilt-navigation-compose:1.0.0")
-    implementation("androidx.hilt:hilt-navigation-fragment:1.0.0")
+    implementation("androidx.hilt:hilt-work:1.0.0")
+    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    implementation("androidx.hilt:hilt-navigation-fragment:1.1.0")
 
     // Lifecycle
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycleVersion")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:$lifecycleVersion")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
 
+    // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.8.1")
     implementation("androidx.work:work-runtime:2.8.1")
 
@@ -156,15 +175,22 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:$coroutinesVersion")
 
     // gRPC
-    implementation("io.grpc:grpc-okhttp:1.58.0")
-    implementation("io.grpc:grpc-android:1.58.0")
-    implementation("io.grpc:grpc-protobuf:1.58.0")
-    implementation("io.grpc:grpc-stub:1.58.0")
+    implementation("io.grpc:grpc-okhttp:$grpcVersion")
+    implementation("io.grpc:grpc-android:$grpcVersion")
+    implementation("io.grpc:grpc-protobuf:$grpcVersion")
+    implementation("io.grpc:grpc-stub:$grpcVersion")
 
     // JSON
     implementation("org.json:json:20231013")
+
+    // Add these dependencies if you're using them
+    implementation("org.slf4j:slf4j-api:1.7.36")
+    implementation("org.slf4j:slf4j-simple:1.7.36")
+
+    // If you need the Jetty ALPN boot library
+    implementation("org.eclipse.jetty.alpn:alpn-api:1.1.3.v20160715")
 }

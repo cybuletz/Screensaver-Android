@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.screensaver">
 
     <!-- Required Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -11,6 +12,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Dream service features -->
     <uses-feature
@@ -32,7 +34,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Screensaver"
         android:hardwareAccelerated="true"
-        android:largeHeap="true">
+        android:largeHeap="true"
+        android:enableOnBackInvokedCallback="true">
 
         <meta-data
             android:name="com.google.android.gms.version"
@@ -49,7 +52,8 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -62,6 +66,7 @@
             android:theme="@style/Theme.Screensaver"
             android:label="@string/settings_title"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:parentActivityName=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -78,6 +83,7 @@
             android:name=".AlbumSelectionActivity"
             android:label="@string/album_selection_title"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:parentActivityName=".SettingsActivity">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
@@ -93,6 +99,7 @@
             android:screenOrientation="user"
             android:showOnLockScreen="true"
             android:taskAffinity=""
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:theme="@style/Theme.AppCompat.NoActionBar">
             <intent-filter>
                 <category android:name="android.intent.category.DEFAULT" />
@@ -104,7 +111,8 @@
             android:name=".PhotoDreamService"
             android:exported="true"
             android:label="@string/app_name"
-            android:permission="android:permission.BIND_DREAM_SERVICE">
+            android:permission="android.permission.BIND_DREAM_SERVICE"
+            android:directBootAware="true">
             <intent-filter>
                 <action android:name="android.service.dreams.DreamService" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -134,6 +142,7 @@
             android:name=".lock.PhotoLockScreenService"
             android:enabled="true"
             android:exported="false"
+            android:directBootAware="true"
             android:foregroundServiceType="dataSync">
             <intent-filter>
                 <action android:name="android.intent.action.SCREEN_OFF" />
@@ -150,6 +159,16 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Hilt WorkManager Initializer -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup" />
         </provider>
 
     </application>

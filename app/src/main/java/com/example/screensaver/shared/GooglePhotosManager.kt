@@ -44,27 +44,19 @@ class GooglePhotosManager @Inject constructor(
         private const val PHOTO_QUALITY = "=w2048-h1024"
         private const val PAGE_SIZE = 100
         private const val TOKEN_EXPIRY_BUFFER = 60000L // 1 minute buffer
-
-        @Volatile
-        private var instance: GooglePhotosManager? = null
-
-        // Since we're using Hilt, we should probably remove this getInstance method
-        // as Hilt will handle the instantiation
-        @Deprecated("Use Hilt injection instead")
-        fun getInstance(context: Context): GooglePhotosManager {
-            return instance ?: synchronized(this) {
-                instance ?: GooglePhotosManager(
-                    context.applicationContext,
-                    CoroutineScope(SupervisorJob() + Dispatchers.Main)
-                ).also { instance = it }
-            }
-        }
     }
 
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
             if (photosLibraryClient != null) {
                 return@withContext true
+            }
+
+            // Check if we have tokens before trying to authenticate
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            if (!prefs.contains("access_token") || !prefs.contains("refresh_token")) {
+                Log.d(TAG, "No tokens available, skipping initialization")
+                return@withContext false
             }
 
             _loadingState.value = LoadingState.LOADING
@@ -85,18 +77,32 @@ class GooglePhotosManager @Inject constructor(
 
     suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
         try {
+            Log.d(TAG, "Getting albums...")
             if (!initialize()) {
+                Log.e(TAG, "Failed to initialize before getting albums")
                 return@withContext emptyList()
             }
 
-            photosLibraryClient?.listAlbums()?.iterateAll()?.map { googleAlbum ->
+            val albums = photosLibraryClient?.listAlbums()?.iterateAll()?.map { googleAlbum ->
+                Log.d(TAG, "Found album: ${googleAlbum.title} with ${googleAlbum.mediaItemsCount} items")
+
+                // Get the cover photo URL if we have a cover photo media item ID
+                val coverPhotoUrl = if (!googleAlbum.coverPhotoMediaItemId.isNullOrEmpty()) {
+                    photosLibraryClient?.getMediaItem(googleAlbum.coverPhotoMediaItemId)?.baseUrl + PHOTO_QUALITY
+                } else {
+                    ""
+                }
+
                 Album(
                     id = googleAlbum.id,
                     title = googleAlbum.title,
-                    coverPhotoUrl = googleAlbum.coverPhotoMediaItemId ?: "",
+                    coverPhotoUrl = coverPhotoUrl,
                     mediaItemsCount = googleAlbum.mediaItemsCount.toInt()
                 )
             }?.toList() ?: emptyList()
+
+            Log.d(TAG, "Retrieved ${albums.size} albums")
+            albums
         } catch (e: Exception) {
             Log.e(TAG, "Error getting albums", e)
             emptyList()
@@ -228,7 +234,6 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
-
     private fun shouldRetryOnError(error: Exception): Boolean {
         return error.message?.contains("UNAUTHENTICATED") == true
     }
@@ -237,9 +242,18 @@ class GooglePhotosManager @Inject constructor(
         try {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
             val accessToken = prefs.getString("access_token", null)
+            val refreshToken = prefs.getString("refresh_token", null)
             val tokenExpiration = prefs.getLong("token_expiration", 0)
 
-            if (accessToken == null || System.currentTimeMillis() > tokenExpiration - TOKEN_EXPIRY_BUFFER) {
+            Log.d(TAG, "Checking credentials - Access Token: ${accessToken != null}, Refresh Token: ${refreshToken != null}")
+
+            if (accessToken == null || refreshToken == null) {
+                Log.d(TAG, "Missing tokens")
+                return@withContext null
+            }
+
+            if (System.currentTimeMillis() > tokenExpiration - TOKEN_EXPIRY_BUFFER) {
+                Log.d(TAG, "Token expired, refreshing")
                 if (!refreshTokens()) {
                     return@withContext null
                 }

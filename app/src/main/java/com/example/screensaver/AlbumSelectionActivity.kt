@@ -30,6 +30,7 @@ import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
 import com.example.screensaver.PhotoDreamService
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.collect
+import androidx.preference.PreferenceManager
 
 
 @AndroidEntryPoint
@@ -60,7 +61,11 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
         dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
 
-        // Add these lines
+        // First set up the RecyclerView and adapter
+        setupRecyclerView()
+        setupConfirmButton()
+
+        // Then collect the loading state
         lifecycleScope.launch {
             viewModel.isLoading.collect { isLoading ->
                 setLoading(isLoading)
@@ -68,8 +73,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
 
         try {
-            setupRecyclerView()
-            setupConfirmButton()
             initializeGooglePhotos()
         } catch (e: Exception) {
             loge("Error in onCreate", e)
@@ -112,7 +115,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         try {
             setLoading(true)
             val albums = photoManager.getAlbums()
-            val selectedAlbumIds = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(this)
                 .getStringSet("selected_albums", emptySet()) ?: emptySet()
 
             withContext(Dispatchers.Main) {
@@ -204,7 +207,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
             .map { it.id }
             .toSet()
 
-        getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+        PreferenceManager.getDefaultSharedPreferences(this)
             .edit()
             .putStringSet("selected_albums", selectedAlbums)
             .apply()
@@ -309,7 +312,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
         viewModel.setLoading(loading)
         isLoading = loading
         showLoading(loading)
-        updateConfirmButtonState()
+        if (::albumAdapter.isInitialized) {
+            updateConfirmButtonState()
+        }
     }
 
     private fun showError(message: String) {

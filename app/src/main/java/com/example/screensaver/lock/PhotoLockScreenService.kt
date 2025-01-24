@@ -24,8 +24,10 @@ class PhotoLockScreenService : Service() {
     @Inject
     lateinit var photoLoadingManager: PhotoLoadingManager
 
+    @Inject
+    lateinit var photoManager: GooglePhotosManager
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val photoManager by lazy { GooglePhotosManager.getInstance(applicationContext) }
     private var isInitialized = false
     private var initializationJob: Job? = null
 
