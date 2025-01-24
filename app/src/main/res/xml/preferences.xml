@@ -75,7 +75,6 @@
         <PreferenceCategory
             android:title="@string/pref_category_google_photos"
             android:key="google_photos_settings"
-            app:dependency="photo_source_selection">
 
             <SwitchPreferenceCompat
                 android:key="google_photos_enabled"

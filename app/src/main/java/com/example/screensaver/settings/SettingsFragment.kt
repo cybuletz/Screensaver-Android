@@ -162,60 +162,55 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun setupPhotoSourcePreferences() {
-        val photoSourceSelection =
-            findPreference<MultiSelectListPreference>("photo_source_selection")
+        val photoSourceSelection = findPreference<MultiSelectListPreference>("photo_source_selection")
         val googlePhotosCategory = findPreference<PreferenceCategory>("google_photos_settings")
-        val useGooglePhotos =
-            findPreference<SwitchPreferenceCompat>("google_photos_enabled")  // Changed from "use_google_photos"
+        val useGooglePhotos = findPreference<SwitchPreferenceCompat>("google_photos_enabled")
         val selectAlbums = findPreference<Preference>("select_albums")
 
         Log.d(TAG, "Setting up photo source preferences")
 
+        // Set initial visibility based on selected sources
         val currentSources = PreferenceManager.getDefaultSharedPreferences(requireContext())
             .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
         Log.d(TAG, "Current photo sources: $currentSources")
 
         googlePhotosCategory?.isVisible = currentSources.contains("google_photos")
 
+        // Handle changes to photo source selection
+        photoSourceSelection?.setOnPreferenceChangeListener { _, newValue ->
+            @Suppress("UNCHECKED_CAST")
+            val selectedSources = newValue as Set<String>
+            Log.d(TAG, "Photo sources changed to: $selectedSources")
+            googlePhotosCategory?.isVisible = selectedSources.contains("google_photos")
+            if (!selectedSources.contains("google_photos")) {
+                signOutCompletely()
+            }
+            true
+        }
+
+        // Handle Google Sign-in
         useGooglePhotos?.setOnPreferenceChangeListener { _, newValue ->
             val enabled = newValue as Boolean
             Log.d(TAG, "Google Photos sign-in state changing to: $enabled")
             if (enabled) {
                 showGoogleSignInPrompt()
-                false  // Don't update the switch until sign-in is successful
+                false // Don't update the switch until sign-in is successful
             } else {
                 signOutCompletely()
                 true
             }
         }
 
+        // Handle album selection
         selectAlbums?.setOnPreferenceClickListener {
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val account = GoogleSignIn.getLastSignedInAccount(requireContext())
                     withContext(Dispatchers.Main) {
                         if (account != null) {
-                            // Initialize Google Photos Manager before starting activity
-                            if (googlePhotosManager.initialize()) {
-                                startActivity(
-                                    Intent(
-                                        requireContext(),
-                                        AlbumSelectionActivity::class.java
-                                    )
-                                )
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Failed to initialize Google Photos",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                            startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
                         } else {
-                            Toast.makeText(
-                                context,
-                                "Please sign in with Google first",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Exception) {
@@ -227,8 +222,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
             true
         }
 
+        // Update initial state of Google Photos options
         val account = GoogleSignIn.getLastSignedInAccount(requireContext())
-        findPreference<Preference>("select_albums")?.isVisible = account != null
+        useGooglePhotos?.isChecked = account != null
+        selectAlbums?.isEnabled = account != null
     }
 
     private fun setupGoogleSignIn() {

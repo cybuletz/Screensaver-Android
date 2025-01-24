@@ -13,6 +13,7 @@
 
     <string-array name="default_photo_sources">
         <item>local</item>
+        <item>google_photos</item>
     </string-array>
 
     <!-- Transition Effects -->
