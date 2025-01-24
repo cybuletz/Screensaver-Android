@@ -21,4 +21,16 @@ class PreferencesManager(context: Context) {
     fun isAutoStartEnabled(): Boolean {
         return prefs.getBoolean("auto_start", true)
     }
+
+    fun isKioskModeEnabled(): Boolean {
+        return sharedPreferences.getBoolean("kiosk_mode_enabled", false)
+    }
+
+    fun setKioskModeEnabled(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("kiosk_mode_enabled", enabled).apply()
+    }
+
+    fun getKioskSettingsTimeout(): Int {
+        return sharedPreferences.getString("kiosk_settings_timeout", "5")?.toIntOrNull() ?: 5
+    }
 }

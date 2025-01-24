@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
@@ -29,6 +28,7 @@ class AppPreferences @Inject constructor(context: Context) {
             PREF_SHOW_CLOCK -> _showClockFlow.value = isShowClock()
             PREF_CLOCK_FORMAT -> _clockFormatFlow.value = getClockFormat()
             PREF_SELECTED_ALBUMS -> _selectedAlbumsFlow.value = getSelectedAlbumIds()
+            PREF_KIOSK_MODE_ENABLED -> _kioskModeEnabledFlow.value = isKioskModeEnabled()
         }
     }
 
@@ -40,6 +40,7 @@ class AppPreferences @Inject constructor(context: Context) {
     private val _showClockFlow = MutableStateFlow(isShowClock())
     private val _clockFormatFlow = MutableStateFlow(getClockFormat())
     private val _selectedAlbumsFlow = MutableStateFlow(getSelectedAlbumIds())
+    private val _kioskModeEnabledFlow = MutableStateFlow(isKioskModeEnabled())
 
     // Public flows
     val displayModeFlow = _displayModeFlow.asStateFlow()
@@ -49,6 +50,7 @@ class AppPreferences @Inject constructor(context: Context) {
     val showClockFlow = _showClockFlow.asStateFlow()
     val clockFormatFlow = _clockFormatFlow.asStateFlow()
     val selectedAlbumsFlow = _selectedAlbumsFlow.asStateFlow()
+    val kioskModeEnabledFlow = _kioskModeEnabledFlow.asStateFlow()
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
@@ -78,6 +80,8 @@ class AppPreferences @Inject constructor(context: Context) {
         private const val PREF_SHOW_DATE = "show_date"
         private const val PREF_ENABLE_TRANSITIONS = "enable_transitions"
         private const val PREF_DARK_MODE = "dark_mode"
+        private const val PREF_KIOSK_MODE_ENABLED = "kiosk_mode_enabled"
+        private const val PREF_KIOSK_SETTINGS_TIMEOUT = "kiosk_settings_timeout"
     }
 
     enum class DisplayMode {
@@ -243,12 +247,26 @@ class AppPreferences @Inject constructor(context: Context) {
             putBoolean(PREF_SHOW_DATE, true)
             putBoolean(PREF_ENABLE_TRANSITIONS, true)
             putBoolean(PREF_DARK_MODE, false)
+            putBoolean(PREF_KIOSK_MODE_ENABLED, false)
+            putInt(PREF_KIOSK_SETTINGS_TIMEOUT, 5)
         }
     }
 
-    /**
-     * Cleans up resources
-     */
+    // Kiosk Mode
+    fun isKioskModeEnabled(): Boolean =
+        prefs.getBoolean(PREF_KIOSK_MODE_ENABLED, false)
+
+    fun setKioskModeEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(PREF_KIOSK_MODE_ENABLED, enabled) }
+    }
+
+    fun getKioskSettingsTimeout(): Int =
+        prefs.getInt(PREF_KIOSK_SETTINGS_TIMEOUT, 5)
+
+    fun setKioskSettingsTimeout(seconds: Int) {
+        prefs.edit { putInt(PREF_KIOSK_SETTINGS_TIMEOUT, seconds) }
+    }
+
     fun cleanup() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefsChangeListener)
     }

@@ -243,6 +243,66 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun setupKioskModePreference() {
+        findPreference<SwitchPreferenceCompat>("kiosk_mode_enabled")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                handleKioskModeChange(newValue as Boolean)
+                true
+            }
+        }
+
+        findPreference<SeekBarPreference>("kiosk_exit_delay")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .edit()
+                    .putInt("kiosk_exit_delay", newValue as Int)
+                    .apply()
+                true
+            }
+        }
+    }
+
+    private fun handleKioskModeChange(enabled: Boolean) {
+        if (enabled) {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.pref_kiosk_mode_enabled_title)
+                .setMessage(R.string.kiosk_mode_warning)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    enableKioskMode()
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ ->
+                    // Reset the switch
+                    findPreference<SwitchPreferenceCompat>("kiosk_mode_enabled")?.isChecked = false
+                }
+                .show()
+        } else {
+            disableKioskMode()
+        }
+    }
+
+    private fun enableKioskMode() {
+        PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .edit()
+            .putBoolean("kiosk_mode_enabled", true)
+            .apply()
+
+        // Launch kiosk activity
+        KioskActivity.start(requireContext())
+
+        // Show feedback to user
+        showFeedback(R.string.kiosk_mode_enabled)
+    }
+
+    private fun disableKioskMode() {
+        PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .edit()
+            .putBoolean("kiosk_mode_enabled", false)
+            .apply()
+
+        // Show feedback to user
+        showFeedback(R.string.kiosk_mode_disabled)
+    }
+
     private fun setupGoogleSignIn() {
         try {
             Log.d(TAG, "Setting up Google Sign In")
@@ -333,6 +393,21 @@ class SettingsFragment : PreferenceFragmentCompat() {
             Toast.makeText(context, "Sign in failed: ${e.message}", Toast.LENGTH_SHORT).show()
             updateGooglePhotosState(false)
         }
+    }
+
+
+    private fun showKioskModeConfirmation() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.enable_kiosk_mode)
+            .setMessage(R.string.kiosk_mode_confirmation)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                enableKioskMode()
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ ->
+                // Reset the switch
+                findPreference<SwitchPreferenceCompat>("kiosk_mode_enabled")?.isChecked = false
+            }
+            .show()
     }
 
     private fun exchangeAuthCode(authCode: String, email: String) {

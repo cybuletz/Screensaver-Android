@@ -32,8 +32,13 @@ class PhotoLockDeviceAdmin : DeviceAdminReceiver() {
 
     override fun onEnabled(context: Context, intent: Intent) {
         super.onEnabled(context, intent)
-        handleAdminStateChange(context, true) {
-            "Device admin enabled successfully"
+
+        // If kiosk mode is enabled, set up kiosk policies
+        val isKioskEnabled = PreferenceManager.getDefaultSharedPreferences(context)
+            .getBoolean("kiosk_mode_enabled", false)
+
+        if (isKioskEnabled) {
+            KioskPolicyManager(context).setKioskPolicies(true)
         }
     }
 

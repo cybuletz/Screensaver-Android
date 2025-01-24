@@ -13,12 +13,15 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.preference.PreferenceManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.example.screensaver.R
 import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.PhotoLoadingManager
 import com.example.screensaver.models.MediaItem
+import com.example.screensaver.kiosk.KioskActivity
+import com.example.screensaver.kiosk.KioskPolicyManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import javax.inject.Inject
@@ -33,9 +36,13 @@ class PhotoLockScreenService : Service() {
     @Inject
     lateinit var photoManager: GooglePhotosManager
 
+    @Inject
+    lateinit var kioskPolicyManager: KioskPolicyManager
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var isInitialized = false
     private var initializationJob: Job? = null
+    private var isKioskMode = false
 
     private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -58,7 +65,13 @@ class PhotoLockScreenService : Service() {
         Log.d(TAG, "Service created")
         createNotificationChannel()
         registerScreenReceiver()
+        checkKioskMode()
         initializeService()
+    }
+
+    private fun checkKioskMode() {
+        isKioskMode = PreferenceManager.getDefaultSharedPreferences(this)
+            .getBoolean("kiosk_mode_enabled", false)
     }
 
     private fun createNotificationChannel() {
@@ -77,9 +90,12 @@ class PhotoLockScreenService : Service() {
     }
 
     private fun startForegroundWithNotification() {
+        val title = if (isKioskMode) "Kiosk Mode Active" else "Lock Screen Active"
+        val text = if (isKioskMode) "App running in kiosk mode" else "Tap to return to lock screen"
+
         val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Lock Screen Active")
-            .setContentText("Tap to return to lock screen")
+            .setContentTitle(title)
+            .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -108,7 +124,11 @@ class PhotoLockScreenService : Service() {
     private fun handleScreenOff() {
         Log.d(TAG, "Screen turned off")
         if (isInitialized) {
-            showLockScreen()
+            if (isKioskMode) {
+                showKioskScreen()
+            } else {
+                showLockScreen()
+            }
         } else {
             initializeService()
         }
@@ -118,6 +138,9 @@ class PhotoLockScreenService : Service() {
         Log.d(TAG, "User unlocked device")
         serviceScope.launch {
             try {
+                if (isKioskMode) {
+                    showKioskScreen()
+                }
                 precachePhotos()
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling user present", e)
@@ -130,7 +153,6 @@ class PhotoLockScreenService : Service() {
         initializationJob = serviceScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    // First check if we have tokens
                     if (!photoManager.hasValidTokens()) {
                         Log.d(TAG, "No valid tokens available, waiting for authentication")
                         return@withContext
@@ -192,10 +214,25 @@ class PhotoLockScreenService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "Service start command received")
+        Log.d(TAG, "Service start command received: ${intent?.action}")
+
+        when (intent?.action) {
+            "CHECK_KIOSK_MODE" -> {
+                checkKioskMode()
+                if (isKioskMode) {
+                    kioskPolicyManager.setKioskPolicies(true)
+                    showKioskScreen()
+                }
+            }
+            "STOP_KIOSK" -> {
+                isKioskMode = false
+                kioskPolicyManager.setKioskPolicies(false)
+            }
+            "AUTH_UPDATED" -> onAuthenticationUpdated()
+        }
+
         startForegroundWithNotification()
 
-        // Only try to initialize if we're not already initialized
         if (!isInitialized) {
             initializeService()
         }
@@ -229,6 +266,10 @@ class PhotoLockScreenService : Service() {
         photoManager.cleanup()
         isInitialized = false
 
+        if (isKioskMode) {
+            kioskPolicyManager.setKioskPolicies(false)
+        }
+
         Glide.get(applicationContext).clearMemory()
     }
 
@@ -248,6 +289,20 @@ class PhotoLockScreenService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error showing lock screen", e)
+        }
+    }
+
+    private fun showKioskScreen() {
+        try {
+            val kioskIntent = Intent(this, KioskActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra("from_service", true)
+            }
+            startActivity(kioskIntent)
+            Log.d(TAG, "Kiosk activity started")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing kiosk screen", e)
         }
     }
 }
