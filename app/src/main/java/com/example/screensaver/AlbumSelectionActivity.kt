@@ -1,37 +1,36 @@
 package com.example.screensaver
 
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
-import androidx.recyclerview.widget.RecyclerView
+import androidx.activity.viewModels
+import androidx.core.app.NotificationCompat
+import androidx.lifecycle.lifecycleScope
+import androidx.preference.PreferenceManager
 import com.example.screensaver.adapters.AlbumAdapter
+import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
 import com.example.screensaver.models.Album
+import com.example.screensaver.models.MediaItem
 import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.DreamServiceHelper
 import com.example.screensaver.utils.DreamServiceStatus
-import com.example.screensaver.utils.PhotoLoadingManager  // Add this import
+import com.example.screensaver.utils.PhotoLoadingManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import com.example.screensaver.models.MediaItem
-import androidx.activity.viewModels
-import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
-import com.example.screensaver.PhotoDreamService
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.flow.collect
-import androidx.preference.PreferenceManager
-
 
 @AndroidEntryPoint
 class AlbumSelectionActivity : AppCompatActivity() {
@@ -58,6 +57,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityAlbumSelectionBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Initialize dreamServiceHelper first
+        dreamServiceHelper = DreamServiceHelper(this)
 
         setupRecyclerView()
         setupConfirmButton()

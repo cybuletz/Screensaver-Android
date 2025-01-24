@@ -1,22 +1,27 @@
 package com.example.screensaver.lock
 
 import android.app.KeyguardManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.example.screensaver.R
 import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.PhotoLoadingManager
+import com.example.screensaver.models.MediaItem
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import javax.inject.Inject
-import com.example.screensaver.models.MediaItem
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -43,13 +48,42 @@ class PhotoLockScreenService : Service() {
     companion object {
         private const val TAG = "PhotoLockScreenService"
         private const val PRECACHE_COUNT = 5
+        private const val NOTIFICATION_CHANNEL_ID = "lock_screen"
+        private const val NOTIFICATION_ID = 1
     }
 
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service created")
+        createNotificationChannel()
         registerScreenReceiver()
         initializeService()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Lock Screen Service",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Keeps the lock screen service running"
+            }
+
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun startForegroundWithNotification() {
+        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Lock Screen Active")
+            .setContentText("Tap to return to lock screen")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun registerScreenReceiver() {
@@ -124,9 +158,9 @@ class PhotoLockScreenService : Service() {
                                     id = index.toString(),
                                     albumId = "lock_screen",
                                     baseUrl = url,
-                                    mimeType = "image/jpeg", // Default mime type
-                                    width = 1920,  // Default width
-                                    height = 1080  // Default height
+                                    mimeType = "image/jpeg",
+                                    width = 1920,
+                                    height = 1080
                                 )
                                 photoLoadingManager.preloadPhoto(mediaItem)
                             }
@@ -145,6 +179,7 @@ class PhotoLockScreenService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Service start command received")
+        startForegroundWithNotification()
         if (!isInitialized) {
             initializeService()
         }
@@ -171,7 +206,6 @@ class PhotoLockScreenService : Service() {
         photoManager.cleanup()
         isInitialized = false
 
-        // Clear Glide memory cache
         Glide.get(applicationContext).clearMemory()
     }
 
