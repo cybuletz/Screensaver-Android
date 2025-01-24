@@ -84,7 +84,6 @@ class GooglePhotosManager @Inject constructor(
             val albums = photosLibraryClient?.listAlbums()?.iterateAll()?.map { googleAlbum ->
                 Log.d(TAG, "Found album: ${googleAlbum.title} with ${googleAlbum.mediaItemsCount} items")
 
-                // Get the cover photo URL if we have a cover photo media item ID
                 val coverPhotoUrl = if (!googleAlbum.coverPhotoMediaItemId.isNullOrEmpty()) {
                     photosLibraryClient?.getMediaItem(googleAlbum.coverPhotoMediaItemId)?.baseUrl + PHOTO_QUALITY
                 } else {
@@ -117,7 +116,44 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
-    suspend fun loadPhotos(albumId: String): List<MediaItem>? = withContext(Dispatchers.IO) {
+    suspend fun loadPhotos(): List<MediaItem>? = withContext(Dispatchers.IO) {
+        try {
+            if (!initialize()) {
+                Log.e(TAG, "Failed to initialize Google Photos client")
+                return@withContext null
+            }
+
+            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(context)
+                .getStringSet("selected_albums", emptySet()) ?: emptySet()
+
+            if (selectedAlbumIds.isEmpty()) {
+                Log.d(TAG, "No albums selected")
+                return@withContext null
+            }
+
+            val allPhotos = mutableListOf<MediaItem>()
+
+            selectedAlbumIds.forEach { albumId ->
+                try {
+                    val albumPhotos = loadAlbumPhotos(albumId)
+                    if (albumPhotos != null) {
+                        allPhotos.addAll(albumPhotos)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading photos for album $albumId", e)
+                }
+            }
+
+            mediaItems.clear()
+            mediaItems.addAll(allPhotos)
+            allPhotos
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching photos", e)
+            null
+        }
+    }
+
+    private suspend fun loadAlbumPhotos(albumId: String): List<MediaItem>? = withContext(Dispatchers.IO) {
         try {
             if (!initialize()) {
                 Log.e(TAG, "Failed to initialize Google Photos client")
@@ -150,43 +186,6 @@ class GooglePhotosManager @Inject constructor(
             null
         } catch (e: Exception) {
             Log.e(TAG, "Error loading photos", e)
-            null
-        }
-    }
-
-    suspend fun fetchPhotos(): List<MediaItem>? = withContext(Dispatchers.IO) {
-        try {
-            if (!initialize()) {
-                Log.e(TAG, "Failed to initialize Google Photos client")
-                return@withContext null
-            }
-
-            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(context)
-                .getStringSet("selected_albums", emptySet()) ?: emptySet()
-
-            if (selectedAlbumIds.isEmpty()) {
-                Log.d(TAG, "No albums selected")
-                return@withContext null
-            }
-
-            val allPhotos = mutableListOf<MediaItem>()
-
-            selectedAlbumIds.forEach { albumId ->
-                try {
-                    val albumPhotos = loadPhotos(albumId)
-                    if (albumPhotos != null) {
-                        allPhotos.addAll(albumPhotos)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error loading photos for album $albumId", e)
-                }
-            }
-
-            mediaItems.clear()
-            mediaItems.addAll(allPhotos)
-            allPhotos
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching photos", e)
             null
         }
     }
@@ -258,7 +257,6 @@ class GooglePhotosManager @Inject constructor(
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val accessToken = prefs.getString("access_token", null)
         val tokenExpiration = prefs.getLong("token_expiration", 0)
-
         return accessToken != null && tokenExpiration > System.currentTimeMillis()
     }
 
@@ -329,7 +327,6 @@ class GooglePhotosManager @Inject constructor(
             photosLibraryClient?.let { client ->
                 try {
                     client.close()
-                    // Use reflection to access shutdownNow and awaitTermination
                     client.javaClass.getDeclaredMethod("shutdownNow").apply {
                         isAccessible = true
                         invoke(client)

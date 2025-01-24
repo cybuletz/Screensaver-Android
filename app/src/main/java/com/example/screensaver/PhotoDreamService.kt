@@ -145,7 +145,8 @@ class PhotoDreamService : DreamService() {
 
     private suspend fun loadPhotos() {
         try {
-            if (photoManager.loadPhotos()) {
+            val photos = photoManager.loadPhotos()
+            if (!photos.isNullOrEmpty()) {
                 startSlideshow()
             } else {
                 handleError(Exception("Failed to load photos"))

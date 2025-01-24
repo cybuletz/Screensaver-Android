@@ -68,7 +68,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     private fun setupRecyclerView() {
         albumAdapter = AlbumAdapter { album ->
-            if (!(viewModel.isLoading.value ?: true)) {  // default to true when null
+            if (!viewModel.isLoading.value) {  // Remove Elvis operator since value is non-null
                 toggleAlbumSelection(album)
             }
         }
@@ -83,7 +83,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         binding.confirmButton.apply {
             isEnabled = false
             setOnClickListener {
-                if (!(viewModel.isLoading.value ?: true)) {  // default to true when null
+                if (!viewModel.isLoading.value) {  // Remove Elvis operator since value is non-null
                     saveSelectedAlbums()
                     setResult(Activity.RESULT_OK)
                     finish()
@@ -260,7 +260,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun updateConfirmButtonState() {
-        val isEnabled = !(viewModel.isLoading.value ?: false) &&
+        val isEnabled = !viewModel.isLoading.value &&  // Remove Elvis operator since value is non-null
                 albumAdapter.currentList.any { it.isSelected }
         binding.confirmButton.isEnabled = isEnabled
     }
