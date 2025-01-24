@@ -60,7 +60,11 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
         dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
 
-        // Add these lines
+        // First set up the RecyclerView and adapter
+        setupRecyclerView()
+        setupConfirmButton()
+
+        // Then collect the loading state
         lifecycleScope.launch {
             viewModel.isLoading.collect { isLoading ->
                 setLoading(isLoading)
@@ -68,8 +72,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
 
         try {
-            setupRecyclerView()
-            setupConfirmButton()
             initializeGooglePhotos()
         } catch (e: Exception) {
             loge("Error in onCreate", e)
@@ -309,7 +311,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
         viewModel.setLoading(loading)
         isLoading = loading
         showLoading(loading)
-        updateConfirmButtonState()
+        if (::albumAdapter.isInitialized) {
+            updateConfirmButtonState()
+        }
     }
 
     private fun showError(message: String) {
