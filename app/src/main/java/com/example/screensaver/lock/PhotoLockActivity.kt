@@ -187,7 +187,7 @@ class PhotoLockActivity : AppCompatActivity() {
     private fun initializePhotos() {
         lifecycleScope.launch {
             try {
-                if (photoManager.initialize() && photoManager.loadPhotos()) {
+                if (photoManager.initialize() && photoManager.loadPhotos()?.isNotEmpty() == true) {
                     isInitialized = true
                     startPhotoDisplay()
                 } else {

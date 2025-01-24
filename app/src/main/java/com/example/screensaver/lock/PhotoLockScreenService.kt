@@ -136,7 +136,7 @@ class PhotoLockScreenService : Service() {
                         return@withContext
                     }
 
-                    if (photoManager.initialize() && photoManager.loadPhotos()) {
+                    if (photoManager.initialize() && photoManager.loadPhotos()?.isNotEmpty() == true) {
                         isInitialized = true
                         precachePhotos()
                         Log.d(TAG, "Service initialized successfully")

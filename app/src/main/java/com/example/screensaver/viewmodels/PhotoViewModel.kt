@@ -233,7 +233,8 @@ class PhotoViewModel @Inject constructor(
             mediaItems.clear()
 
             _selectedAlbums.value.forEach { album ->
-                photosManager.loadPhotos(album.id)?.let { items ->
+                val allPhotos = photosManager.loadPhotos()
+                allPhotos?.filter { it.albumId == album.id }?.let { items ->
                     // The items are already MediaItem objects, no conversion needed
                     mediaItems.addAll(items)
                 }
