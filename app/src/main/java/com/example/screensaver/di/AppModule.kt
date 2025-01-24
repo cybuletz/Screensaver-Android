@@ -12,6 +12,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.example.screensaver.shared.GooglePhotosManager
+import com.example.screensaver.utils.NotificationHelper
+
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -44,5 +46,10 @@ object AppModule {
         return GooglePhotosManager(context, coroutineScope)
     }
 
+    @Provides
+    @Singleton
+    fun provideNotificationHelper(@ApplicationContext context: Context): NotificationHelper {
+        return NotificationHelper(context)
+    }
 
 }
