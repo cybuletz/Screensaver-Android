@@ -1,4 +1,4 @@
-package com.example.screensaver.kiosk
+package com.example.screensaver.activities.kiosk
 
 import android.app.ActivityManager
 import android.content.Context
@@ -115,10 +115,6 @@ class KioskActivity : PhotoLockActivity() {
         loadPhoto(currentPhotoIndex, backgroundImageView)
     }
 
-    override fun onPhotoLoaded(mediaItem: MediaItem) {
-        super.onPhotoLoaded(mediaItem)
-        showControlsTemporarily()
-    }
 
     private fun initializeKioskMode() {
         if (kioskPolicyManager.isKioskModeAllowed()) {
