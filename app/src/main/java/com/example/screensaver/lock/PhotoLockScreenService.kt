@@ -129,6 +129,12 @@ class PhotoLockScreenService : Service() {
         initializationJob = serviceScope.launch {
             try {
                 withContext(Dispatchers.IO) {
+                    // First check if we have tokens
+                    if (!photoManager.hasValidTokens()) {
+                        Log.d(TAG, "No valid tokens available, waiting for authentication")
+                        return@withContext
+                    }
+
                     if (photoManager.initialize() && photoManager.loadPhotos()) {
                         isInitialized = true
                         precachePhotos()
@@ -138,7 +144,11 @@ class PhotoLockScreenService : Service() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error initializing service", e)
+                if (e is JobCancellationException) {
+                    Log.d(TAG, "Initialization job was cancelled")
+                } else {
+                    Log.e(TAG, "Error initializing service", e)
+                }
                 isInitialized = false
             }
         }
@@ -180,10 +190,19 @@ class PhotoLockScreenService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Service start command received")
         startForegroundWithNotification()
+
+        // Only try to initialize if we're not already initialized
         if (!isInitialized) {
             initializeService()
         }
+
         return START_STICKY
+    }
+
+    fun onAuthenticationUpdated() {
+        if (!isInitialized) {
+            initializeService()
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

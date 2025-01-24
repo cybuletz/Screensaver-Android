@@ -314,6 +314,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
             account?.serverAuthCode?.let { authCode ->
                 account.email?.let { email ->
                     exchangeAuthCode(authCode, email)
+                    // Notify service of authentication update
+                    Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
+                        intent.action = "AUTH_UPDATED"
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            requireContext().startForegroundService(intent)
+                        } else {
+                            requireContext().startService(intent)
+                        }
+                    }
                 }
             } ?: run {
                 Log.e(TAG, "No server auth code received")

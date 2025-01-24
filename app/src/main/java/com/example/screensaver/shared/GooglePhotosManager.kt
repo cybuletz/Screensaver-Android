@@ -46,11 +46,13 @@ class GooglePhotosManager @Inject constructor(
         private const val TOKEN_EXPIRY_BUFFER = 60000L // 1 minute buffer
     }
 
-    suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            if (photosLibraryClient != null) {
-                return@withContext true
-            }
+    suspend fun initialize(): Boolean {
+        if (!hasValidTokens()) {
+            Log.d(TAG, "No tokens available, skipping initialization")
+            return false
+        }
+
+        return try {
 
             // Check if we have tokens before trying to authenticate
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
@@ -71,6 +73,9 @@ class GooglePhotosManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing Google Photos", e)
             _loadingState.value = LoadingState.ERROR
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during initialization", e)
             false
         }
     }
@@ -159,6 +164,14 @@ class GooglePhotosManager @Inject constructor(
             Log.e(TAG, "Error loading photos", e)
             null
         }
+    }
+
+    fun hasValidTokens(): Boolean {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val accessToken = prefs.getString("access_token", null)
+        val tokenExpiration = prefs.getLong("token_expiration", 0)
+
+        return accessToken != null && tokenExpiration > System.currentTimeMillis()
     }
 
     fun getPhotoCount(): Int = mediaItems.size
