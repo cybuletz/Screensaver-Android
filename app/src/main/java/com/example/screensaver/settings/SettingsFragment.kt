@@ -37,6 +37,7 @@ import javax.inject.Inject
 import android.content.pm.PackageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.URLEncoder
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -326,7 +327,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun exchangeAuthCode(authCode: String) {
+    private fun exchangeAuthCode(authCode: String, email: String) {
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val connection = withContext(Dispatchers.IO) {
@@ -357,13 +358,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     connection.inputStream.bufferedReader().use { it.readText() }
                 }
 
-                // Process response on IO thread
                 val jsonResponse = JSONObject(response)
                 val accessToken = jsonResponse.getString("access_token")
                 val refreshToken = jsonResponse.getString("refresh_token")
                 val expiresIn = jsonResponse.getLong("expires_in")
 
-                // Update UI on main thread
                 withContext(Dispatchers.Main) {
                     PreferenceManager.getDefaultSharedPreferences(requireContext())
                         .edit()
@@ -372,7 +371,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         .putLong("token_expiration", System.currentTimeMillis() + (expiresIn * 1000))
                         .apply()
 
-                    updateSignInState(true)
+                    updateGooglePhotosState(true)  // Changed from updateSignInState
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error exchanging auth code", e)
@@ -382,7 +381,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         "Failed to sign in: ${e.message}",
                         Toast.LENGTH_SHORT
                     ).show()
-                    updateSignInState(false)
+                    updateGooglePhotosState(false)  // Changed from updateSignInState
                 }
             }
         }
