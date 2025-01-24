@@ -78,7 +78,7 @@ class PhotoAnalytics @Inject constructor(
         val event = if (start) EVENT_SCREENSAVER_START else EVENT_SCREENSAVER_STOP
         logEvent(event, bundleOf(
             PARAM_SESSION_DURATION to sessionDuration,
-            PARAM_PHOTO_COUNT to sessionData.getOrDefault("photo_count", 0)
+            PARAM_PHOTO_COUNT to (sessionData["photo_count"] ?: 0)
         ))
     }
 
@@ -90,7 +90,7 @@ class PhotoAnalytics @Inject constructor(
             PARAM_LOAD_TIME to loadTime,
             "from_cache" to isFromCache,
             PARAM_MEMORY_USAGE to getAppMemoryUsage(),
-            PARAM_CACHE_SIZE to sessionData.getOrDefault(PARAM_CACHE_SIZE, 0L)
+            PARAM_CACHE_SIZE to (sessionData[PARAM_CACHE_SIZE] ?: 0L)
         ))
         incrementPhotoCount()
     }
@@ -190,7 +190,7 @@ class PhotoAnalytics @Inject constructor(
      * Increments photo count in session data
      */
     private fun incrementPhotoCount() {
-        val currentCount = sessionData.getOrDefault("photo_count", 0) as Int
+        val currentCount = (sessionData["photo_count"] ?: 0) as Int
         sessionData["photo_count"] = currentCount + 1
     }
 
@@ -199,7 +199,7 @@ class PhotoAnalytics @Inject constructor(
      */
     private fun shouldLogPerformanceMetrics(metrics: Map<String, Any>): Boolean {
         // Log if memory usage increased significantly or cache size changed dramatically
-        val previousMemoryUsage = sessionData.getOrDefault(PARAM_MEMORY_USAGE, 0L) as Long
+        val previousMemoryUsage = (sessionData[PARAM_MEMORY_USAGE] ?: 0L) as Long
         val currentMemoryUsage = metrics[PARAM_MEMORY_USAGE] as? Long ?: 0L
 
         return abs(currentMemoryUsage - previousMemoryUsage) > 10_000_000 // 10MB threshold

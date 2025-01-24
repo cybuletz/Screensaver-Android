@@ -108,6 +108,7 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.databinding:databinding-runtime:8.1.4")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     kapt("com.google.auto.value:auto-value:1.9")
     implementation("com.google.auto.value:auto-value-annotations:1.9")
