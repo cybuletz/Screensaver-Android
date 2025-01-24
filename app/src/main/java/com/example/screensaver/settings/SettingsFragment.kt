@@ -326,58 +326,63 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun exchangeAuthCode(authCode: String, accountEmail: String) {
-        lifecycleScope.launch {
+    private fun exchangeAuthCode(authCode: String) {
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val tokenEndpoint = "https://oauth2.googleapis.com/token"
+                val connection = withContext(Dispatchers.IO) {
+                    (URL("https://oauth2.googleapis.com/token").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                    }
+                }
+
                 val clientId = getString(R.string.google_oauth_client_id)
                 val clientSecret = getString(R.string.google_oauth_client_secret)
+                val postData = buildString {
+                    append("code=").append(URLEncoder.encode(authCode, "UTF-8"))
+                    append("&client_id=").append(URLEncoder.encode(clientId, "UTF-8"))
+                    append("&client_secret=").append(URLEncoder.encode(clientSecret, "UTF-8"))
+                    append("&redirect_uri=").append(URLEncoder.encode("http://localhost", "UTF-8"))
+                    append("&grant_type=authorization_code")
+                }
 
-                val connection = URL(tokenEndpoint).openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                withContext(Dispatchers.IO) {
+                    connection.outputStream.use {
+                        it.write(postData.toByteArray())
+                    }
+                }
 
-                val postData = StringBuilder()
-                    .append("grant_type=authorization_code")
-                    .append("&code=").append(authCode)
-                    .append("&client_id=").append(clientId)
-                    .append("&client_secret=").append(clientSecret)
-                    .append("&redirect_uri=").append("http://localhost")
-                    .toString()
+                val response = withContext(Dispatchers.IO) {
+                    connection.inputStream.bufferedReader().use { it.readText() }
+                }
 
-                connection.outputStream.use { it.write(postData.toByteArray()) }
+                // Process response on IO thread
+                val jsonResponse = JSONObject(response)
+                val accessToken = jsonResponse.getString("access_token")
+                val refreshToken = jsonResponse.getString("refresh_token")
+                val expiresIn = jsonResponse.getLong("expires_in")
 
-                if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                    val response = connection.inputStream.bufferedReader().use { it.readText() }
-                    val jsonResponse = JSONObject(response)
-
-                    // Save tokens
+                // Update UI on main thread
+                withContext(Dispatchers.Main) {
                     PreferenceManager.getDefaultSharedPreferences(requireContext())
                         .edit()
-                        .putString("access_token", jsonResponse.getString("access_token"))
-                        .putString("refresh_token", jsonResponse.getString("refresh_token"))
-                        .putLong("token_expiration", System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000))
-                        .putString("google_account", accountEmail)
+                        .putString("access_token", accessToken)
+                        .putString("refresh_token", refreshToken)
+                        .putLong("token_expiration", System.currentTimeMillis() + (expiresIn * 1000))
                         .apply()
 
-                    withContext(Dispatchers.Main) {
-                        updateGooglePhotosState(true)
-                        Toast.makeText(context, "Signed in as $accountEmail", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    val error = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
-                    Log.e(TAG, "Failed to exchange auth code: $error")
-                    withContext(Dispatchers.Main) {
-                        updateGooglePhotosState(false)
-                        Toast.makeText(context, "Failed to complete sign in", Toast.LENGTH_SHORT).show()
-                    }
+                    updateSignInState(true)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error exchanging auth code", e)
                 withContext(Dispatchers.Main) {
-                    updateGooglePhotosState(false)
-                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        requireContext(),
+                        "Failed to sign in: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    updateSignInState(false)
                 }
             }
         }

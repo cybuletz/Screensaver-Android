@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.CheckBox  // Added this import
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -51,6 +52,7 @@ class AlbumAdapter(
         private val coverImageView: ImageView = itemView.findViewById(R.id.albumCover)
         private val selectedOverlay: View = itemView.findViewById(R.id.selectedOverlay)
         private val checkmarkIcon: ImageView = itemView.findViewById(R.id.checkmark)
+        private val checkbox: CheckBox = itemView.findViewById(R.id.albumCheckbox)
 
         private var currentLoadingJob: Any? = null
 
@@ -59,7 +61,7 @@ class AlbumAdapter(
             setPhotoCount(album.mediaItemsCount)
             loadAlbumCover(album)
             updateSelectionState(album)
-            setupClickListener(album)
+            setupCheckbox(album)  // Changed from setupClickListener to setupCheckbox
         }
 
         private fun setPhotoCount(count: Int) {
@@ -77,9 +79,9 @@ class AlbumAdapter(
                 .load(album.coverPhotoUrl)
                 .transition(DrawableTransitionOptions.withCrossFade())
                 .placeholder(R.drawable.placeholder_album)
-                .error(R.drawable.placeholder_album_error) // Add a specific error placeholder
+                .error(R.drawable.placeholder_album_error)
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .timeout(10000) // Add a timeout of 10 seconds
+                .timeout(10000)
                 .centerCrop()
                 .into(object : CustomTarget<Drawable>() {
                     override fun onResourceReady(
@@ -118,33 +120,10 @@ class AlbumAdapter(
         }
 
         private fun updateSelectionState(album: Album) {
-            val isSelected = getIsSelected(album)
-            animateSelectionState(isSelected)
-            updateElevation(isSelected)
-        }
-
-        private fun getIsSelected(album: Album): Boolean {
-            return itemView.context.getSharedPreferences("screensaver_prefs", 0)
-                .getStringSet("selected_albums", setOf())
-                ?.contains(album.id) == true
-        }
-
-        private fun animateSelectionState(isSelected: Boolean) {
-            selectedOverlay.apply {
-                visibility = View.VISIBLE
-                animate()
-                    .alpha(if (isSelected) OVERLAY_ALPHA else 0f)
-                    .setDuration(ANIMATION_DURATION)
-                    .start()
-            }
-
-            checkmarkIcon.apply {
-                visibility = View.VISIBLE
-                animate()
-                    .alpha(if (isSelected) 1f else 0f)
-                    .setDuration(ANIMATION_DURATION)
-                    .start()
-            }
+            checkbox.isChecked = album.isSelected  // Update checkbox state
+            selectedOverlay.alpha = if (album.isSelected) OVERLAY_ALPHA else 0f
+            checkmarkIcon.alpha = if (album.isSelected) 1f else 0f
+            updateElevation(album.isSelected)
         }
 
         private fun updateElevation(isSelected: Boolean) {
@@ -156,16 +135,12 @@ class AlbumAdapter(
             }
         }
 
-        private fun setupClickListener(album: Album) {
-            itemView.setOnClickListener { view ->
-                view.isEnabled = false
-                view.isPressed = true
-                onAlbumClick(album)
-
-                view.postDelayed({
-                    view.isPressed = false
-                    view.isEnabled = true
-                }, CLICK_DELAY)
+        private fun setupCheckbox(album: Album) {
+            // Remove click listener from itemView since we're using checkbox
+            checkbox.setOnCheckedChangeListener { _, isChecked ->
+                if (adapterPosition != RecyclerView.NO_POSITION) {
+                    onAlbumClick(album.copy(isSelected = isChecked))
+                }
             }
         }
     }

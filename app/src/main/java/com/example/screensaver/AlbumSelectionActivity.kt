@@ -59,13 +59,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
         binding = ActivityAlbumSelectionBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
-
-        // First set up the RecyclerView and adapter
         setupRecyclerView()
         setupConfirmButton()
 
-        // Then collect the loading state
         lifecycleScope.launch {
             viewModel.isLoading.collect { isLoading ->
                 setLoading(isLoading)
@@ -309,12 +305,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun setLoading(loading: Boolean) {
-        viewModel.setLoading(loading)
-        isLoading = loading
-        showLoading(loading)
-        if (::albumAdapter.isInitialized) {
-            updateConfirmButtonState()
-        }
+        binding.loadingContainer.visibility = if (loading) View.VISIBLE else View.GONE
+        binding.albumRecyclerView.visibility = if (loading) View.GONE else View.VISIBLE
+        binding.confirmButton.isEnabled = !loading && albumAdapter.currentList.any { it.isSelected }
     }
 
     private fun showError(message: String) {
