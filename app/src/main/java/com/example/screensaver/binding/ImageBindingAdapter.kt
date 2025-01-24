@@ -1,11 +1,16 @@
 package com.example.screensaver.binding
 
+import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
 import androidx.databinding.BindingAdapter
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
+import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.target.Target
 import com.example.screensaver.utils.OnPhotoLoadListener
 
 object ImageBindingAdapter {
@@ -24,15 +29,15 @@ object ImageBindingAdapter {
             return
         }
 
-        Glide.with(view.context)
-            .load(url)
+        val request = Glide.with(view.context)
+            .load(url as String)
             .transition(DrawableTransitionOptions.withCrossFade(CROSSFADE_DURATION))
             .diskCacheStrategy(DiskCacheStrategy.ALL)
-            .listener(object : com.bumptech.glide.request.RequestListener<android.graphics.drawable.Drawable> {
+            .listener(object : RequestListener<Drawable> {
                 override fun onLoadFailed(
-                    e: com.bumptech.glide.load.engine.GlideException?,
+                    e: GlideException?,
                     model: Any?,
-                    target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?,
+                    target: Target<Drawable>,
                     isFirstResource: Boolean
                 ): Boolean {
                     listener?.onPhotoLoadComplete(false)
@@ -40,23 +45,23 @@ object ImageBindingAdapter {
                 }
 
                 override fun onResourceReady(
-                    resource: android.graphics.drawable.Drawable?,
-                    model: Any?,
-                    target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?,
-                    dataSource: com.bumptech.glide.load.DataSource?,
+                    resource: Drawable,
+                    model: Any,
+                    target: Target<Drawable>,
+                    dataSource: DataSource,
                     isFirstResource: Boolean
                 ): Boolean {
                     listener?.onPhotoLoadComplete(true)
                     return false
                 }
             })
-            .let { request ->
-                when (quality) {
-                    1 -> request.override(720, 720)
-                    2 -> request.override(1080, 1080)
-                    else -> request
-                }.into(view)
-            }
+
+        when (quality) {
+            1 -> request.override(720, 720)
+            2 -> request.override(1080, 1080)
+            3 -> request.override(Target.SIZE_ORIGINAL)
+            else -> request.override(Target.SIZE_ORIGINAL)
+        }.into(view)
     }
 
     @JvmStatic

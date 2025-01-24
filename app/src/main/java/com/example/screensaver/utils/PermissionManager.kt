@@ -15,20 +15,24 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import com.example.screensaver.receivers.PhotoLockDeviceAdmin
+import com.example.screensaver.lock.PhotoLockDeviceAdmin
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Manages all permission-related operations for the application.
- * Handles permission requests, checks, and status tracking.
  */
-class PermissionManager(private val context: Context) {
-
+@Singleton
+class PermissionManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
     private val _permissionState = MutableStateFlow(PermissionState())
     private var permissionCallback: ((Boolean) -> Unit)? = null
-    private lateinit var deviceAdmin: ComponentName
+    private val deviceAdmin: ComponentName
 
     companion object {
         private val REQUIRED_PERMISSIONS = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -50,30 +54,54 @@ class PermissionManager(private val context: Context) {
         private const val REQUEST_OVERLAY_PERMISSION = 2
     }
 
-    /**
-     * Represents the current state of all required permissions
-     */
     data class PermissionState(
         val storagePermissionGranted: Boolean = false,
         val networkPermissionGranted: Boolean = false,
         val deviceAdminActive: Boolean = false,
         val overlayPermissionGranted: Boolean = false,
         val notificationPermissionGranted: Boolean = false
-    )
+    ) {
+        val allPermissionsGranted: Boolean
+            get() = storagePermissionGranted && networkPermissionGranted &&
+                    (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || notificationPermissionGranted)
+    }
 
     init {
         deviceAdmin = ComponentName(context, PhotoLockDeviceAdmin::class.java)
         updatePermissionState()
     }
 
-    /**
-     * Provides access to the current permission state
-     */
     val permissionState: StateFlow<PermissionState> = _permissionState.asStateFlow()
 
-    /**
-     * Updates the current state of all permissions
-     */
+    fun registerWithActivity(activity: FragmentActivity): PermissionLaunchers {
+        return PermissionLaunchers(
+            storage = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+                handlePermissionResult(isGranted)
+            },
+            notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+                    handlePermissionResult(isGranted)
+                }
+            } else null
+        )
+    }
+
+    fun areAllPermissionsGranted(): Boolean = permissionState.value.allPermissionsGranted
+
+    fun requestRequiredPermissions(activity: Activity, callback: (Boolean) -> Unit) {
+        permissionCallback = callback
+
+        val ungrantedPermissions = REQUIRED_PERMISSIONS.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+
+        if (ungrantedPermissions.isNotEmpty()) {
+            ActivityCompat.requestPermissions(activity, ungrantedPermissions, REQUEST_DEVICE_ADMIN)
+        } else {
+            callback(true)
+        }
+    }
+
     private fun updatePermissionState() {
         _permissionState.value = PermissionState(
             storagePermissionGranted = checkStoragePermission(),
@@ -84,92 +112,21 @@ class PermissionManager(private val context: Context) {
         )
     }
 
-    /**
-     * Registers permission launchers for an activity
-     */
-    fun registerWithActivity(activity: FragmentActivity): Map<String, ActivityResultLauncher<String>> {
-        val launchers = mutableMapOf<String, ActivityResultLauncher<String>>()
-
-        // Storage permission launcher
-        launchers["storage"] = activity.registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { isGranted ->
-            handlePermissionResult(isGranted)
-        }
-
-        // Notification permission launcher (Android 13+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            launchers["notification"] = activity.registerForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { isGranted ->
-                handlePermissionResult(isGranted)
-            }
-        }
-
-        return launchers
-    }
-
-    /**
-     * Checks if all required permissions are granted
-     */
-    fun areAllPermissionsGranted(): Boolean {
-        return permissionState.value.run {
-            storagePermissionGranted && networkPermissionGranted &&
-                    (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || notificationPermissionGranted)
-        }
-    }
-
-    /**
-     * Requests all required permissions
-     */
-    fun requestRequiredPermissions(
-        activity: Activity,
-        callback: (Boolean) -> Unit
-    ) {
-        permissionCallback = callback
-
-        val ungrantedPermissions = REQUIRED_PERMISSIONS.filter {
-            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-        }.toTypedArray()
-
-        if (ungrantedPermissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(
-                activity,
-                ungrantedPermissions,
-                PackageManager.PERMISSION_GRANTED
-            )
-        } else {
-            callback(true)
-        }
-    }
-
-    /**
-     * Handles permission request results
-     */
     private fun handlePermissionResult(isGranted: Boolean) {
         updatePermissionState()
         permissionCallback?.invoke(isGranted)
         permissionCallback = null
     }
 
-    /**
-     * Checks storage permission
-     */
     private fun checkStoragePermission(): Boolean {
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_IMAGES
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
-        return ContextCompat.checkSelfPermission(
-            context,
-            permission
-        ) == PackageManager.PERMISSION_GRANTED
+        return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
 
-    /**
-     * Checks network permission
-     */
     private fun checkNetworkPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
             context,
@@ -177,9 +134,6 @@ class PermissionManager(private val context: Context) {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    /**
-     * Checks notification permission
-     */
     private fun checkNotificationPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
@@ -191,31 +145,22 @@ class PermissionManager(private val context: Context) {
         }
     }
 
-    /**
-     * Checks if device admin is active
-     */
     fun isDeviceAdminActive(): Boolean {
         val devicePolicyManager = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         return devicePolicyManager.isAdminActive(deviceAdmin)
     }
 
-    /**
-     * Requests device admin privileges
-     */
     fun requestDeviceAdmin(activity: Activity) {
         val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
             putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, deviceAdmin)
             putExtra(
                 DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Device admin permission is required for lock screen functionality"
+                context.getString(com.example.screensaver.R.string.device_admin_explanation)
             )
         }
         activity.startActivityForResult(intent, REQUEST_DEVICE_ADMIN)
     }
 
-    /**
-     * Checks overlay permission
-     */
     private fun checkOverlayPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Settings.canDrawOverlays(context)
@@ -224,9 +169,6 @@ class PermissionManager(private val context: Context) {
         }
     }
 
-    /**
-     * Requests overlay permission
-     */
     fun requestOverlayPermission(activity: Activity) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val intent = Intent(
@@ -237,9 +179,6 @@ class PermissionManager(private val context: Context) {
         }
     }
 
-    /**
-     * Shows permission settings
-     */
     fun openPermissionSettings(activity: Activity) {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.fromParts("package", context.packageName, null)
@@ -247,17 +186,14 @@ class PermissionManager(private val context: Context) {
         activity.startActivity(intent)
     }
 
-    /**
-     * Handles activity results for permission requests
-     */
     fun handleActivityResult(requestCode: Int, resultCode: Int) {
         when (requestCode) {
-            REQUEST_DEVICE_ADMIN -> {
-                updatePermissionState()
-            }
-            REQUEST_OVERLAY_PERMISSION -> {
-                updatePermissionState()
-            }
+            REQUEST_DEVICE_ADMIN, REQUEST_OVERLAY_PERMISSION -> updatePermissionState()
         }
     }
+
+    data class PermissionLaunchers(
+        val storage: ActivityResultLauncher<String>,
+        val notification: ActivityResultLauncher<String>?
+    )
 }

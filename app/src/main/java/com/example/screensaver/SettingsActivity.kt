@@ -22,14 +22,23 @@ import com.example.screensaver.lock.PhotoLockScreenService
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
+import dagger.hilt.android.AndroidEntryPoint
+import androidx.appcompat.widget.Toolbar
 
+@AndroidEntryPoint
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_settings)
+
+        // Set up toolbar
+        val toolbar = findViewById<Toolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+
         if (savedInstanceState == null) {
             supportFragmentManager
                 .beginTransaction()
-                .replace(android.R.id.content, SettingsFragment())
+                .replace(R.id.settings_container, SettingsFragment())
                 .commit()
         }
     }
@@ -115,6 +124,9 @@ class SettingsActivity : AppCompatActivity() {
             return try {
                 if (!isDeviceAdminActive()) {
                     requestDeviceAdmin()
+                    // Since requestDeviceAdmin launches an activity for result,
+                    // we return false here and handle the result in deviceAdminLauncher
+                    false
                 } else {
                     startLockScreenService()
                     true
@@ -146,14 +158,16 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        private fun startLockScreenService() {
-            try {
+        private fun startLockScreenService(): Boolean {
+            return try {
                 Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
                     requireContext().startService(intent)
                     showFeedback(R.string.lock_screen_enabled)
                 }
+                true
             } catch (e: Exception) {
                 handleError("Error starting lock screen service", e)
+                false
             }
         }
 
@@ -264,12 +278,12 @@ class SettingsActivity : AppCompatActivity() {
         private fun handleError(message: String, error: Exception) {
             Log.e(TAG, "$message: ${error.message}", error)
             view?.let { v ->
-                Snackbar.make(v,
-                    getString(R.string.generic_error, error.localizedMessage),
-                    Snackbar.LENGTH_LONG
-                ).setAction(R.string.details) {
-                    showErrorDialog(error)
-                }.show()
+                // Create the error message without using String.format
+                val errorMessage = "${getString(R.string.generic_error)}: ${error.localizedMessage}"
+                Snackbar.make(v, errorMessage, Snackbar.LENGTH_LONG)
+                    .setAction(R.string.details) {
+                        showErrorDialog(error)
+                    }.show()
             }
         }
 

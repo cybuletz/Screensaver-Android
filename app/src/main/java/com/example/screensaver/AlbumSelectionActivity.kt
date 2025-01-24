@@ -1,10 +1,10 @@
 package com.example.screensaver
 
 import android.app.Activity
-import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -12,35 +12,60 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.screensaver.adapters.AlbumAdapter
 import com.example.screensaver.models.Album
+import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.DreamServiceHelper
 import com.example.screensaver.utils.DreamServiceStatus
+import com.example.screensaver.utils.PhotoLoadingManager  // Add this import
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
+import javax.inject.Inject
+import com.example.screensaver.models.MediaItem
+import androidx.activity.viewModels
+import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
+import com.example.screensaver.PhotoDreamService
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.collect
 
+
+@AndroidEntryPoint
 class AlbumSelectionActivity : AppCompatActivity() {
-    private lateinit var recyclerView: RecyclerView
+    private lateinit var binding: ActivityAlbumSelectionBinding
     private lateinit var albumAdapter: AlbumAdapter
-    private lateinit var confirmButton: Button
     private lateinit var dreamServiceHelper: DreamServiceHelper
     private val coroutineScope = CoroutineScope(Dispatchers.Main + Job())
-    private val photoManager by lazy { GooglePhotosManager.getInstance(this) }
+
+    @Inject
+    lateinit var photoManager: GooglePhotosManager
+
+    @Inject
+    lateinit var photoLoadingManager: PhotoLoadingManager
+
     private var isLoading = false
+    private val viewModel: AlbumSelectionViewModel by viewModels()
 
     companion object {
         private const val TAG = "AlbumSelection"
+        private const val PRECACHE_COUNT = 5
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        logd("onCreate called")
-        setContentView(R.layout.activity_album_selection)
+        binding = ActivityAlbumSelectionBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
         dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
+
+        // Add these lines
+        lifecycleScope.launch {
+            viewModel.isLoading.collect { isLoading ->
+                setLoading(isLoading)
+            }
+        }
 
         try {
             setupRecyclerView()
@@ -48,7 +73,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
             initializeGooglePhotos()
         } catch (e: Exception) {
             loge("Error in onCreate", e)
-            Toast.makeText(this, "Failed to initialize: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.init_failed, e.message), Toast.LENGTH_LONG).show()
             finish()
         }
     }
@@ -61,11 +86,11 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     loadAlbums()
                     checkDreamServiceRegistration()
                 } else {
-                    showError("Failed to initialize Google Photos")
+                    showError(getString(R.string.google_photos_init_failed))
                     showRetryButton()
                 }
             } catch (e: Exception) {
-                showError("Error initializing Google Photos: ${e.message}")
+                showError(getString(R.string.google_photos_init_error, e.message))
                 showRetryButton()
             } finally {
                 setLoading(false)
@@ -74,7 +99,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun showRetryButton() {
-        findViewById<Button>(R.id.retryButton)?.apply {
+        binding.retryButton.apply {
             visibility = View.VISIBLE
             setOnClickListener {
                 visibility = View.GONE
@@ -90,26 +115,26 @@ class AlbumSelectionActivity : AppCompatActivity() {
             val selectedAlbumIds = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
                 .getStringSet("selected_albums", emptySet()) ?: emptySet()
 
-            val albumModels = albums.map { googleAlbum ->
-                Album(
-                    id = googleAlbum.id,
-                    title = googleAlbum.title,
-                    coverPhotoUrl = googleAlbum.coverPhotoBaseUrl,
-                    mediaItemsCount = googleAlbum.mediaItemsCount.toInt(),
-                    isSelected = selectedAlbumIds.contains(googleAlbum.id)
-                )
-            }
-
             withContext(Dispatchers.Main) {
+                val albumModels = albums.map { googleAlbum ->
+                    Album(
+                        id = googleAlbum.id,
+                        title = googleAlbum.title,
+                        coverPhotoUrl = googleAlbum.coverPhotoUrl ?: "", // Changed from coverPhotoMediaItemId
+                        mediaItemsCount = googleAlbum.mediaItemsCount.toInt(),
+                        isSelected = selectedAlbumIds.contains(googleAlbum.id)
+                    )
+                }
+
                 if (albumModels.isEmpty()) {
-                    showError("No albums found")
+                    showError(getString(R.string.no_albums_found))
                 } else {
                     albumAdapter.submitList(albumModels)
                     updateConfirmButtonState()
                 }
             }
         } catch (e: Exception) {
-            showError("Error loading albums: ${e.message}")
+            showError(getString(R.string.albums_load_error, e.message))
             showRetryButton()
         } finally {
             setLoading(false)
@@ -117,70 +142,102 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        logd("Setting up RecyclerView")
-        recyclerView = findViewById(R.id.albumRecyclerView)
-        recyclerView.layoutManager = GridLayoutManager(this, 2)
-
+        binding.albumRecyclerView.layoutManager = GridLayoutManager(this, 2)
         albumAdapter = AlbumAdapter { album ->
-            if (!isLoading) {
-                logd("Album clicked: ${album.title}")
+            if (!viewModel.isLoading.value) {
                 toggleAlbumSelection(album)
             }
         }
-        recyclerView.adapter = albumAdapter
+        binding.albumRecyclerView.adapter = albumAdapter
+    }
+
+    private suspend fun precachePhotos() {
+        withContext(Dispatchers.IO) {
+            try {
+                val photoCount = photoManager.getPhotoCount()
+                val countToPreload = if (photoCount > 0) {
+                    minOf(PRECACHE_COUNT, photoCount)
+                } else {
+                    0
+                }
+
+                if (countToPreload > 0) {
+                    repeat(countToPreload) { index ->
+                        photoManager.getPhotoUrl(index)?.let { url ->
+                            val mediaItem = MediaItem(
+                                id = index.toString(),
+                                albumId = "lock_screen",
+                                baseUrl = url,
+                                mimeType = "image/jpeg",
+                                width = 1920,
+                                height = 1080
+                            )
+                            photoLoadingManager.preloadPhoto(mediaItem)
+                        }
+                    }
+                    Log.d(TAG, "Precached $countToPreload photos")
+                } else {
+                    Log.d(TAG, "No photos to precache")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error precaching photos", e)
+            }
+        }
     }
 
     private fun setupConfirmButton() {
         logd("Setting up Confirm Button")
-        confirmButton = findViewById(R.id.confirmButton)
-
-        confirmButton.setOnClickListener {
+        binding.confirmButton.setOnClickListener {
             if (!isLoading) {
                 logd("Confirm button clicked")
+                saveSelectedAlbums()
                 setResult(Activity.RESULT_OK)
                 finish()
             }
         }
-
         updateConfirmButtonState()
     }
 
+    private fun saveSelectedAlbums() {
+        val selectedAlbums = albumAdapter.currentList
+            .filter { it.isSelected }
+            .map { it.id }
+            .toSet()
+
+        getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
+            .edit()
+            .putStringSet("selected_albums", selectedAlbums)
+            .apply()
+    }
+
     private fun updateConfirmButtonState() {
-        val selectedAlbums = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
-            .getStringSet("selected_albums", emptySet()) ?: emptySet()
-        confirmButton.isEnabled = selectedAlbums.isNotEmpty() && !isLoading
+        binding.confirmButton.isEnabled = albumAdapter.currentList.any { it.isSelected } && !isLoading
     }
 
     private fun toggleAlbumSelection(album: Album) {
         if (isLoading) return
 
         logd("Toggling selection for album: ${album.title}")
-        val prefs = getSharedPreferences("screensaver_prefs", MODE_PRIVATE)
-        val selectedAlbums = prefs.getStringSet("selected_albums", mutableSetOf())?.toMutableSet()
-            ?: mutableSetOf()
+        val updatedAlbum = album.copy(isSelected = !album.isSelected)
+        val currentList = albumAdapter.currentList.toMutableList()
+        val position = currentList.indexOfFirst { it.id == album.id }
 
-        if (selectedAlbums.contains(album.id)) {
-            selectedAlbums.remove(album.id)
-            album.isSelected = false
-        } else {
-            selectedAlbums.add(album.id)
-            album.isSelected = true
+        if (position != -1) {
+            currentList[position] = updatedAlbum
+            albumAdapter.submitList(currentList)
+            updateConfirmButtonState()
+
+            Toast.makeText(
+                this,
+                getString(
+                    if (updatedAlbum.isSelected) R.string.album_added else R.string.album_removed,
+                    updatedAlbum.title
+                ),
+                Toast.LENGTH_SHORT
+            ).show()
+
+            checkDreamServiceRegistration()
         }
-
-        prefs.edit()
-            .putStringSet("selected_albums", selectedAlbums)
-            .apply()
-
-        albumAdapter.notifyItemChanged(albumAdapter.currentList.indexOf(album))
-        updateConfirmButtonState()
-
-        Toast.makeText(
-            this,
-            if (album.isSelected) "Added ${album.title}" else "Removed ${album.title}",
-            Toast.LENGTH_SHORT
-        ).show()
-
-        checkDreamServiceRegistration()
     }
 
     private fun checkDreamServiceRegistration() {
@@ -214,16 +271,10 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun addTestDreamButton() {
-        val testButton = Button(this).apply {
-            text = "Test Dream Service"
+        binding.testDreamButton.apply {
+            visibility = View.VISIBLE
             setOnClickListener {
                 testDreamService()
-            }
-        }
-
-        findViewById<View>(R.id.root_layout)?.let { root ->
-            if (root is android.view.ViewGroup) {
-                root.addView(testButton)
             }
         }
     }
@@ -250,14 +301,15 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun showLoading(show: Boolean) {
-        findViewById<View>(R.id.loadingProgress)?.visibility = if (show) View.VISIBLE else View.GONE
-        recyclerView.visibility = if (show) View.GONE else View.VISIBLE
+        binding.loadingProgress.visibility = if (show) View.VISIBLE else View.GONE
+        binding.albumRecyclerView.visibility = if (show) View.GONE else View.VISIBLE
     }
 
     private fun setLoading(loading: Boolean) {
+        viewModel.setLoading(loading)
         isLoading = loading
         showLoading(loading)
-        confirmButton.isEnabled = !loading && (albumAdapter.currentList.any { it.isSelected })
+        updateConfirmButtonState()
     }
 
     private fun showError(message: String) {

@@ -128,6 +128,7 @@ object PhotoBindingAdapters {
                 PhotoLoadingManager.QUALITY_LOW -> request.override(720, 720)
                 PhotoLoadingManager.QUALITY_MEDIUM -> request.override(1080, 1080)
                 PhotoLoadingManager.QUALITY_HIGH -> request.override(Target.SIZE_ORIGINAL)
+                else -> request.override(Target.SIZE_ORIGINAL)  // Added missing else branch
             }
         }
 
