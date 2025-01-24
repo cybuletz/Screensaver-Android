@@ -164,7 +164,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun setupPhotoSourcePreferences() {
         val photoSourceSelection = findPreference<MultiSelectListPreference>("photo_source_selection")
         val googlePhotosCategory = findPreference<PreferenceCategory>("google_photos_settings")
-        val useGooglePhotos = findPreference<SwitchPreferenceCompat>("use_google_photos")
+        val useGooglePhotos = findPreference<SwitchPreferenceCompat>("google_photos_enabled")  // Changed from "use_google_photos"
         val selectAlbums = findPreference<Preference>("select_albums")
 
         Log.d(TAG, "Setting up photo source preferences")
@@ -177,9 +177,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         useGooglePhotos?.setOnPreferenceChangeListener { _, newValue ->
             val enabled = newValue as Boolean
+            Log.d(TAG, "Google Photos sign-in state changing to: $enabled")
             if (enabled) {
                 showGoogleSignInPrompt()
-                false
+                false  // Don't update the switch until sign-in is successful
             } else {
                 signOutCompletely()
                 true
@@ -229,7 +230,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
             googleSignInClient = GoogleSignIn.getClient(requireActivity(), gso)
 
-            findPreference<SwitchPreference>("use_google_photos")?.apply {
+            findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.apply {
                 val account = GoogleSignIn.getLastSignedInAccount(requireContext())
                 val hasRequiredScope = account?.grantedScopes?.contains(
                     Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
@@ -259,7 +260,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 if (signOutTask.isSuccessful) {
                     Log.d(TAG, "Previous sign-out successful, launching sign-in")
                     val signInIntent = googleSignInClient?.signInIntent
-                    signInLauncher.launch(signInIntent)
+                    if (signInIntent != null) {
+                        signInLauncher.launch(signInIntent)
+                    } else {
+                        Log.e(TAG, "Sign-in intent is null")
+                        Toast.makeText(context, "Error preparing sign in", Toast.LENGTH_SHORT).show()
+                        updateGooglePhotosState(false)
+                    }
                 } else {
                     Log.e(TAG, "Error clearing previous sign in", signOutTask.exception)
                     Toast.makeText(context, "Error preparing sign in", Toast.LENGTH_SHORT).show()
@@ -370,7 +377,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun updateGooglePhotosState(enabled: Boolean) {
-        findPreference<SwitchPreferenceCompat>("use_google_photos")?.isChecked = enabled
+        Log.d(TAG, "Updating Google Photos state to: $enabled")
+        findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = enabled
         findPreference<Preference>("select_albums")?.isVisible = enabled
     }
 
