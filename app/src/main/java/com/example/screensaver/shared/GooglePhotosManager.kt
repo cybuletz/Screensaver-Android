@@ -44,21 +44,6 @@ class GooglePhotosManager @Inject constructor(
         private const val PHOTO_QUALITY = "=w2048-h1024"
         private const val PAGE_SIZE = 100
         private const val TOKEN_EXPIRY_BUFFER = 60000L // 1 minute buffer
-
-        @Volatile
-        private var instance: GooglePhotosManager? = null
-
-        // Since we're using Hilt, we should probably remove this getInstance method
-        // as Hilt will handle the instantiation
-        @Deprecated("Use Hilt injection instead")
-        fun getInstance(context: Context): GooglePhotosManager {
-            return instance ?: synchronized(this) {
-                instance ?: GooglePhotosManager(
-                    context.applicationContext,
-                    CoroutineScope(SupervisorJob() + Dispatchers.Main)
-                ).also { instance = it }
-            }
-        }
     }
 
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
@@ -227,7 +212,6 @@ class GooglePhotosManager @Inject constructor(
             }
         }
     }
-
 
     private fun shouldRetryOnError(error: Exception): Boolean {
         return error.message?.contains("UNAUTHENTICATED") == true

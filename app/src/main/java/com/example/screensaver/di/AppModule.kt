@@ -11,6 +11,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import com.example.screensaver.shared.GooglePhotosManager
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -32,5 +33,14 @@ object AppModule {
     @Provides
     fun providePhotoAnalytics(@ApplicationContext context: Context): PhotoAnalytics {
         return PhotoAnalytics(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGooglePhotosManager(
+        @ApplicationContext context: Context,
+        coroutineScope: CoroutineScope
+    ): GooglePhotosManager {
+        return GooglePhotosManager(context, coroutineScope)
     }
 }

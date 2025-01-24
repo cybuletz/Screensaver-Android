@@ -49,6 +49,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
     @Inject
     lateinit var googlePhotosManager: GooglePhotosManager
 
+    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+        setPreferencesFromResource(R.xml.preferences, rootKey)
+        setupPhotoSourcePreferences()
+        setupGoogleSignIn()
+        setupTestScreensaver()
+        setupDisplayModeSelection()
+    }
+
     private var googleSignInClient: GoogleSignInClient? = null
 
     private val scope get() = lifecycleScope
@@ -79,12 +87,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
         private const val TAG = "SettingsFragment"
     }
 
-    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        setPreferencesFromResource(R.xml.preferences, rootKey)
-        setupPhotoSourcePreferences()
-        setupGoogleSignIn()
-        setupTestScreensaver()
-    }
+//    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+//        setPreferencesFromResource(R.xml.preferences, rootKey)
+//        setupPhotoSourcePreferences()
+//        setupGoogleSignIn()
+//        setupTestScreensaver()
+//    }
 
     private fun setupDisplayModeSelection() {
         findPreference<ListPreference>("display_mode_selection")?.setOnPreferenceChangeListener { _, newValue ->

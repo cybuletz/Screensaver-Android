@@ -7,6 +7,7 @@ import android.util.Log
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
+import android.view.View
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -18,8 +19,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.MenuProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.ui.setupWithNavController
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var isWebViewInitialized = false
@@ -36,7 +42,28 @@ class MainActivity : AppCompatActivity() {
 
         setupWebView(savedInstanceState)
         setupMenu()
+        setupNavigation()
         handleBackPress()
+    }
+
+    private fun setupNavigation() {
+        val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+        val navController = navHostFragment.navController
+
+        // Setup BottomNavigationView with NavController
+        findViewById<BottomNavigationView>(R.id.bottom_navigation).setupWithNavController(navController)
+
+        // Handle navigation changes
+        navController.addOnDestinationChangedListener { _, destination, _ ->
+            when (destination.id) {
+                R.id.mainFragment -> {
+                    webView.visibility = View.VISIBLE
+                }
+                else -> {
+                    webView.visibility = View.GONE
+                }
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -167,7 +194,9 @@ class MainActivity : AppCompatActivity() {
             override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
                 return when (menuItem.itemId) {
                     R.id.action_settings -> {
-                        navigateToSettings()
+                        // Use Navigation component instead of direct Activity start
+                        val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+                        navHostFragment.navController.navigate(R.id.action_mainFragment_to_settingsFragment)
                         true
                     }
                     R.id.action_refresh -> {
@@ -183,23 +212,20 @@ class MainActivity : AppCompatActivity() {
     private fun handleBackPress() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.canGoBack() && isWebViewInitialized) {
-                    webView.goBack()
-                } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
+                val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+                val navController = navHostFragment.navController
+
+                when {
+                    webView.visibility == View.VISIBLE && webView.canGoBack() && isWebViewInitialized -> {
+                        webView.goBack()
+                    }
+                    !navController.navigateUp() -> {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
                 }
             }
         })
-    }
-
-    private fun navigateToSettings() {
-        try {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        } catch (e: Exception) {
-            Log.e(TAG, "Error navigating to settings", e)
-            showError("Unable to open settings")
-        }
     }
 
     private fun refreshWebView() {
