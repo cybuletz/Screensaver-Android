@@ -24,6 +24,7 @@ import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.appcompat.widget.Toolbar
+import com.example.screensaver.settings.SettingsFragment
 
 @AndroidEntryPoint
 class SettingsActivity : AppCompatActivity() {
