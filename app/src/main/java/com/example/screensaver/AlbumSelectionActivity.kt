@@ -68,7 +68,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     private fun setupRecyclerView() {
         albumAdapter = AlbumAdapter { album ->
-            // Add null-safe check for isLoading value
             if (!(viewModel.isLoading.value ?: true)) {  // default to true when null
                 toggleAlbumSelection(album)
             }
@@ -84,7 +83,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
         binding.confirmButton.apply {
             isEnabled = false
             setOnClickListener {
-                // Add null-safe check for isLoading value
                 if (!(viewModel.isLoading.value ?: true)) {  // default to true when null
                     saveSelectedAlbums()
                     setResult(Activity.RESULT_OK)
@@ -173,12 +171,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun showSelectionToast(album: Album) {
-        val stringResId = if (album.isSelected) {
-            R.string.album_added
-        } else {
-            R.string.album_removed
-        }
-
+        val stringResId = if (album.isSelected) R.string.album_added else R.string.album_removed
         Toast.makeText(
             this,
             getString(stringResId, album.title),
@@ -257,15 +250,16 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     private fun updateLoadingState(isLoading: Boolean) {
         binding.apply {
-            loadingContainer.visibility = if (isLoading) View.VISIBLE else View.GONE
-            albumRecyclerView.visibility = if (isLoading) View.GONE else View.VISIBLE
-            // Use the isLoading parameter instead of viewModel.isLoading.value
+            val visibility = if (isLoading) View.VISIBLE else View.GONE
+            val inverseVisibility = if (isLoading) View.GONE else View.VISIBLE
+
+            loadingContainer.visibility = visibility
+            albumRecyclerView.visibility = inverseVisibility
             confirmButton.isEnabled = !isLoading && albumAdapter.currentList.any { it.isSelected }
         }
     }
 
     private fun updateConfirmButtonState() {
-        // Use the current loading state from viewModel with safe call and elvis operator
         val isEnabled = !(viewModel.isLoading.value ?: false) &&
                 albumAdapter.currentList.any { it.isSelected }
         binding.confirmButton.isEnabled = isEnabled
@@ -283,7 +277,17 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+
+        // Cancel coroutines first to prevent new operations
         coroutineScope.cancel()
-        photoManager.cleanup()
+
+        // Clean up PhotoManager
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                photoManager.cleanup()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during cleanup", e)
+            }
+        }
     }
 }

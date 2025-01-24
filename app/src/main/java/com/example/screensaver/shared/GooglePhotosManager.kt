@@ -11,7 +11,6 @@ import com.example.screensaver.models.Album
 import com.example.screensaver.models.MediaItem
 import com.google.photos.library.v1.proto.SearchMediaItemsRequest
 import com.example.screensaver.R
-import com.example.screensaver.models.MediaItemModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,8 +21,7 @@ import java.net.URL
 import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 
 @Singleton
 class GooglePhotosManager @Inject constructor(
@@ -49,6 +47,8 @@ class GooglePhotosManager @Inject constructor(
     }
 
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
+        cleanup() // Ensure any existing client is properly cleaned up
+
         if (!hasValidTokens()) {
             Log.d(TAG, "No tokens available, skipping initialization")
             return@withContext false
@@ -56,13 +56,6 @@ class GooglePhotosManager @Inject constructor(
 
         try {
             _loadingState.value = LoadingState.LOADING
-
-            // Check if we have tokens before trying to authenticate
-            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            if (!prefs.contains("access_token") || !prefs.contains("refresh_token")) {
-                Log.d(TAG, "No tokens available, skipping initialization")
-                return@withContext false
-            }
 
             val credentials = getOrRefreshCredentials() ?: return@withContext false
             val settings = PhotosLibrarySettings.newBuilder()
@@ -75,6 +68,7 @@ class GooglePhotosManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing Google Photos", e)
             _loadingState.value = LoadingState.ERROR
+            cleanup() // Clean up if initialization fails
             false
         }
     }
@@ -113,18 +107,13 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
-    suspend fun loadPhotos(): Boolean {
-        return try {
-            val photos = fetchPhotos()
-            val success = photos != null && photos.isNotEmpty()
-            if (success) {
-                mediaItems.clear()
-                photos?.let { mediaItems.addAll(it) }
-            }
-            success
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading photos", e)
-            false
+    fun getPhotoCount(): Int = mediaItems.size
+
+    fun getPhotoUrl(index: Int): String? {
+        return if (index in 0 until mediaItems.size) {
+            mediaItems[index].baseUrl
+        } else {
+            null
         }
     }
 
@@ -161,24 +150,6 @@ class GooglePhotosManager @Inject constructor(
             null
         } catch (e: Exception) {
             Log.e(TAG, "Error loading photos", e)
-            null
-        }
-    }
-
-    fun hasValidTokens(): Boolean {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val accessToken = prefs.getString("access_token", null)
-        val tokenExpiration = prefs.getLong("token_expiration", 0)
-
-        return accessToken != null && tokenExpiration > System.currentTimeMillis()
-    }
-
-    fun getPhotoCount(): Int = mediaItems.size
-
-    fun getPhotoUrl(index: Int): String? {
-        return if (index in 0 until mediaItems.size) {
-            mediaItems[index].baseUrl
-        } else {
             null
         }
     }
@@ -283,6 +254,14 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
+    fun hasValidTokens(): Boolean {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val accessToken = prefs.getString("access_token", null)
+        val tokenExpiration = prefs.getLong("token_expiration", 0)
+
+        return accessToken != null && tokenExpiration > System.currentTimeMillis()
+    }
+
     private suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         try {
@@ -346,9 +325,28 @@ class GooglePhotosManager @Inject constructor(
     }
 
     fun cleanup() {
-        coroutineScope.cancel()
-        photosLibraryClient?.shutdown()
-        photosLibraryClient = null
-        mediaItems.clear()
+        try {
+            photosLibraryClient?.let { client ->
+                try {
+                    client.close()
+                    // Use reflection to access shutdownNow and awaitTermination
+                    client.javaClass.getDeclaredMethod("shutdownNow").apply {
+                        isAccessible = true
+                        invoke(client)
+                    }
+                    client.javaClass.getDeclaredMethod("awaitTermination", Long::class.java, TimeUnit::class.java).apply {
+                        isAccessible = true
+                        invoke(client, 30L, TimeUnit.SECONDS)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during client shutdown", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during cleanup", e)
+        } finally {
+            photosLibraryClient = null
+            mediaItems.clear()
+        }
     }
 }
