@@ -85,10 +85,18 @@ class GooglePhotosManager @Inject constructor(
 
             val albums = photosLibraryClient?.listAlbums()?.iterateAll()?.map { googleAlbum ->
                 Log.d(TAG, "Found album: ${googleAlbum.title} with ${googleAlbum.mediaItemsCount} items")
+
+                // Get the cover photo URL if we have a cover photo media item ID
+                val coverPhotoUrl = if (!googleAlbum.coverPhotoMediaItemId.isNullOrEmpty()) {
+                    photosLibraryClient?.getMediaItem(googleAlbum.coverPhotoMediaItemId)?.baseUrl + PHOTO_QUALITY
+                } else {
+                    ""
+                }
+
                 Album(
                     id = googleAlbum.id,
                     title = googleAlbum.title,
-                    coverPhotoUrl = googleAlbum.coverPhotoMediaItemId ?: "",
+                    coverPhotoUrl = coverPhotoUrl,
                     mediaItemsCount = googleAlbum.mediaItemsCount.toInt()
                 )
             }?.toList() ?: emptyList()
