@@ -38,11 +38,7 @@ import android.content.pm.PackageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
-import android.os.Build
-import android.app.NotificationManager
-import android.app.NotificationChannel
-import com.example.screensaver.activities.KioskActivity
-import com.example.screensaver.R
+import com.example.screensaver.kiosk.KioskActivity
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {

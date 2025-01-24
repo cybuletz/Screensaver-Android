@@ -13,6 +13,7 @@ import com.example.screensaver.utils.PreferenceKeys
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.example.screensaver.lock.PhotoLockScreenService
+import com.example.screensaver.kiosk.KioskPolicyManager
 
 /**
  * Device administrator receiver for handling lock screen permissions and management.

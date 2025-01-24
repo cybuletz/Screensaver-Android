@@ -1,6 +1,5 @@
-package com.example.screensaver.activities
+package com.example.screensaver.kiosk
 
-import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
