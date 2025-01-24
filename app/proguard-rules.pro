@@ -15,17 +15,38 @@
 # Keep all your model classes
 -keep class com.example.screensaver.model.** { *; }
 
-# Keep your app's classes
+# Keep your app's core classes
 -keep class com.example.screensaver.** { *; }
 
-# AutoValue specific rules
--keep class com.google.auto.value.AutoValue { *; }
--keep @com.google.auto.value.AutoValue class * { *; }
--keep class * extends com.google.auto.value.AutoValue { *; }
+# WebView related rules (new)
+-keep class android.webkit.** { *; }
+-keepclassmembers class * extends android.webkit.WebViewClient {
+    public void *(android.webkit.WebView, java.lang.String);
+    public void *(android.webkit.WebView, java.lang.String, android.graphics.Bitmap);
+    public boolean *(android.webkit.WebView, java.lang.String);
+}
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
 
 # Hilt related classes
 -keep class dagger.hilt.** { *; }
 -keep class javax.inject.** { *; }
+-keepclassmembers,allowobfuscation class * {
+    @dagger.hilt.* *;
+}
+
+# Navigation Component (updated)
+-keepnames class androidx.navigation.fragment.NavHostFragment
+-keep class * extends androidx.navigation.Navigator
+-keep class androidx.navigation.** { *; }
+-keepnames class * extends androidx.fragment.app.Fragment
+
+# ViewBinding (new)
+-keep class * implements androidx.viewbinding.ViewBinding {
+    public static *** bind(android.view.View);
+    public static *** inflate(android.view.LayoutInflater);
+}
 
 # Kotlin specific rules
 -keep class kotlin.** { *; }
@@ -40,7 +61,6 @@
 -keep public class * extends android.app.Service
 -keep public class * extends android.content.BroadcastReceiver
 -keep public class * extends android.content.ContentProvider
--keep public class * extends android.preference.PreferenceFragment
 -keep public class * extends androidx.fragment.app.Fragment
 
 # Keep your custom views
@@ -69,7 +89,7 @@
     public static int i(...);
 }
 
-# Add warning suppressions for missing classes
+# Warning suppressions
 -dontwarn javax.lang.model.**
 -dontwarn javax.tools.**
 -dontwarn javax.annotation.**
@@ -77,18 +97,7 @@
 -dontwarn org.slf4j.**
 -dontwarn reactor.blockhound.**
 
-# Keep Fragments
+# Keep specific fragments (updated)
 -keep class com.example.screensaver.MainFragment { *; }
+-keep class com.example.screensaver.WebViewFragment { *; }
 -keep class com.example.screensaver.fragments.** { *; }
-
-# Keep Navigation Component classes
--keep class androidx.navigation.fragment.NavHostFragment { *; }
--keepnames class * extends androidx.fragment.app.Fragment
-
-# Keep classes that are referenced in the navigation graph
--keepclassmembers class * extends androidx.fragment.app.Fragment {
-    <init>();
-}
-
-# Keep the navigation graph itself
--keep class **.navigation.** { *; }
