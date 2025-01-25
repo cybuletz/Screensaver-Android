@@ -119,13 +119,8 @@ class PreviewActivity : AppCompatActivity() {
                 previewViewModel.startPreview()
             }
 
-            val selectedAlbums = preferences.selectedAlbumsFlow.value.map {
-                Album(
-                    id = it,
-                    title = "",
-                    coverPhotoUrl = "",
-                    mediaItemsCount = 0
-                )
+            val selectedAlbums = preferences.selectedAlbumsFlow.value.map { albumId ->
+                Album.createPreviewAlbum(albumId)
             }
             photoViewModel.initialize(selectedAlbums)
             isPreviewActive = true
@@ -148,13 +143,8 @@ class PreviewActivity : AppCompatActivity() {
                         }
                         is PreviewState.Available -> {
                             if (photoViewModel.loadingState.value == PhotoViewModel.LoadingState.IDLE) {
-                                val selectedAlbums = preferences.selectedAlbumsFlow.value.map {
-                                    Album(
-                                        id = it,
-                                        title = "",
-                                        coverPhotoUrl = "",
-                                        mediaItemsCount = 0
-                                    )
+                                val selectedAlbums = preferences.selectedAlbumsFlow.value.map { albumId ->
+                                    Album.createPreviewAlbum(albumId)
                                 }
                                 photoViewModel.initialize(selectedAlbums)
                             }
