@@ -26,6 +26,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import com.example.screensaver.PhotoSourceState
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -243,30 +244,9 @@ class PhotoLockScreenService : Service() {
                 isKioskMode = false
                 kioskPolicyManager.setKioskPolicies(false)
             }
-            "START_PREVIEW" -> {
-                handlePreviewStart()
-            }
-            "STOP_PREVIEW" -> {
-                handlePreviewStop()
-            }
+            "START_PREVIEW" -> handlePreviewStart()
+            "STOP_PREVIEW" -> handlePreviewStop()
             "AUTH_UPDATED" -> onAuthenticationUpdated()
-        }
-
-        private fun handlePreviewStart() {
-            if (canStartPreview()) {
-                isPreviewMode = true
-                photoSourceState.recordPreviewStarted()
-                showLockScreen(true)
-            }
-        }
-
-        private fun handlePreviewStop() {
-            isPreviewMode = false
-            startForegroundWithNotification()
-        }
-
-        private fun canStartPreview(): Boolean {
-            return photoSourceState.getTimeSinceLastPreview() > MIN_PREVIEW_INTERVAL
         }
 
         startForegroundWithNotification()
@@ -282,6 +262,23 @@ class PhotoLockScreenService : Service() {
         if (!isInitialized) {
             initializeService()
         }
+    }
+
+    private fun handlePreviewStart() {
+        if (canStartPreview()) {
+            isPreviewMode = true
+            photoSourceState.recordPreviewStarted()
+            showLockScreen(true)
+        }
+    }
+
+    private fun handlePreviewStop() {
+        isPreviewMode = false
+        startForegroundWithNotification()
+    }
+
+    private fun canStartPreview(): Boolean {
+        return photoSourceState.getTimeSinceLastPreview() > MIN_PREVIEW_INTERVAL
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -110,8 +110,11 @@ class PreviewManager @Inject constructor(
     }
 
     private fun loadPreviewStats() {
-        lastPreviewTime = preferences.getLong(PREF_LAST_PREVIEW_TIME, 0L)
-        dailyPreviewCount = preferences.getInt(PREF_DAILY_PREVIEW_COUNT, 0)
-        lastResetTime = preferences.getLong(PREF_LAST_RESET_TIME, SystemClock.elapsedRealtime())
+        with(preferences) {
+            lastPreviewTime = getLong(PREF_LAST_PREVIEW_TIME, 0L)
+            dailyPreviewCount = getInt(PREF_DAILY_PREVIEW_COUNT, 0)
+            lastResetTime = getLong(PREF_LAST_RESET_TIME, SystemClock.elapsedRealtime())
+        }
     }
+
 }

@@ -669,18 +669,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-
-    private fun showLockScreenPreview() {
-        try {
-            Intent(requireContext(), PhotoLockActivity::class.java).apply {
-                putExtra("preview_mode", true)
-                startActivity(this)
-            }
-        } catch (e: Exception) {
-            handleError("Error showing preview", e)
-        }
-    }
-
     private fun setupLockScreenStatus() {
         findPreference<Preference>("lock_screen_status")?.isVisible = isLockScreenModeSelected()
     }

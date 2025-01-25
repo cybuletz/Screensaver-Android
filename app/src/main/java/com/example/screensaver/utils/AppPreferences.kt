@@ -107,6 +107,16 @@ class AppPreferences @Inject constructor(context: Context) {
         FORMAT_12H, FORMAT_24H
     }
 
+    fun getLong(key: String, defaultValue: Long): Long = prefs.getLong(key, defaultValue)
+
+    fun getInt(key: String, defaultValue: Int): Int = prefs.getInt(key, defaultValue)
+
+    fun edit(operation: SharedPreferences.Editor.() -> Unit) {
+        prefs.edit().apply {
+            operation()
+            apply()
+        }
+    }
 
     fun getPreviewCount(): Int = prefs.getInt(PREF_PREVIEW_COUNT, 0)
 

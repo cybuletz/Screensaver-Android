@@ -23,6 +23,7 @@ import javax.inject.Inject
 import android.view.animation.AnimationUtils
 import androidx.core.content.ContextCompat
 import com.google.android.material.snackbar.Snackbar
+import com.example.screensaver.lock.PhotoLockActivity
 
 @AndroidEntryPoint
 class MainFragment : Fragment() {

@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.NotificationHelper
+import com.example.screensaver.PhotoSourceState
 
 
 @Module
