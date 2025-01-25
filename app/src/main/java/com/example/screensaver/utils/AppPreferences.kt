@@ -107,6 +107,7 @@ class AppPreferences @Inject constructor(context: Context) {
         FORMAT_12H, FORMAT_24H
     }
 
+
     fun getPreviewCount(): Int = prefs.getInt(PREF_PREVIEW_COUNT, 0)
 
     fun getRemainingPreviews(): Int = MAX_PREVIEW_COUNT - getPreviewCount()
@@ -221,10 +222,14 @@ class AppPreferences @Inject constructor(context: Context) {
     }
 
     // Transition Animation
-    fun getTransitionAnimation(): TransitionAnimation =
-        TransitionAnimation.valueOf(
-            prefs.getString(PREF_TRANSITION_ANIMATION, DEFAULT_TRANSITION_ANIMATION)!!.uppercase()
-        )
+    fun getTransitionAnimation(): TransitionAnimation {
+        val prefValue = getString("transition_animation", "fade")
+        return when (prefValue?.lowercase()) {
+            "slide" -> TransitionAnimation.SLIDE
+            "zoom" -> TransitionAnimation.ZOOM
+            else -> TransitionAnimation.FADE
+        }
+    }
 
     fun setTransitionAnimation(animation: TransitionAnimation) {
         prefs.edit { putString(PREF_TRANSITION_ANIMATION, animation.name.lowercase()) }
