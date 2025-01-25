@@ -60,6 +60,7 @@ open class PhotoLockActivity : AppCompatActivity() {
     protected var isActivityVisible = false
     private var screenWidth: Int = 0
     protected var isInitialized = false
+    protected var isPreviewMode = false
 
     companion object {
         private const val TAG = "PhotoLockActivity"
@@ -69,6 +70,7 @@ open class PhotoLockActivity : AppCompatActivity() {
         private const val POWER_SAVING_SCALE = 2L // Double the interval in power saving mode
         private const val TRANSITION_DURATION_NORMAL = 1000L
         private const val TRANSITION_DURATION_POWER_SAVING = 500L
+        private const val MAX_PREVIEW_DURATION = 300000L // 5 minutes
     }
 
     private val powerSavingReceiver = object : BroadcastReceiver() {
@@ -158,7 +160,6 @@ open class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
-
     private fun setupGestureDetection() {
         gestureDetector = GestureDetectorCompat(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
@@ -194,20 +195,6 @@ open class PhotoLockActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 showError("Error initializing photos: ${e.message}")
             }
-        }
-    }
-
-    private fun checkPreviewDuration() {
-        if (isPreviewMode && photoSourceState.getTimeSinceLastPreview() > MAX_PREVIEW_DURATION) {
-            handleUnlock()
-        }
-    }
-
-    override fun onBackPressed() {
-        if (isPreviewMode) {
-            finish()
-        } else {
-            super.onBackPressed()
         }
     }
 
@@ -444,11 +431,17 @@ open class PhotoLockActivity : AppCompatActivity() {
         isInitialized = false
     }
 
-        Glide.with(this).apply {
-            clear(backgroundImageView)
-            clear(overlayImageView)
+    override fun onBackPressed() {
+        if (isPreviewMode) {
+            finish()
+        } else {
+            super.onBackPressed()
         }
+    }
 
-        isInitialized = false
+    private fun checkPreviewDuration() {
+        if (isPreviewMode && System.currentTimeMillis() - photoManager.getStartTime() > MAX_PREVIEW_DURATION) {
+            handleUnlock()
+        }
     }
 }
