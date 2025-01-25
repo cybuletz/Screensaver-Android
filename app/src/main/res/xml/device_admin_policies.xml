@@ -8,5 +8,6 @@
         <wipe-data />
         <disable-camera />
         <disable-keyguard-features />
+        <encrypted-storage />
     </uses-policies>
 </device-admin>

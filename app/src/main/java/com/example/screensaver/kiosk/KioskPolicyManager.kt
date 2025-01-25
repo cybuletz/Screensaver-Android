@@ -134,6 +134,14 @@ class KioskPolicyManager @Inject constructor(
         }
     }
 
+    fun isDeviceAdmin(): Boolean {
+        return devicePolicyManager.isAdminActive(adminComponent)
+    }
+
+    fun getAdminComponent(): ComponentName {
+        return adminComponent
+    }
+
     fun isKioskModeAllowed(): Boolean {
         if (!checkPrerequisites()) {
             return false

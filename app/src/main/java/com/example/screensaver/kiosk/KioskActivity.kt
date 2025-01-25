@@ -20,6 +20,7 @@ import javax.inject.Inject
 import android.annotation.SuppressLint
 
 
+
 @AndroidEntryPoint
 class KioskActivity : PhotoLockActivity() {
     private lateinit var binding: ActivityKioskBinding
