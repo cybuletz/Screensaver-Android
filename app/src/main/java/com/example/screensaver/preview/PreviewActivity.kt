@@ -57,7 +57,7 @@ class PreviewActivity : AppCompatActivity() {
 
         initializeViews()
         setupGestureDetection()
-        initializePreview()
+        startPreviewMode()
         observePreviewState()
         observePhotos()
     }
@@ -109,7 +109,7 @@ class PreviewActivity : AppCompatActivity() {
         })
     }
 
-    private fun initializePreview() {
+    private fun startPreviewMode() {
         lifecycleScope.launch {
             if (!previewViewModel.isPreviewModeActive()) {
                 val remainingPreviews = previewViewModel.getRemainingPreviews()

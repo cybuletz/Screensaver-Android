@@ -439,6 +439,13 @@ open class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
+    protected fun checkAndStartPreviewMode() {
+        if (intent.getBooleanExtra("preview_mode", false)) {
+            isPreviewMode = true
+            checkPreviewDuration()
+        }
+    }
+
     private fun checkPreviewDuration() {
         if (isPreviewMode && System.currentTimeMillis() - photoManager.getStartTime() > MAX_PREVIEW_DURATION) {
             handleUnlock()

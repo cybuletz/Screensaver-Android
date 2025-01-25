@@ -204,13 +204,14 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        private fun setupLockScreenPreview() {
-            findPreference<Preference>("preview_lock_screen")?.apply {
-                isVisible = isLockScreenModeSelected()
-                setOnPreferenceClickListener {
-                    launchLockScreenPreviewFromSettings()
-                    true
+        private fun launchLockScreenPreviewFromSettings() {
+            try {
+                Intent(requireContext(), PhotoLockActivity::class.java).apply {
+                    putExtra("preview_mode", true)
+                    startActivity(this)
                 }
+            } catch (e: Exception) {
+                handleError("Error showing preview", e)
             }
         }
 
