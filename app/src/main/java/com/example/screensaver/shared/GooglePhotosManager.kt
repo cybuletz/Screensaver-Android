@@ -57,6 +57,12 @@ class GooglePhotosManager @Inject constructor(
         private const val PHOTO_QUALITY = "=w2048-h1024"
         private const val PAGE_SIZE = 100
         private const val TOKEN_EXPIRY_BUFFER = 60000L // 1 minute buffer
+
+        private val REQUIRED_SCOPES = listOf(
+            "https://www.googleapis.com/auth/photoslibrary.readonly",
+            "https://www.googleapis.com/auth/photoslibrary",
+            "https://www.googleapis.com/auth/photos.readonly"
+        )
     }
 
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
@@ -132,7 +138,6 @@ class GooglePhotosManager @Inject constructor(
     suspend fun loadPhotos(): List<MediaItem>? = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Starting to load photos...")
-            // Cancel any existing load job
             photosLoadJob.value?.cancelAndJoin()
 
             if (!initialize()) {
@@ -150,31 +155,52 @@ class GooglePhotosManager @Inject constructor(
 
             val allPhotos = mutableListOf<MediaItem>()
 
-            // Create new load job
             photosLoadJob.value = managerScope.launch {
                 supervisorScope {
-                    selectedAlbumIds.forEach { albumId ->
-                        launch {
+                    selectedAlbumIds.map { albumId ->
+                        async {
                             try {
-                                Log.d(TAG, "Loading photos for album: $albumId")
-                                val albumPhotos = loadAlbumPhotos(albumId)
-                                if (albumPhotos != null) {
-                                    Log.d(TAG, "Loaded ${albumPhotos.size} photos from album $albumId")
-                                    synchronized(allPhotos) {
-                                        allPhotos.addAll(albumPhotos)
+                                Log.d(TAG, "Starting to load photos for album: $albumId")
+                                val request = SearchMediaItemsRequest.newBuilder()
+                                    .setAlbumId(albumId)
+                                    .setPageSize(100)
+                                    .build()
+
+                                val albumPhotos = mutableListOf<MediaItem>()
+                                photosLibraryClient?.searchMediaItems(request)?.iterateAll()?.forEach { googleMediaItem ->
+                                    if (googleMediaItem.mediaMetadata.hasPhoto()) {
+                                        val baseUrl = googleMediaItem.baseUrl
+                                        if (baseUrl != null) {
+                                            albumPhotos.add(MediaItem(
+                                                id = googleMediaItem.id,
+                                                albumId = albumId,
+                                                baseUrl = "$baseUrl$PHOTO_QUALITY",
+                                                mimeType = googleMediaItem.mimeType,
+                                                width = googleMediaItem.mediaMetadata.width.toInt(),
+                                                height = googleMediaItem.mediaMetadata.height.toInt()
+                                            ))
+                                        }
                                     }
                                 }
+
+                                synchronized(allPhotos) {
+                                    allPhotos.addAll(albumPhotos)
+                                }
                             } catch (e: Exception) {
+                                // Fixed if-else expression
                                 if (e !is CancellationException) {
                                     Log.e(TAG, "Error loading photos for album $albumId", e)
+                                    e.printStackTrace()
+                                } else {
+                                    Log.d(TAG, "Loading cancelled for album $albumId")
                                 }
+                                null  // Add return value for expression
                             }
                         }
-                    }
+                    }.awaitAll()
                 }
             }
 
-            // Wait for load job to complete
             photosLoadJob.value?.join()
             Log.d(TAG, "Finished loading photos. Total photos loaded: ${allPhotos.size}")
 
@@ -185,10 +211,14 @@ class GooglePhotosManager @Inject constructor(
 
             allPhotos
         } catch (e: Exception) {
+            // Fixed if-else expression
             if (e !is CancellationException) {
                 Log.e(TAG, "Error fetching photos", e)
+                e.printStackTrace()
+            } else {
+                Log.d(TAG, "Photo loading operation was cancelled")
             }
-            null
+            null  // Add return value for expression
         }
     }
 
@@ -317,7 +347,7 @@ class GooglePhotosManager @Inject constructor(
 
             val expirationTime = prefs.getLong("token_expiration", 0)
             GoogleCredentials.create(AccessToken(currentToken, Date(expirationTime)))
-                .createScoped(listOf("https://www.googleapis.com/auth/photoslibrary.readonly"))
+                .createScoped(REQUIRED_SCOPES)  // Changed this line to use REQUIRED_SCOPES
         } catch (e: Exception) {
             Log.e(TAG, "Error getting/refreshing credentials", e)
             null
