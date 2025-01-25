@@ -102,11 +102,11 @@ class MainActivity : AppCompatActivity() {
             override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
                 return when (menuItem.itemId) {
                     R.id.action_settings -> {
-                        navController.navigate(R.id.action_mainFragment_to_settingsFragment)
+                        // Update this line to use the new action ID
+                        navController.navigate(R.id.nav_settings)
                         true
                     }
                     R.id.action_refresh -> {
-                        // Find current fragment and refresh if it's MainFragment
                         val currentFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)
                             ?.childFragmentManager
                             ?.fragments

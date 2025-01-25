@@ -326,14 +326,15 @@ class GooglePhotosManager @Inject constructor(
         try {
             photosLibraryClient?.let { client ->
                 try {
+                    // Use the standard close method
                     client.close()
-                    client.javaClass.getDeclaredMethod("shutdownNow").apply {
-                        isAccessible = true
-                        invoke(client)
-                    }
-                    client.javaClass.getDeclaredMethod("awaitTermination", Long::class.java, TimeUnit::class.java).apply {
-                        isAccessible = true
-                        invoke(client, 30L, TimeUnit.SECONDS)
+
+                    // Allow a brief moment for cleanup
+                    try {
+                        // Wait for any pending operations to complete
+                        Thread.sleep(100)
+                    } catch (e: InterruptedException) {
+                        Log.w(TAG, "Cleanup interrupted", e)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error during client shutdown", e)
@@ -342,6 +343,7 @@ class GooglePhotosManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error during cleanup", e)
         } finally {
+            // Clean up resources
             photosLibraryClient = null
             mediaItems.clear()
         }
