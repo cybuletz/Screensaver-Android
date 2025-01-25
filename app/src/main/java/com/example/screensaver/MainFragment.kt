@@ -16,9 +16,13 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.example.screensaver.databinding.FragmentMainBinding
+import com.example.screensaver.lock.PhotoLockScreenService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import android.view.animation.AnimationUtils
+import androidx.core.content.ContextCompat
+import com.google.android.material.snackbar.Snackbar
 
 @AndroidEntryPoint
 class MainFragment : Fragment() {
@@ -33,12 +37,14 @@ class MainFragment : Fragment() {
         private const val TAG = "MainFragment"
         private const val DEFAULT_URL = "file:///android_asset/index.html"
         private const val ERROR_PAGE = "file:///android_asset/error.html"
+        private const val MIN_PREVIEW_INTERVAL = 5000L // 5 seconds between previews
 
         fun newInstance() = MainFragment()
     }
 
     private var errorToastCount = 0
     private val MAX_TOAST_COUNT = 3
+    private var isPreviewEnabled = false
 
     private fun showErrorToast(message: String) {
         if (errorToastCount < MAX_TOAST_COUNT) {
@@ -58,22 +64,66 @@ class MainFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        setupViews()
         if (photoSourceState.isScreensaverReady()) {
-            showScreensaverContent()
+            enablePreviewButton()
         } else {
             setupWebView(savedInstanceState)
         }
     }
 
-    private fun showScreensaverContent() {
-        binding.webView.visibility = View.GONE
-        binding.screensaverContainer.visibility = View.VISIBLE
-
-        // Launch PhotoLockActivity in preview mode
-        val intent = Intent(requireContext(), PhotoLockActivity::class.java).apply {
-            putExtra("preview_mode", true)
+    private fun setupViews() {
+        binding.previewButton.apply {
+            setOnClickListener {
+                if (canStartPreview()) {
+                    startPreviewMode()
+                } else {
+                    showPreviewCooldownMessage()
+                }
+            }
+            visibility = if (photoSourceState.isScreensaverReady()) View.VISIBLE else View.GONE
         }
-        startActivity(intent)
+
+        binding.screensaverReadyCard.apply {
+            visibility = if (photoSourceState.isScreensaverReady()) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun enablePreviewButton() {
+        binding.previewButton.apply {
+            isEnabled = true
+            alpha = 1.0f
+            startAnimation(AnimationUtils.loadAnimation(context, android.R.anim.fade_in))
+        }
+        isPreviewEnabled = true
+    }
+
+    private fun canStartPreview(): Boolean {
+        return photoSourceState.getTimeSinceLastPreview() > MIN_PREVIEW_INTERVAL
+    }
+
+    private fun showPreviewCooldownMessage() {
+        val remainingTime = (MIN_PREVIEW_INTERVAL - photoSourceState.getTimeSinceLastPreview()) / 1000
+        Snackbar.make(
+            binding.root,
+            getString(R.string.preview_cooldown_message, remainingTime),
+            Snackbar.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun startPreviewMode() {
+        // Start the service with preview mode
+        val serviceIntent = Intent(requireContext(), PhotoLockScreenService::class.java).apply {
+            action = "START_PREVIEW"
+        }
+        ContextCompat.startForegroundService(requireContext(), serviceIntent)
+
+        // Show preview activity
+        val previewIntent = Intent(requireContext(), PhotoLockActivity::class.java).apply {
+            putExtra("preview_mode", true)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(previewIntent)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -86,9 +136,22 @@ class MainFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         binding.webView.onResume()
-        // Check if photo source state changed while fragment was paused
+        updatePreviewButtonState()
+    }
+
+    private fun updatePreviewButtonState() {
         if (photoSourceState.isScreensaverReady()) {
-            showScreensaverContent()
+            binding.previewButton.visibility = View.VISIBLE
+            binding.screensaverReadyCard.visibility = View.VISIBLE
+            if (canStartPreview()) {
+                enablePreviewButton()
+            } else {
+                binding.previewButton.isEnabled = false
+                binding.previewButton.alpha = 0.5f
+            }
+        } else {
+            binding.previewButton.visibility = View.GONE
+            binding.screensaverReadyCard.visibility = View.GONE
         }
     }
 
