@@ -30,6 +30,9 @@ class ScreensaverApplication : Application() {
     @Inject
     lateinit var preferences: AppPreferences
 
+    @Inject
+    lateinit var photoSourceState: PhotoSourceState
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var firebaseAnalytics: FirebaseAnalytics
 
@@ -40,11 +43,12 @@ class ScreensaverApplication : Application() {
         private const val PHOTO_REFRESH_WORK = "photo_refresh_work"
         private const val CACHE_CLEANUP_INTERVAL_HOURS = 24L
         private const val PHOTO_REFRESH_INTERVAL_HOURS = 6L
+        private const val PREVIEW_MODE_TAG = "preview_mode"
     }
 
     override fun onCreate() {
         super.onCreate()
-        initializeApp()  // This was missing from the original implementation
+        initializeApp()
     }
 
     private fun initializeApp() {
@@ -55,7 +59,29 @@ class ScreensaverApplication : Application() {
         initializeFirebase()
         initializeTheme()
         initializeWorkManager()
+        initializePhotoSourceState()
         logApplicationStart()
+    }
+
+    private fun initializePhotoSourceState() {
+        applicationScope.launch {
+            try {
+                // Reset preview mode on app start
+                photoSourceState.recordPreviewEnded()
+
+                // Log the screensaver readiness state
+                Timber.d("Screensaver ready state: ${photoSourceState.isScreensaverReady()}")
+
+                // Track in analytics
+                firebaseAnalytics.setUserProperty(
+                    "screensaver_ready",
+                    photoSourceState.isScreensaverReady().toString()
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize PhotoSourceState")
+                FirebaseCrashlytics.getInstance().recordException(e)
+            }
+        }
     }
 
     private fun initializeDebugMode() {
@@ -67,9 +93,9 @@ class ScreensaverApplication : Application() {
         if (BuildConfig.DEBUG) {
             StrictMode.setThreadPolicy(
                 StrictMode.ThreadPolicy.Builder()
-                    .detectAll()               // This is more comprehensive
+                    .detectAll()
                     .penaltyLog()
-                    .permitDiskReads()         // Allow disk reads for preferences
+                    .permitDiskReads()
                     .build()
             )
 
@@ -155,6 +181,7 @@ class ScreensaverApplication : Application() {
             putInt("version_code", VERSION_CODE)
             putString("build_type", BuildConfig.BUILD_TYPE)
             putBoolean("debug_mode", BuildConfig.DEBUG)
+            putBoolean("screensaver_ready", photoSourceState.isScreensaverReady())
         }
 
         firebaseAnalytics.logEvent("app_start", params)
@@ -165,6 +192,10 @@ class ScreensaverApplication : Application() {
         super.onLowMemory()
         Timber.w("Low memory condition detected")
         clearNonEssentialCaches()
+        // End preview mode if active
+        if (photoSourceState.isInPreviewMode) {
+            photoSourceState.recordPreviewEnded()
+        }
     }
 
     override fun onTrimMemory(level: Int) {
@@ -174,6 +205,10 @@ class ScreensaverApplication : Application() {
             TRIM_MEMORY_COMPLETE -> {
                 Timber.w("Critical memory condition detected")
                 clearAllCaches()
+                // End preview mode if active
+                if (photoSourceState.isInPreviewMode) {
+                    photoSourceState.recordPreviewEnded()
+                }
             }
             TRIM_MEMORY_RUNNING_LOW,
             TRIM_MEMORY_RUNNING_MODERATE -> {
