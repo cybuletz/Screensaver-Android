@@ -3,7 +3,6 @@ package com.example.screensaver.preview
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.screensaver.utils.AppPreferences
-import com.example.screensaver.viewmodels.PhotoViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +25,9 @@ class PreviewViewModel @Inject constructor(
     companion object {
         private const val MAX_PREVIEW_COUNT = 5
         private const val PREVIEW_COOLDOWN_DURATION = 3600000L // 1 hour in milliseconds
+        private const val PREF_PREVIEW_COUNT = "preview_count"
+        private const val PREF_LAST_PREVIEW = "last_preview_timestamp"
+        private const val PREF_PREVIEW_START = "preview_start_timestamp"
     }
 
     sealed class PreviewState {
@@ -34,6 +36,33 @@ class PreviewViewModel @Inject constructor(
         object Active : PreviewState()
         data class Cooldown(val remainingSeconds: Long) : PreviewState()
         data class Error(val message: String) : PreviewState()
+    }
+
+    init {
+        // Check and reset preview count if cooldown period has passed
+        resetPreviewCountIfNeeded()
+        // Start cooldown tracking if needed
+        updateCooldownStatus()
+    }
+
+    private fun resetPreviewCountIfNeeded() {
+        val lastPreview = preferences.getLong(PREF_LAST_PREVIEW, 0)
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastPreview > PREVIEW_COOLDOWN_DURATION) {
+            preferences.edit {
+                putInt(PREF_PREVIEW_COUNT, 0)
+                putLong(PREF_LAST_PREVIEW, 0)
+            }
+        }
+    }
+
+    private fun updateCooldownStatus() {
+        viewModelScope.launch {
+            if (!canStartPreview()) {
+                val timeUntilNext = getTimeUntilNextPreviewAllowed() / 1000
+                _cooldownSeconds.value = timeUntilNext
+            }
+        }
     }
 
     fun startPreview() {
@@ -60,9 +89,11 @@ class PreviewViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 if (isPreviewActive) {
+                    recordPreviewEnd()
                     isPreviewActive = false
                 }
                 _previewState.value = PreviewState.Initial
+                updateCooldownStatus()
             } catch (e: Exception) {
                 _previewState.value = PreviewState.Error(e.message ?: "Failed to end preview")
             }
@@ -70,12 +101,18 @@ class PreviewViewModel @Inject constructor(
     }
 
     private fun canStartPreview(): Boolean {
-        val lastPreview = preferences.getLong(PREF_LAST_PREVIEW, 0)
-        val currentTime = System.currentTimeMillis()
-        val timeSinceLastPreview = currentTime - lastPreview
+        val previewCount = getPreviewCount()
+        val timeSinceLastPreview = getTimeSinceLastPreview()
 
-        return getPreviewCount() < MAX_PREVIEW_COUNT ||
-                timeSinceLastPreview > PREVIEW_COOLDOWN_DURATION
+        return when {
+            previewCount < MAX_PREVIEW_COUNT -> true
+            timeSinceLastPreview > PREVIEW_COOLDOWN_DURATION -> {
+                // Reset count if cooldown period has passed
+                resetPreviewCountIfNeeded()
+                true
+            }
+            else -> false
+        }
     }
 
     private fun getPreviewCount(): Int =
@@ -84,11 +121,13 @@ class PreviewViewModel @Inject constructor(
     fun getRemainingPreviews(): Int =
         MAX_PREVIEW_COUNT - getPreviewCount()
 
-    private fun getTimeUntilNextPreviewAllowed(): Long {
+    private fun getTimeSinceLastPreview(): Long {
         val lastPreview = preferences.getLong(PREF_LAST_PREVIEW, 0)
-        val currentTime = System.currentTimeMillis()
-        val timeSinceLastPreview = currentTime - lastPreview
+        return System.currentTimeMillis() - lastPreview
+    }
 
+    fun getTimeUntilNextPreviewAllowed(): Long {
+        val timeSinceLastPreview = getTimeSinceLastPreview()
         return if (timeSinceLastPreview < PREVIEW_COOLDOWN_DURATION) {
             PREVIEW_COOLDOWN_DURATION - timeSinceLastPreview
         } else {
@@ -100,6 +139,16 @@ class PreviewViewModel @Inject constructor(
         preferences.edit {
             putInt(PREF_PREVIEW_COUNT, getPreviewCount() + 1)
             putLong(PREF_LAST_PREVIEW, System.currentTimeMillis())
+            putLong(PREF_PREVIEW_START, System.currentTimeMillis())
+        }
+    }
+
+    private fun recordPreviewEnd() {
+        val startTime = preferences.getLong(PREF_PREVIEW_START, 0)
+        if (startTime > 0) {
+            preferences.edit {
+                putLong(PREF_PREVIEW_START, 0)
+            }
         }
     }
 
@@ -110,10 +159,5 @@ class PreviewViewModel @Inject constructor(
         if (isPreviewActive) {
             endPreview()
         }
-    }
-
-    companion object {
-        private const val PREF_PREVIEW_COUNT = "preview_count"
-        private const val PREF_LAST_PREVIEW = "last_preview_timestamp"
     }
 }
