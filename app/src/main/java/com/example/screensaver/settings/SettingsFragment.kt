@@ -12,13 +12,17 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.preference.*
 import com.example.screensaver.R
 import com.example.screensaver.AlbumSelectionActivity
-import com.example.screensaver.lock.PhotoLockActivity
 import com.example.screensaver.lock.PhotoLockDeviceAdmin
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.shared.GooglePhotosManager
+import com.example.screensaver.preview.PreviewActivity
+import com.example.screensaver.preview.PreviewViewModel
+import com.example.screensaver.preview.PreviewState
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -30,15 +34,16 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import javax.inject.Inject
 import android.content.pm.PackageManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.URLEncoder
 import com.example.screensaver.kiosk.KioskActivity
+import androidx.fragment.app.viewModels
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -48,6 +53,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
     private var googleSignInClient: GoogleSignInClient? = null
+    private val previewViewModel: PreviewViewModel by viewModels()
 
     companion object {
         private const val TAG = "SettingsFragment"
@@ -92,11 +98,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         lifecycleScope.launch(Dispatchers.IO) {
-            // Load preferences in background
             withContext(Dispatchers.IO) {
                 setPreferencesFromResource(R.xml.preferences, rootKey)
             }
-            // Setup UI on main thread
             withContext(Dispatchers.Main) {
                 initializeDeviceAdmin()
                 setupPhotoSourcePreferences()
@@ -105,6 +109,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 setupDisplayModeSelection()
                 setupLockScreenPreview()
                 setupLockScreenStatus()
+                setupKioskModePreference()
             }
         }
     }
@@ -153,11 +158,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
             when (displayMode) {
                 "dream_service" -> startScreensaver()
-                "lock_screen" -> {
-                    val intent = Intent(requireContext(), PhotoLockActivity::class.java)
-                    intent.putExtra("preview_mode", true)
-                    startActivity(intent)
-                }
+                "lock_screen" -> showLockScreenPreview()
             }
             true
         }
@@ -628,8 +629,46 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 showLockScreenPreview()
                 true
             }
+
+            // Observe preview state
+            viewLifecycleOwner.lifecycleScope.launch {
+                viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    previewViewModel.previewState.collect { state ->
+                        when (state) {
+                            is PreviewState.Cooldown -> {
+                                isEnabled = false
+                                summary = getString(R.string.preview_cooldown_message,
+                                    state.remainingSeconds)
+                            }
+                            is PreviewState.Error -> {
+                                isEnabled = false
+                                summary = state.message
+                            }
+                            else -> {
+                                isEnabled = true
+                                summary = getString(R.string.preview_available_message,
+                                    previewViewModel.getRemainingPreviews())
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
+
+    private fun showLockScreenPreview() {
+        try {
+            if (previewViewModel.getRemainingPreviews() > 0) {
+                startActivity(Intent(requireContext(), PreviewActivity::class.java))
+            } else {
+                val timeUntilNext = previewViewModel.getTimeUntilNextPreviewAllowed()
+                showFeedback(getString(R.string.preview_cooldown_message, timeUntilNext / 1000))
+            }
+        } catch (e: Exception) {
+            handleError("Error showing preview", e)
+        }
+    }
+
 
     private fun showLockScreenPreview() {
         try {
