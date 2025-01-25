@@ -31,7 +31,6 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
 import com.example.screensaver.R
 import com.example.screensaver.shared.GooglePhotosManager
-import com.example.screensaver.PhotoSourceState
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -44,24 +43,18 @@ import kotlin.math.abs
 open class PhotoLockActivity : AppCompatActivity() {
     // UI Components
     protected lateinit var backgroundImageView: ImageView
-    private lateinit var overlayImageView: ImageView
-    private lateinit var clockView: TextClock
-    private lateinit var dateView: TextView
-    private lateinit var previewNotice: TextView
-    private lateinit var unlockHint: TextView
-    private lateinit var gestureDetector: GestureDetectorCompat
+    protected lateinit var overlayImageView: ImageView
+    protected lateinit var clockView: TextClock
+    protected lateinit var dateView: TextView
+    protected lateinit var unlockHint: TextView
+    protected lateinit var gestureDetector: GestureDetectorCompat
 
-    // Managers and Handlers
     @Inject
     lateinit var photoManager: GooglePhotosManager
-
-    @Inject
-    lateinit var photoSourceState: PhotoSourceState
 
     protected val handler = Handler(Looper.getMainLooper())
 
     // State Variables
-    private var isPreviewMode = false
     protected var currentPhotoIndex = 0
     protected var isPowerSaving = false
     protected var isActivityVisible = false
@@ -76,7 +69,6 @@ open class PhotoLockActivity : AppCompatActivity() {
         private const val POWER_SAVING_SCALE = 2L // Double the interval in power saving mode
         private const val TRANSITION_DURATION_NORMAL = 1000L
         private const val TRANSITION_DURATION_POWER_SAVING = 500L
-        private const val MAX_PREVIEW_DURATION = 30000L // 30 seconds max preview
     }
 
     private val powerSavingReceiver = object : BroadcastReceiver() {
@@ -98,14 +90,8 @@ open class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
-    private val exitPreviewCallback = {
-        handler.removeCallbacks(photoChangeRunnable)
-        finish()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        isPreviewMode = intent.getBooleanExtra("preview_mode", false)
         setContentView(R.layout.activity_photo_lock)
         initializeViews()
         setupWindow()
@@ -119,9 +105,6 @@ open class PhotoLockActivity : AppCompatActivity() {
         isActivityVisible = true
         if (isInitialized) {
             startPhotoDisplay()
-            if (isPreviewMode) {
-                checkPreviewDuration()
-            }
         }
     }
 
@@ -137,24 +120,16 @@ open class PhotoLockActivity : AppCompatActivity() {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (isPreviewMode && event.action == MotionEvent.ACTION_UP) {
-            handleUnlock()
-            return true
-        }
         return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
     }
 
     protected open fun setupWindow() {
         screenWidth = resources.displayMetrics.widthPixels
         window.apply {
-            if (!isPreviewMode) {
-                addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-                        or WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-                        or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-                        or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
-            } else {
-                addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
+            addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                    or WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+                    or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                    or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         }
         updatePowerSavingMode()
     }
@@ -164,7 +139,6 @@ open class PhotoLockActivity : AppCompatActivity() {
         overlayImageView = findViewById(R.id.overlayImageView)
         clockView = findViewById(R.id.lockScreenClock)
         dateView = findViewById(R.id.lockScreenDate)
-        previewNotice = findViewById(R.id.previewNotice)
         unlockHint = findViewById(R.id.unlockHint)
 
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
@@ -178,25 +152,12 @@ open class PhotoLockActivity : AppCompatActivity() {
             text = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date())
         }
 
-        if (isPreviewMode) {
-            previewNotice.apply {
-                visibility = View.VISIBLE
-                alpha = 0f
-                animate().alpha(1f).setDuration(500).start()
-            }
-            unlockHint.apply {
-                text = getString(R.string.tap_to_exit_preview)
-                visibility = View.VISIBLE
-            }
-            photoSourceState.recordPreviewStarted()
-        } else {
-            previewNotice.visibility = View.GONE
-            unlockHint.apply {
-                text = getString(R.string.swipe_up_to_unlock)
-                visibility = View.VISIBLE
-            }
+        unlockHint.apply {
+            text = getString(R.string.swipe_up_to_unlock)
+            visibility = View.VISIBLE
         }
     }
+
 
     private fun setupGestureDetection() {
         gestureDetector = GestureDetectorCompat(this, object : GestureDetector.SimpleOnGestureListener() {
@@ -442,18 +403,8 @@ open class PhotoLockActivity : AppCompatActivity() {
     }
 
     protected open fun handleUnlock() {
-        if (isPreviewMode) {
-            // Stop preview mode and notify the service
-            val intent = Intent(this, PhotoLockScreenService::class.java).apply {
-                action = "STOP_PREVIEW"
-            }
-            startService(intent)
-            finish()
-        } else {
-            // Normal unlock behavior
-            finish()
-            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
-        }
+        finish()
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
     }
 
     private fun scheduleNextPhotoChange() {
@@ -485,12 +436,13 @@ open class PhotoLockActivity : AppCompatActivity() {
 
         handler.removeCallbacks(photoChangeRunnable)
 
-        if (isPreviewMode) {
-            val intent = Intent(this, PhotoLockScreenService::class.java).apply {
-                action = "STOP_PREVIEW"
-            }
-            startService(intent)
+        Glide.with(this).apply {
+            clear(backgroundImageView)
+            clear(overlayImageView)
         }
+
+        isInitialized = false
+    }
 
         Glide.with(this).apply {
             clear(backgroundImageView)
