@@ -128,6 +128,7 @@ class GooglePhotosManager @Inject constructor(
 
     suspend fun loadPhotos(): List<MediaItem>? = withContext(Dispatchers.IO) {
         try {
+            Log.d(TAG, "Starting to load photos...")
             // Cancel any existing load job
             photosLoadJob.value?.cancelAndJoin()
 
@@ -138,6 +139,8 @@ class GooglePhotosManager @Inject constructor(
 
             val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(context)
                 .getStringSet("selected_albums", emptySet()) ?: emptySet()
+
+            Log.d(TAG, "Selected album IDs: $selectedAlbumIds")
 
             if (selectedAlbumIds.isEmpty()) {
                 Log.d(TAG, "No albums selected")
@@ -152,8 +155,10 @@ class GooglePhotosManager @Inject constructor(
                     selectedAlbumIds.forEach { albumId ->
                         launch {
                             try {
+                                Log.d(TAG, "Loading photos for album: $albumId")
                                 val albumPhotos = loadAlbumPhotos(albumId)
                                 if (albumPhotos != null) {
+                                    Log.d(TAG, "Loaded ${albumPhotos.size} photos from album $albumId")
                                     synchronized(allPhotos) {
                                         allPhotos.addAll(albumPhotos)
                                     }
@@ -170,6 +175,7 @@ class GooglePhotosManager @Inject constructor(
 
             // Wait for load job to complete
             photosLoadJob.value?.join()
+            Log.d(TAG, "Finished loading photos. Total photos loaded: ${allPhotos.size}")
 
             synchronized(mediaItems) {
                 mediaItems.clear()

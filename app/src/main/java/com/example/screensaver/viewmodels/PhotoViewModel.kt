@@ -226,12 +226,11 @@ class PhotoViewModel @Inject constructor(
             _isLoading.value = true
             mediaItems.clear()
 
-            _selectedAlbums.value.forEach { album ->
-                val allPhotos = photosManager.loadPhotos()
-                allPhotos?.filter { it.albumId == album.id }?.let { items ->
-                    mediaItems.addAll(items)
-                }
-            }
+            // Load photos once and then filter for all albums
+            val allPhotos = photosManager.loadPhotos() ?: return
+            val selectedAlbumIds = _selectedAlbums.value.map { it.id }.toSet()
+
+            mediaItems.addAll(allPhotos.filter { it.albumId in selectedAlbumIds })
 
             if (mediaItems.isNotEmpty()) {
                 mediaItems.shuffle()

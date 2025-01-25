@@ -122,7 +122,9 @@ class PreviewActivity : AppCompatActivity() {
             val selectedAlbums = preferences.selectedAlbumsFlow.value.map { albumId ->
                 Album.createPreviewAlbum(albumId)
             }
-            photoViewModel.initialize(selectedAlbums)
+            // Pass isPreview = true and show first photo
+            photoViewModel.initialize(selectedAlbums, isPreview = true)
+            photoViewModel.showNextPhoto() // Add this line to show the first photo
             isPreviewActive = true
             binding.textViewPreviewNotice.visibility = View.VISIBLE
         }
