@@ -22,6 +22,8 @@ import com.example.screensaver.lock.PhotoLockScreenService
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import kotlinx.coroutines.*
 
 
 @AndroidEntryPoint
@@ -37,7 +39,8 @@ class KioskActivity : PhotoLockActivity() {
 
     companion object {
         private const val TAG = "KioskActivity"
-        private const val CONTROLS_HIDE_DELAY = 3000L // 3 seconds
+        private const val CONTROLS_HIDE_DELAY = 3000L
+        private const val KIOSK_PERMISSION_REQUEST_CODE = 1001
 
         fun start(context: Context) {
             val intent = Intent(context, KioskActivity::class.java).apply {
@@ -147,6 +150,17 @@ class KioskActivity : PhotoLockActivity() {
     }
 
     private fun initializeKioskMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(android.Manifest.permission.MANAGE_DEVICE_POLICY_LOCK_TASK)
+                != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                    arrayOf(android.Manifest.permission.MANAGE_DEVICE_POLICY_LOCK_TASK),
+                    KIOSK_PERMISSION_REQUEST_CODE
+                )
+                return
+            }
+        }
+
         if (kioskPolicyManager.isKioskModeAllowed()) {
             startLockTask()
         } else {
@@ -159,6 +173,25 @@ class KioskActivity : PhotoLockActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             hideSystemUI()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        when (requestCode) {
+            KIOSK_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() &&
+                    grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    initializeKioskMode()
+                } else {
+                    Log.w(TAG, "Kiosk permission denied")
+                    finish()
+                }
+            }
+            else -> super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         }
     }
 

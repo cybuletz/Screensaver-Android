@@ -61,7 +61,7 @@ open class PhotoLockActivity : AppCompatActivity() {
     lateinit var photoManager: GooglePhotosManager
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val uiScope = CoroutineScope(Dispatchers.Main + Job())
+    private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var glide: RequestManager
 
     // State Variables with thread-safe access
@@ -96,7 +96,7 @@ open class PhotoLockActivity : AppCompatActivity() {
         override fun run() {
             if (!isActivityVisible || !isInitialized || isDestroyed) return
 
-            uiScope.launch {
+            activityScope.launch {  // Changed from uiScope to activityScope
                 try {
                     transitionToNextPhoto()
                     scheduleNextPhotoChange()
@@ -106,6 +106,7 @@ open class PhotoLockActivity : AppCompatActivity() {
             }
         }
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -149,7 +150,7 @@ open class PhotoLockActivity : AppCompatActivity() {
     override fun onDestroy() {
         isDestroyed = true
         cleanup()
-        uiScope.cancel()
+        activityScope.cancel() // Instead of uiScope.cancel()
         super.onDestroy()
     }
 
@@ -240,17 +241,25 @@ open class PhotoLockActivity : AppCompatActivity() {
     private fun initializePhotos() {
         if (isDestroyed) return
 
-        uiScope.launch {
+        activityScope.launch {
             try {
-                if (photoManager.initialize() && photoManager.loadPhotos()?.isNotEmpty() == true) {
-                    isInitialized = true
-                    startPhotoDisplay()
-                } else {
-                    showError("Failed to load photos")
+                withContext(Dispatchers.IO) {
+                    if (photoManager.initialize() && photoManager.loadPhotos()?.isNotEmpty() == true) {
+                        withContext(Dispatchers.Main) {
+                            if (!isDestroyed) {
+                                isInitialized = true
+                                startPhotoDisplay()
+                            }
+                        }
+                    } else {
+                        showError("Failed to load photos")
+                    }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error initializing photos", e)
-                showError("Error initializing photos: ${e.message}")
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Error initializing photos", e)
+                    showError("Error initializing photos: ${e.message}")
+                }
             }
         }
     }
@@ -297,7 +306,7 @@ open class PhotoLockActivity : AppCompatActivity() {
         currentPhotoIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
 
         // Preload next photo
-        uiScope.launch {
+        activityScope.launch {  // Changed from uiScope to activityScope
             try {
                 val nextIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
                 photoManager.getPhotoUrl(nextIndex)?.let { url ->
