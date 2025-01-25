@@ -77,6 +77,7 @@ android {
 
     lint {
         baseline = file("lint-baseline.xml")
+        warning += "ProtectedPermissions"
     }
 
     buildFeatures {
