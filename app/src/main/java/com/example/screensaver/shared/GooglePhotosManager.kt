@@ -9,6 +9,7 @@ import com.google.photos.library.v1.PhotosLibraryClient
 import com.google.photos.library.v1.PhotosLibrarySettings
 import com.example.screensaver.models.Album
 import com.example.screensaver.models.MediaItem
+import com.example.screensaver.utils.AppPreferences
 import com.google.photos.library.v1.proto.SearchMediaItemsRequest
 import com.example.screensaver.R
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -32,7 +33,9 @@ import kotlinx.coroutines.ensureActive
 
 @Singleton
 class GooglePhotosManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @ApplicationContext
+    private val context: Context,
+    private val preferences: AppPreferences,
     private val coroutineScope: CoroutineScope
 ) {
     private var photosLibraryClient: PhotosLibraryClient? = null
@@ -137,9 +140,7 @@ class GooglePhotosManager @Inject constructor(
                 return@withContext null
             }
 
-            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(context)
-                .getStringSet("selected_albums", emptySet()) ?: emptySet()
-
+            val selectedAlbumIds = preferences.getSelectedAlbumIds()
             Log.d(TAG, "Selected album IDs: $selectedAlbumIds")
 
             if (selectedAlbumIds.isEmpty()) {

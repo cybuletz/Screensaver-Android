@@ -18,6 +18,7 @@ import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.DreamServiceHelper
 import com.example.screensaver.utils.DreamServiceStatus
 import com.example.screensaver.utils.PhotoLoadingManager
+import com.example.screensaver.utils.AppPreferences
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -143,22 +144,29 @@ class AlbumSelectionActivity : AppCompatActivity() {
         try {
             viewModel.setLoading(true)
             val albums = photoManager.getAlbums()
-            val selectedAlbumIds = preferences.getSelectedAlbumIds() // Use AppPreferences
+            // Get selected albums before mapping to ensure consistency
+            val selectedAlbumIds = preferences.getSelectedAlbumIds()
+
+            Log.d(TAG, "Loading albums. Selected albums: ${selectedAlbumIds.size}")
 
             withContext(Dispatchers.Main) {
                 val albumModels = albums.map { googleAlbum ->
+                    val isSelected = selectedAlbumIds.contains(googleAlbum.id)
+                    Log.d(TAG, "Album ${googleAlbum.title} selection state: $isSelected")
+
                     Album(
                         id = googleAlbum.id,
                         title = googleAlbum.title,
                         coverPhotoUrl = googleAlbum.coverPhotoUrl ?: "",
                         mediaItemsCount = googleAlbum.mediaItemsCount.toInt(),
-                        isSelected = selectedAlbumIds.contains(googleAlbum.id)
+                        isSelected = isSelected
                     )
                 }
 
                 if (albumModels.isEmpty()) {
                     handleError(getString(R.string.no_albums_found))
                 } else {
+                    Log.d(TAG, "Loaded ${albumModels.size} albums")
                     albumAdapter.submitList(albumModels)
                     updateConfirmButtonState()
                 }
@@ -171,24 +179,33 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun toggleAlbumSelection(album: Album) {
-        val updatedAlbum = album.copy(isSelected = !album.isSelected)
+        // First check the actual state in preferences
+        val isCurrentlySelected = preferences.getSelectedAlbumIds().contains(album.id)
+        // Toggle based on the actual state from preferences
+        val shouldBeSelected = !isCurrentlySelected
+
+        Log.d(TAG, "Toggling album ${album.title}: current state in prefs=$isCurrentlySelected, UI state=${album.isSelected}")
+
+        // Update preferences first
+        if (shouldBeSelected) {
+            preferences.addSelectedAlbumId(album.id)
+        } else {
+            preferences.removeSelectedAlbumId(album.id)
+        }
+
+        // Then update UI to match preferences
+        val updatedAlbum = album.copy(isSelected = shouldBeSelected)
         val currentList = albumAdapter.currentList.toMutableList()
         val position = currentList.indexOfFirst { it.id == album.id }
 
         if (position != -1) {
             currentList[position] = updatedAlbum
             albumAdapter.submitList(currentList)
-
-            // Update preferences immediately
-            if (updatedAlbum.isSelected) {
-                preferences.addSelectedAlbumId(updatedAlbum.id)
-            } else {
-                preferences.removeSelectedAlbumId(updatedAlbum.id)
-            }
-
             updateConfirmButtonState()
             showSelectionToast(updatedAlbum)
         }
+
+        Log.d(TAG, "After toggle: album ${album.title} selected=$shouldBeSelected")
     }
 
     private fun showSelectionToast(album: Album) {
