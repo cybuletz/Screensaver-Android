@@ -1,11 +1,13 @@
 package com.example.screensaver
 
+import android.content.Intent
+import android.content.pm.PackageManager  // Add this import
 import android.os.Bundle
+import android.util.Log
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
-import android.content.Intent
-import android.util.Log
+import android.widget.Toast  // Add this import
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.MenuProvider
 import androidx.lifecycle.Lifecycle
@@ -30,6 +32,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+        private const val KIOSK_PERMISSION_REQUEST_CODE = 1001
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,7 +56,20 @@ class MainActivity : AppCompatActivity() {
             .getBoolean("kiosk_mode_enabled", false)
 
         if (isKioskEnabled) {
-            Log.d(TAG, "Kiosk mode is enabled, starting KioskActivity")
+            Log.d(TAG, "Kiosk mode is enabled, checking permissions")
+
+            // Check if we have the required permission
+            if (checkSelfPermission(android.Manifest.permission.MANAGE_DEVICE_POLICY_LOCK_TASK)
+                != PackageManager.PERMISSION_GRANTED) {
+
+                // Request the permission
+                requestPermissions(
+                    arrayOf(android.Manifest.permission.MANAGE_DEVICE_POLICY_LOCK_TASK),
+                    KIOSK_PERMISSION_REQUEST_CODE
+                )
+                return false
+            }
+
             startKioskMode()
             finish()
             return true
@@ -120,6 +136,36 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }, this, Lifecycle.State.RESUMED)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        if (requestCode == KIOSK_PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted, try starting kiosk mode again
+                startKioskMode()
+                finish()
+            } else {
+                // Permission denied, disable kiosk mode in preferences
+                PreferenceManager.getDefaultSharedPreferences(this)
+                    .edit()
+                    .putBoolean("kiosk_mode_enabled", false)
+                    .apply()
+
+                // Show error message to user
+                Toast.makeText(
+                    this,
+                    "Kiosk mode requires additional permissions",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
