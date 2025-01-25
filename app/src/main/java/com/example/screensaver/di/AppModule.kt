@@ -52,4 +52,10 @@ object AppModule {
         return NotificationHelper(context)
     }
 
+    @Provides
+    @Singleton
+    fun providePhotoSourceState(@ApplicationContext context: Context): PhotoSourceState {
+        return PhotoSourceState(context)
+    }
+
 }

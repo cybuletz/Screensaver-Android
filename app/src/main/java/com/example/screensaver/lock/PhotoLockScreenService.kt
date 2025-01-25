@@ -39,6 +39,11 @@ class PhotoLockScreenService : Service() {
     @Inject
     lateinit var kioskPolicyManager: KioskPolicyManager
 
+    @Inject
+    lateinit var photoSourceState: PhotoSourceState
+
+    private var isPreviewMode = false
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var isInitialized = false
     private var initializationJob: Job? = null
@@ -58,6 +63,7 @@ class PhotoLockScreenService : Service() {
         private const val PRECACHE_COUNT = 5
         private const val NOTIFICATION_CHANNEL_ID = "lock_screen"
         private const val NOTIFICATION_ID = 1
+        private const val MIN_PREVIEW_INTERVAL = 5000L
     }
 
     override fun onCreate() {
@@ -90,8 +96,17 @@ class PhotoLockScreenService : Service() {
     }
 
     private fun startForegroundWithNotification() {
-        val title = if (isKioskMode) "Kiosk Mode Active" else "Lock Screen Active"
-        val text = if (isKioskMode) "App running in kiosk mode" else "Tap to return to lock screen"
+        val title = when {
+            isPreviewMode -> "Preview Mode Active"
+            isKioskMode -> "Kiosk Mode Active"
+            else -> "Lock Screen Active"
+        }
+
+        val text = when {
+            isPreviewMode -> "Tap to exit preview mode"
+            isKioskMode -> "App running in kiosk mode"
+            else -> "Tap to return to lock screen"
+        }
 
         val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(title)
@@ -123,7 +138,7 @@ class PhotoLockScreenService : Service() {
 
     private fun handleScreenOff() {
         Log.d(TAG, "Screen turned off")
-        if (isInitialized) {
+        if (!isPreviewMode && isInitialized) {
             if (isKioskMode) {
                 showKioskScreen()
             } else {
@@ -138,7 +153,7 @@ class PhotoLockScreenService : Service() {
         Log.d(TAG, "User unlocked device")
         serviceScope.launch {
             try {
-                if (isKioskMode) {
+                if (isKioskMode && !isPreviewMode) {
                     showKioskScreen()
                 }
                 precachePhotos()
@@ -219,7 +234,7 @@ class PhotoLockScreenService : Service() {
         when (intent?.action) {
             "CHECK_KIOSK_MODE" -> {
                 checkKioskMode()
-                if (isKioskMode) {
+                if (isKioskMode && !isPreviewMode) {
                     kioskPolicyManager.setKioskPolicies(true)
                     showKioskScreen()
                 }
@@ -228,7 +243,30 @@ class PhotoLockScreenService : Service() {
                 isKioskMode = false
                 kioskPolicyManager.setKioskPolicies(false)
             }
+            "START_PREVIEW" -> {
+                handlePreviewStart()
+            }
+            "STOP_PREVIEW" -> {
+                handlePreviewStop()
+            }
             "AUTH_UPDATED" -> onAuthenticationUpdated()
+        }
+
+        private fun handlePreviewStart() {
+            if (canStartPreview()) {
+                isPreviewMode = true
+                photoSourceState.recordPreviewStarted()
+                showLockScreen(true)
+            }
+        }
+
+        private fun handlePreviewStop() {
+            isPreviewMode = false
+            startForegroundWithNotification()
+        }
+
+        private fun canStartPreview(): Boolean {
+            return photoSourceState.getTimeSinceLastPreview() > MIN_PREVIEW_INTERVAL
         }
 
         startForegroundWithNotification()
@@ -270,20 +308,22 @@ class PhotoLockScreenService : Service() {
             kioskPolicyManager.setKioskPolicies(false)
         }
 
+        isPreviewMode = false
         Glide.get(applicationContext).clearMemory()
     }
 
-    private fun showLockScreen() {
+    private fun showLockScreen(isPreview: Boolean = false) {
         try {
             val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            if (!keyguardManager.isKeyguardLocked) {
+            if (!keyguardManager.isKeyguardLocked || isPreview) {
                 val lockIntent = Intent(this, PhotoLockActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     putExtra("from_service", true)
+                    putExtra("preview_mode", isPreview)
                 }
                 startActivity(lockIntent)
-                Log.d(TAG, "Lock screen activity started")
+                Log.d(TAG, "Lock screen activity started (Preview: $isPreview)")
             } else {
                 Log.d(TAG, "Device already locked")
             }

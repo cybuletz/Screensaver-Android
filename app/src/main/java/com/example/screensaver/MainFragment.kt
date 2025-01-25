@@ -18,12 +18,16 @@ import androidx.lifecycle.lifecycleScope
 import com.example.screensaver.databinding.FragmentMainBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainFragment : Fragment() {
     private var _binding: FragmentMainBinding? = null
     private val binding get() = _binding!!
     private var isWebViewInitialized = false
+
+    @Inject
+    lateinit var photoSourceState: PhotoSourceState
 
     companion object {
         private const val TAG = "MainFragment"
@@ -54,7 +58,22 @@ class MainFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        setupWebView(savedInstanceState)
+        if (photoSourceState.isScreensaverReady()) {
+            showScreensaverContent()
+        } else {
+            setupWebView(savedInstanceState)
+        }
+    }
+
+    private fun showScreensaverContent() {
+        binding.webView.visibility = View.GONE
+        binding.screensaverContainer.visibility = View.VISIBLE
+
+        // Launch PhotoLockActivity in preview mode
+        val intent = Intent(requireContext(), PhotoLockActivity::class.java).apply {
+            putExtra("preview_mode", true)
+        }
+        startActivity(intent)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -67,6 +86,10 @@ class MainFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         binding.webView.onResume()
+        // Check if photo source state changed while fragment was paused
+        if (photoSourceState.isScreensaverReady()) {
+            showScreensaverContent()
+        }
     }
 
     override fun onPause() {
@@ -102,26 +125,17 @@ class MainFragment : Fragment() {
 
     private fun configureWebViewSettings() {
         binding.webView.settings.apply {
-            // Security settings
             allowFileAccess = true
             allowContentAccess = false
             allowFileAccessFromFileURLs = false
             allowUniversalAccessFromFileURLs = false
-
-            // Performance settings
             javaScriptEnabled = true
             domStorageEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
-
-            // Feature settings
             setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
-
-            // Mixed content settings
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-
-            // Misc settings
             mediaPlaybackRequiresUserGesture = true
             useWideViewPort = true
             loadWithOverviewMode = true
