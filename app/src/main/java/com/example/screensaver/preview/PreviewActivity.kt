@@ -15,7 +15,7 @@ import com.bumptech.glide.Glide
 import com.example.screensaver.R
 import com.example.screensaver.databinding.ActivityPreviewBinding
 import com.example.screensaver.models.Album
-import com.example.screensaver.preview.PreviewViewModel.PreviewState
+import com.example.screensaver.preview.PreviewState
 import com.example.screensaver.transitions.PhotoTransitionManager
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.viewmodels.PhotoViewModel
@@ -146,7 +146,7 @@ class PreviewActivity : AppCompatActivity() {
                             binding.textViewPreviewNotice.text = state.message
                             finish()
                         }
-                        is PreviewState.Active -> {
+                        is PreviewState.Available -> {
                             if (photoViewModel.loadingState.value == PhotoViewModel.LoadingState.IDLE) {
                                 val selectedAlbums = preferences.selectedAlbumsFlow.value.map {
                                     Album(
@@ -159,7 +159,9 @@ class PreviewActivity : AppCompatActivity() {
                                 photoViewModel.initialize(selectedAlbums)
                             }
                         }
-                        else -> {} // Handle other states if needed
+                        is PreviewState.Initial -> {
+                            // Handle initial state if needed
+                        }
                     }
                 }
             }

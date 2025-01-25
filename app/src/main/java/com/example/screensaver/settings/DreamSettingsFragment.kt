@@ -128,7 +128,7 @@ class DreamSettingsFragment : Fragment() {
     private fun handlePreviewState(state: PreviewState) {
         binding.buttonPreview.apply {
             when (state) {
-                is PreviewState.Initial -> {
+                PreviewState.Initial -> {
                     isEnabled = true
                     setText(R.string.preview_button_text)
                 }
@@ -140,9 +140,9 @@ class DreamSettingsFragment : Fragment() {
                     isEnabled = false
                     text = state.message
                 }
-                else -> {
+                is PreviewState.Available -> {
                     isEnabled = true
-                    setText(R.string.preview_button_text)
+                    text = getString(R.string.preview_button_text_with_count, state.remainingPreviews)
                 }
             }
         }
@@ -205,7 +205,9 @@ class DreamSettingsFragment : Fragment() {
                 if (previewViewModel.getRemainingPreviews() > 0) {
                     startActivity(Intent(requireContext(), PreviewActivity::class.java))
                 } else {
-                    errorHandler.showError(getString(R.string.preview_limit_reached))
+                    lifecycleScope.launch {
+                        errorHandler.handleError(IllegalStateException(getString(R.string.preview_limit_reached)), binding.root)
+                    }
                 }
             }
 

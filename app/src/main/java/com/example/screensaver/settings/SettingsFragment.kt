@@ -644,10 +644,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
                                 isEnabled = false
                                 summary = state.message
                             }
-                            else -> {
+                            is PreviewState.Initial -> {
                                 isEnabled = true
                                 summary = getString(R.string.preview_available_message,
                                     previewViewModel.getRemainingPreviews())
+                            }
+                            is PreviewState.Available -> {
+                                isEnabled = true
+                                summary = getString(R.string.preview_available_message,
+                                    state.remainingPreviews)
                             }
                         }
                     }
@@ -662,7 +667,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 startActivity(Intent(requireContext(), PreviewActivity::class.java))
             } else {
                 val timeUntilNext = previewViewModel.getTimeUntilNextPreviewAllowed()
-                showFeedback(getString(R.string.preview_cooldown_message, timeUntilNext / 1000))
+                view?.let { v ->
+                    Snackbar.make(v,
+                        getString(R.string.preview_cooldown_message, timeUntilNext / 1000),
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                }
             }
         } catch (e: Exception) {
             handleError("Error showing preview", e)

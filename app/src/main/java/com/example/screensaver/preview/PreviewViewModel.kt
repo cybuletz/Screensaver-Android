@@ -30,14 +30,6 @@ class PreviewViewModel @Inject constructor(
         private const val PREF_PREVIEW_START = "preview_start_timestamp"
     }
 
-    sealed class PreviewState {
-        object Initial : PreviewState()
-        object Loading : PreviewState()
-        object Active : PreviewState()
-        data class Cooldown(val remainingSeconds: Long) : PreviewState()
-        data class Error(val message: String) : PreviewState()
-    }
-
     init {
         // Check and reset preview count if cooldown period has passed
         resetPreviewCountIfNeeded()
@@ -75,10 +67,10 @@ class PreviewViewModel @Inject constructor(
             }
 
             try {
-                _previewState.value = PreviewState.Loading
+                _previewState.value = PreviewState.Initial
                 recordPreviewStart()
                 isPreviewActive = true
-                _previewState.value = PreviewState.Active
+                _previewState.value = PreviewState.Available(getRemainingPreviews())
             } catch (e: Exception) {
                 _previewState.value = PreviewState.Error(e.message ?: "Failed to start preview")
             }

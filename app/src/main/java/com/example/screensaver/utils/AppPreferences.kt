@@ -334,6 +334,10 @@ class AppPreferences @Inject constructor(context: Context) {
         prefs.edit { putInt(PREF_KIOSK_SETTINGS_TIMEOUT, seconds) }
     }
 
+    fun getString(key: String, defaultValue: String): String {
+        return prefs.getString(key, defaultValue) ?: defaultValue
+    }
+
     fun cleanup() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefsChangeListener)
     }
