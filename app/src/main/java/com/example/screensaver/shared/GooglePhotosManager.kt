@@ -194,7 +194,8 @@ class GooglePhotosManager @Inject constructor(
     private suspend fun loadAlbumPhotos(albumId: String): List<MediaItem>? =
         withContext(Dispatchers.IO) {
             try {
-                ensureActive() // Check if job is still active
+                Log.d(TAG, "Starting to load photos for album: $albumId")
+                ensureActive()
 
                 if (!initialize()) {
                     Log.e(TAG, "Failed to initialize Google Photos client")
@@ -204,21 +205,28 @@ class GooglePhotosManager @Inject constructor(
                 val items = mutableListOf<MediaItem>()
                 var retryCount = 0
 
-                while (retryCount < MAX_RETRIES && isActive) { // Check if still active
+                while (retryCount < MAX_RETRIES && isActive) {
                     try {
                         photosLibraryClient?.let { client ->
+                            Log.d(TAG, "Attempting to fetch photos, attempt ${retryCount + 1}")
                             fetchPhotosForAlbum(client, albumId, items)
+                        } ?: run {
+                            Log.e(TAG, "PhotosLibraryClient is null")
+                            return@withContext null
                         }
 
                         if (items.isNotEmpty()) {
+                            Log.d(TAG, "Successfully loaded ${items.size} photos from album $albumId")
                             return@withContext items
                         }
+                        Log.d(TAG, "No photos found in album $albumId")
                         break
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
 
                         if (shouldRetryOnError(e) && retryCount < MAX_RETRIES - 1) {
                             retryCount++
+                            Log.d(TAG, "Retrying photo load, attempt $retryCount")
                             refreshTokens()
                             delay(1000)
                             continue
@@ -229,7 +237,7 @@ class GooglePhotosManager @Inject constructor(
                 null
             } catch (e: Exception) {
                 if (e !is CancellationException) {
-                    Log.e(TAG, "Error loading photos", e)
+                    Log.e(TAG, "Error loading photos for album $albumId", e)
                 }
                 null
             }
@@ -240,29 +248,46 @@ class GooglePhotosManager @Inject constructor(
         albumId: String,
         items: MutableList<MediaItem>
     ) {
+        Log.d(TAG, "Fetching photos for album: $albumId")
+
         val request = SearchMediaItemsRequest.newBuilder()
             .setAlbumId(albumId)
             .setPageSize(PAGE_SIZE)
             .build()
 
-        client.searchMediaItems(request).iterateAll().forEach { googleMediaItem ->
-            if (googleMediaItem.mediaMetadata.hasPhoto()) {
-                googleMediaItem.baseUrl?.let { baseUrl ->
-                    items.add(MediaItem(
-                        id = googleMediaItem.id,
-                        albumId = albumId,
-                        baseUrl = "$baseUrl$PHOTO_QUALITY",
-                        mimeType = googleMediaItem.mimeType,
-                        width = googleMediaItem.mediaMetadata.width.toInt(),
-                        height = googleMediaItem.mediaMetadata.height.toInt()
-                    ))
+        try {
+            val mediaItems = client.searchMediaItems(request).iterateAll()
+            Log.d(TAG, "Retrieved ${mediaItems.count()} items from Google Photos API")
+
+            mediaItems.forEach { googleMediaItem ->
+                Log.d(TAG, "Processing item: ${googleMediaItem.id}, hasPhoto: ${googleMediaItem.mediaMetadata.hasPhoto()}")
+                if (googleMediaItem.mediaMetadata.hasPhoto()) {
+                    googleMediaItem.baseUrl?.let { baseUrl ->
+                        Log.d(TAG, "Adding photo with baseUrl: $baseUrl")
+                        items.add(MediaItem(
+                            id = googleMediaItem.id,
+                            albumId = albumId,
+                            baseUrl = "$baseUrl$PHOTO_QUALITY",
+                            mimeType = googleMediaItem.mimeType,
+                            width = googleMediaItem.mediaMetadata.width.toInt(),
+                            height = googleMediaItem.mediaMetadata.height.toInt()
+                        ))
+                    }
                 }
             }
+
+            Log.d(TAG, "Added ${items.size} photos from album $albumId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching photos for album $albumId", e)
+            throw e
         }
     }
 
     private fun shouldRetryOnError(error: Exception): Boolean {
-        return error.message?.contains("UNAUTHENTICATED") == true
+        Log.d(TAG, "Checking if should retry for error: ${error.message}")
+        val shouldRetry = error.message?.contains("UNAUTHENTICATED") == true
+        Log.d(TAG, "Should retry: $shouldRetry")
+        return shouldRetry
     }
 
     private suspend fun getOrRefreshCredentials(): GoogleCredentials? = withContext(Dispatchers.IO) {

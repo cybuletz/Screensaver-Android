@@ -41,6 +41,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
     @Inject
     lateinit var photoLoadingManager: PhotoLoadingManager
 
+    @Inject
+    lateinit var preferences: AppPreferences
+
     private val viewModel: AlbumSelectionViewModel by viewModels()
 
     companion object {
@@ -105,6 +108,17 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 updateLoadingState(isLoading)
             }
         }
+
+        // Add this block
+        lifecycleScope.launch {
+            preferences.selectedAlbumsFlow.collectLatest { selectedAlbumIds ->
+                val currentList = albumAdapter.currentList.map { album ->
+                    album.copy(isSelected = selectedAlbumIds.contains(album.id))
+                }
+                albumAdapter.submitList(currentList)
+                updateConfirmButtonState()
+            }
+        }
     }
 
     private fun initializeGooglePhotos() {
@@ -129,8 +143,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         try {
             viewModel.setLoading(true)
             val albums = photoManager.getAlbums()
-            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(this)
-                .getStringSet("selected_albums", emptySet()) ?: emptySet()
+            val selectedAlbumIds = preferences.getSelectedAlbumIds() // Use AppPreferences
 
             withContext(Dispatchers.Main) {
                 val albumModels = albums.map { googleAlbum ->
@@ -165,6 +178,14 @@ class AlbumSelectionActivity : AppCompatActivity() {
         if (position != -1) {
             currentList[position] = updatedAlbum
             albumAdapter.submitList(currentList)
+
+            // Update preferences immediately
+            if (updatedAlbum.isSelected) {
+                preferences.addSelectedAlbumId(updatedAlbum.id)
+            } else {
+                preferences.removeSelectedAlbumId(updatedAlbum.id)
+            }
+
             updateConfirmButtonState()
             showSelectionToast(updatedAlbum)
         }
@@ -185,10 +206,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
             .map { it.id }
             .toSet()
 
-        PreferenceManager.getDefaultSharedPreferences(this)
-            .edit()
-            .putStringSet("selected_albums", selectedAlbums)
-            .apply()
+        preferences.setSelectedAlbumIds(selectedAlbums)
 
         coroutineScope.launch {
             precachePhotos()
