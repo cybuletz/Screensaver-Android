@@ -87,6 +87,7 @@ class PhotoViewModel @Inject constructor(
     private val _darkMode = MutableStateFlow(preferences.getDarkMode())
     val darkMode: StateFlow<Boolean> = _darkMode
 
+
     private var timeUpdateJob: Job? = null
     private var photoChangeJob: Job? = null
     private val mediaItems = mutableListOf<MediaItem>()
@@ -201,6 +202,16 @@ class PhotoViewModel @Inject constructor(
                 updateDateTime()
                 delay(1000) // Update every second
             }
+        }
+    }
+
+    private val _previewMode = MutableStateFlow(false)
+    val previewMode: StateFlow<Boolean> = _previewMode
+
+    fun setPreviewMode(enabled: Boolean) {
+        _previewMode.value = enabled
+        if (enabled) {
+            preferences.recordPreviewStart()
         }
     }
 
