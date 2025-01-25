@@ -178,7 +178,7 @@ class PhotoViewModel @Inject constructor(
     }
 
     fun startPreview() {
-        // This will be handled by the Fragment
+        // This method should be removed as preview handling is now in PreviewViewModel
     }
 
     override fun onPhotoLoadComplete(success: Boolean) {
@@ -202,16 +202,6 @@ class PhotoViewModel @Inject constructor(
                 updateDateTime()
                 delay(1000) // Update every second
             }
-        }
-    }
-
-    private val _previewMode = MutableStateFlow(false)
-    val previewMode: StateFlow<Boolean> = _previewMode
-
-    fun setPreviewMode(enabled: Boolean) {
-        _previewMode.value = enabled
-        if (enabled) {
-            preferences.recordPreviewStart()
         }
     }
 

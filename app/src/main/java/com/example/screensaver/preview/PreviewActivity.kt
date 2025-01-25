@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.GestureDetectorCompat
 import androidx.lifecycle.Lifecycle
@@ -16,6 +17,7 @@ import com.example.screensaver.R
 import com.example.screensaver.databinding.ActivityPreviewBinding
 import com.example.screensaver.transitions.PhotoTransitionManager
 import com.example.screensaver.utils.AppPreferences
+import com.example.screensaver.viewmodels.PhotoViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,8 +30,8 @@ class PreviewActivity : AppCompatActivity() {
     private lateinit var gestureDetector: GestureDetectorCompat
     private lateinit var transitionManager: PhotoTransitionManager
 
-    @Inject
-    lateinit var previewManager: PreviewManager
+    private val photoViewModel: PhotoViewModel by viewModels()
+    private val previewViewModel: PreviewViewModel by viewModels()
 
     @Inject
     lateinit var preferences: AppPreferences
@@ -57,6 +59,7 @@ class PreviewActivity : AppCompatActivity() {
         setupGestureDetection()
         initializePreview()
         observePreviewState()
+        observePhotos()
     }
 
     private fun initializeViews() {
@@ -107,14 +110,20 @@ class PreviewActivity : AppCompatActivity() {
     }
 
     private fun initializePreview() {
-        if (!previewManager.canStartPreview()) {
-            showPreviewCooldownMessage()
-            finish()
-            return
-        }
-
         lifecycleScope.launch {
-            previewManager.startPreview()
+            if (!previewViewModel.isPreviewModeActive()) {
+                val remainingPreviews = previewViewModel.getRemainingPreviews()
+                if (remainingPreviews <= 0) {
+                    showPreviewCooldownMessage()
+                    finish()
+                    return@launch
+                }
+
+                previewViewModel.startPreview()
+            }
+
+            // Initialize photo display after preview is started
+            photoViewModel.initialize(preferences.selectedAlbumsFlow.value)
             isPreviewActive = true
             binding.previewNotice.visibility = View.VISIBLE
         }
@@ -122,10 +131,58 @@ class PreviewActivity : AppCompatActivity() {
 
     private fun observePreviewState() {
         lifecycleScope.launch {
+            // Observe preview state
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                previewManager.canStartPreview.collect { canStart ->
-                    if (!canStart && isPreviewActive) {
-                        endPreview()
+                previewViewModel.previewState.collect { state ->
+                    when (state) {
+                        is PreviewState.Cooldown -> {
+                            showPreviewCooldownMessage()
+                            finish()
+                        }
+                        is PreviewState.Error -> {
+                            binding.previewNotice.text = state.message
+                            finish()
+                        }
+                        is PreviewState.Active -> {
+                            if (photoViewModel.loadingState.value == PhotoViewModel.LoadingState.IDLE) {
+                                photoViewModel.initialize(preferences.selectedAlbumsFlow.value)
+                            }
+                        }
+                        else -> {} // Handle other states if needed
+                    }
+                }
+            }
+        }
+
+        // Observe photo loading state
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                photoViewModel.loadingState.collect { state ->
+                    when (state) {
+                        PhotoViewModel.LoadingState.ERROR -> {
+                            binding.progressBar?.visibility = View.GONE
+                        }
+                        PhotoViewModel.LoadingState.LOADING -> {
+                            binding.progressBar?.visibility = View.VISIBLE
+                        }
+                        PhotoViewModel.LoadingState.SUCCESS -> {
+                            binding.progressBar?.visibility = View.GONE
+                        }
+                        else -> {}
+                    }
+                }
+            }
+        }
+    }
+
+    private fun observePhotos() {
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                photoViewModel.currentPhoto.observe(this@PreviewActivity) { photo ->
+                    photo?.let {
+                        Glide.with(this@PreviewActivity)
+                            .load(it.baseUrl)
+                            .into(currentImageView ?: primaryImageView)
                     }
                 }
             }
@@ -133,14 +190,15 @@ class PreviewActivity : AppCompatActivity() {
     }
 
     private fun showPreviewCooldownMessage() {
-        val timeRemaining = previewManager.getTimeUntilNextPreviewAllowed() / 1000
+        val timeRemaining = previewViewModel.cooldownSeconds.value
         val message = getString(R.string.preview_cooldown_message, timeRemaining)
         binding.previewNotice.text = message
     }
 
     private fun endPreview() {
         isPreviewActive = false
-        previewManager.endPreview()
+        photoViewModel.stop()
+        previewViewModel.endPreview()
         finish()
     }
 
@@ -158,7 +216,9 @@ class PreviewActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (isPreviewActive) {
-            previewManager.endPreview()
+            photoViewModel.stop()
+            previewViewModel.endPreview()
         }
+        transitionManager.cleanup()
     }
 }
