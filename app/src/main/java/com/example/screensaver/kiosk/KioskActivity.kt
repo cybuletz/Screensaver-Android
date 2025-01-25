@@ -2,6 +2,7 @@ package com.example.screensaver.kiosk
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,16 +10,18 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import android.widget.SeekBar
+import androidx.activity.OnBackPressedCallback
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.preference.PreferenceManager
 import com.example.screensaver.R
 import com.example.screensaver.databinding.ActivityKioskBinding
 import com.example.screensaver.lock.PhotoLockActivity
 import com.example.screensaver.lock.PhotoLockScreenService
-import com.example.screensaver.models.MediaItem
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import android.annotation.SuppressLint
-
 
 
 @AndroidEntryPoint
@@ -52,19 +55,44 @@ class KioskActivity : PhotoLockActivity() {
         exitDelay = PreferenceManager.getDefaultSharedPreferences(this)
             .getInt("kiosk_exit_delay", 5)
 
+        // Set up back press handling
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - backPressedTime > exitDelay * 1000) {
+                    backPressCount = 1
+                    backPressedTime = currentTime
+                    binding.kioskExitHint.text = getString(R.string.kiosk_exit_hint, exitDelay)
+                    showControlsTemporarily()
+                } else {
+                    backPressCount++
+                    if (backPressCount >= exitDelay) {
+                        disableKioskMode()
+                    }
+                }
+            }
+        })
+
         setupWindow()
         setupControls()
         initializeKioskMode()
     }
 
     override fun setupWindow() {
-        super.setupWindow()  // This is correct since setupWindow() is already protected in PhotoLockActivity
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        )
+        super.setupWindow()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            )
+        }
     }
 
     private fun setupControls() {
@@ -118,7 +146,6 @@ class KioskActivity : PhotoLockActivity() {
         loadPhoto(currentPhotoIndex, backgroundImageView)
     }
 
-
     private fun initializeKioskMode() {
         if (kioskPolicyManager.isKioskModeAllowed()) {
             startLockTask()
@@ -136,14 +163,24 @@ class KioskActivity : PhotoLockActivity() {
     }
 
     private fun hideSystemUI() {
-        window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_FULLSCREEN
-                )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            WindowInsetsControllerCompat(window, window.decorView).let { controller ->
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_FULLSCREEN
+                    )
+        }
     }
 
     private fun showControlsTemporarily() {
@@ -188,13 +225,11 @@ class KioskActivity : PhotoLockActivity() {
             stopLockTask()
             kioskPolicyManager.setKioskPolicies(false)
 
-            // Update preferences
             PreferenceManager.getDefaultSharedPreferences(this)
                 .edit()
                 .putBoolean("kiosk_mode_enabled", false)
                 .apply()
 
-            // Notify service
             Intent(this, PhotoLockScreenService::class.java).also { intent ->
                 intent.action = "STOP_KIOSK"
                 startService(intent)
