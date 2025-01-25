@@ -24,6 +24,8 @@ import javax.inject.Inject
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import kotlinx.coroutines.*
+import android.widget.Toast
+import kotlinx.coroutines.*
 
 
 @AndroidEntryPoint
@@ -188,6 +190,9 @@ class KioskActivity : PhotoLockActivity() {
                     initializeKioskMode()
                 } else {
                     Log.w(TAG, "Kiosk permission denied")
+                    Toast.makeText(this,
+                        "Kiosk mode requires permissions to function",
+                        Toast.LENGTH_LONG).show()
                     finish()
                 }
             }
@@ -236,21 +241,6 @@ class KioskActivity : PhotoLockActivity() {
         val params = window.attributes
         params.screenBrightness = brightness / 100f
         window.attributes = params
-    }
-    @SuppressLint("MissingSuperCall")
-    override fun onBackPressed() {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - backPressedTime > exitDelay * 1000) {
-            backPressCount = 1
-            backPressedTime = currentTime
-            binding.kioskExitHint.text = getString(R.string.kiosk_exit_hint, exitDelay)
-            showControlsTemporarily()
-        } else {
-            backPressCount++
-            if (backPressCount >= exitDelay) {
-                disableKioskMode()
-            }
-        }
     }
 
     private fun disableKioskMode() {

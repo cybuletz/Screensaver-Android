@@ -22,6 +22,13 @@ import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 
 @Singleton
 class GooglePhotosManager @Inject constructor(
@@ -30,6 +37,9 @@ class GooglePhotosManager @Inject constructor(
 ) {
     private var photosLibraryClient: PhotosLibraryClient? = null
     private val mediaItems = mutableListOf<MediaItem>()
+
+    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val photosLoadJob = MutableStateFlow<Job?>(null)
 
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
     val loadingState: StateFlow<LoadingState> = _loadingState
@@ -118,6 +128,9 @@ class GooglePhotosManager @Inject constructor(
 
     suspend fun loadPhotos(): List<MediaItem>? = withContext(Dispatchers.IO) {
         try {
+            // Cancel any existing load job
+            photosLoadJob.value?.cancelAndJoin()
+
             if (!initialize()) {
                 Log.e(TAG, "Failed to initialize Google Photos client")
                 return@withContext null
@@ -133,62 +146,88 @@ class GooglePhotosManager @Inject constructor(
 
             val allPhotos = mutableListOf<MediaItem>()
 
-            selectedAlbumIds.forEach { albumId ->
-                try {
-                    val albumPhotos = loadAlbumPhotos(albumId)
-                    if (albumPhotos != null) {
-                        allPhotos.addAll(albumPhotos)
+            // Create new load job
+            photosLoadJob.value = managerScope.launch {
+                supervisorScope {
+                    selectedAlbumIds.forEach { albumId ->
+                        launch {
+                            try {
+                                val albumPhotos = loadAlbumPhotos(albumId)
+                                if (albumPhotos != null) {
+                                    synchronized(allPhotos) {
+                                        allPhotos.addAll(albumPhotos)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                if (e !is CancellationException) {
+                                    Log.e(TAG, "Error loading photos for album $albumId", e)
+                                }
+                            }
+                        }
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error loading photos for album $albumId", e)
                 }
             }
 
-            mediaItems.clear()
-            mediaItems.addAll(allPhotos)
+            // Wait for load job to complete
+            photosLoadJob.value?.join()
+
+            synchronized(mediaItems) {
+                mediaItems.clear()
+                mediaItems.addAll(allPhotos)
+            }
+
             allPhotos
         } catch (e: Exception) {
-            Log.e(TAG, "Error fetching photos", e)
+            if (e !is CancellationException) {
+                Log.e(TAG, "Error fetching photos", e)
+            }
             null
         }
     }
 
-    private suspend fun loadAlbumPhotos(albumId: String): List<MediaItem>? = withContext(Dispatchers.IO) {
-        try {
-            if (!initialize()) {
-                Log.e(TAG, "Failed to initialize Google Photos client")
-                return@withContext null
-            }
+    private suspend fun loadAlbumPhotos(albumId: String): List<MediaItem>? =
+        withContext(Dispatchers.IO) {
+            try {
+                ensureActive() // Check if job is still active
 
-            val items = mutableListOf<MediaItem>()
-            var retryCount = 0
-
-            while (retryCount < MAX_RETRIES) {
-                try {
-                    photosLibraryClient?.let { client ->
-                        fetchPhotosForAlbum(client, albumId, items)
-                    }
-
-                    if (items.isNotEmpty()) {
-                        return@withContext items
-                    }
-                    break
-                } catch (e: Exception) {
-                    if (shouldRetryOnError(e) && retryCount < MAX_RETRIES - 1) {
-                        retryCount++
-                        refreshTokens()
-                        delay(1000)
-                        continue
-                    }
-                    throw e
+                if (!initialize()) {
+                    Log.e(TAG, "Failed to initialize Google Photos client")
+                    return@withContext null
                 }
+
+                val items = mutableListOf<MediaItem>()
+                var retryCount = 0
+
+                while (retryCount < MAX_RETRIES && isActive) { // Check if still active
+                    try {
+                        photosLibraryClient?.let { client ->
+                            fetchPhotosForAlbum(client, albumId, items)
+                        }
+
+                        if (items.isNotEmpty()) {
+                            return@withContext items
+                        }
+                        break
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+
+                        if (shouldRetryOnError(e) && retryCount < MAX_RETRIES - 1) {
+                            retryCount++
+                            refreshTokens()
+                            delay(1000)
+                            continue
+                        }
+                        throw e
+                    }
+                }
+                null
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Error loading photos", e)
+                }
+                null
             }
-            null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading photos", e)
-            null
         }
-    }
 
     private suspend fun fetchPhotosForAlbum(
         client: PhotosLibraryClient,
@@ -324,18 +363,14 @@ class GooglePhotosManager @Inject constructor(
 
     fun cleanup() {
         try {
+            runBlocking {
+                photosLoadJob.value?.cancelAndJoin()
+            }
+
             photosLibraryClient?.let { client ->
                 try {
-                    // Use the standard close method
                     client.close()
-
-                    // Allow a brief moment for cleanup
-                    try {
-                        // Wait for any pending operations to complete
-                        Thread.sleep(100)
-                    } catch (e: InterruptedException) {
-                        Log.w(TAG, "Cleanup interrupted", e)
-                    }
+                    Thread.sleep(100)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error during client shutdown", e)
                 }
@@ -343,9 +378,11 @@ class GooglePhotosManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error during cleanup", e)
         } finally {
-            // Clean up resources
             photosLibraryClient = null
-            mediaItems.clear()
+            synchronized(mediaItems) {
+                mediaItems.clear()
+            }
+            managerScope.cancel()
         }
     }
 }
