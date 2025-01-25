@@ -48,6 +48,7 @@ open class PhotoLockActivity : AppCompatActivity() {
     protected lateinit var dateView: TextView
     protected lateinit var unlockHint: TextView
     protected lateinit var gestureDetector: GestureDetectorCompat
+    private var previewStartTime: Long = 0
 
     @Inject
     lateinit var photoManager: GooglePhotosManager
@@ -99,6 +100,7 @@ open class PhotoLockActivity : AppCompatActivity() {
         setupWindow()
         setupGestureDetection()
         registerPowerSavingReceiver()
+        initializePreviewMode() // Use the renamed method here
         initializePhotos()
     }
 
@@ -431,6 +433,14 @@ open class PhotoLockActivity : AppCompatActivity() {
         isInitialized = false
     }
 
+    protected fun initializePreviewMode() {
+        if (intent.getBooleanExtra("preview_mode", false)) {
+            isPreviewMode = true
+            previewStartTime = System.currentTimeMillis()
+            checkPreviewDuration()
+        }
+    }
+
     override fun onBackPressed() {
         if (isPreviewMode) {
             finish()
@@ -439,15 +449,8 @@ open class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
-    protected fun checkAndStartPreviewMode() {
-        if (intent.getBooleanExtra("preview_mode", false)) {
-            isPreviewMode = true
-            checkPreviewDuration()
-        }
-    }
-
     private fun checkPreviewDuration() {
-        if (isPreviewMode && System.currentTimeMillis() - photoManager.getStartTime() > MAX_PREVIEW_DURATION) {
+        if (isPreviewMode && System.currentTimeMillis() - previewStartTime > MAX_PREVIEW_DURATION) {
             handleUnlock()
         }
     }

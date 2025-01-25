@@ -5,7 +5,6 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageView
-import android.widget.TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.GestureDetectorCompat
@@ -15,6 +14,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.bumptech.glide.Glide
 import com.example.screensaver.R
 import com.example.screensaver.databinding.ActivityPreviewBinding
+import com.example.screensaver.models.Album
+import com.example.screensaver.preview.PreviewViewModel.PreviewState
 import com.example.screensaver.transitions.PhotoTransitionManager
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.viewmodels.PhotoViewModel
@@ -38,8 +39,6 @@ class PreviewActivity : AppCompatActivity() {
 
     private lateinit var primaryImageView: ImageView
     private lateinit var secondaryImageView: ImageView
-    private lateinit var previewNotice: TextView
-
     private var currentImageView: ImageView? = null
     private var isPreviewActive = false
 
@@ -66,8 +65,6 @@ class PreviewActivity : AppCompatActivity() {
         with(binding) {
             primaryImageView = imageViewPrimary
             secondaryImageView = imageViewSecondary
-            previewNotice = textViewPreviewNotice
-
             secondaryImageView.alpha = 0f
             currentImageView = primaryImageView
         }
@@ -122,16 +119,22 @@ class PreviewActivity : AppCompatActivity() {
                 previewViewModel.startPreview()
             }
 
-            // Initialize photo display after preview is started
-            photoViewModel.initialize(preferences.selectedAlbumsFlow.value)
+            val selectedAlbums = preferences.selectedAlbumsFlow.value.map {
+                Album(
+                    id = it,
+                    title = "",
+                    coverPhotoUrl = "",
+                    mediaItemsCount = 0
+                )
+            }
+            photoViewModel.initialize(selectedAlbums)
             isPreviewActive = true
-            binding.previewNotice.visibility = View.VISIBLE
+            binding.textViewPreviewNotice.visibility = View.VISIBLE
         }
     }
 
     private fun observePreviewState() {
         lifecycleScope.launch {
-            // Observe preview state
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 previewViewModel.previewState.collect { state ->
                     when (state) {
@@ -140,12 +143,20 @@ class PreviewActivity : AppCompatActivity() {
                             finish()
                         }
                         is PreviewState.Error -> {
-                            binding.previewNotice.text = state.message
+                            binding.textViewPreviewNotice.text = state.message
                             finish()
                         }
                         is PreviewState.Active -> {
                             if (photoViewModel.loadingState.value == PhotoViewModel.LoadingState.IDLE) {
-                                photoViewModel.initialize(preferences.selectedAlbumsFlow.value)
+                                val selectedAlbums = preferences.selectedAlbumsFlow.value.map {
+                                    Album(
+                                        id = it,
+                                        title = "",
+                                        coverPhotoUrl = "",
+                                        mediaItemsCount = 0
+                                    )
+                                }
+                                photoViewModel.initialize(selectedAlbums)
                             }
                         }
                         else -> {} // Handle other states if needed
@@ -154,19 +165,18 @@ class PreviewActivity : AppCompatActivity() {
             }
         }
 
-        // Observe photo loading state
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 photoViewModel.loadingState.collect { state ->
                     when (state) {
                         PhotoViewModel.LoadingState.ERROR -> {
-                            binding.progressBar?.visibility = View.GONE
+                            binding.progressBar.visibility = View.GONE
                         }
                         PhotoViewModel.LoadingState.LOADING -> {
-                            binding.progressBar?.visibility = View.VISIBLE
+                            binding.progressBar.visibility = View.VISIBLE
                         }
                         PhotoViewModel.LoadingState.SUCCESS -> {
-                            binding.progressBar?.visibility = View.GONE
+                            binding.progressBar.visibility = View.GONE
                         }
                         else -> {}
                     }
@@ -192,7 +202,7 @@ class PreviewActivity : AppCompatActivity() {
     private fun showPreviewCooldownMessage() {
         val timeRemaining = previewViewModel.cooldownSeconds.value
         val message = getString(R.string.preview_cooldown_message, timeRemaining)
-        binding.previewNotice.text = message
+        binding.textViewPreviewNotice.text = message
     }
 
     private fun endPreview() {

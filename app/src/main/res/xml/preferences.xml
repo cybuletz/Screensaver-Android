@@ -51,8 +51,8 @@
 
         <Preference
             android:key="preview_lock_screen"
-            android:title="@string/pref_preview_lock_screen_title"
-            android:summary="@string/pref_preview_lock_screen_summary" />
+            android:title="@string/preview_lock_screen_title"
+            android:summary="@string/preview_lock_screen_summary" />
 
         <Preference
             android:key="lock_screen_status"
