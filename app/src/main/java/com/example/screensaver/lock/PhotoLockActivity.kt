@@ -483,9 +483,11 @@ open class PhotoLockActivity : AppCompatActivity() {
     private fun showError(message: String) {
         Log.e(TAG, message)
         if (!isDestroyed) {
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-            if (!isPreviewMode) {
-                finish()
+            mainHandler.post {
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                if (!isPreviewMode) {
+                    finish()
+                }
             }
         }
     }
