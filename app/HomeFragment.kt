@@ -1,5 +1,21 @@
 package com.example.screensaver
 
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.core.view.isVisible
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
+import com.example.screensaver.databinding.FragmentHomeBinding
+import com.example.screensaver.shared.GooglePhotosManager
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
 @AndroidEntryPoint
 class HomeFragment : Fragment() {
     private var _binding: FragmentHomeBinding? = null
@@ -63,6 +79,15 @@ class HomeFragment : Fragment() {
             photoPreview.isVisible = false
             noPhotosMessage.isVisible = true
             noPhotosMessage.text = getString(R.string.no_photos_selected)
+        }
+    }
+
+    private fun showError(message: String) {
+        // Add error handling implementation
+        binding.apply {
+            photoPreview.isVisible = false
+            noPhotosMessage.isVisible = true
+            noPhotosMessage.text = message
         }
     }
 
