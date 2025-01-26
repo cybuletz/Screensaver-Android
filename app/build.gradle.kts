@@ -162,6 +162,8 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics-ktx")
     implementation("com.google.firebase:firebase-crashlytics-ktx")
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
+    implementation("com.google.api:gax:2.19.5")
+
 
     // Google Photos Library
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")
