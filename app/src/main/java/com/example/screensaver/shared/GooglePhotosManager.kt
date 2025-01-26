@@ -32,6 +32,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.ensureActive
 import java.util.concurrent.Executors
 import com.google.api.gax.core.InstantiatingExecutorProvider
+import java.util.concurrent.RejectedExecutionException
 
 @Singleton
 class GooglePhotosManager @Inject constructor(
@@ -48,6 +49,12 @@ class GooglePhotosManager @Inject constructor(
 
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
     val loadingState: StateFlow<LoadingState> = _loadingState
+
+    private var executorService = Executors.newScheduledThreadPool(4)
+    private val executorMutex = Mutex()
+
+    private val _photoLoadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
+    val photoLoadingState: StateFlow<LoadingState> = _photoLoadingState
 
     enum class LoadingState {
         IDLE, LOADING, SUCCESS, ERROR
@@ -104,10 +111,23 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
-    private fun createPhotosLibrarySettings(credentials: GoogleCredentials): PhotosLibrarySettings {
-        return PhotosLibrarySettings.newBuilder()
-            .setCredentialsProvider { credentials }
-            .build()
+    private suspend fun createPhotosLibrarySettings(credentials: GoogleCredentials): PhotosLibrarySettings {
+        return withContext(Dispatchers.IO) {
+            executorMutex.withLock {
+                val currentExecutor = if (executorService.isShutdown || executorService.isTerminated) {
+                    Executors.newScheduledThreadPool(4).also { executorService = it }
+                } else executorService  // Added else branch
+
+                PhotosLibrarySettings.newBuilder()
+                    .setCredentialsProvider { credentials }
+                    .setExecutorProvider(
+                        InstantiatingExecutorProvider.newBuilder()
+                            .setExecutorThreadCount(4)
+                            .build()
+                    )
+                    .build()
+            }
+        }
     }
 
     suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
@@ -156,9 +176,11 @@ class GooglePhotosManager @Inject constructor(
     suspend fun loadPhotos(): List<MediaItem>? = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Starting to load photos...")
+            _photoLoadingState.value = LoadingState.LOADING
 
             if (!initialize()) {
                 Log.e(TAG, "Failed to initialize Google Photos client")
+                _photoLoadingState.value = LoadingState.ERROR
                 return@withContext null
             }
 
@@ -169,10 +191,12 @@ class GooglePhotosManager @Inject constructor(
 
             if (selectedAlbumIds.isEmpty()) {
                 Log.d(TAG, "No albums selected")
+                _photoLoadingState.value = LoadingState.ERROR
                 return@withContext null
             }
 
             val allPhotos = mutableListOf<MediaItem>()
+            var totalProcessed = 0
 
             selectedAlbumIds.forEach { albumId ->
                 try {
@@ -197,6 +221,10 @@ class GooglePhotosManager @Inject constructor(
                                         height = googleMediaItem.mediaMetadata.height.toInt()
                                     ))
                                     photoCount++
+                                    totalProcessed++
+                                    if (totalProcessed % 10 == 0) {
+                                        Log.d(TAG, "Progress: Processed $totalProcessed photos")
+                                    }
                                 }
                             }
                         }
@@ -214,14 +242,40 @@ class GooglePhotosManager @Inject constructor(
                     mediaItems.clear()
                     mediaItems.addAll(allPhotos)
                 }
+                _photoLoadingState.value = LoadingState.SUCCESS
                 allPhotos
             } else {
                 Log.w(TAG, "No photos were loaded")
+                _photoLoadingState.value = LoadingState.ERROR
                 null
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching photos", e)
+            _photoLoadingState.value = LoadingState.ERROR
             null
+        }
+    }
+
+    private suspend fun safeShutdownExecutor() {
+        executorMutex.withLock {
+            try {
+                if (!executorService.isShutdown) {
+                    val currentExecutor = executorService
+                    executorService = Executors.newScheduledThreadPool(4)
+                    currentExecutor.shutdown()
+                    if (!currentExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                        currentExecutor.shutdownNow()
+                    } else {
+                        // Added else branch
+                        Log.d(TAG, "Executor terminated normally")
+                    }
+                } else {
+                    // Added else branch
+                    Log.d(TAG, "Executor already shutdown")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during executor shutdown", e)
+            }
         }
     }
 
@@ -257,7 +311,12 @@ class GooglePhotosManager @Inject constructor(
                         break
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
-
+                        if (e is RejectedExecutionException) {
+                            Log.w(TAG, "Executor rejected task, attempting recovery")
+                            recoverFromExecutorFailure()
+                            retryCount++
+                            continue
+                        }
                         if (shouldRetryOnError(e) && retryCount < MAX_RETRIES - 1) {
                             retryCount++
                             Log.d(TAG, "Retrying photo load, attempt $retryCount")
@@ -426,20 +485,37 @@ class GooglePhotosManager @Inject constructor(
         return false
     }
 
+    private suspend fun recoverFromExecutorFailure() {
+        executorMutex.withLock {
+            try {
+                executorService = if (executorService.isShutdown || executorService.isTerminated) {
+                    Executors.newScheduledThreadPool(4)
+                } else {
+                    executorService
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error recovering from executor failure", e)
+                // Create new executor in case of error
+                executorService = Executors.newScheduledThreadPool(4)
+            }
+        }
+    }
+
     fun cleanup() {
         try {
             photosLibraryClient?.let { client ->
                 try {
                     client.close()
-                    client.shutdownNow()
-                    client.awaitTermination(30, TimeUnit.SECONDS)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error during client shutdown", e)
+                    Log.e(TAG, "Error closing client", e)
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error during cleanup", e)
         } finally {
+            runBlocking {
+                safeShutdownExecutor()
+            }
             photosLibraryClient = null
             synchronized(mediaItems) {
                 mediaItems.clear()

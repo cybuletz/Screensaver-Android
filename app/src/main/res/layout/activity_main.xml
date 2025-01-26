@@ -5,6 +5,99 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!-- Photo Container -->
+    <FrameLayout
+        android:id="@+id/photoContainer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="visible"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/bottom_navigation"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageView
+            android:id="@+id/primaryImageView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:visibility="visible"
+            android:contentDescription="@string/photo_description"/>
+
+        <ImageView
+            android:id="@+id/overlayImageView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:alpha="0"
+            android:visibility="visible"
+            android:contentDescription="@string/photo_overlay_description"/>
+
+        <!-- Info Overlay Container -->
+        <LinearLayout
+            android:id="@+id/infoContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:layout_margin="16dp"
+            android:background="@drawable/info_background">
+
+            <TextView
+                android:id="@+id/clockView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@android:color/white"
+                android:textSize="48sp"
+                android:shadowColor="@android:color/black"
+                android:shadowRadius="3"
+                android:shadowDx="1"
+                android:shadowDy="1"
+                android:visibility="gone"
+                android:includeFontPadding="false"
+                android:lineSpacingExtra="0dp"/>
+
+            <TextView
+                android:id="@+id/dateView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@android:color/white"
+                android:textSize="24sp"
+                android:shadowColor="@android:color/black"
+                android:shadowRadius="2"
+                android:shadowDx="1"
+                android:shadowDy="1"
+                android:visibility="gone"
+                android:layout_marginTop="4dp"
+                android:includeFontPadding="false"
+                android:lineSpacingExtra="0dp"/>
+
+            <TextView
+                android:id="@+id/locationView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:shadowColor="@android:color/black"
+                android:shadowRadius="2"
+                android:shadowDx="1"
+                android:shadowDy="1"
+                android:visibility="gone"
+                android:layout_marginTop="4dp"
+                android:includeFontPadding="false"
+                android:lineSpacingExtra="0dp"/>
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/loadingIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone"
+            android:indeterminateTint="@android:color/white"/>
+    </FrameLayout>
+
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/nav_host_fragment"
         android:name="androidx.navigation.fragment.NavHostFragment"
@@ -21,6 +114,8 @@
         android:id="@+id/bottom_navigation"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="?android:attr/windowBackground"
+        android:elevation="8dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

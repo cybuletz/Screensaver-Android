@@ -52,6 +52,8 @@ class AlbumAdapter(
         private val checkbox: CheckBox = itemView.findViewById(R.id.albumCheckbox)
 
         private var currentLoadingJob: Any? = null
+        private var isBinding = false
+
 
         init {
             itemView.setOnClickListener {
@@ -65,11 +67,18 @@ class AlbumAdapter(
         }
 
         fun bind(album: Album) {
-            titleTextView.text = album.title
-            setPhotoCount(album.mediaItemsCount)
-            loadAlbumCover(album)
-            updateSelectionState(album)
-            checkbox.isChecked = album.isSelected
+            if (isBinding) return // Prevent concurrent bindings
+            isBinding = true
+
+            try {
+                titleTextView.text = album.title
+                setPhotoCount(album.mediaItemsCount)
+                loadAlbumCover(album)
+                updateSelectionState(album)
+                checkbox.isChecked = album.isSelected
+            } finally {
+                isBinding = false
+            }
         }
 
         private fun setPhotoCount(count: Int) {
@@ -82,6 +91,8 @@ class AlbumAdapter(
 
         private fun loadAlbumCover(album: Album) {
             cancelCurrentLoading()
+
+            if (bindingAdapterPosition == RecyclerView.NO_POSITION) return
 
             currentLoadingJob = Glide.with(itemView.context)
                 .load(album.coverPhotoUrl)
@@ -97,27 +108,44 @@ class AlbumAdapter(
                         transition: Transition<in Drawable>?
                     ) {
                         if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                            coverImageView.setImageDrawable(resource)
+                            coverImageView.post {
+                                if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                                    coverImageView.setImageDrawable(resource)
+                                }
+                            }
                         }
                         currentLoadingJob = null
                     }
 
                     override fun onLoadCleared(placeholder: Drawable?) {
-                        coverImageView.setImageDrawable(placeholder)
+                        coverImageView.post {
+                            if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                                coverImageView.setImageDrawable(placeholder)
+                            }
+                        }
                         currentLoadingJob = null
                     }
 
                     override fun onLoadFailed(errorDrawable: Drawable?) {
-                        coverImageView.setImageDrawable(errorDrawable)
-                        Log.e(TAG, "Failed to load cover for ${album.title}")
+                        coverImageView.post {
+                            if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                                coverImageView.setImageDrawable(errorDrawable)
+                                Log.e(TAG, "Failed to load cover for ${album.title}")
+                            }
+                        }
                         currentLoadingJob = null
                     }
                 })
         }
 
         private fun cancelCurrentLoading() {
-            currentLoadingJob?.let {
-                Glide.with(itemView.context).clear(coverImageView)
+            try {
+                currentLoadingJob?.let {
+                    Glide.with(itemView.context).clear(coverImageView)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cancelling image load", e)
+            } finally {
                 currentLoadingJob = null
             }
         }

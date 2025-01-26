@@ -174,10 +174,17 @@ class PhotoLockScreenService : Service() {
                         return@withContext
                     }
 
-                    if (photoManager.initialize() && photoManager.loadPhotos()?.isNotEmpty() == true) {
-                        isInitialized = true
-                        precachePhotos()
-                        Log.d(TAG, "Service initialized successfully")
+                    if (photoManager.initialize()) {
+                        val photos = photoManager.loadPhotos()
+                        val photoCount = photoManager.getPhotoCount()
+                        Log.d(TAG, "Service initialized with $photoCount photos")
+
+                        if (photoCount > 0) {
+                            isInitialized = true
+                            precachePhotos()
+                        } else {
+                            Log.w(TAG, "No photos available after initialization")
+                        }
                     } else {
                         Log.e(TAG, "Failed to initialize photo manager")
                     }
@@ -197,14 +204,20 @@ class PhotoLockScreenService : Service() {
     }
 
     private suspend fun precachePhotos() {
-        if (!isInitialized) return
+        if (!isInitialized) {
+            Log.d(TAG, "Skipping precache - not initialized")
+            return
+        }
 
         withContext(Dispatchers.IO) {
             try {
                 val photoCount = photoManager.getPhotoCount()
+                Log.d(TAG, "Starting precache with $photoCount available photos")
+
                 when {
                     photoCount > 0 -> {
-                        repeat(minOf(PRECACHE_COUNT, photoCount)) { index ->
+                        val countToPreload = minOf(PRECACHE_COUNT, photoCount)
+                        repeat(countToPreload) { index ->
                             photoManager.getPhotoUrl(index)?.let { url ->
                                 val mediaItem = MediaItem(
                                     id = index.toString(),
@@ -217,10 +230,10 @@ class PhotoLockScreenService : Service() {
                                 photoLoadingManager.preloadPhoto(mediaItem)
                             }
                         }
-                        Log.d(TAG, "Precached $PRECACHE_COUNT photos")
+                        Log.d(TAG, "Precached $countToPreload photos")
                     }
                     else -> {
-                        Log.d(TAG, "No photos to precache")
+                        Log.d(TAG, "No photos available to precache")
                     }
                 }
             } catch (e: Exception) {
@@ -234,25 +247,53 @@ class PhotoLockScreenService : Service() {
 
         when (intent?.action) {
             "CHECK_KIOSK_MODE" -> {
+                Log.d(TAG, "Checking kiosk mode status")
                 checkKioskMode()
                 if (isKioskMode && !isPreviewMode) {
+                    Log.d(TAG, "Kiosk mode active and not in preview - applying policies")
                     kioskPolicyManager.setKioskPolicies(true)
                     showKioskScreen()
                 }
             }
             "STOP_KIOSK" -> {
+                Log.d(TAG, "Stopping kiosk mode")
                 isKioskMode = false
                 kioskPolicyManager.setKioskPolicies(false)
             }
-            "START_PREVIEW" -> handlePreviewStart()
-            "STOP_PREVIEW" -> handlePreviewStop()
-            "AUTH_UPDATED" -> onAuthenticationUpdated()
+            "START_PREVIEW" -> {
+                Log.d(TAG, "Starting preview mode")
+                handlePreviewStart()
+            }
+            "STOP_PREVIEW" -> {
+                Log.d(TAG, "Stopping preview mode")
+                handlePreviewStop()
+            }
+            "AUTH_UPDATED" -> {
+                Log.d(TAG, "Auth updated, photo count: ${photoManager.getPhotoCount()}")
+                isInitialized = false  // Force reinitialization on auth update
+                onAuthenticationUpdated()
+            }
         }
 
         startForegroundWithNotification()
 
         if (!isInitialized) {
-            initializeService()
+            Log.d(TAG, "Service not initialized, starting initialization")
+            serviceScope.launch {
+                try {
+                    initializeService()
+                    val photoCount = photoManager.getPhotoCount()
+                    Log.d(TAG, "Service initialized, photo count: $photoCount")
+                    if (photoCount == 0) {
+                        Log.d(TAG, "No photos available, attempting to load")
+                        photoManager.loadPhotos()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during service initialization", e)
+                }
+            }
+        } else {
+            Log.d(TAG, "Service already initialized, photo count: ${photoManager.getPhotoCount()}")
         }
 
         return START_STICKY

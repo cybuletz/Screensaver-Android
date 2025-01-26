@@ -44,11 +44,15 @@ import javax.inject.Inject
 import android.content.pm.PackageManager
 import com.example.screensaver.kiosk.KioskActivity
 import androidx.fragment.app.viewModels
+import com.example.screensaver.ui.PhotoDisplayManager
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
     @Inject
     lateinit var googlePhotosManager: GooglePhotosManager
+
+    @Inject
+    lateinit var photoDisplayManager: PhotoDisplayManager
 
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
@@ -73,6 +77,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
             resetDisplayModePreference()
         }
     }
+
+
 
     // Google Sign-in result launcher
     private val signInLauncher = registerForActivityResult(
@@ -103,6 +109,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
             withContext(Dispatchers.Main) {
                 initializeDeviceAdmin()
+                setupPhotoDisplayManager()
                 setupPhotoSourcePreferences()
                 setupGoogleSignIn()
                 setupTestScreensaver()
@@ -112,6 +119,78 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 setupKioskModePreference()
             }
         }
+    }
+
+    private fun setupPhotoDisplayManager() {
+        // Connect transition settings
+        findPreference<ListPreference>("transition_effect")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    transitionDuration = when(newValue as String) {
+                        "fade" -> 1000L
+                        "slide" -> 500L
+                        "zoom" -> 1500L
+                        else -> 1000L
+                    }
+                )
+                true
+            }
+        }
+
+        // Connect refresh interval settings
+        findPreference<ListPreference>("refresh_interval")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    photoInterval = (newValue.toString().toLong() * 1000)
+                )
+                true
+            }
+        }
+
+        // Connect clock display setting
+        findPreference<SwitchPreferenceCompat>("lock_screen_clock")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    showClock = newValue as Boolean
+                )
+                true
+            }
+        }
+
+        // Connect date display setting
+        findPreference<SwitchPreferenceCompat>("lock_screen_date")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    showDate = newValue as Boolean
+                )
+                true
+            }
+        }
+
+        // Connect random order setting
+        findPreference<SwitchPreferenceCompat>("random_order")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    isRandomOrder = newValue as Boolean
+                )
+                true
+            }
+        }
+
+        // Initialize PhotoDisplayManager with current settings
+        val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        photoDisplayManager.updateSettings(
+            transitionDuration = when(prefs.getString("transition_effect", "fade")) {
+                "fade" -> 1000L
+                "slide" -> 500L
+                "zoom" -> 1500L
+                else -> 1000L
+            },
+            photoInterval = (prefs.getString("refresh_interval", "300")?.toLong() ?: 300L) * 1000,
+            showClock = prefs.getBoolean("lock_screen_clock", true),
+            showDate = prefs.getBoolean("lock_screen_date", true),
+            isRandomOrder = prefs.getBoolean("random_order", true)
+        )
     }
 
     override fun onResume() {

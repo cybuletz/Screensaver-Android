@@ -6,6 +6,9 @@ import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.utils.NotificationHelper
 import com.example.screensaver.PhotoSourceState
+import com.example.screensaver.ui.PhotoDisplayManager
+import com.example.screensaver.lock.PhotoManager          // Updated import from lock package
+import com.example.screensaver.utils.PhotoLoadingManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -64,5 +67,32 @@ object AppModule {
     @Singleton
     fun providePhotoSourceState(@ApplicationContext context: Context): PhotoSourceState {
         return PhotoSourceState(context)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoLoadingManager(
+        @ApplicationContext context: Context,
+        coroutineScope: CoroutineScope
+    ): PhotoLoadingManager {
+        return PhotoLoadingManager(context, coroutineScope)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoManager(
+        @ApplicationContext context: Context,
+        photoLoadingManager: PhotoLoadingManager
+    ): PhotoManager {
+        return PhotoManager(context, photoLoadingManager)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoDisplayManager(
+        photoManager: PhotoManager,
+        @ApplicationContext context: Context
+    ): PhotoDisplayManager {
+        return PhotoDisplayManager(photoManager, context)
     }
 }

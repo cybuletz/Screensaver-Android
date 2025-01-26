@@ -28,13 +28,16 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
 
 @AndroidEntryPoint
 class AlbumSelectionActivity : AppCompatActivity() {
     private lateinit var binding: ActivityAlbumSelectionBinding
     private lateinit var albumAdapter: AlbumAdapter
     private lateinit var dreamServiceHelper: DreamServiceHelper
-    private val coroutineScope = CoroutineScope(Dispatchers.Main + Job())
+    private val loadingJob = SupervisorJob()
+    private val activityScope = CoroutineScope(Dispatchers.Main + loadingJob)
 
     @Inject
     lateinit var photoManager: GooglePhotosManager
@@ -52,7 +55,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         private const val PRECACHE_COUNT = 5
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+        override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityAlbumSelectionBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -87,10 +90,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
         binding.confirmButton.apply {
             isEnabled = false
             setOnClickListener {
-                if (!viewModel.isLoading.value) {  // Remove Elvis operator since value is non-null
+                if (!viewModel.isLoading.value) {
                     saveSelectedAlbums()
-                    setResult(Activity.RESULT_OK)
-                    finish()
+                    // Remove setResult and finish from here
                 }
             }
         }
@@ -123,7 +125,8 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun initializeGooglePhotos() {
-        coroutineScope.launch {
+        // Change from coroutineScope to activityScope
+        activityScope.launch {
             try {
                 viewModel.setLoading(true)
                 if (photoManager.initialize()) {
@@ -223,44 +226,84 @@ class AlbumSelectionActivity : AppCompatActivity() {
             .map { it.id }
             .toSet()
 
+        Log.d(TAG, "Saving selected albums: $selectedAlbums")
         preferences.setSelectedAlbumIds(selectedAlbums)
 
-        coroutineScope.launch {
-            precachePhotos()
-        }
-    }
-
-    private suspend fun precachePhotos() {
-        withContext(Dispatchers.IO) {
+        lifecycleScope.launch {
+            Log.d(TAG, "Starting photo loading process...")
             try {
-                val photoCount = photoManager.getPhotoCount()
-                val countToPreload = minOf(PRECACHE_COUNT, photoCount)
+                withContext(NonCancellable) {
+                    // First load photos from Google Photos
+                    val photos = photoManager.loadPhotos()
+                    if (photos != null) {
+                        Log.d(TAG, "Successfully loaded ${photos.size} photos from Google Photos")
 
-                when {
-                    countToPreload > 0 -> {
-                        repeat(countToPreload) { index ->
-                            photoManager.getPhotoUrl(index)?.let { url ->
-                                photoLoadingManager.preloadPhoto(
-                                    MediaItem(
-                                        id = index.toString(),
-                                        albumId = "lock_screen",
-                                        baseUrl = url,
-                                        mimeType = "image/jpeg",
-                                        width = 1920,
-                                        height = 1080
-                                    )
-                                )
-                            }
+                        // Now ensure these photos are loaded into the lock screen PhotoManager
+                        withContext(Dispatchers.IO) {
+                            photoLoadingManager.preloadPhotos(photos)
+                            Log.d(TAG, "Photos transferred to PhotoLoadingManager")
                         }
-                        Log.d(TAG, "Precached $countToPreload photos")
-                    }
-                    else -> {
-                        Log.d(TAG, "No photos to precache")
+
+                        // Cache first few photos
+                        precachePhotos()
+
+                        withContext(Dispatchers.Main) {
+                            setResult(Activity.RESULT_OK)
+                            Log.d(TAG, "Photo loading complete, finishing activity")
+                            finish()
+                        }
+                    } else {
+                        Log.e(TAG, "Failed to load photos - null result")
+                        withContext(Dispatchers.Main) {
+                            showError(getString(R.string.photos_load_failed))
+                        }
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error precaching photos", e)
+                Log.e(TAG, "Error loading photos", e)
+                withContext(Dispatchers.Main) {
+                    showError(getString(R.string.photos_load_error, e.message))
+                }
             }
+        }
+    }
+
+
+    private suspend fun precachePhotos() {
+        try {
+            val photoCount = photoManager.getPhotoCount()
+            val countToPreload = minOf(PRECACHE_COUNT, photoCount)
+            Log.d(TAG, "Starting to precache $countToPreload photos out of total $photoCount")
+
+            if (countToPreload > 0) {
+                for (index in 0 until countToPreload) {
+                    try {
+                        val url = photoManager.getPhotoUrl(index)
+                        if (url != null) {
+                            photoLoadingManager.preloadPhoto(
+                                MediaItem(
+                                    id = index.toString(),
+                                    albumId = "lock_screen",
+                                    baseUrl = url,
+                                    mimeType = "image/jpeg",
+                                    width = 1920,
+                                    height = 1080
+                                )
+                            )
+                            Log.d(TAG, "Successfully precached photo $index with URL: $url")
+                        } else {
+                            Log.e(TAG, "Failed to get URL for photo $index")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error precaching photo $index", e)
+                    }
+                }
+            } else {
+                Log.d(TAG, "No photos to precache")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during precaching", e)
+            throw e
         }
     }
 
@@ -311,18 +354,19 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-
-        // Cancel coroutines first to prevent new operations
-        coroutineScope.cancel()
-
-        // Clean up PhotoManager
-        lifecycleScope.launch(Dispatchers.IO) {
+        lifecycleScope.launch {
             try {
-                photoManager.cleanup()
+                withContext(NonCancellable) { // Change to withContext instead of plus operator
+                    photoManager.cleanup()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error during cleanup", e)
+            } finally {
+                loadingJob.cancel()
+                activityScope.cancel()
             }
         }
+        super.onDestroy()
     }
+
 }

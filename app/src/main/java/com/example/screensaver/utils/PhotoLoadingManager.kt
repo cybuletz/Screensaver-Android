@@ -23,6 +23,9 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import com.example.screensaver.models.LoadingState
 
 @Singleton
 class PhotoLoadingManager @Inject constructor(
@@ -34,6 +37,9 @@ class PhotoLoadingManager @Inject constructor(
     private lateinit var diskCache: File
     private val loadingJobs = mutableMapOf<String, Job>()
     private var currentLoadingItem: MediaItem? = null
+
+    private val _photoLoadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
+    val photoLoadingState: StateFlow<LoadingState> = _photoLoadingState
 
     companion object {
         private const val CACHE_SIZE_PERCENTAGE = 0.25 // Use 25% of available memory
@@ -89,6 +95,15 @@ class PhotoLoadingManager @Inject constructor(
         }
     }
 
+    private fun updateLoadingState(state: LoadingState) {
+        _photoLoadingState.value = state
+    }
+
+    fun startPhotoDisplay() {
+        updateLoadingState(LoadingState.LOADING)
+        // Your existing implementation
+    }
+
     private fun createRequestListener(
         mediaItem: MediaItem,
         onSuccess: () -> Unit,
@@ -115,6 +130,18 @@ class PhotoLoadingManager @Inject constructor(
             mediaItem.updateLoadState(MediaItem.LoadState.LOADED)
             onSuccess()
             return false
+        }
+    }
+
+    suspend fun preloadPhotos(photos: List<MediaItem>) {
+        Log.d(TAG, "Starting to preload ${photos.size} photos")
+        photos.forEachIndexed { index, photo ->
+            try {
+                preloadPhoto(photo)
+                Log.d(TAG, "Preloaded photo $index: ${photo.baseUrl}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to preload photo $index", e)
+            }
         }
     }
 
