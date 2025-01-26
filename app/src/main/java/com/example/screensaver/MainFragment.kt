@@ -23,10 +23,10 @@ import javax.inject.Inject
 import android.view.animation.AnimationUtils
 import androidx.core.content.ContextCompat
 import com.google.android.material.snackbar.Snackbar
-import com.example.screensaver.lock.PhotoLockActivity
 import androidx.preference.PreferenceManager
 import com.example.screensaver.ui.PhotoDisplayManager
-
+import com.example.screensaver.lock.LockScreenPhotoManager
+import kotlinx.coroutines.flow.collectLatest
 
 @AndroidEntryPoint
 class MainFragment : Fragment() {
@@ -40,11 +40,11 @@ class MainFragment : Fragment() {
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
 
+    @Inject
+    lateinit var photoManager: LockScreenPhotoManager
+
     private var isPhotoDisplayActive = false
     private var usePhotoDisplay: Boolean = false
-
-    private var savedPhotoDisplayState: Boolean = false
-    private var savedPreviewState: Bundle? = null
 
     companion object {
         private const val TAG = "MainFragment"
@@ -54,19 +54,6 @@ class MainFragment : Fragment() {
 
         private const val KEY_PHOTO_DISPLAY_ACTIVE = "photo_display_active"
         private const val KEY_PREVIEW_ENABLED = "preview_enabled"
-
-        fun newInstance() = MainFragment()
-    }
-
-    private var errorToastCount = 0
-    private val MAX_TOAST_COUNT = 3
-    private var isPreviewEnabled = false
-
-    private fun showErrorToast(message: String) {
-        if (errorToastCount < MAX_TOAST_COUNT) {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-            errorToastCount++
-        }
     }
 
     override fun onCreateView(
@@ -81,19 +68,16 @@ class MainFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // First, check if photos are ready
         if (photoSourceState.isScreensaverReady()) {
-            // Initialize photo display first
             setupPhotoDisplay()
             initializeDisplayMode()
             setupViews()
+            observePhotoManager()
         } else {
-            // Fall back to WebView if no photos
             setupWebView(savedInstanceState)
             setupViews()
         }
 
-        // Handle saved state
         savedInstanceState?.let {
             if (it.getBoolean(KEY_PHOTO_DISPLAY_ACTIVE, false)) {
                 startPreviewMode()
@@ -101,9 +85,32 @@ class MainFragment : Fragment() {
         }
     }
 
+    private fun observePhotoManager() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            photoManager.loadingState.collectLatest { state ->
+                when (state) {
+                    LockScreenPhotoManager.LoadingState.SUCCESS -> {
+                        binding.loadingIndicator.visibility = View.GONE
+                        if (photoManager.getPhotoCount() > 0) {
+                            updatePreviewButtonState()
+                        }
+                    }
+                    LockScreenPhotoManager.LoadingState.LOADING -> {
+                        binding.loadingIndicator.visibility = View.VISIBLE
+                    }
+                    LockScreenPhotoManager.LoadingState.ERROR -> {
+                        binding.loadingIndicator.visibility = View.GONE
+                        showError("Error loading photos")
+                    }
+                    LockScreenPhotoManager.LoadingState.IDLE -> {
+                        binding.loadingIndicator.visibility = View.GONE
+                    }
+                }
+            }
+        }
+    }
 
     private fun setupPhotoDisplay() {
-        // First check if we're recreating after configuration change
         val shouldRestartDisplay = isPhotoDisplayActive
 
         photoDisplayManager.initialize(
@@ -119,7 +126,6 @@ class MainFragment : Fragment() {
             viewLifecycleOwner.lifecycleScope
         )
 
-        // Load settings
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         photoDisplayManager.updateSettings(
             transitionDuration = prefs.getInt("transition_duration", 1000).toLong(),
@@ -130,7 +136,6 @@ class MainFragment : Fragment() {
             isRandomOrder = prefs.getBoolean("random_order", false)
         )
 
-        // Restart display if it was active before configuration change
         if (shouldRestartDisplay) {
             binding.screensaverContainer.visibility = View.VISIBLE
             binding.webView.visibility = View.GONE
@@ -161,7 +166,6 @@ class MainFragment : Fragment() {
             alpha = 1.0f
             startAnimation(AnimationUtils.loadAnimation(context, android.R.anim.fade_in))
         }
-        isPreviewEnabled = true
     }
 
     private fun canStartPreview(): Boolean {
@@ -187,6 +191,12 @@ class MainFragment : Fragment() {
             }
             photoDisplayManager.startPhotoDisplay()
             photoSourceState.recordPreviewStarted()
+
+            // Start service in preview mode
+            Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
+                intent.action = "START_PREVIEW"
+                requireContext().startService(intent)
+            }
         }
     }
 
@@ -196,6 +206,12 @@ class MainFragment : Fragment() {
             if (!photoSourceState.isScreensaverReady()) {
                 binding.webView.visibility = View.VISIBLE
                 setupWebView(null)
+            }
+
+            // Stop preview mode in service
+            Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
+                intent.action = "STOP_PREVIEW"
+                requireContext().startService(intent)
             }
         }
     }
@@ -218,78 +234,24 @@ class MainFragment : Fragment() {
         binding.screensaverContainer.visibility = View.GONE
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.apply {
-            putBoolean(KEY_PHOTO_DISPLAY_ACTIVE, isPhotoDisplayActive)
-            putBoolean(KEY_PREVIEW_ENABLED, isPreviewEnabled)
-            // Save WebView state
-            _binding?.let {
-                binding.webView.saveState(outState)
+    private fun initializeDisplayMode() {
+        val isReady = photoSourceState.isScreensaverReady()
+        Log.d(TAG, "Initializing display mode. Photos ready: $isReady")
+
+        if (isReady) {
+            binding.webView.apply {
+                stopLoading()
+                clearHistory()
+                visibility = View.GONE
             }
-        }
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        savedInstanceState?.let {
-            savedPhotoDisplayState = it.getBoolean(KEY_PHOTO_DISPLAY_ACTIVE, false)
-            isPreviewEnabled = it.getBoolean(KEY_PREVIEW_ENABLED, false)
-        }
-    }
-
-    fun onBackPressed(): Boolean {
-        return if (isPhotoDisplayActive) {
-            stopPreviewMode()
-            true
-        } else {
-            false
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (photoSourceState.isScreensaverReady()) {
-            binding.webView.visibility = View.GONE
-            if (isPhotoDisplayActive) {
-                startPhotoDisplay()
-            }
-        } else {
-            binding.webView.onResume()
-        }
-        updatePreviewButtonState()
-    }
-
-    private fun updatePreviewButtonState() {
-        if (photoSourceState.isScreensaverReady()) {
-            binding.previewButton.visibility = View.VISIBLE
+            binding.screensaverContainer.visibility = View.VISIBLE
             binding.screensaverReadyCard.visibility = View.VISIBLE
-            if (canStartPreview()) {
-                enablePreviewButton()
-            } else {
-                binding.previewButton.isEnabled = false
-                binding.previewButton.alpha = 0.5f
-            }
+            startPhotoDisplay()
         } else {
-            binding.previewButton.visibility = View.GONE
+            binding.webView.visibility = View.VISIBLE
+            binding.screensaverContainer.visibility = View.GONE
             binding.screensaverReadyCard.visibility = View.GONE
         }
-    }
-
-    override fun onPause() {
-        if (isPhotoDisplayActive) {
-            stopPhotoDisplay()
-        }
-        if (!photoSourceState.isScreensaverReady()) {
-            binding.webView.onPause()
-        }
-        super.onPause()
-    }
-
-    override fun onDestroyView() {
-        photoDisplayManager.cleanup()
-        super.onDestroyView()
-        _binding = null
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -298,7 +260,7 @@ class MainFragment : Fragment() {
         setupWebViewClient()
         setupJavaScriptInterface()
 
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             try {
                 if (savedInstanceState != null) {
                     binding.webView.restoreState(savedInstanceState)
@@ -309,43 +271,6 @@ class MainFragment : Fragment() {
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing WebView", e)
                 handleWebViewError()
-            }
-        }
-    }
-
-    private fun initializeDisplayMode() {
-        val isReady = photoSourceState.isScreensaverReady()
-        Log.d(TAG, "Initializing display mode. Photos ready: $isReady")
-
-        if (isReady) {
-            // Immediately stop and clear WebView
-            binding.webView.apply {
-                stopLoading()
-                clearHistory()
-                visibility = View.GONE
-            }
-
-            // Show photo container
-            binding.screensaverContainer.visibility = View.VISIBLE
-            binding.screensaverReadyCard.visibility = View.VISIBLE
-
-            // Start photo display
-            startPhotoDisplay()
-        } else {
-            binding.webView.visibility = View.VISIBLE
-            binding.screensaverContainer.visibility = View.GONE
-            binding.screensaverReadyCard.visibility = View.GONE
-        }
-    }
-
-    private fun updateDisplayVisibility() {
-        binding.apply {
-            if (usePhotoDisplay) {
-                webView.visibility = View.GONE
-                screensaverContainer.visibility = View.VISIBLE
-            } else {
-                webView.visibility = View.VISIBLE
-                screensaverContainer.visibility = View.GONE
             }
         }
     }
@@ -379,7 +304,7 @@ class MainFragment : Fragment() {
                 super.onReceivedError(view, request, error)
                 Log.e(TAG, "WebView error: ${error?.description}")
                 view?.loadUrl(ERROR_PAGE)
-                showErrorToast("Error loading page: ${error?.description}")
+                showError("Error loading page: ${error?.description}")
             }
 
             override fun shouldOverrideUrlLoading(
@@ -409,14 +334,6 @@ class MainFragment : Fragment() {
         }
     }
 
-    fun refreshWebView() {
-        if (isWebViewInitialized) {
-            binding.webView.reload()
-        } else {
-            binding.webView.loadUrl(DEFAULT_URL)
-        }
-    }
-
     private fun handleWebViewError() {
         try {
             binding.webView.loadUrl(ERROR_PAGE)
@@ -428,14 +345,78 @@ class MainFragment : Fragment() {
     }
 
     private fun showError(message: String) {
-        showErrorToast(message)
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
-    fun clearWebViewData() {
-        binding.webView.apply {
-            clearCache(true)
-            clearHistory()
-            clearFormData()
+    private fun updatePreviewButtonState() {
+        if (photoSourceState.isScreensaverReady()) {
+            binding.previewButton.visibility = View.VISIBLE
+            binding.screensaverReadyCard.visibility = View.VISIBLE
+            if (canStartPreview()) {
+                enablePreviewButton()
+            } else {
+                binding.previewButton.isEnabled = false
+                binding.previewButton.alpha = 0.5f
+            }
+        } else {
+            binding.previewButton.visibility = View.GONE
+            binding.screensaverReadyCard.visibility = View.GONE
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.apply {
+            putBoolean(KEY_PHOTO_DISPLAY_ACTIVE, isPhotoDisplayActive)
+            _binding?.let {
+                binding.webView.saveState(outState)
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (photoSourceState.isScreensaverReady()) {
+            binding.webView.visibility = View.GONE
+            if (isPhotoDisplayActive) {
+                startPhotoDisplay()
+            }
+        } else {
+            binding.webView.onResume()
+        }
+        updatePreviewButtonState()
+    }
+
+    override fun onPause() {
+        if (isPhotoDisplayActive) {
+            stopPhotoDisplay()
+        }
+        if (!photoSourceState.isScreensaverReady()) {
+            binding.webView.onPause()
+        }
+        super.onPause()
+    }
+
+    override fun onDestroyView() {
+        photoDisplayManager.cleanup()
+        super.onDestroyView()
+        _binding = null
+    }
+
+    fun onBackPressed(): Boolean {
+        return if (isPhotoDisplayActive) {
+            stopPreviewMode()
+            true
+        } else {
+            false
+        }
+    }
+
+    fun refreshDisplay() {
+        if (photoSourceState.isScreensaverReady()) {
+            photoDisplayManager.startPhotoDisplay()
+        } else {
+            binding.webView.reload()
         }
     }
 }

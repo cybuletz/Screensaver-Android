@@ -104,14 +104,19 @@ class PhotoManager @Inject constructor(
         }
     }
 
-    fun getPhotoCount(): Int = mediaItems.size
+    fun getPhotoCount(): Int {
+        val count = mediaItems.size
+        Log.d(TAG, "Getting photo count from lock screen PhotoManager: $count")
+        return count
+    }
 
     fun getPhotoUrl(index: Int): String? {
         return if (index in mediaItems.indices) {
-            currentIndex = index
-            preloadNextPhotos(index)
-            mediaItems[index].baseUrl
+            val url = mediaItems[index].baseUrl
+            Log.d(TAG, "Getting photo URL for index $index: $url")
+            url
         } else {
+            Log.e(TAG, "Invalid photo index: $index, total photos: ${mediaItems.size}")
             null
         }
     }

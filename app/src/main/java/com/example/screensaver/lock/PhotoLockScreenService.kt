@@ -27,6 +27,8 @@ import kotlinx.coroutines.*
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import com.example.screensaver.PhotoSourceState
+import com.example.screensaver.lock.LockScreenPhotoManager
+import kotlinx.coroutines.*
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -35,7 +37,7 @@ class PhotoLockScreenService : Service() {
     lateinit var photoLoadingManager: PhotoLoadingManager
 
     @Inject
-    lateinit var photoManager: GooglePhotosManager
+    lateinit var photoManager: LockScreenPhotoManager
 
     @Inject
     lateinit var kioskPolicyManager: KioskPolicyManager
@@ -168,25 +170,20 @@ class PhotoLockScreenService : Service() {
         initializationJob?.cancel()
         initializationJob = serviceScope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    if (!photoManager.hasValidTokens()) {
-                        Log.d(TAG, "No valid tokens available, waiting for authentication")
-                        return@withContext
-                    }
+                val photoCount = photoManager.getPhotoCount()
+                Log.d(TAG, "Initial photo count: $photoCount")
 
-                    if (photoManager.initialize()) {
-                        val photos = photoManager.loadPhotos()
-                        val photoCount = photoManager.getPhotoCount()
-                        Log.d(TAG, "Service initialized with $photoCount photos")
-
-                        if (photoCount > 0) {
-                            isInitialized = true
-                            precachePhotos()
-                        } else {
-                            Log.w(TAG, "No photos available after initialization")
-                        }
+                if (photoCount > 0) {
+                    isInitialized = true
+                    precachePhotos()
+                } else {
+                    Log.w(TAG, "No photos available, checking if photos can be loaded")
+                    val loadedPhotos = photoManager.loadPhotos()
+                    if (loadedPhotos != null && loadedPhotos.isNotEmpty()) {
+                        isInitialized = true
+                        precachePhotos()
                     } else {
-                        Log.e(TAG, "Failed to initialize photo manager")
+                        Log.w(TAG, "No photos available after loading attempt")
                     }
                 }
             } catch (e: Exception) {
@@ -286,7 +283,14 @@ class PhotoLockScreenService : Service() {
                     Log.d(TAG, "Service initialized, photo count: $photoCount")
                     if (photoCount == 0) {
                         Log.d(TAG, "No photos available, attempting to load")
-                        photoManager.loadPhotos()
+                        serviceScope.launch {
+                            photoManager.loadPhotos()?.let { photos ->
+                                if (photos.isNotEmpty()) {
+                                    Log.d(TAG, "Successfully loaded ${photos.size} photos")
+                                    precachePhotos()
+                                }
+                            }
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error during service initialization", e)

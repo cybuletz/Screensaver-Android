@@ -30,6 +30,13 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
+import android.content.Intent
+import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
+import com.example.screensaver.lock.LockScreenPhotoManager
+import com.example.screensaver.lock.PhotoLockScreenService
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
 
 @AndroidEntryPoint
 class AlbumSelectionActivity : AppCompatActivity() {
@@ -44,6 +51,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     @Inject
     lateinit var photoLoadingManager: PhotoLoadingManager
+
+    @Inject
+    lateinit var lockScreenPhotoManager: LockScreenPhotoManager
 
     @Inject
     lateinit var preferences: AppPreferences
@@ -233,19 +243,25 @@ class AlbumSelectionActivity : AppCompatActivity() {
             Log.d(TAG, "Starting photo loading process...")
             try {
                 withContext(NonCancellable) {
-                    // First load photos from Google Photos
                     val photos = photoManager.loadPhotos()
                     if (photos != null) {
                         Log.d(TAG, "Successfully loaded ${photos.size} photos from Google Photos")
 
-                        // Now ensure these photos are loaded into the lock screen PhotoManager
+                        // Transfer photos to lock screen manager
+                        lockScreenPhotoManager.clearPhotos()
+                        lockScreenPhotoManager.addPhotos(photos)
+                        Log.d(TAG, "Photos transferred to LockScreenPhotoManager")
+
+                        // Precache photos
                         withContext(Dispatchers.IO) {
-                            photoLoadingManager.preloadPhotos(photos)
-                            Log.d(TAG, "Photos transferred to PhotoLoadingManager")
+                            precachePhotos()
                         }
 
-                        // Cache first few photos
-                        precachePhotos()
+                        // Start the lock screen service
+                        val serviceIntent = Intent(this@AlbumSelectionActivity, PhotoLockScreenService::class.java).apply {
+                            action = "AUTH_UPDATED"
+                        }
+                        startService(serviceIntent)
 
                         withContext(Dispatchers.Main) {
                             setResult(Activity.RESULT_OK)

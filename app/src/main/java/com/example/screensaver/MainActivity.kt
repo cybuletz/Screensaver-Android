@@ -10,29 +10,34 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.widget.Toast
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.MenuProvider
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.ui.NavigationUI
+import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import androidx.preference.PreferenceManager
 import com.example.screensaver.databinding.ActivityMainBinding
 import com.example.screensaver.kiosk.KioskActivity
 import com.example.screensaver.kiosk.KioskPolicyManager
+import com.example.screensaver.lock.LockScreenPhotoManager
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.ui.PhotoDisplayManager
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import android.view.View
-import com.example.screensaver.models.LoadingState
-import kotlinx.coroutines.flow.collect
-import com.example.screensaver.lock.PhotoManager
-import com.example.screensaver.lock.PhotoManager.LoadingState as PhotoManagerState
+import kotlinx.coroutines.delay
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -42,7 +47,7 @@ class MainActivity : AppCompatActivity() {
     private val navController get() = _navController!!
 
     @Inject
-    lateinit var photoManager: PhotoManager
+    lateinit var photoManager: LockScreenPhotoManager
 
     @Inject
     lateinit var kioskPolicyManager: KioskPolicyManager
@@ -51,6 +56,16 @@ class MainActivity : AppCompatActivity() {
     lateinit var photoDisplayManager: PhotoDisplayManager
 
     private var isDestroyed = false
+
+    private val viewLifecycleOwner: LifecycleOwner?
+        get() = try {
+            val navHostFragment = supportFragmentManager
+                .findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
+            navHostFragment?.viewLifecycleOwner
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting viewLifecycleOwner", e)
+            null
+        }
 
     private val deviceAdminLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -81,7 +96,7 @@ class MainActivity : AppCompatActivity() {
 
             setupNavigation()
             setupMenu()
-            setupPhotoDisplay()
+            initializePhotoDisplayManager() // New method call instead of setupPhotoDisplay
             startLockScreenService()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
@@ -90,6 +105,85 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun initializePhotoDisplayManager() {
+        lifecycleScope.launch {
+            try {
+                Log.d(TAG, "Initializing photo display manager")
+                val views = PhotoDisplayManager.Views(
+                    primaryView = binding.primaryImageView,
+                    overlayView = binding.overlayImageView,
+                    clockView = binding.clockView,
+                    dateView = binding.dateView,
+                    locationView = binding.locationView,
+                    loadingIndicator = binding.loadingIndicator,
+                    container = binding.photoContainer
+                )
+
+                // Show loading state
+                binding.loadingIndicator?.visibility = View.VISIBLE
+
+                // Initialize PhotoDisplayManager first
+                photoDisplayManager.initialize(views, lifecycleScope)
+
+                // Wait for photos to be available
+                withContext(Dispatchers.IO) {
+                    var attempts = 0
+                    while (attempts < 10 && photoManager.getPhotoCount() == 0) {
+                        delay(500)
+                        attempts++
+                        Log.d(TAG, "Waiting for photos, attempt $attempts")
+                    }
+                }
+
+                // Update settings
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                photoDisplayManager.updateSettings(
+                    showClock = prefs.getBoolean("show_clock", true),
+                    showDate = prefs.getBoolean("show_date", true),
+                    photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
+                    isRandomOrder = prefs.getBoolean("random_order", false)
+                )
+
+                // Start display if we have photos
+                val photoCount = photoManager.getPhotoCount()
+                if (photoCount > 0) {
+                    Log.d(TAG, "Starting display with $photoCount photos")
+                    photoDisplayManager.startPhotoDisplay()
+                } else {
+                    Log.w(TAG, "No photos available after initialization")
+                    binding.loadingIndicator?.visibility = View.GONE
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing photo display manager", e)
+                binding.loadingIndicator?.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun setupBackPressHandler() {
+        onBackPressedDispatcher.addCallback(this) {
+            val currentDestination = navController.currentDestination
+            when (currentDestination?.id) {
+                R.id.nav_photos -> {
+                    val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
+                    val currentFragment = navHostFragment?.childFragmentManager?.fragments?.firstOrNull()
+
+                    if (currentFragment is MainFragment && currentFragment.onBackPressed()) {
+                        return@addCallback
+                    }
+                    if (isTaskRoot) {
+                        finish()
+                    } else {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
+                }
+                else -> {
+                    navController.navigate(R.id.nav_photos)
+                }
+            }
+        }
+    }
     private fun setupPhotoDisplay() {
         lifecycleScope.launch {
             try {
@@ -104,47 +198,36 @@ class MainActivity : AppCompatActivity() {
                     container = binding.photoContainer
                 )
 
+                // Initialize with loading state
+                binding.loadingIndicator?.visibility = View.VISIBLE  // Changed from isVisible
+
+                // Wait for photo manager to be ready
+                withContext(Dispatchers.IO) {
+                    var attempts = 0
+                    while (attempts < 6 && photoManager.getPhotoCount() == 0) {
+                        delay(500)
+                        attempts++
+                    }
+                }
+
                 photoDisplayManager.initialize(views, lifecycleScope)
                 Log.d(TAG, "PhotoDisplayManager initialized")
 
-                // Load preferences and update settings directly
                 val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
                 photoDisplayManager.updateSettings(
                     showClock = prefs.getBoolean("show_clock", true),
                     showDate = prefs.getBoolean("show_date", true),
-                    photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L
+                    photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
+                    isRandomOrder = prefs.getBoolean("random_order", false)
                 )
 
-                // Single collector for photo loading state
-                photoManager.loadingState
-                    .collect { state ->
-                        Log.d(TAG, "Photo manager state: $state, photo count: ${photoManager.getPhotoCount()}")
-                        when (state) {
-                            PhotoManagerState.SUCCESS -> {
-                                binding.loadingIndicator.visibility = View.GONE
-                                val photoCount = photoManager.getPhotoCount()
-                                Log.d(TAG, "Success state with $photoCount photos")
-                                if (photoCount > 0) {
-                                    photoDisplayManager.startPhotoDisplay()
-                                }
-                            }
-                            PhotoManagerState.LOADING -> {
-                                binding.loadingIndicator.visibility = View.VISIBLE
-                            }
-                            PhotoManagerState.ERROR -> {
-                                binding.loadingIndicator.visibility = View.GONE
-                            }
-                            PhotoManagerState.IDLE -> {
-                                binding.loadingIndicator.visibility = View.GONE
-                                if (photoManager.getPhotoCount() == 0) {
-                                    Log.d(TAG, "No photos in IDLE state, attempting to load")
-                                    photoManager.loadPhotos()
-                                }
-                            }
-                        }
-                    }
+                // Start display only if we have photos
+                if (photoManager.getPhotoCount() > 0) {
+                    photoDisplayManager.startPhotoDisplay()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in setupPhotoDisplay", e)
+                binding.loadingIndicator?.visibility = View.GONE  // Changed from isVisible
             }
         }
     }
@@ -168,9 +251,9 @@ class MainActivity : AppCompatActivity() {
         val isMainScreen = destinationId == R.id.nav_photos
         Log.d(TAG, "Navigation destination: $destinationId, isMainScreen: $isMainScreen")
 
-        updateViewVisibility(binding.photoContainer, isMainScreen)
-        updateViewVisibility(binding.clockView, isMainScreen)
-        updateViewVisibility(binding.dateView, isMainScreen)
+        listOf(binding.photoContainer, binding.clockView, binding.dateView).forEach { view ->
+            updateViewVisibility(view, isMainScreen)
+        }
     }
 
     private fun checkKioskMode(): Boolean {
@@ -182,13 +265,11 @@ class MainActivity : AppCompatActivity() {
         if (isKioskEnabled) {
             Log.d(TAG, "Kiosk mode is enabled, checking permissions")
 
-            // Check for device admin first
             if (!kioskPolicyManager.isDeviceAdmin()) {
                 requestDeviceAdmin()
                 return false
             }
 
-            // Check for lock task permission
             if (checkSelfPermission(android.Manifest.permission.MANAGE_DEVICE_POLICY_LOCK_TASK)
                 != PackageManager.PERMISSION_GRANTED) {
 
@@ -265,9 +346,10 @@ class MainActivity : AppCompatActivity() {
             ?: throw IllegalStateException("Nav host fragment not found")
 
         _navController = navHostFragment.navController
+
+        setupActionBarWithNavController(navController)
         binding.bottomNavigation.setupWithNavController(navController)
 
-        // Add navigation listener
         navController.addOnDestinationChangedListener { _, destination, _ ->
             handleNavigationVisibility(destination.id)
         }
@@ -304,7 +386,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshMainFragment() {
         try {
-            photoDisplayManager.startPhotoDisplay() // Update to use PhotoDisplayManager instead
+            photoDisplayManager.startPhotoDisplay()
         } catch (e: Exception) {
             Log.e(TAG, "Error refreshing display", e)
         }
@@ -344,17 +426,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onBackPressed() {
-        val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
-        val currentFragment = navHostFragment?.childFragmentManager?.fragments?.firstOrNull()
-
-        if (currentFragment is MainFragment) {
-            // Handle back press in main fragment if needed
-            return
-        }
-        super.onBackPressed()
-    }
-
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -380,7 +451,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onSupportNavigateUp(): Boolean {
-        return _navController?.navigateUp() ?: false || super.onSupportNavigateUp()
+        return navController.navigateUp() || super.onSupportNavigateUp()
     }
 
     override fun onResume() {
@@ -391,21 +462,32 @@ class MainActivity : AppCompatActivity() {
 
         updateLockScreenService("CHECK_KIOSK_MODE")
 
-        // Only start display if we have photos
         if (!isDestroyed && photoManager.getPhotoCount() > 0) {
             photoDisplayManager.startPhotoDisplay()
         }
     }
 
     override fun onDestroy() {
-        isDestroyed = true
-        if (PreferenceManager.getDefaultSharedPreferences(this)
-                .getBoolean("kiosk_mode_enabled", false)) {
-            startKioskMode()
+        try {
+            isDestroyed = true
+            if (PreferenceManager.getDefaultSharedPreferences(this)
+                    .getBoolean("kiosk_mode_enabled", false)) {
+                startKioskMode()
+            }
+
+            viewLifecycleOwner?.lifecycleScope?.launch(Dispatchers.Main) {
+                withContext(NonCancellable) {
+                    photoDisplayManager.cleanup()
+                }
+            }
+
+            _binding = null
+            _navController = null
+
+            super.onDestroy()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onDestroy", e)
+            super.onDestroy()
         }
-        photoDisplayManager.cleanup() // Add cleanup for PhotoDisplayManager
-        _binding = null
-        _navController = null
-        super.onDestroy()
     }
 }

@@ -12,7 +12,11 @@
         tools:layout="@layout/fragment_main">
         <action
             android:id="@+id/action_nav_photos_to_nav_settings"
-            app:destination="@id/nav_settings" />
+            app:destination="@id/nav_settings"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim" />
     </fragment>
 
     <fragment
@@ -22,20 +26,26 @@
         tools:layout="@layout/fragment_settings">
         <action
             android:id="@+id/action_nav_settings_to_nav_photos"
-            app:destination="@id/nav_photos" />
+            app:destination="@id/nav_photos"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"
+            app:popUpTo="@id/nav_photos"
+            app:popUpToInclusive="true" />
         <action
             android:id="@+id/action_nav_settings_to_albumFragment"
-            app:destination="@id/albumFragment" />
+            app:destination="@id/albumFragment"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim" />
     </fragment>
 
-    <fragment
+    <activity
         android:id="@+id/albumFragment"
         android:name="com.example.screensaver.AlbumSelectionActivity"
         android:label="Albums"
-        tools:layout="@layout/activity_album_selection">
-        <action
-            android:id="@+id/action_albumFragment_to_nav_settings"
-            app:destination="@id/nav_settings" />
-    </fragment>
+        tools:layout="@layout/activity_album_selection" />
 
 </navigation>

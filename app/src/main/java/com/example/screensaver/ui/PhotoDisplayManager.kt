@@ -7,7 +7,8 @@ import android.widget.TextView
 import androidx.core.view.isVisible
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.bumptech.glide.Glide
-import com.example.screensaver.lock.PhotoManager
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.example.screensaver.lock.LockScreenPhotoManager
 import com.example.screensaver.models.LoadingState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,15 +17,19 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
+import javax.inject.Singleton
 import android.util.Log
 import android.graphics.drawable.Drawable
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
+import kotlin.random.Random
+import kotlinx.coroutines.delay
 
+@Singleton
 class PhotoDisplayManager @Inject constructor(
-    private val photoManager: PhotoManager,
+    private val photoManager: LockScreenPhotoManager,
     private val context: Context
 ) {
     private val managerJob = SupervisorJob()
@@ -32,10 +37,6 @@ class PhotoDisplayManager @Inject constructor(
 
     private val _photoLoadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
     val photoLoadingState: StateFlow<LoadingState> = _photoLoadingState
-
-    companion object {
-        private const val TAG = "PhotoDisplayManager"
-    }
 
     data class Views(
         val primaryView: ImageView,
@@ -55,61 +56,226 @@ class PhotoDisplayManager @Inject constructor(
     private var timeUpdateJob: Job? = null
 
     // Settings
-    private var transitionDuration: Long = 1000 // 1 second
-    private var photoInterval: Long = 10000 // 10 seconds
-    private var showClock: Boolean = false
-    private var showDate: Boolean = false
+    private var transitionDuration: Long = 1000
+    private var photoInterval: Long = 10000
+    private var showClock: Boolean = true
+    private var showDate: Boolean = true
     private var showLocation: Boolean = false
     private var isRandomOrder: Boolean = false
+
+    // Date formatters
+    private val dateFormat = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault())
+    private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     fun initialize(views: Views, scope: LifecycleCoroutineScope) {
         Log.d(TAG, "Initializing PhotoDisplayManager")
         this.views = views
         this.lifecycleScope = scope
+
         views.overlayView.alpha = 0f
+        _photoLoadingState.value = LoadingState.LOADING
+
+        val currentScope = scope
+        currentScope.launch {
+            try {
+                // Initial wait for photos
+                if (ensurePhotosLoaded()) {
+                    startPhotoDisplay()
+                } else {
+                    Log.w(TAG, "No photos available after initialization")
+                    _photoLoadingState.value = LoadingState.ERROR("No photos available")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during initialization", e)
+                _photoLoadingState.value = LoadingState.ERROR(e.message ?: "Unknown error")
+            }
+        }
+
+        setupPhotoManagerObserver()
+        updateTimeDisplayVisibility()
+    }
+
+    private suspend fun ensurePhotosLoaded(): Boolean {
+        var retryCount = 0
+        val maxRetries = 10  // 5 seconds total
+
+        while (photoManager.getPhotoCount() == 0 && retryCount < maxRetries) {
+            Log.d(TAG, "Waiting for photos to load... attempt ${retryCount + 1}")
+            delay(500)
+            retryCount++
+        }
 
         val photoCount = photoManager.getPhotoCount()
-        Log.d(TAG, "Initial photo count: $photoCount")
+        Log.d(TAG, "Photos available after waiting: $photoCount")
+        return photoCount > 0
+    }
 
+    private fun setupPhotoManagerObserver() {
         managerScope.launch {
-            try {
-                _photoLoadingState.value = LoadingState.IDLE
-                photoManager.loadingState.collect { state ->
-                    Log.d(TAG, "Photo manager loading state changed to: $state")
-                    views.loadingIndicator?.isVisible = state == PhotoManager.LoadingState.LOADING
-                    when (state) {
-                        PhotoManager.LoadingState.LOADING -> {
-                            _photoLoadingState.value = LoadingState.LOADING
+            photoManager.loadingState.collect { state ->
+                when (state) {
+                    LockScreenPhotoManager.LoadingState.SUCCESS -> {  // Removed 'is'
+                        if (photoManager.getPhotoCount() > 0 && views != null) {
+                            startPhotoDisplay()
                         }
-                        PhotoManager.LoadingState.SUCCESS -> {
-                            _photoLoadingState.value = LoadingState.SUCCESS
-                            if (photoManager.getPhotoCount() > 0 && displayJob == null) {
-                                withContext(NonCancellable) {
-                                    startPhotoDisplay()
-                                }
-                            }
-                        }
-                        PhotoManager.LoadingState.ERROR -> {
-                            _photoLoadingState.value = LoadingState.ERROR("Failed to load photos")
-                        }
-                        PhotoManager.LoadingState.IDLE -> {
-                            _photoLoadingState.value = LoadingState.IDLE
-                            if (photoManager.getPhotoCount() == 0) {
-                                photoManager.loadPhotos()
-                            }
+                    }
+                    LockScreenPhotoManager.LoadingState.LOADING -> {  // Removed 'is'
+                        _photoLoadingState.value = LoadingState.LOADING
+                        views?.loadingIndicator?.visibility = View.VISIBLE  // Changed from isVisible
+                    }
+                    LockScreenPhotoManager.LoadingState.ERROR -> {  // Removed 'is'
+                        _photoLoadingState.value = LoadingState.ERROR("Failed to load photos")
+                        views?.loadingIndicator?.visibility = View.GONE  // Changed from isVisible
+                    }
+                    else -> { /* Handle other states */ }
+                }
+            }
+        }
+    }
+
+    private suspend fun handlePhotoManagerState(state: LockScreenPhotoManager.LoadingState) {
+        views?.loadingIndicator?.isVisible = state == LockScreenPhotoManager.LoadingState.LOADING
+
+        when (state) {
+            LockScreenPhotoManager.LoadingState.LOADING -> {
+                _photoLoadingState.value = LoadingState.LOADING
+            }
+            LockScreenPhotoManager.LoadingState.SUCCESS -> {
+                val count = photoManager.getPhotoCount()
+                Log.d(TAG, "Success state with $count photos")
+                if (count > 0) {
+                    _photoLoadingState.value = LoadingState.SUCCESS
+                    if (displayJob == null) {
+                        withContext(NonCancellable) {
+                            startPhotoDisplay()
                         }
                     }
                 }
-            } catch (e: Exception) {
-                if (e is CancellationException) {
-                    Log.d(TAG, "Photo manager state collection cancelled")
-                    return@launch
+            }
+            LockScreenPhotoManager.LoadingState.ERROR -> {
+                _photoLoadingState.value = LoadingState.ERROR("Failed to load photos")
+            }
+            LockScreenPhotoManager.LoadingState.IDLE -> {
+                _photoLoadingState.value = LoadingState.IDLE
+                if (photoManager.getPhotoCount() == 0) {
+                    photoManager.loadPhotos()
                 }
-                Log.e(TAG, "Error in photo manager state collection", e)
             }
         }
-        updateTimeDisplayVisibility()
-        Log.d(TAG, "PhotoDisplayManager initialized")
+    }
+
+    fun startPhotoDisplay() {
+        val currentScope = lifecycleScope ?: return
+        displayJob?.cancel()
+
+        displayJob = currentScope.launch {
+            try {
+                val photoCount = photoManager.getPhotoCount()
+                Log.d(TAG, "Starting photo display with $photoCount photos")
+
+                if (photoCount == 0) {
+                    // Wait for photos to be available
+                    if (!ensurePhotosLoaded()) {
+                        Log.w(TAG, "No photos available after waiting")
+                        _photoLoadingState.value = LoadingState.ERROR("No photos available")
+                        return@launch
+                    }
+                }
+
+                _photoLoadingState.value = LoadingState.LOADING
+                views?.loadingIndicator?.visibility = View.VISIBLE
+
+                // Initial photo display
+                loadAndDisplayPhoto()
+
+                while (isActive) {
+                    delay(photoInterval)
+                    val currentCount = photoManager.getPhotoCount()
+                    if (currentCount > 0) {
+                        loadAndDisplayPhoto()
+                    } else {
+                        Log.w(TAG, "No photos available during display loop")
+                        break
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Error in photo display loop", e)
+                }
+                views?.loadingIndicator?.visibility = View.GONE
+            }
+        }
+    }
+
+    private suspend fun loadAndDisplayPhoto() {
+        if (isTransitioning) return
+
+        val photoCount = photoManager.getPhotoCount()
+        if (photoCount == 0) return
+
+        val nextIndex = if (isRandomOrder) {
+            Random.nextInt(photoCount)
+        } else {
+            (currentPhotoIndex + 1) % photoCount
+        }
+
+        val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: return
+
+        views?.let { views ->
+            isTransitioning = true
+            try {
+                withContext(NonCancellable) {
+                    loadPhotoWithGlide(nextUrl, views)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading photo", e)
+                isTransitioning = false
+            }
+        }
+    }
+
+    private suspend fun loadPhotoWithGlide(url: String, views: Views) {
+        withContext(Dispatchers.Main) {
+            Glide.with(context)
+                .load(url)
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                .listener(createGlideListener(url))
+                .into(views.overlayView)
+
+            views.overlayView.animate()
+                .alpha(1f)
+                .setDuration(transitionDuration)
+                .withEndAction {
+                    views.primaryView.setImageDrawable(views.overlayView.drawable)
+                    views.overlayView.alpha = 0f
+                    isTransitioning = false
+                    currentPhotoIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
+                }
+                .start()
+        }
+    }
+
+    private fun createGlideListener(url: String) = object : RequestListener<Drawable> {
+        override fun onLoadFailed(
+            e: GlideException?,
+            model: Any?,
+            target: Target<Drawable>,
+            isFirstResource: Boolean
+        ): Boolean {
+            Log.e(TAG, "Failed to load photo: $url", e)
+            isTransitioning = false
+            return false
+        }
+
+        override fun onResourceReady(
+            resource: Drawable,
+            model: Any,
+            target: Target<Drawable>,
+            dataSource: DataSource,
+            isFirstResource: Boolean
+        ): Boolean {
+            return false
+        }
     }
 
     fun updateSettings(
@@ -129,7 +295,6 @@ class PhotoDisplayManager @Inject constructor(
         isRandomOrder?.let { this.isRandomOrder = it }
 
         updateTimeDisplayVisibility()
-        Log.d(TAG, "Settings updated - Interval: $photoInterval, Clock: $showClock, Date: $showDate")
     }
 
     private fun updateTimeDisplayVisibility() {
@@ -147,160 +312,11 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
-    fun startPhotoDisplay() {
-        Log.d(TAG, "Starting photo display with ${photoManager.getPhotoCount()} photos")
-        if (photoManager.getPhotoCount() == 0) {
-            Log.w(TAG, "No photos available to display, attempting to load")
-            lifecycleScope?.launch {
-                _photoLoadingState.value = LoadingState.LOADING
-                photoManager.loadPhotos()
-                delay(1000) // Wait a bit for photos to load
-                if (photoManager.getPhotoCount() > 0) {
-                    startPhotoDisplay() // Retry after loading
-                } else {
-                    _photoLoadingState.value = LoadingState.ERROR("No photos available")
-                }
-            }
-            return
-        }
-
-        try {
-            _photoLoadingState.value = LoadingState.LOADING
-            displayJob?.cancel()
-            displayJob = lifecycleScope?.launch {
-                currentPhotoIndex = -1  // This ensures first photo is index 0
-                loadAndDisplayPhoto()
-
-                while (true) {
-                    delay(photoInterval)
-                    val currentCount = photoManager.getPhotoCount()
-                    if (currentCount > 0) {
-                        loadAndDisplayPhoto()
-                    } else {
-                        Log.w(TAG, "No photos available during display cycle, attempting reload")
-                        photoManager.loadPhotos()
-                        if (photoManager.getPhotoCount() > 0) {
-                            loadAndDisplayPhoto()
-                        }
-                    }
-                }
-            }
-            Log.d(TAG, "Photo display started successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting photo display", e)
-            _photoLoadingState.value = LoadingState.ERROR("Failed to start display: ${e.message}")
-        }
-    }
-
-    fun stopPhotoDisplay() {
-        Log.d(TAG, "Stopping photo display")
-        displayJob?.cancel()
-        displayJob = null
-        _photoLoadingState.value = LoadingState.IDLE
-    }
-
-    private suspend fun loadAndDisplayPhoto() {
-        if (isTransitioning) {
-            Log.d(TAG, "Photo transition in progress, skipping")
-            return
-        }
-
-        val photoCount = photoManager.getPhotoCount()
-        Log.d(TAG, "Attempting to load photo. Total photos available: $photoCount")
-
-        if (photoCount == 0) {
-            Log.e(TAG, "No photos available")
-            _photoLoadingState.value = LoadingState.ERROR("No photos available")
-            photoManager.loadPhotos()
-            delay(1000)
-            if (photoManager.getPhotoCount() > 0) {
-                Log.d(TAG, "Photos loaded successfully after retry")
-                loadAndDisplayPhoto()
-            }
-            return
-        }
-
-        val nextIndex = if (isRandomOrder) {
-            (0 until photoCount).random()
-        } else {
-            (currentPhotoIndex + 1) % photoCount
-        }
-
-        Log.d(TAG, "Loading photo $nextIndex of $photoCount")
-        val nextUrl = photoManager.getPhotoUrl(nextIndex)
-        if (nextUrl == null) {
-            Log.e(TAG, "Failed to get photo URL for index: $nextIndex")
-            _photoLoadingState.value = LoadingState.ERROR("Failed to get photo URL")
-            return
-        }
-
-        Log.d(TAG, "Got photo URL: $nextUrl")
-
-        views?.let { views ->
-            isTransitioning = true
-            try {
-                withContext(NonCancellable) {
-                    Glide.with(context)
-                        .load(nextUrl)
-                        .listener(object : RequestListener<Drawable> {
-                            override fun onLoadFailed(
-                                e: GlideException?,
-                                model: Any?,
-                                target: Target<Drawable>,
-                                isFirstResource: Boolean
-                            ): Boolean {
-                                Log.e(TAG, "Failed to load photo from URL: $nextUrl", e)
-                                isTransitioning = false
-                                _photoLoadingState.value = LoadingState.ERROR("Failed to load photo")
-                                return false
-                            }
-
-                            override fun onResourceReady(
-                                resource: Drawable,
-                                model: Any,
-                                target: Target<Drawable>,
-                                dataSource: DataSource,
-                                isFirstResource: Boolean
-                            ): Boolean {
-                                Log.d(TAG, "Photo loaded successfully from URL: $nextUrl")
-                                return false
-                            }
-                        })
-                        .error(android.R.drawable.ic_dialog_alert)
-                        .into(views.overlayView)
-
-                    views.overlayView.animate()
-                        .alpha(1f)
-                        .setDuration(transitionDuration)
-                        .withEndAction {
-                            Glide.with(context)
-                                .load(nextUrl)
-                                .error(android.R.drawable.ic_dialog_alert)
-                                .into(views.primaryView)
-                            views.overlayView.alpha = 0f
-                            currentPhotoIndex = nextIndex
-                            isTransitioning = false
-                            _photoLoadingState.value = LoadingState.SUCCESS
-
-                            lifecycleScope?.launch {
-                                val nextPreloadIndex = (nextIndex + 1) % photoCount
-                                photoManager.preloadNextPhoto(nextPreloadIndex)
-                            }
-                        }
-                        .start()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during photo transition", e)
-                isTransitioning = false
-                _photoLoadingState.value = LoadingState.ERROR("Transition failed: ${e.message}")
-            }
-        }
-    }
-
     private fun startTimeUpdates() {
+        val currentScope = lifecycleScope ?: return
         timeUpdateJob?.cancel()
-        timeUpdateJob = lifecycleScope?.launch {
-            while (true) {
+        timeUpdateJob = currentScope.launch {
+            while (isActive) {
                 updateTimeDisplay()
                 delay(1000)
             }
@@ -309,16 +325,20 @@ class PhotoDisplayManager @Inject constructor(
 
     private fun updateTimeDisplay() {
         val now = System.currentTimeMillis()
-        views?.let { views ->
+        views?.apply {
             if (showClock) {
-                views.clockView?.text = SimpleDateFormat("HH:mm", Locale.getDefault())
-                    .format(Date(now))
+                clockView?.text = timeFormat.format(now)
             }
             if (showDate) {
-                views.dateView?.text = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault())
-                    .format(Date(now))
+                dateView?.text = dateFormat.format(now)
             }
         }
+    }
+
+    fun stopPhotoDisplay() {
+        Log.d(TAG, "Stopping photo display")
+        displayJob?.cancel()
+        displayJob = null
     }
 
     fun cleanup() {
@@ -330,5 +350,9 @@ class PhotoDisplayManager @Inject constructor(
         views = null
         lifecycleScope = null
         _photoLoadingState.value = LoadingState.IDLE
+    }
+
+    companion object {
+        private const val TAG = "PhotoDisplayManager"
     }
 }

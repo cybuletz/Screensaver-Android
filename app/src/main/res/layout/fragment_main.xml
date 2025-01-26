@@ -1,125 +1,124 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:animateLayoutChanges="true">
 
-    <!-- Moved FrameLayout first in hierarchy -->
+    <!-- WebView Container -->
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"/>
+
+    <!-- Screensaver Container -->
     <FrameLayout
         android:id="@+id/screensaverContainer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/screensaverReadyCard"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        android:visibility="visible"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/previewButton">
 
-        <!-- Primary Photo View -->
         <ImageView
             android:id="@+id/photoPreview"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
-            android:contentDescription="@string/photo_preview_description" />
+            android:contentDescription="@string/photo_description"/>
 
-        <!-- Transition Overlay Photo View -->
         <ImageView
             android:id="@+id/photoPreviewOverlay"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
             android:alpha="0"
-            android:contentDescription="@string/photo_preview_transition_description" />
+            android:contentDescription="@string/photo_overlay_description"/>
 
-        <!-- Information Overlay Container -->
-        <androidx.constraintlayout.widget.ConstraintLayout
-            android:id="@+id/infoOverlayContainer"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent">
+        <!-- Info Overlay Container -->
+        <LinearLayout
+            android:id="@+id/infoContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:layout_margin="16dp"
+            android:background="@drawable/info_background"
+            android:elevation="4dp">
 
-            <!-- Clock Overlay -->
             <TextView
                 android:id="@+id/clockOverlay"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="16dp"
                 android:textColor="@android:color/white"
                 android:textSize="48sp"
                 android:shadowColor="@android:color/black"
-                android:shadowDx="2"
-                android:shadowDy="2"
-                android:shadowRadius="4"
+                android:shadowRadius="3"
+                android:shadowDx="1"
+                android:shadowDy="1"
                 android:visibility="gone"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                android:includeFontPadding="false"
+                android:lineSpacingExtra="0dp"
+                tools:text="12:34"/>
 
-            <!-- Date Overlay -->
             <TextView
                 android:id="@+id/dateOverlay"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="16dp"
                 android:textColor="@android:color/white"
-                android:textSize="18sp"
+                android:textSize="24sp"
                 android:shadowColor="@android:color/black"
+                android:shadowRadius="2"
                 android:shadowDx="1"
                 android:shadowDy="1"
-                android:shadowRadius="2"
                 android:visibility="gone"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/clockOverlay" />
+                android:layout_marginTop="4dp"
+                android:includeFontPadding="false"
+                android:lineSpacingExtra="0dp"
+                tools:text="January 26, 2025"/>
 
-            <!-- Location Overlay -->
             <TextView
                 android:id="@+id/locationOverlay"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="16dp"
                 android:textColor="@android:color/white"
                 android:textSize="16sp"
                 android:shadowColor="@android:color/black"
+                android:shadowRadius="2"
                 android:shadowDx="1"
                 android:shadowDy="1"
-                android:shadowRadius="2"
                 android:visibility="gone"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent" />
+                android:layout_marginTop="4dp"
+                android:includeFontPadding="false"
+                android:lineSpacingExtra="0dp"
+                tools:text="Location"/>
+        </LinearLayout>
 
-            <!-- Loading Indicator -->
-            <ProgressBar
-                android:id="@+id/loadingIndicator"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:visibility="gone"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
-        </androidx.constraintlayout.widget.ConstraintLayout>
+        <ProgressBar
+            android:id="@+id/loadingIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone"
+            android:indeterminateTint="@android:color/white"
+            android:elevation="5dp"/>
     </FrameLayout>
 
-    <WebView
-        android:id="@+id/webView"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:contentDescription="@string/web_content_description"
-        app:layout_constraintBottom_toTopOf="@id/screensaverReadyCard"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
+    <!-- Screensaver Ready Card -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/screensaverReadyCard"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
-        android:visibility="gone"
+        app:cardCornerRadius="8dp"
         app:cardElevation="4dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/previewButton">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -130,25 +129,26 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/screensaver_ready_title"
-                android:textAppearance="?attr/textAppearanceHeadline6" />
+                android:text="@string/screensaver_ready"
+                android:textAppearance="?attr/textAppearanceHeadline6"/>
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/screensaver_ready_description"
-                android:textAppearance="?attr/textAppearanceBody2" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/previewButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
-                android:layout_marginTop="16dp"
-                android:text="@string/preview_button_text" />
+                android:textAppearance="?attr/textAppearanceBody2"/>
         </LinearLayout>
-
     </com.google.android.material.card.MaterialCardView>
+
+    <!-- Preview Button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/previewButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:text="@string/preview_screensaver"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

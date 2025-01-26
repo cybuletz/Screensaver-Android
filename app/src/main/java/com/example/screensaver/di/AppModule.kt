@@ -7,7 +7,6 @@ import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.utils.NotificationHelper
 import com.example.screensaver.PhotoSourceState
 import com.example.screensaver.ui.PhotoDisplayManager
-import com.example.screensaver.lock.PhotoManager          // Updated import from lock package
 import com.example.screensaver.utils.PhotoLoadingManager
 import dagger.Module
 import dagger.Provides
@@ -18,6 +17,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import com.example.screensaver.lock.LockScreenPhotoManager
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -80,19 +80,18 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun providePhotoManager(
-        @ApplicationContext context: Context,
-        photoLoadingManager: PhotoLoadingManager
-    ): PhotoManager {
-        return PhotoManager(context, photoLoadingManager)
+    fun provideLockScreenPhotoManager(
+        @ApplicationContext context: Context
+    ): LockScreenPhotoManager {
+        return LockScreenPhotoManager(context)
     }
 
     @Provides
     @Singleton
     fun providePhotoDisplayManager(
-        photoManager: PhotoManager,
+        lockScreenPhotoManager: LockScreenPhotoManager,
         @ApplicationContext context: Context
     ): PhotoDisplayManager {
-        return PhotoDisplayManager(photoManager, context)
+        return PhotoDisplayManager(lockScreenPhotoManager, context)
     }
 }
