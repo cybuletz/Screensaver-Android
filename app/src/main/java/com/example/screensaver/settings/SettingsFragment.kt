@@ -12,13 +12,17 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.preference.*
 import com.example.screensaver.R
 import com.example.screensaver.AlbumSelectionActivity
-import com.example.screensaver.lock.PhotoLockActivity
 import com.example.screensaver.lock.PhotoLockDeviceAdmin
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.shared.GooglePhotosManager
+import com.example.screensaver.preview.PreviewActivity
+import com.example.screensaver.preview.PreviewViewModel
+import com.example.screensaver.preview.PreviewState
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -30,31 +34,49 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import javax.inject.Inject
 import android.content.pm.PackageManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.URLEncoder
-import android.os.Build
-import android.app.NotificationManager
-import android.app.NotificationChannel
+import com.example.screensaver.kiosk.KioskActivity
+import androidx.fragment.app.viewModels
+import com.example.screensaver.ui.PhotoDisplayManager
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import android.view.View
+import android.widget.FrameLayout
+import androidx.navigation.fragment.findNavController
+import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import androidx.coordinatorlayout.widget.CoordinatorLayout
+import android.view.Gravity
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
     @Inject
     lateinit var googlePhotosManager: GooglePhotosManager
 
+    @Inject
+    lateinit var photoDisplayManager: PhotoDisplayManager
+
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
     private var googleSignInClient: GoogleSignInClient? = null
+    private val previewViewModel: PreviewViewModel by viewModels()
 
     companion object {
         private const val TAG = "SettingsFragment"
         private const val DEFAULT_DISPLAY_MODE = "dream_service"
         private const val LOCK_SCREEN_MODE = "lock_screen"
+    }
+
+    class PreferenceFragment : PreferenceFragmentCompat() {
+        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+            setPreferencesFromResource(R.xml.preferences, rootKey)
+        }
     }
 
     // Device Admin result launcher
@@ -69,6 +91,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
             resetDisplayModePreference()
         }
     }
+
+
 
     // Google Sign-in result launcher
     private val signInLauncher = registerForActivityResult(
@@ -92,23 +116,150 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            // Load preferences in background
-            withContext(Dispatchers.IO) {
-                setPreferencesFromResource(R.xml.preferences, rootKey)
+    private fun setupPreferences(container: FrameLayout) {
+        childFragmentManager
+            .beginTransaction()
+            .replace(R.id.settings_container, PreferenceFragment())
+            .commit()
+    }
+
+    private fun saveSettings() {
+        // Save preferences
+        PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .edit()
+            .apply()
+
+        Toast.makeText(context, "Settings saved", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View {
+        val view = super.onCreateView(inflater, container, savedInstanceState)
+
+        // Create a CoordinatorLayout to wrap the preferences and FAB
+        val coordinator = CoordinatorLayout(requireContext()).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // Add the preferences view
+        coordinator.addView(view)
+
+        // Add the FAB
+        val fab = ExtendedFloatingActionButton(requireContext()).apply {
+            id = View.generateViewId()
+            text = getString(R.string.save_settings)
+            setIconResource(R.drawable.ic_save)
+            layoutParams = CoordinatorLayout.LayoutParams(
+                CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+                CoordinatorLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = resources.getDimensionPixelSize(R.dimen.fab_margin)
             }
-            // Setup UI on main thread
-            withContext(Dispatchers.Main) {
-                initializeDeviceAdmin()
-                setupPhotoSourcePreferences()
-                setupGoogleSignIn()
-                setupTestScreensaver()
-                setupDisplayModeSelection()
-                setupLockScreenPreview()
-                setupLockScreenStatus()
+            setOnClickListener {
+                saveSettings()
+                findNavController().navigateUp()
             }
         }
+        coordinator.addView(fab)
+
+        return coordinator
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        initializeDeviceAdmin()
+        setupPhotoDisplayManager()
+        setupPhotoSourcePreferences()
+        setupGoogleSignIn()
+        setupTestScreensaver()
+        setupDisplayModeSelection()
+        setupLockScreenPreview()
+        setupLockScreenStatus()
+        setupKioskModePreference()
+    }
+
+    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+        setPreferencesFromResource(R.xml.preferences, rootKey)
+    }
+
+    private fun setupPhotoDisplayManager() {
+        // Connect transition settings
+        findPreference<ListPreference>("transition_effect")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    transitionDuration = when(newValue as String) {
+                        "fade" -> 1000L
+                        "slide" -> 500L
+                        "zoom" -> 1500L
+                        else -> 1000L
+                    }
+                )
+                true
+            }
+        }
+
+        // Connect refresh interval settings
+        findPreference<ListPreference>("refresh_interval")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    photoInterval = (newValue.toString().toLong() * 1000)
+                )
+                true
+            }
+        }
+
+        // Connect clock display setting
+        findPreference<SwitchPreferenceCompat>("lock_screen_clock")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    showClock = newValue as Boolean
+                )
+                true
+            }
+        }
+
+        // Connect date display setting
+        findPreference<SwitchPreferenceCompat>("lock_screen_date")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    showDate = newValue as Boolean
+                )
+                true
+            }
+        }
+
+        // Connect random order setting
+        findPreference<SwitchPreferenceCompat>("random_order")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    isRandomOrder = newValue as Boolean
+                )
+                true
+            }
+        }
+
+        // Initialize PhotoDisplayManager with current settings
+        val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        photoDisplayManager.updateSettings(
+            transitionDuration = when(prefs.getString("transition_effect", "fade")) {
+                "fade" -> 1000L
+                "slide" -> 500L
+                "zoom" -> 1500L
+                else -> 1000L
+            },
+            photoInterval = (prefs.getString("refresh_interval", "300")?.toLong() ?: 300L) * 1000,
+            showClock = prefs.getBoolean("lock_screen_clock", true),
+            showDate = prefs.getBoolean("lock_screen_date", true),
+            isRandomOrder = prefs.getBoolean("random_order", true)
+        )
     }
 
     override fun onResume() {
@@ -155,11 +306,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
             when (displayMode) {
                 "dream_service" -> startScreensaver()
-                "lock_screen" -> {
-                    val intent = Intent(requireContext(), PhotoLockActivity::class.java)
-                    intent.putExtra("preview_mode", true)
-                    startActivity(intent)
-                }
+                "lock_screen" -> showLockScreenPreview()
             }
             true
         }
@@ -241,6 +388,66 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
             true
         }
+    }
+
+    private fun setupKioskModePreference() {
+        findPreference<SwitchPreferenceCompat>("kiosk_mode_enabled")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                handleKioskModeChange(newValue as Boolean)
+                true
+            }
+        }
+
+        findPreference<SeekBarPreference>("kiosk_exit_delay")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .edit()
+                    .putInt("kiosk_exit_delay", newValue as Int)
+                    .apply()
+                true
+            }
+        }
+    }
+
+    private fun handleKioskModeChange(enabled: Boolean) {
+        if (enabled) {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.pref_kiosk_mode_enabled_title)
+                .setMessage(R.string.kiosk_mode_warning)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    enableKioskMode()
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ ->
+                    // Reset the switch
+                    findPreference<SwitchPreferenceCompat>("kiosk_mode_enabled")?.isChecked = false
+                }
+                .show()
+        } else {
+            disableKioskMode()
+        }
+    }
+
+    private fun enableKioskMode() {
+        PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .edit()
+            .putBoolean("kiosk_mode_enabled", true)
+            .apply()
+
+        // Launch kiosk activity
+        KioskActivity.start(requireContext())
+
+        // Show feedback to user
+        showFeedback(R.string.kiosk_mode_enabled)
+    }
+
+    private fun disableKioskMode() {
+        PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .edit()
+            .putBoolean("kiosk_mode_enabled", false)
+            .apply()
+
+        // Show feedback to user
+        showFeedback(R.string.kiosk_mode_disabled)
     }
 
     private fun setupGoogleSignIn() {
@@ -333,6 +540,21 @@ class SettingsFragment : PreferenceFragmentCompat() {
             Toast.makeText(context, "Sign in failed: ${e.message}", Toast.LENGTH_SHORT).show()
             updateGooglePhotosState(false)
         }
+    }
+
+
+    private fun showKioskModeConfirmation() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.enable_kiosk_mode)
+            .setMessage(R.string.kiosk_mode_confirmation)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                enableKioskMode()
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ ->
+                // Reset the switch
+                findPreference<SwitchPreferenceCompat>("kiosk_mode_enabled")?.isChecked = false
+            }
+            .show()
     }
 
     private fun exchangeAuthCode(authCode: String, email: String) {
@@ -555,14 +777,60 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 showLockScreenPreview()
                 true
             }
+
+            // Move the viewLifecycleOwner observation to a separate method
+            observePreviewState(this)
+        }
+    }
+
+    private fun observePreviewState(preference: Preference) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                previewViewModel.previewState.collect { state ->
+                    when (state) {
+                        is PreviewState.Cooldown -> {
+                            preference.isEnabled = false
+                            preference.summary = getString(
+                                R.string.preview_cooldown_message,
+                                state.remainingSeconds
+                            )
+                        }
+                        is PreviewState.Error -> {
+                            preference.isEnabled = false
+                            preference.summary = state.message
+                        }
+                        is PreviewState.Initial -> {
+                            preference.isEnabled = true
+                            preference.summary = getString(
+                                R.string.preview_available_message,
+                                previewViewModel.getRemainingPreviews()
+                            )
+                        }
+                        is PreviewState.Available -> {
+                            preference.isEnabled = true
+                            preference.summary = getString(
+                                R.string.preview_available_message,
+                                state.remainingPreviews
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
     private fun showLockScreenPreview() {
         try {
-            Intent(requireContext(), PhotoLockActivity::class.java).apply {
-                putExtra("preview_mode", true)
-                startActivity(this)
+            if (previewViewModel.getRemainingPreviews() > 0) {
+                startActivity(Intent(requireContext(), PreviewActivity::class.java))
+            } else {
+                val timeUntilNext = previewViewModel.getTimeUntilNextPreviewAllowed()
+                view?.let { v ->
+                    Snackbar.make(v,
+                        getString(R.string.preview_cooldown_message, timeUntilNext / 1000),
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                }
             }
         } catch (e: Exception) {
             handleError("Error showing preview", e)
@@ -638,4 +906,19 @@ class SettingsFragment : PreferenceFragmentCompat() {
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
+
+    private fun showKioskModeConfirmationDialog() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.kiosk_mode_confirmation)
+            .setMessage(getString(R.string.kiosk_mode_confirmation_message))
+            .setPositiveButton(getString(R.string.confirm)) { dialog, _ ->
+                enableKioskMode()
+                dialog.dismiss()
+            }
+            .setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
 }

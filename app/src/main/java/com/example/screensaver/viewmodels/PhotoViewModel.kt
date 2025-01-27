@@ -29,7 +29,7 @@ import com.example.screensaver.utils.AppPreferences
 class PhotoViewModel @Inject constructor(
     application: Application,
     private val photosManager: GooglePhotosManager,
-    private val preferences: AppPreferences // Make sure AppPreferences is properly imported
+    private val preferences: AppPreferences
 ) : AndroidViewModel(application), RetryActionListener, OnPhotoLoadListener {
 
     private val _currentPhoto = MutableLiveData<MediaItem>()
@@ -93,6 +93,7 @@ class PhotoViewModel @Inject constructor(
     private var currentIndex = -1
     private val isActive = AtomicBoolean(false)
     private var retryCount = 0
+    private var isPreviewMode = false
 
     enum class LoadingState {
         IDLE, LOADING, SUCCESS, ERROR
@@ -156,7 +157,6 @@ class PhotoViewModel @Inject constructor(
             setDarkMode(darkMode)
         }
 
-        // Update local state
         _transitionDuration.value = transitionDuration
         _photoQuality.value = photoQuality
         _showClock.value = showClock
@@ -165,19 +165,10 @@ class PhotoViewModel @Inject constructor(
         _enableTransitions.value = enableTransitions
         _darkMode.value = darkMode
 
-        // Adjust photo changing interval if needed
-        if (isActive.get()) {
+        if (isActive.get() && !isPreviewMode) {
             photoChangeJob?.cancel()
             startPhotoChanging()
         }
-    }
-
-    fun navigateToAlbumSelection() {
-        // This will be handled by the Fragment
-    }
-
-    fun startPreview() {
-        // This will be handled by the Fragment
     }
 
     override fun onPhotoLoadComplete(success: Boolean) {
@@ -204,9 +195,10 @@ class PhotoViewModel @Inject constructor(
         }
     }
 
-    fun initialize(albums: List<Album>) {
+    fun initialize(albums: List<Album>, isPreview: Boolean = false) {
         viewModelScope.launch {
             try {
+                isPreviewMode = isPreview
                 _isLoading.value = true
                 _hasError.value = false
                 _loadingState.value = LoadingState.LOADING
@@ -214,7 +206,9 @@ class PhotoViewModel @Inject constructor(
 
                 if (photosManager.initialize()) {
                     loadMediaItems()
-                    startPhotoChanging()
+                    if (!isPreviewMode) {
+                        startPhotoChanging()
+                    }
                     _loadingState.value = LoadingState.SUCCESS
                 } else {
                     handleError("Failed to initialize photo manager", null)
@@ -232,13 +226,11 @@ class PhotoViewModel @Inject constructor(
             _isLoading.value = true
             mediaItems.clear()
 
-            _selectedAlbums.value.forEach { album ->
-                val allPhotos = photosManager.loadPhotos()
-                allPhotos?.filter { it.albumId == album.id }?.let { items ->
-                    // The items are already MediaItem objects, no conversion needed
-                    mediaItems.addAll(items)
-                }
-            }
+            // Load photos once and then filter for all albums
+            val allPhotos = photosManager.loadPhotos() ?: return
+            val selectedAlbumIds = _selectedAlbums.value.map { it.id }.toSet()
+
+            mediaItems.addAll(allPhotos.filter { it.albumId in selectedAlbumIds })
 
             if (mediaItems.isNotEmpty()) {
                 mediaItems.shuffle()
@@ -260,12 +252,13 @@ class PhotoViewModel @Inject constructor(
     }
 
     private fun startPhotoChanging() {
+        if (isPreviewMode) return // Don't auto-change photos in preview mode
+
         if (isActive.compareAndSet(false, true)) {
             photoChangeJob = viewModelScope.launch {
                 try {
                     while (isActive.get()) {
                         showNextPhoto()
-                        // Use transition duration from preferences
                         delay(preferences.getTransitionDuration() * 1000L)
                     }
                 } catch (e: CancellationException) {
@@ -331,12 +324,21 @@ class PhotoViewModel @Inject constructor(
         _showOverlay.value = show
     }
 
+    fun exitPreviewMode() {
+        isPreviewMode = false
+        stop()
+    }
+
     fun stop() {
         isActive.set(false)
         photoChangeJob?.cancel()
-        timeUpdateJob?.cancel()
+        if (!isPreviewMode) {
+            timeUpdateJob?.cancel()
+        }
         photoChangeJob = null
-        timeUpdateJob = null
+        if (!isPreviewMode) {
+            timeUpdateJob = null
+        }
     }
 
     override fun onCleared() {

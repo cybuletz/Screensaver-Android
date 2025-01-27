@@ -15,6 +15,23 @@
         <item>local</item>
     </string-array>
 
+    <!-- Kiosk Mode -->
+    <string-array name="kiosk_actions">
+        <item>Allow Settings Access</item>
+        <item>Allow Manual Photo Change</item>
+        <item>Allow Brightness Control</item>
+    </string-array>
+
+    <string-array name="kiosk_actions_values">
+        <item>settings</item>
+        <item>photo_change</item>
+        <item>brightness</item>
+    </string-array>
+
+    <string-array name="default_kiosk_actions">
+        <item>photo_change</item>
+    </string-array>
+
     <!-- Transition Effects -->
     <string-array name="transition_effects">
         <item>@string/transition_fade</item>

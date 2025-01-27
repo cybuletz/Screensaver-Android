@@ -15,6 +15,9 @@ import com.example.screensaver.interfaces.ThemeUpdateListener
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.utils.ErrorHandler
 import com.example.screensaver.viewmodels.PhotoViewModel
+import com.example.screensaver.preview.PreviewActivity
+import com.example.screensaver.preview.PreviewViewModel
+import com.example.screensaver.preview.PreviewState
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -22,7 +25,6 @@ import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import android.content.Intent
 import com.example.screensaver.AlbumSelectionActivity
-import com.example.screensaver.lock.PhotoLockActivity
 
 /**
  * Fragment for configuring screensaver settings
@@ -33,7 +35,8 @@ class DreamSettingsFragment : Fragment() {
     private var _binding: FragmentDreamSettingsBinding? = null
     private val binding get() = _binding!!
 
-    private val viewModel: PhotoViewModel by viewModels()
+    private val photoViewModel: PhotoViewModel by viewModels()
+    private val previewViewModel: PreviewViewModel by viewModels()
 
     @Inject
     lateinit var preferences: AppPreferences
@@ -70,7 +73,7 @@ class DreamSettingsFragment : Fragment() {
     }
 
     private fun setupUI() {
-        val currentSettings = viewModel.getCurrentSettings()
+        val currentSettings = photoViewModel.getCurrentSettings()
 
         binding.apply {
             sliderTransitionDuration.apply {
@@ -94,19 +97,64 @@ class DreamSettingsFragment : Fragment() {
             switchDarkMode.isChecked = currentSettings.darkMode
 
             sliderTransitionDuration.isEnabled = currentSettings.enableTransitions
+
+            // Update preview button initial state
+            updatePreviewButtonState(previewViewModel.getRemainingPreviews())
         }
     }
 
     private fun observeSettings() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.selectedAlbums.collect { albums ->
+                photoViewModel.selectedAlbums.collect { albums ->
                     binding.textSelectedAlbums.text = requireContext().resources.getQuantityString(
                         R.plurals.selected_albums_count,
                         albums.size,
                         albums.size
                     )
                 }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                previewViewModel.previewState.collect { state ->
+                    handlePreviewState(state)
+                }
+            }
+        }
+    }
+
+    private fun handlePreviewState(state: PreviewState) {
+        binding.buttonPreview.apply {
+            when (state) {
+                PreviewState.Initial -> {
+                    isEnabled = true
+                    setText(R.string.preview_button_text)
+                }
+                is PreviewState.Cooldown -> {
+                    isEnabled = false
+                    text = getString(R.string.preview_cooldown_message, state.remainingSeconds)
+                }
+                is PreviewState.Error -> {
+                    isEnabled = false
+                    text = state.message
+                }
+                is PreviewState.Available -> {
+                    isEnabled = true
+                    text = getString(R.string.preview_button_text_with_count, state.remainingPreviews)
+                }
+            }
+        }
+    }
+
+    private fun updatePreviewButtonState(remainingPreviews: Int) {
+        binding.buttonPreview.apply {
+            isEnabled = remainingPreviews > 0
+            text = if (remainingPreviews > 0) {
+                getString(R.string.preview_button_text_with_count, remainingPreviews)
+            } else {
+                getString(R.string.preview_cooldown_active)
             }
         }
     }
@@ -154,9 +202,13 @@ class DreamSettingsFragment : Fragment() {
             }
 
             buttonPreview.setOnClickListener {
-                startActivity(Intent(requireContext(), PhotoLockActivity::class.java).apply {
-                    putExtra("preview_mode", true)
-                })
+                if (previewViewModel.getRemainingPreviews() > 0) {
+                    startActivity(Intent(requireContext(), PreviewActivity::class.java))
+                } else {
+                    lifecycleScope.launch {
+                        errorHandler.handleError(IllegalStateException(getString(R.string.preview_limit_reached)), binding.root)
+                    }
+                }
             }
 
             buttonResetSettings.setOnClickListener {
@@ -167,7 +219,7 @@ class DreamSettingsFragment : Fragment() {
 
     private fun updatePreview() {
         binding.apply {
-            viewModel.updatePreviewSettings(
+            photoViewModel.updatePreviewSettings(
                 transitionDuration = sliderTransitionDuration.value.toInt(),
                 photoQuality = when (radioGroupQuality.checkedRadioButtonId) {
                     R.id.radioLowQuality -> MIN_PHOTO_QUALITY
@@ -184,7 +236,6 @@ class DreamSettingsFragment : Fragment() {
         }
     }
 
-
     private fun resetSettings() {
         binding.apply {
             sliderTransitionDuration.value = DEFAULT_TRANSITION_DURATION.toFloat()
@@ -197,7 +248,7 @@ class DreamSettingsFragment : Fragment() {
             switchDarkMode.isChecked = false
         }
 
-        viewModel.updatePreviewSettings(
+        photoViewModel.updatePreviewSettings(
             transitionDuration = DEFAULT_TRANSITION_DURATION,
             photoQuality = DEFAULT_PHOTO_QUALITY,
             randomOrder = true,

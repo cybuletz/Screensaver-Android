@@ -12,12 +12,15 @@ import com.example.screensaver.R
 import com.example.screensaver.utils.PreferenceKeys
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import com.example.screensaver.lock.PhotoLockScreenService
+import com.example.screensaver.kiosk.KioskPolicyManager
 
 /**
  * Device administrator receiver for handling lock screen permissions and management.
  */
-@AndroidEntryPoint
 class PhotoLockDeviceAdmin : DeviceAdminReceiver() {
+    @Inject
+    lateinit var kioskPolicyManager: KioskPolicyManager
 
     companion object {
         private const val TAG = "PhotoLockDeviceAdmin"
@@ -32,8 +35,13 @@ class PhotoLockDeviceAdmin : DeviceAdminReceiver() {
 
     override fun onEnabled(context: Context, intent: Intent) {
         super.onEnabled(context, intent)
-        handleAdminStateChange(context, true) {
-            "Device admin enabled successfully"
+
+        // If kiosk mode is enabled, set up kiosk policies
+        val isKioskEnabled = PreferenceManager.getDefaultSharedPreferences(context)
+            .getBoolean("kiosk_mode_enabled", false)
+
+        if (isKioskEnabled) {
+            KioskPolicyManager(context).setKioskPolicies(true)
         }
     }
 

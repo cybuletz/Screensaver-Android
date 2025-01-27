@@ -22,12 +22,45 @@
         android:alpha="0"
         android:contentDescription="@string/secondary_image_description" />
 
+    <!-- Preview Mode Overlay -->
+    <LinearLayout
+        android:id="@+id/previewOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="#80000000"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/previewNotice"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:text="@string/preview_mode"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:padding="8dp"/>
+
+        <TextView
+            android:id="@+id/previewInstructions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:text="@string/tap_to_exit_preview"
+            android:textColor="#CCCCCC"
+            android:textSize="14sp"
+            android:padding="4dp"/>
+    </LinearLayout>
+
     <!-- Debug Info -->
     <LinearLayout
         android:id="@+id/debugOverlay"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
+        android:layout_gravity="bottom|start"
         android:orientation="vertical"
         android:padding="8dp"
         android:background="#80000000">
@@ -49,6 +82,18 @@
             android:layout_marginTop="8dp"
             android:visibility="visible" />
     </LinearLayout>
+
+    <!-- Photo Count Indicator -->
+    <TextView
+        android:id="@+id/photoCountIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:padding="12dp"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:background="#40000000"
+        android:visibility="gone"/>
 
     <ProgressBar
         android:id="@+id/loadingIndicator"

@@ -75,6 +75,11 @@ android {
         }
     }
 
+    lint {
+        baseline = file("lint-baseline.xml")
+        warning += "ProtectedPermissions"
+    }
+
     buildFeatures {
         dataBinding = true
         viewBinding = true
@@ -110,6 +115,8 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.databinding:databinding-runtime:8.1.4")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
+
 
     kapt("com.google.auto.value:auto-value:1.9")
     implementation("com.google.auto.value:auto-value-annotations:1.9")
@@ -157,6 +164,8 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics-ktx")
     implementation("com.google.firebase:firebase-crashlytics-ktx")
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
+    implementation("com.google.api:gax:2.19.5")
+
 
     // Google Photos Library
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")

@@ -38,6 +38,15 @@ data class Album(
             coverPhotoUrl = null,
             mediaItemsCount = 0
         )
+
+        fun createPreviewAlbum(id: String): Album = Album(
+            id = id,
+            title = DEFAULT_ALBUM_TITLE,
+            coverPhotoUrl = null,
+            mediaItemsCount = 0,
+            isSelected = true
+        )
+
     }
 
     init {

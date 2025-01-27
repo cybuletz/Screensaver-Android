@@ -51,8 +51,8 @@
 
         <Preference
             android:key="preview_lock_screen"
-            android:title="@string/pref_preview_lock_screen_title"
-            android:summary="@string/pref_preview_lock_screen_summary" />
+            android:title="@string/preview_lock_screen_title"
+            android:summary="@string/preview_lock_screen_summary" />
 
         <Preference
             android:key="lock_screen_status"
@@ -237,6 +237,35 @@
             android:key="view_logs"
             android:title="@string/pref_view_logs_title"
             android:summary="@string/pref_view_logs_summary" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_kiosk_mode"
+        android:key="kiosk_mode_settings">
+
+        <SwitchPreferenceCompat
+            android:key="kiosk_mode_enabled"
+            android:title="@string/pref_kiosk_mode_enabled_title"
+            android:summary="@string/pref_kiosk_mode_enabled_summary"
+            android:defaultValue="false" />
+
+        <SeekBarPreference
+            android:key="kiosk_exit_delay"
+            android:title="@string/pref_kiosk_exit_delay_title"
+            android:summary="@string/pref_kiosk_exit_delay_summary"
+            app:min="3"
+            android:max="15"
+            android:defaultValue="5"
+            app:dependency="kiosk_mode_enabled" />
+
+        <MultiSelectListPreference
+            android:key="kiosk_allowed_actions"
+            android:title="@string/pref_kiosk_allowed_actions_title"
+            android:summary="@string/pref_kiosk_allowed_actions_summary"
+            android:entries="@array/kiosk_actions"
+            android:entryValues="@array/kiosk_actions_values"
+            android:defaultValue="@array/default_kiosk_actions"
+            app:dependency="kiosk_mode_enabled" />
     </PreferenceCategory>
 
 </PreferenceScreen>

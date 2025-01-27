@@ -13,16 +13,23 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.preference.PreferenceManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.example.screensaver.R
 import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.PhotoLoadingManager
 import com.example.screensaver.models.MediaItem
+import com.example.screensaver.kiosk.KioskActivity
+import com.example.screensaver.kiosk.KioskPolicyManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import com.example.screensaver.PhotoSourceState
+import com.example.screensaver.lock.LockScreenPhotoManager
+import kotlinx.coroutines.*
+import com.example.screensaver.MainActivity
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -31,11 +38,20 @@ class PhotoLockScreenService : Service() {
     lateinit var photoLoadingManager: PhotoLoadingManager
 
     @Inject
-    lateinit var photoManager: GooglePhotosManager
+    lateinit var photoManager: LockScreenPhotoManager
+
+    @Inject
+    lateinit var kioskPolicyManager: KioskPolicyManager
+
+    @Inject
+    lateinit var photoSourceState: PhotoSourceState
+
+    private var isPreviewMode = false
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var isInitialized = false
     private var initializationJob: Job? = null
+    private var isKioskMode = false
 
     private val screenStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -51,6 +67,7 @@ class PhotoLockScreenService : Service() {
         private const val PRECACHE_COUNT = 5
         private const val NOTIFICATION_CHANNEL_ID = "lock_screen"
         private const val NOTIFICATION_ID = 1
+        private const val MIN_PREVIEW_INTERVAL = 5000L
     }
 
     override fun onCreate() {
@@ -58,7 +75,13 @@ class PhotoLockScreenService : Service() {
         Log.d(TAG, "Service created")
         createNotificationChannel()
         registerScreenReceiver()
+        checkKioskMode()
         initializeService()
+    }
+
+    private fun checkKioskMode() {
+        isKioskMode = PreferenceManager.getDefaultSharedPreferences(this)
+            .getBoolean("kiosk_mode_enabled", false)
     }
 
     private fun createNotificationChannel() {
@@ -77,9 +100,21 @@ class PhotoLockScreenService : Service() {
     }
 
     private fun startForegroundWithNotification() {
+        val title = when {
+            isPreviewMode -> "Preview Mode Active"
+            isKioskMode -> "Kiosk Mode Active"
+            else -> "Lock Screen Active"
+        }
+
+        val text = when {
+            isPreviewMode -> "Tap to exit preview mode"
+            isKioskMode -> "App running in kiosk mode"
+            else -> "Tap to return to lock screen"
+        }
+
         val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Lock Screen Active")
-            .setContentText("Tap to return to lock screen")
+            .setContentTitle(title)
+            .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -107,8 +142,12 @@ class PhotoLockScreenService : Service() {
 
     private fun handleScreenOff() {
         Log.d(TAG, "Screen turned off")
-        if (isInitialized) {
-            showLockScreen()
+        if (!isPreviewMode && isInitialized) {
+            if (isKioskMode) {
+                showKioskScreen()
+            } else {
+                showLockScreen()
+            }
         } else {
             initializeService()
         }
@@ -118,6 +157,9 @@ class PhotoLockScreenService : Service() {
         Log.d(TAG, "User unlocked device")
         serviceScope.launch {
             try {
+                if (isKioskMode && !isPreviewMode) {
+                    showKioskScreen()
+                }
                 precachePhotos()
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling user present", e)
@@ -129,19 +171,20 @@ class PhotoLockScreenService : Service() {
         initializationJob?.cancel()
         initializationJob = serviceScope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    // First check if we have tokens
-                    if (!photoManager.hasValidTokens()) {
-                        Log.d(TAG, "No valid tokens available, waiting for authentication")
-                        return@withContext
-                    }
+                val photoCount = photoManager.getPhotoCount()
+                Log.d(TAG, "Initial photo count: $photoCount")
 
-                    if (photoManager.initialize() && photoManager.loadPhotos()?.isNotEmpty() == true) {
+                if (photoCount > 0) {
+                    isInitialized = true
+                    precachePhotos()
+                } else {
+                    Log.w(TAG, "No photos available, checking if photos can be loaded")
+                    val loadedPhotos = photoManager.loadPhotos()
+                    if (loadedPhotos != null && loadedPhotos.isNotEmpty()) {
                         isInitialized = true
                         precachePhotos()
-                        Log.d(TAG, "Service initialized successfully")
                     } else {
-                        Log.e(TAG, "Failed to initialize photo manager")
+                        Log.w(TAG, "No photos available after loading attempt")
                     }
                 }
             } catch (e: Exception) {
@@ -159,14 +202,20 @@ class PhotoLockScreenService : Service() {
     }
 
     private suspend fun precachePhotos() {
-        if (!isInitialized) return
+        if (!isInitialized) {
+            Log.d(TAG, "Skipping precache - not initialized")
+            return
+        }
 
         withContext(Dispatchers.IO) {
             try {
                 val photoCount = photoManager.getPhotoCount()
+                Log.d(TAG, "Starting precache with $photoCount available photos")
+
                 when {
                     photoCount > 0 -> {
-                        repeat(minOf(PRECACHE_COUNT, photoCount)) { index ->
+                        val countToPreload = minOf(PRECACHE_COUNT, photoCount)
+                        repeat(countToPreload) { index ->
                             photoManager.getPhotoUrl(index)?.let { url ->
                                 val mediaItem = MediaItem(
                                     id = index.toString(),
@@ -179,10 +228,10 @@ class PhotoLockScreenService : Service() {
                                 photoLoadingManager.preloadPhoto(mediaItem)
                             }
                         }
-                        Log.d(TAG, "Precached $PRECACHE_COUNT photos")
+                        Log.d(TAG, "Precached $countToPreload photos")
                     }
                     else -> {
-                        Log.d(TAG, "No photos to precache")
+                        Log.d(TAG, "No photos available to precache")
                     }
                 }
             } catch (e: Exception) {
@@ -192,12 +241,66 @@ class PhotoLockScreenService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "Service start command received")
+        Log.d(TAG, "Service start command received: ${intent?.action}")
+
+        when (intent?.action) {
+            "CHECK_KIOSK_MODE" -> {
+                Log.d(TAG, "Checking kiosk mode status")
+                checkKioskMode()
+                if (isKioskMode && !isPreviewMode) {
+                    Log.d(TAG, "Kiosk mode active and not in preview - applying policies")
+                    kioskPolicyManager.setKioskPolicies(true)
+                    showKioskScreen()
+                }
+            }
+            "STOP_KIOSK" -> {
+                Log.d(TAG, "Stopping kiosk mode")
+                isKioskMode = false
+                kioskPolicyManager.setKioskPolicies(false)
+            }
+            "START_PREVIEW" -> {
+                Log.d(TAG, "Starting preview mode")
+                handlePreviewStart()
+            }
+            "STOP_PREVIEW" -> {
+                Log.d(TAG, "Stopping preview mode")
+                handlePreviewStop()
+            }
+            "AUTH_UPDATED" -> {
+                Log.d(TAG, "Auth updated, photo count: ${photoManager.getPhotoCount()}")
+                isInitialized = false  // Reset initialization state
+                initializeService()    // Initialize service to load photos
+                // Removed showLockScreen() as we want photos to show in main view
+                showMainScreen()  // Show main screen instead of lock screen
+            }
+        }
+
         startForegroundWithNotification()
 
-        // Only try to initialize if we're not already initialized
         if (!isInitialized) {
-            initializeService()
+            Log.d(TAG, "Service not initialized, starting initialization")
+            serviceScope.launch {
+                try {
+                    initializeService()
+                    val photoCount = photoManager.getPhotoCount()
+                    Log.d(TAG, "Service initialized, photo count: $photoCount")
+                    if (photoCount == 0) {
+                        Log.d(TAG, "No photos available, attempting to load")
+                        serviceScope.launch {
+                            photoManager.loadPhotos()?.let { photos ->
+                                if (photos.isNotEmpty()) {
+                                    Log.d(TAG, "Successfully loaded ${photos.size} photos")
+                                    precachePhotos()
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during service initialization", e)
+                }
+            }
+        } else {
+            Log.d(TAG, "Service already initialized, photo count: ${photoManager.getPhotoCount()}")
         }
 
         return START_STICKY
@@ -207,6 +310,23 @@ class PhotoLockScreenService : Service() {
         if (!isInitialized) {
             initializeService()
         }
+    }
+
+    private fun handlePreviewStart() {
+        if (canStartPreview()) {
+            isPreviewMode = true
+            photoSourceState.recordPreviewStarted()
+            showLockScreen(true)
+        }
+    }
+
+    private fun handlePreviewStop() {
+        isPreviewMode = false
+        startForegroundWithNotification()
+    }
+
+    private fun canStartPreview(): Boolean {
+        return photoSourceState.getTimeSinceLastPreview() > MIN_PREVIEW_INTERVAL
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -229,25 +349,60 @@ class PhotoLockScreenService : Service() {
         photoManager.cleanup()
         isInitialized = false
 
+        if (isKioskMode) {
+            kioskPolicyManager.setKioskPolicies(false)
+        }
+
+        isPreviewMode = false
         Glide.get(applicationContext).clearMemory()
     }
 
-    private fun showLockScreen() {
+    private fun showMainScreen() {
+        try {
+            val mainIntent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra("from_service", true)
+                putExtra("photos_ready", true)  // Add this line
+            }
+            startActivity(mainIntent)
+            Log.d(TAG, "Main activity started with photos_ready flag")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing main screen", e)
+        }
+    }
+
+    private fun showLockScreen(isPreview: Boolean = false) {
         try {
             val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            if (!keyguardManager.isKeyguardLocked) {
+            if (!keyguardManager.isKeyguardLocked || isPreview) {
                 val lockIntent = Intent(this, PhotoLockActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     putExtra("from_service", true)
+                    putExtra("preview_mode", isPreview)
                 }
                 startActivity(lockIntent)
-                Log.d(TAG, "Lock screen activity started")
+                Log.d(TAG, "Lock screen activity started (Preview: $isPreview)")
             } else {
                 Log.d(TAG, "Device already locked")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error showing lock screen", e)
+        }
+    }
+
+    private fun showKioskScreen() {
+        try {
+            val kioskIntent = Intent(this, KioskActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra("from_service", true)
+            }
+            startActivity(kioskIntent)
+            Log.d(TAG, "Kiosk activity started")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing kiosk screen", e)
         }
     }
 }

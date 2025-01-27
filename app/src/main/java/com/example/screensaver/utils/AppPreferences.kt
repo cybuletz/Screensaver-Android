@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
@@ -29,6 +28,7 @@ class AppPreferences @Inject constructor(context: Context) {
             PREF_SHOW_CLOCK -> _showClockFlow.value = isShowClock()
             PREF_CLOCK_FORMAT -> _clockFormatFlow.value = getClockFormat()
             PREF_SELECTED_ALBUMS -> _selectedAlbumsFlow.value = getSelectedAlbumIds()
+            PREF_KIOSK_MODE_ENABLED -> _kioskModeEnabledFlow.value = isKioskModeEnabled()
         }
     }
 
@@ -40,6 +40,11 @@ class AppPreferences @Inject constructor(context: Context) {
     private val _showClockFlow = MutableStateFlow(isShowClock())
     private val _clockFormatFlow = MutableStateFlow(getClockFormat())
     private val _selectedAlbumsFlow = MutableStateFlow(getSelectedAlbumIds())
+    private val _kioskModeEnabledFlow = MutableStateFlow(isKioskModeEnabled())
+
+    private val _previewCountFlow = MutableStateFlow(getPreviewCount())
+    val previewCountFlow = _previewCountFlow.asStateFlow()
+
 
     // Public flows
     val displayModeFlow = _displayModeFlow.asStateFlow()
@@ -49,6 +54,7 @@ class AppPreferences @Inject constructor(context: Context) {
     val showClockFlow = _showClockFlow.asStateFlow()
     val clockFormatFlow = _clockFormatFlow.asStateFlow()
     val selectedAlbumsFlow = _selectedAlbumsFlow.asStateFlow()
+    val kioskModeEnabledFlow = _kioskModeEnabledFlow.asStateFlow()
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
@@ -78,6 +84,15 @@ class AppPreferences @Inject constructor(context: Context) {
         private const val PREF_SHOW_DATE = "show_date"
         private const val PREF_ENABLE_TRANSITIONS = "enable_transitions"
         private const val PREF_DARK_MODE = "dark_mode"
+        private const val PREF_KIOSK_MODE_ENABLED = "kiosk_mode_enabled"
+        private const val PREF_KIOSK_SETTINGS_TIMEOUT = "kiosk_settings_timeout"
+
+        private const val PREF_PREVIEW_COOLDOWN = "preview_cooldown"
+        private const val PREF_PREVIEW_COUNT = "preview_count"
+        private const val PREF_LAST_PREVIEW = "last_preview_timestamp"
+        private const val MAX_PREVIEW_COUNT = 5
+        private const val PREVIEW_COOLDOWN_DURATION = 3600000L
+
     }
 
     enum class DisplayMode {
@@ -90,6 +105,58 @@ class AppPreferences @Inject constructor(context: Context) {
 
     enum class ClockFormat {
         FORMAT_12H, FORMAT_24H
+    }
+
+    fun getLong(key: String, defaultValue: Long): Long = prefs.getLong(key, defaultValue)
+
+    fun getInt(key: String, defaultValue: Int): Int = prefs.getInt(key, defaultValue)
+
+    fun edit(operation: SharedPreferences.Editor.() -> Unit) {
+        prefs.edit().apply {
+            operation()
+            apply()
+        }
+    }
+
+    fun getPreviewCount(): Int = prefs.getInt(PREF_PREVIEW_COUNT, 0)
+
+    fun getRemainingPreviews(): Int = MAX_PREVIEW_COUNT - getPreviewCount()
+
+    fun canStartPreview(): Boolean {
+        val lastPreview = prefs.getLong(PREF_LAST_PREVIEW, 0)
+        val currentTime = System.currentTimeMillis()
+        val timeSinceLastPreview = currentTime - lastPreview
+
+        return getPreviewCount() < MAX_PREVIEW_COUNT ||
+                timeSinceLastPreview > PREVIEW_COOLDOWN_DURATION
+    }
+
+    fun recordPreviewStart() {
+        prefs.edit {
+            putInt(PREF_PREVIEW_COUNT, getPreviewCount() + 1)
+            putLong(PREF_LAST_PREVIEW, System.currentTimeMillis())
+        }
+        _previewCountFlow.value = getPreviewCount()
+    }
+
+    fun getTimeUntilNextPreviewAllowed(): Long {
+        val lastPreview = prefs.getLong(PREF_LAST_PREVIEW, 0)
+        val currentTime = System.currentTimeMillis()
+        val timeSinceLastPreview = currentTime - lastPreview
+
+        return if (timeSinceLastPreview < PREVIEW_COOLDOWN_DURATION) {
+            PREVIEW_COOLDOWN_DURATION - timeSinceLastPreview
+        } else {
+            0L
+        }
+    }
+
+    fun resetPreviewCount() {
+        prefs.edit {
+            putInt(PREF_PREVIEW_COUNT, 0)
+            putLong(PREF_LAST_PREVIEW, 0)
+        }
+        _previewCountFlow.value = 0
     }
 
     // Display Mode
@@ -165,10 +232,14 @@ class AppPreferences @Inject constructor(context: Context) {
     }
 
     // Transition Animation
-    fun getTransitionAnimation(): TransitionAnimation =
-        TransitionAnimation.valueOf(
-            prefs.getString(PREF_TRANSITION_ANIMATION, DEFAULT_TRANSITION_ANIMATION)!!.uppercase()
-        )
+    fun getTransitionAnimation(): TransitionAnimation {
+        val prefValue = getString("transition_animation", "fade")
+        return when (prefValue?.lowercase()) {
+            "slide" -> TransitionAnimation.SLIDE
+            "zoom" -> TransitionAnimation.ZOOM
+            else -> TransitionAnimation.FADE
+        }
+    }
 
     fun setTransitionAnimation(animation: TransitionAnimation) {
         prefs.edit { putString(PREF_TRANSITION_ANIMATION, animation.name.lowercase()) }
@@ -243,12 +314,30 @@ class AppPreferences @Inject constructor(context: Context) {
             putBoolean(PREF_SHOW_DATE, true)
             putBoolean(PREF_ENABLE_TRANSITIONS, true)
             putBoolean(PREF_DARK_MODE, false)
+            putBoolean(PREF_KIOSK_MODE_ENABLED, false)
+            putInt(PREF_KIOSK_SETTINGS_TIMEOUT, 5)
         }
     }
 
-    /**
-     * Cleans up resources
-     */
+    // Kiosk Mode
+    fun isKioskModeEnabled(): Boolean =
+        prefs.getBoolean(PREF_KIOSK_MODE_ENABLED, false)
+
+    fun setKioskModeEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(PREF_KIOSK_MODE_ENABLED, enabled) }
+    }
+
+    fun getKioskSettingsTimeout(): Int =
+        prefs.getInt(PREF_KIOSK_SETTINGS_TIMEOUT, 5)
+
+    fun setKioskSettingsTimeout(seconds: Int) {
+        prefs.edit { putInt(PREF_KIOSK_SETTINGS_TIMEOUT, seconds) }
+    }
+
+    fun getString(key: String, defaultValue: String): String {
+        return prefs.getString(key, defaultValue) ?: defaultValue
+    }
+
     fun cleanup() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefsChangeListener)
     }
