@@ -6,52 +6,57 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Photo Container with proper z-ordering -->
+    <!-- Navigation Host Fragment -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/nav_host_fragment"
+        android:name="androidx.navigation.fragment.NavHostFragment"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:defaultNavHost="true"
+        app:layout_constraintBottom_toTopOf="@+id/bottom_navigation"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:navGraph="@navigation/nav_graph" />
+
+    <!-- WebView for non-photo content -->
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@+id/bottom_navigation"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"/>
+
+    <!-- Screensaver Container -->
     <FrameLayout
-        android:id="@+id/photoContainer"
+        android:id="@+id/screensaverContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:visibility="visible"
-        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toTopOf="@+id/bottom_navigation"
-        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        android:elevation="0dp">
-
-        <TextView
-            android:id="@+id/loadingMessage"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:textColor="@android:color/white"
-            android:textSize="16sp"
-            android:padding="16dp"
-            android:background="@android:color/transparent"
-            android:visibility="gone"
-            android:elevation="5dp"
-            android:shadowColor="@android:color/black"
-            android:shadowRadius="2"
-            android:shadowDx="1"
-            android:shadowDy="1"/>
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
 
         <ImageView
-            android:id="@+id/primaryImageView"
+            android:id="@+id/photoPreview"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
-            android:visibility="visible"
-            android:contentDescription="@string/photo_description"/>
+            android:contentDescription="@string/photo_preview_description"/>
 
         <ImageView
-            android:id="@+id/overlayImageView"
+            android:id="@+id/photoPreviewOverlay"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"
             android:alpha="0"
-            android:visibility="visible"
-            android:contentDescription="@string/photo_overlay_description"/>
+            android:contentDescription="@string/photo_preview_transition_description"/>
 
-        <!-- Info Overlay Container with improved styling -->
+        <!-- Info Overlay Container -->
         <LinearLayout
             android:id="@+id/infoContainer"
             android:layout_width="wrap_content"
@@ -64,7 +69,7 @@
             android:elevation="4dp">
 
             <TextView
-                android:id="@+id/clockView"
+                android:id="@+id/clockOverlay"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@android:color/white"
@@ -74,12 +79,10 @@
                 android:shadowDx="1"
                 android:shadowDy="1"
                 android:visibility="gone"
-                android:includeFontPadding="false"
-                android:lineSpacingExtra="0dp"
                 tools:text="12:34"/>
 
             <TextView
-                android:id="@+id/dateView"
+                android:id="@+id/dateOverlay"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@android:color/white"
@@ -90,12 +93,10 @@
                 android:shadowDy="1"
                 android:visibility="gone"
                 android:layout_marginTop="4dp"
-                android:includeFontPadding="false"
-                android:lineSpacingExtra="0dp"
-                tools:text="January 26, 2025"/>
+                tools:text="January 27, 2025"/>
 
             <TextView
-                android:id="@+id/locationView"
+                android:id="@+id/locationOverlay"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@android:color/white"
@@ -106,42 +107,93 @@
                 android:shadowDy="1"
                 android:visibility="gone"
                 android:layout_marginTop="4dp"
-                android:includeFontPadding="false"
-                android:lineSpacingExtra="0dp"
                 tools:text="Location"/>
         </LinearLayout>
 
+        <!-- Loading Indicator -->
         <ProgressBar
             android:id="@+id/loadingIndicator"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:visibility="gone"
-            android:indeterminateTint="@android:color/white"
-            android:elevation="5dp"/>
+            android:indeterminateTint="@android:color/white"/>
+
+        <!-- Loading Message -->
+        <TextView
+            android:id="@+id/loadingMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:textColor="@android:color/white"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:visibility="gone"/>
+
+        <!-- Overlay Message Container -->
+        <FrameLayout
+            android:id="@+id/overlayMessageContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#80000000"
+            android:visibility="gone"
+            android:elevation="6dp">
+
+            <TextView
+                android:id="@+id/overlayMessageText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:padding="16dp"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:fontFamily="sans-serif-medium"
+                android:shadowColor="@android:color/black"
+                android:shadowRadius="2"
+                android:shadowDx="1"
+                android:shadowDy="1"/>
+        </FrameLayout>
     </FrameLayout>
 
-    <!-- Navigation Host Fragment -->
-    <androidx.fragment.app.FragmentContainerView
-        android:id="@+id/nav_host_fragment"
-        android:name="androidx.navigation.fragment.NavHostFragment"
+    <!-- Preview Controls -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/screensaverReadyCard"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        app:defaultNavHost="true"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
         app:layout_constraintBottom_toTopOf="@+id/bottom_navigation"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:navGraph="@navigation/nav_graph"
-        android:elevation="1dp"/>
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/screensaver_ready"
+                android:textAppearance="?attr/textAppearanceBody1"/>
+
+            <Button
+                android:id="@+id/previewButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/preview_screensaver"/>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- Bottom Navigation -->
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottom_navigation"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:background="?android:attr/windowBackground"
-        android:elevation="8dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

@@ -38,6 +38,11 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import android.view.View
 import kotlinx.coroutines.delay
+import android.widget.TextView
+import com.google.android.material.bottomnavigation.BottomNavigationView
+import androidx.navigation.ui.setupWithNavController
+
+
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -110,24 +115,25 @@ class MainActivity : AppCompatActivity() {
             try {
                 Log.d(TAG, "Initializing photo display manager")
                 val views = PhotoDisplayManager.Views(
-                    primaryView = binding.primaryImageView,
-                    overlayView = binding.overlayImageView,
-                    clockView = binding.clockView,
-                    dateView = binding.dateView,
-                    locationView = binding.locationView,
-                    loadingIndicator = binding.loadingIndicator,
-                    loadingMessage = binding.loadingMessage,  // Add the loadingMessage
-                    container = binding.photoContainer
+                    primaryView = findViewById(R.id.photoPreview),          // Changed
+                    overlayView = findViewById(R.id.photoPreviewOverlay),   // Changed
+                    clockView = findViewById(R.id.clockOverlay),            // Changed
+                    dateView = findViewById(R.id.dateOverlay),              // Changed
+                    locationView = findViewById(R.id.locationOverlay),      // Changed
+                    loadingIndicator = findViewById(R.id.loadingIndicator),
+                    loadingMessage = findViewById(R.id.loadingMessage),
+                    container = findViewById(R.id.screensaverContainer),    // Changed
+                    overlayMessageContainer = findViewById(R.id.overlayMessageContainer),
+                    overlayMessageText = findViewById(R.id.overlayMessageText)
                 )
 
                 // Initialize PhotoDisplayManager
                 photoDisplayManager.initialize(views, lifecycleScope)
 
-                // Rest of the method remains the same...
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing photo display manager", e)
-                binding.loadingIndicator.visibility = View.VISIBLE  // Remove ?
-                binding.loadingMessage.apply {  // Remove ?
+                findViewById<View>(R.id.loadingIndicator).visibility = View.VISIBLE
+                findViewById<TextView>(R.id.loadingMessage).apply {
                     text = e.message
                     visibility = View.VISIBLE
                 }
@@ -139,8 +145,9 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this) {
             val currentDestination = navController.currentDestination
             when (currentDestination?.id) {
-                R.id.nav_photos -> {
-                    val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
+                R.id.nav_photos -> {  // Changed from mainFragment to nav_photos
+                    val navHostFragment = supportFragmentManager
+                        .findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
                     val currentFragment = navHostFragment?.childFragmentManager?.fragments?.firstOrNull()
 
                     if (currentFragment is MainFragment && currentFragment.onBackPressed()) {
@@ -154,7 +161,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 else -> {
-                    navController.navigate(R.id.nav_photos)
+                    navController.navigate(R.id.nav_photos)  // Changed from mainFragment to nav_photos
                 }
             }
         }
@@ -172,14 +179,16 @@ class MainActivity : AppCompatActivity() {
             try {
                 Log.d(TAG, "Setting up photo display")
                 val views = PhotoDisplayManager.Views(
-                    primaryView = binding.primaryImageView,
-                    overlayView = binding.overlayImageView,
-                    clockView = binding.clockView,
-                    dateView = binding.dateView,
-                    locationView = binding.locationView,
+                    primaryView = binding.photoPreview,
+                    overlayView = binding.photoPreviewOverlay,
+                    clockView = binding.clockOverlay,         // Changed from clockView
+                    dateView = binding.dateOverlay,           // Changed from dateView
+                    locationView = binding.locationOverlay,   // Changed from locationView
                     loadingIndicator = binding.loadingIndicator,
-                    loadingMessage = binding.loadingMessage,  // Add this line
-                    container = binding.photoContainer
+                    loadingMessage = binding.loadingMessage,
+                    container = binding.screensaverContainer,
+                    overlayMessageContainer = binding.overlayMessageContainer,
+                    overlayMessageText = binding.overlayMessageText
                 )
 
                 // Initialize with loading state
@@ -211,7 +220,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in setupPhotoDisplay", e)
-                binding.loadingIndicator.visibility = View.GONE
+                binding.loadingIndicator?.visibility = View.GONE
             }
         }
     }
@@ -236,7 +245,11 @@ class MainActivity : AppCompatActivity() {
         val isMainScreen = destinationId == R.id.nav_photos
         Log.d(TAG, "Navigation destination: $destinationId, isMainScreen: $isMainScreen")
 
-        listOf(binding.photoContainer, binding.clockView, binding.dateView).forEach { view ->
+        listOf(
+            findViewById<View>(R.id.screensaverContainer),  // Changed
+            findViewById<View>(R.id.clockOverlay),          // Changed
+            findViewById<View>(R.id.dateOverlay)            // Changed
+        ).forEach { view ->
             updateViewVisibility(view, isMainScreen)
         }
     }
@@ -333,7 +346,8 @@ class MainActivity : AppCompatActivity() {
         _navController = navHostFragment.navController
 
         setupActionBarWithNavController(navController)
-        binding.bottomNavigation.setupWithNavController(navController)
+        findViewById<BottomNavigationView>(R.id.bottom_navigation)
+            .setupWithNavController(navController)
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             handleNavigationVisibility(destination.id)
@@ -352,7 +366,7 @@ class MainActivity : AppCompatActivity() {
                 return when (menuItem.itemId) {
                     R.id.action_settings -> {
                         try {
-                            navController.navigate(R.id.nav_settings)
+                            navController.navigate(R.id.nav_settings)  // This matches your nav_graph.xml
                             true
                         } catch (e: Exception) {
                             Log.e(TAG, "Error navigating to settings", e)
@@ -394,14 +408,16 @@ class MainActivity : AppCompatActivity() {
             try {
                 if (photoManager.getPhotoCount() > 0) {
                     val views = PhotoDisplayManager.Views(
-                        primaryView = binding.primaryImageView,
-                        overlayView = binding.overlayImageView,
-                        clockView = binding.clockView,
-                        dateView = binding.dateView,
-                        locationView = binding.locationView,
-                        loadingIndicator = binding.loadingIndicator,
-                        loadingMessage = binding.loadingMessage,  // Add this line
-                        container = binding.photoContainer
+                        primaryView = findViewById(R.id.photoPreview),          // Changed
+                        overlayView = findViewById(R.id.photoPreviewOverlay),   // Changed
+                        clockView = findViewById(R.id.clockOverlay),            // Changed
+                        dateView = findViewById(R.id.dateOverlay),              // Changed
+                        locationView = findViewById(R.id.locationOverlay),      // Changed
+                        loadingIndicator = findViewById(R.id.loadingIndicator),
+                        loadingMessage = findViewById(R.id.loadingMessage),
+                        container = findViewById(R.id.screensaverContainer),    // Changed
+                        overlayMessageContainer = findViewById(R.id.overlayMessageContainer),
+                        overlayMessageText = findViewById(R.id.overlayMessageText)
                     )
 
                     // Initialize if needed
@@ -418,7 +434,6 @@ class MainActivity : AppCompatActivity() {
                         )
                     }
 
-                    // Start the photo display
                     photoDisplayManager.startPhotoDisplay()
                     Log.d(TAG, "Photo display started with ${photoManager.getPhotoCount()} photos")
                 } else {

@@ -48,8 +48,10 @@ class PhotoDisplayManager @Inject constructor(
         val dateView: TextView?,
         val locationView: TextView?,
         val loadingIndicator: View?,
-        val loadingMessage: TextView?,  // Add this line
-        val container: View
+        val loadingMessage: TextView?,
+        val container: View,
+        val overlayMessageContainer: View?,  // New field
+        val overlayMessageText: TextView?    // New field
     )
 
     private var views: Views? = null
@@ -89,16 +91,15 @@ class PhotoDisplayManager @Inject constructor(
         views.overlayView.alpha = 0f
         _photoLoadingState.value = LoadingState.LOADING
 
-        // Show default photo immediately
-        showDefaultPhoto()
-
-        // Check for photos in the background
         val currentScope = scope
         currentScope.launch {
             try {
                 if (photoManager.getPhotoCount() > 0) {
+                    // If photos are already available, start display immediately
                     startPhotoDisplay()
                 } else {
+                    // Only show default photo and message if no photos are available
+                    showDefaultPhoto()
                     checkForPhotosInBackground()
                 }
             } catch (e: Exception) {
@@ -109,6 +110,60 @@ class PhotoDisplayManager @Inject constructor(
 
         setupPhotoManagerObserver()
         updateTimeDisplayVisibility()
+    }
+
+    fun showLoadingOverlay(message: String) {
+        views?.let { views ->
+            views.overlayMessageText?.text = message
+            views.overlayMessageContainer?.apply {
+                visibility = View.VISIBLE
+                alpha = 0f
+                animate()
+                    .alpha(1f)
+                    .setDuration(300)
+                    .start()
+            }
+        }
+    }
+
+    fun hideLoadingOverlay() {
+        views?.let { views ->
+            views.overlayMessageContainer?.animate()
+                ?.alpha(0f)
+                ?.setDuration(300)
+                ?.withEndAction {
+                    views.overlayMessageContainer?.visibility = View.GONE
+                }
+                ?.start()
+        }
+    }
+
+    private fun showDefaultPhotoWithLoadingMessage() {
+        views?.let { views ->
+            try {
+                // Show default photo
+                views.primaryView.post {
+                    views.primaryView.setImageResource(R.drawable.default_photo)
+                }
+
+                // Show overlay message with animation
+                views.overlayMessageContainer?.apply {
+                    visibility = View.VISIBLE
+                    alpha = 0f
+                    animate()
+                        .alpha(1f)
+                        .setDuration(300)
+                        .start()
+                }
+
+                views.overlayMessageText?.text = context.getString(R.string.loading_photos_friendly)
+
+                updateLoadingState(true)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error showing default photo with message", e)
+                updateLoadingState(false, context.getString(R.string.no_photos_message))
+            }
+        }
     }
 
     private fun checkForPhotosInBackground() {
@@ -226,43 +281,45 @@ class PhotoDisplayManager @Inject constructor(
                 val photoCount = photoManager.getPhotoCount()
                 Log.d(TAG, "Starting photo display with $photoCount photos")
 
-                if (photoCount == 0) {
-                    // Wait for photos to be available
-                    updateLoadingState(true, context.getString(R.string.loading_photos_message))
-                    if (!ensurePhotosLoaded()) {
-                        Log.w(TAG, "No photos available after waiting")
-                        updateLoadingState(false, context.getString(R.string.no_photos_message))
-                        _photoLoadingState.value = LoadingState.ERROR("No photos available")
-                        return@launch
+                if (photoCount > 0) {
+                    // Hide all messages before starting photo display
+                    hideAllMessages()
+
+                    // Initial photo display
+                    loadAndDisplayPhoto()
+
+                    while (isActive) {
+                        delay(photoInterval)
+                        val currentCount = photoManager.getPhotoCount()
+                        if (currentCount > 0) {
+                            loadAndDisplayPhoto()
+                        } else {
+                            Log.w(TAG, "No photos available during display loop")
+                            break
+                        }
                     }
-                }
-
-                // Show caching message while preparing first photo
-                updateLoadingState(true, context.getString(R.string.caching_photos_message))
-
-                // Initial photo display
-                loadAndDisplayPhoto()
-
-                // Hide loading state after first photo is displayed
-                updateLoadingState(false)
-
-                while (isActive) {
-                    delay(photoInterval)
-                    val currentCount = photoManager.getPhotoCount()
-                    if (currentCount > 0) {
-                        loadAndDisplayPhoto()
-                    } else {
-                        Log.w(TAG, "No photos available during display loop")
-                        break
-                    }
+                } else {
+                    showDefaultPhoto()
+                    Log.w(TAG, "No photos available to display")
+                    _photoLoadingState.value = LoadingState.ERROR("No photos available")
                 }
             } catch (e: Exception) {
                 if (e !is CancellationException) {
                     Log.e(TAG, "Error in photo display loop", e)
-                    updateLoadingState(false, e.message)
+                    showDefaultPhoto()
                 }
             }
         }
+    }
+
+    private fun hideLoadingMessage() {
+        views?.overlayMessageContainer?.animate()
+            ?.alpha(0f)
+            ?.setDuration(300)
+            ?.withEndAction {
+                views?.overlayMessageContainer?.visibility = View.GONE
+            }
+            ?.start()
     }
 
     private suspend fun loadAndDisplayPhoto() {
@@ -283,7 +340,55 @@ class PhotoDisplayManager @Inject constructor(
             isTransitioning = true
             try {
                 withContext(NonCancellable) {
-                    loadPhotoWithGlide(nextUrl, views)
+                    // Load into overlay view first
+                    withContext(Dispatchers.Main) {
+                        Glide.with(context)
+                            .load(nextUrl)
+                            .diskCacheStrategy(DiskCacheStrategy.ALL)
+                            .priority(Priority.IMMEDIATE)
+                            .listener(object : RequestListener<Drawable> {
+                                override fun onLoadFailed(
+                                    e: GlideException?,
+                                    model: Any?,
+                                    target: Target<Drawable>,
+                                    isFirstResource: Boolean
+                                ): Boolean {
+                                    Log.e(TAG, "Failed to load photo: $nextUrl", e)
+                                    isTransitioning = false
+                                    return false
+                                }
+
+                                override fun onResourceReady(
+                                    resource: Drawable,
+                                    model: Any,
+                                    target: Target<Drawable>,
+                                    dataSource: DataSource,
+                                    isFirstResource: Boolean
+                                ): Boolean {
+                                    // Successfully loaded, start transition
+                                    views.overlayView.alpha = 0f
+                                    views.overlayView.visibility = View.VISIBLE
+
+                                    views.overlayView.animate()
+                                        .alpha(1f)
+                                        .setDuration(transitionDuration)
+                                        .withEndAction {
+                                            // Copy to primary view and reset overlay
+                                            views.primaryView.setImageDrawable(resource)
+                                            views.overlayView.alpha = 0f
+                                            views.overlayView.visibility = View.INVISIBLE
+                                            isTransitioning = false
+                                            currentPhotoIndex = nextIndex
+                                        }
+                                        .start()
+                                    return false
+                                }
+                            })
+                            .into(views.overlayView)
+
+                        // Hide loading state if still showing
+                        hideLoadingOverlay()
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading photo", e)
@@ -384,15 +489,41 @@ class PhotoDisplayManager @Inject constructor(
     private fun showDefaultPhoto() {
         views?.let { views ->
             try {
-                // Direct loading without any delay
-                views.primaryView.post {
-                    views.primaryView.setImageResource(R.drawable.default_photo)
+                // Use Glide to load the default photo
+                Glide.with(context)
+                    .load(R.drawable.default_photo)
+                    .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                    .into(views.primaryView)
+
+                if (photoManager.getPhotoCount() == 0) {
+                    // Only show the message if there are no photos
+                    views.loadingMessage?.apply {
+                        text = context.getString(R.string.no_photo_source)
+                        visibility = View.VISIBLE
+                    }
+                } else {
+                    // Hide all messages if photos are available
+                    views.loadingMessage?.visibility = View.GONE
+                    views.overlayMessageContainer?.visibility = View.GONE
                 }
-                updateLoadingState(false, context.getString(R.string.no_photo_source))
+
+                // Always hide the loading indicator
+                views.loadingIndicator?.visibility = View.GONE
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading default photo", e)
-                updateLoadingState(false, context.getString(R.string.no_photos_message))
+                views.loadingMessage?.apply {
+                    text = context.getString(R.string.no_photos_message)
+                    visibility = View.VISIBLE
+                }
             }
+        }
+    }
+
+    private fun hideAllMessages() {
+        views?.apply {
+            loadingMessage?.visibility = View.GONE
+            loadingIndicator?.visibility = View.GONE
+            overlayMessageContainer?.visibility = View.GONE
         }
     }
 
