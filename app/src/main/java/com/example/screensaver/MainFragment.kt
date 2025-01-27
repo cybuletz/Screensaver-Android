@@ -121,6 +121,7 @@ class MainFragment : Fragment() {
                 dateView = binding.dateOverlay,
                 locationView = binding.locationOverlay,
                 loadingIndicator = binding.loadingIndicator,
+                loadingMessage = binding.loadingMessage,  // Add this line
                 container = binding.screensaverContainer
             ),
             viewLifecycleOwner.lifecycleScope

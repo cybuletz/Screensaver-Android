@@ -107,6 +107,25 @@
             android:visibility="gone"
             android:indeterminateTint="@android:color/white"
             android:elevation="5dp"/>
+
+        <TextView
+            android:id="@+id/loadingMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginTop="8dp"
+            android:textColor="@android:color/white"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:background="@android:color/transparent"
+            android:visibility="gone"
+            android:elevation="5dp"
+            android:shadowColor="@android:color/black"
+            android:shadowRadius="2"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:textAlignment="center"/>
+
     </FrameLayout>
 
     <!-- Screensaver Ready Card -->

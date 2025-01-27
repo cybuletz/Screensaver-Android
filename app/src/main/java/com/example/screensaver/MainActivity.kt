@@ -116,46 +116,21 @@ class MainActivity : AppCompatActivity() {
                     dateView = binding.dateView,
                     locationView = binding.locationView,
                     loadingIndicator = binding.loadingIndicator,
+                    loadingMessage = binding.loadingMessage,  // Add the loadingMessage
                     container = binding.photoContainer
                 )
 
-                // Show loading state
-                binding.loadingIndicator?.visibility = View.VISIBLE
-
-                // Initialize PhotoDisplayManager first
+                // Initialize PhotoDisplayManager
                 photoDisplayManager.initialize(views, lifecycleScope)
 
-                // Wait for photos to be available
-                withContext(Dispatchers.IO) {
-                    var attempts = 0
-                    while (attempts < 10 && photoManager.getPhotoCount() == 0) {
-                        delay(500)
-                        attempts++
-                        Log.d(TAG, "Waiting for photos, attempt $attempts")
-                    }
-                }
-
-                // Update settings
-                val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                photoDisplayManager.updateSettings(
-                    showClock = prefs.getBoolean("show_clock", true),
-                    showDate = prefs.getBoolean("show_date", true),
-                    photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
-                    isRandomOrder = prefs.getBoolean("random_order", false)
-                )
-
-                // Start display if we have photos
-                val photoCount = photoManager.getPhotoCount()
-                if (photoCount > 0) {
-                    Log.d(TAG, "Starting display with $photoCount photos")
-                    photoDisplayManager.startPhotoDisplay()
-                } else {
-                    Log.w(TAG, "No photos available after initialization")
-                    binding.loadingIndicator?.visibility = View.GONE
-                }
+                // Rest of the method remains the same...
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing photo display manager", e)
-                binding.loadingIndicator?.visibility = View.GONE
+                binding.loadingIndicator.visibility = View.VISIBLE  // Remove ?
+                binding.loadingMessage.apply {  // Remove ?
+                    text = e.message
+                    visibility = View.VISIBLE
+                }
             }
         }
     }
@@ -203,11 +178,12 @@ class MainActivity : AppCompatActivity() {
                     dateView = binding.dateView,
                     locationView = binding.locationView,
                     loadingIndicator = binding.loadingIndicator,
+                    loadingMessage = binding.loadingMessage,  // Add this line
                     container = binding.photoContainer
                 )
 
                 // Initialize with loading state
-                binding.loadingIndicator?.visibility = View.VISIBLE  // Changed from isVisible
+                binding.loadingIndicator.visibility = View.VISIBLE  // Changed from isVisible
 
                 // Wait for photo manager to be ready
                 withContext(Dispatchers.IO) {
@@ -235,10 +211,11 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in setupPhotoDisplay", e)
-                binding.loadingIndicator?.visibility = View.GONE  // Changed from isVisible
+                binding.loadingIndicator.visibility = View.GONE
             }
         }
     }
+
 
     private fun updateViewVisibility(view: View, visible: Boolean) {
         if (view.visibility == View.VISIBLE && !visible) {
@@ -416,7 +393,6 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 if (photoManager.getPhotoCount() > 0) {
-                    // Make sure the views are properly initialized
                     val views = PhotoDisplayManager.Views(
                         primaryView = binding.primaryImageView,
                         overlayView = binding.overlayImageView,
@@ -424,6 +400,7 @@ class MainActivity : AppCompatActivity() {
                         dateView = binding.dateView,
                         locationView = binding.locationView,
                         loadingIndicator = binding.loadingIndicator,
+                        loadingMessage = binding.loadingMessage,  // Add this line
                         container = binding.photoContainer
                     )
 

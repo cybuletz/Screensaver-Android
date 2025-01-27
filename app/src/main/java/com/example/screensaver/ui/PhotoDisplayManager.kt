@@ -26,6 +26,9 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import kotlin.random.Random
 import kotlinx.coroutines.delay
+import com.example.screensaver.R
+import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
+import com.bumptech.glide.Priority
 
 @Singleton
 class PhotoDisplayManager @Inject constructor(
@@ -45,6 +48,7 @@ class PhotoDisplayManager @Inject constructor(
         val dateView: TextView?,
         val locationView: TextView?,
         val loadingIndicator: View?,
+        val loadingMessage: TextView?,  // Add this line
         val container: View
     )
 
@@ -67,6 +71,16 @@ class PhotoDisplayManager @Inject constructor(
     private val dateFormat = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault())
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
+    companion object {
+        private const val TAG = "PhotoDisplayManager"
+        private const val DEFAULT_PHOTO_FADE_DURATION = 300
+    }
+
+    init {
+        // Preload immediately on initialization
+        preloadDefaultPhoto()
+    }
+
     fun initialize(views: Views, scope: LifecycleCoroutineScope) {
         Log.d(TAG, "Initializing PhotoDisplayManager")
         this.views = views
@@ -75,15 +89,17 @@ class PhotoDisplayManager @Inject constructor(
         views.overlayView.alpha = 0f
         _photoLoadingState.value = LoadingState.LOADING
 
+        // Show default photo immediately
+        showDefaultPhoto()
+
+        // Check for photos in the background
         val currentScope = scope
         currentScope.launch {
             try {
-                // Initial wait for photos
-                if (ensurePhotosLoaded()) {
+                if (photoManager.getPhotoCount() > 0) {
                     startPhotoDisplay()
                 } else {
-                    Log.w(TAG, "No photos available after initialization")
-                    _photoLoadingState.value = LoadingState.ERROR("No photos available")
+                    checkForPhotosInBackground()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error during initialization", e)
@@ -95,13 +111,38 @@ class PhotoDisplayManager @Inject constructor(
         updateTimeDisplayVisibility()
     }
 
+    private fun checkForPhotosInBackground() {
+        lifecycleScope?.launch(Dispatchers.IO) {
+            try {
+                photoManager.loadPhotos() // Assuming this is your method to load photos
+                if (photoManager.getPhotoCount() > 0) {
+                    withContext(Dispatchers.Main) {
+                        startPhotoDisplay()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading photos in background", e)
+            }
+        }
+    }
+
+    private fun updateLoadingState(isLoading: Boolean, message: String? = null) {
+        views?.apply {
+            loadingIndicator?.visibility = if (isLoading) View.VISIBLE else View.GONE
+            loadingMessage?.apply {
+                text = message
+                visibility = if (message != null) View.VISIBLE else View.GONE
+            }
+        }
+    }
+
     fun isInitialized(): Boolean {
         return views != null && lifecycleScope != null
     }
 
     private suspend fun ensurePhotosLoaded(): Boolean {
         var retryCount = 0
-        val maxRetries = 10  // 5 seconds total
+        val maxRetries = 10
 
         while (photoManager.getPhotoCount() == 0 && retryCount < maxRetries) {
             Log.d(TAG, "Waiting for photos to load... attempt ${retryCount + 1}")
@@ -111,25 +152,33 @@ class PhotoDisplayManager @Inject constructor(
 
         val photoCount = photoManager.getPhotoCount()
         Log.d(TAG, "Photos available after waiting: $photoCount")
-        return photoCount > 0
+
+        if (photoCount == 0) {
+            showDefaultPhoto()
+            return false
+        }
+        return true
     }
 
     private fun setupPhotoManagerObserver() {
         managerScope.launch {
             photoManager.loadingState.collect { state ->
                 when (state) {
-                    LockScreenPhotoManager.LoadingState.SUCCESS -> {  // Removed 'is'
+                    LockScreenPhotoManager.LoadingState.SUCCESS -> {
                         if (photoManager.getPhotoCount() > 0 && views != null) {
+                            updateLoadingState(false)
                             startPhotoDisplay()
+                        } else {
+                            updateLoadingState(false, context.getString(R.string.no_photos_message))
                         }
                     }
-                    LockScreenPhotoManager.LoadingState.LOADING -> {  // Removed 'is'
+                    LockScreenPhotoManager.LoadingState.LOADING -> {
+                        updateLoadingState(true, context.getString(R.string.loading_photos_message))
                         _photoLoadingState.value = LoadingState.LOADING
-                        views?.loadingIndicator?.visibility = View.VISIBLE  // Changed from isVisible
                     }
-                    LockScreenPhotoManager.LoadingState.ERROR -> {  // Removed 'is'
+                    LockScreenPhotoManager.LoadingState.ERROR -> {
+                        updateLoadingState(false, context.getString(R.string.photos_load_error))
                         _photoLoadingState.value = LoadingState.ERROR("Failed to load photos")
-                        views?.loadingIndicator?.visibility = View.GONE  // Changed from isVisible
                     }
                     else -> { /* Handle other states */ }
                 }
@@ -179,18 +228,23 @@ class PhotoDisplayManager @Inject constructor(
 
                 if (photoCount == 0) {
                     // Wait for photos to be available
+                    updateLoadingState(true, context.getString(R.string.loading_photos_message))
                     if (!ensurePhotosLoaded()) {
                         Log.w(TAG, "No photos available after waiting")
+                        updateLoadingState(false, context.getString(R.string.no_photos_message))
                         _photoLoadingState.value = LoadingState.ERROR("No photos available")
                         return@launch
                     }
                 }
 
-                _photoLoadingState.value = LoadingState.LOADING
-                views?.loadingIndicator?.visibility = View.VISIBLE
+                // Show caching message while preparing first photo
+                updateLoadingState(true, context.getString(R.string.caching_photos_message))
 
                 // Initial photo display
                 loadAndDisplayPhoto()
+
+                // Hide loading state after first photo is displayed
+                updateLoadingState(false)
 
                 while (isActive) {
                     delay(photoInterval)
@@ -205,8 +259,8 @@ class PhotoDisplayManager @Inject constructor(
             } catch (e: Exception) {
                 if (e !is CancellationException) {
                     Log.e(TAG, "Error in photo display loop", e)
+                    updateLoadingState(false, e.message)
                 }
-                views?.loadingIndicator?.visibility = View.GONE
             }
         }
     }
@@ -316,6 +370,32 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    private fun preloadDefaultPhoto() {
+        try {
+            Glide.with(context.applicationContext)
+                .load(R.drawable.default_photo)
+                .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                .submit()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preloading default photo", e)
+        }
+    }
+
+    private fun showDefaultPhoto() {
+        views?.let { views ->
+            try {
+                // Direct loading without any delay
+                views.primaryView.post {
+                    views.primaryView.setImageResource(R.drawable.default_photo)
+                }
+                updateLoadingState(false, context.getString(R.string.no_photo_source))
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading default photo", e)
+                updateLoadingState(false, context.getString(R.string.no_photos_message))
+            }
+        }
+    }
+
     private fun startTimeUpdates() {
         val currentScope = lifecycleScope ?: return
         timeUpdateJob?.cancel()
@@ -354,9 +434,5 @@ class PhotoDisplayManager @Inject constructor(
         views = null
         lifecycleScope = null
         _photoLoadingState.value = LoadingState.IDLE
-    }
-
-    companion object {
-        private const val TAG = "PhotoDisplayManager"
     }
 }

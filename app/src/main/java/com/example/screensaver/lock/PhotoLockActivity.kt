@@ -20,7 +20,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.GestureDetectorCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestManager
@@ -295,7 +294,7 @@ open class PhotoLockActivity : AppCompatActivity() {
 
     private fun loadDefaultBackground(imageView: ImageView) {
         if (!isDestroyed) {
-            glide.load(R.drawable.default_background)
+            glide.load(R.drawable.default_photo)
                 .into(imageView)
         }
     }
@@ -518,7 +517,7 @@ open class PhotoLockActivity : AppCompatActivity() {
     }
 
     private fun createGlideOptions() = RequestOptions().apply {
-        error(R.drawable.default_background)
+        error(R.drawable.default_photo)
         diskCacheStrategy(DiskCacheStrategy.ALL)
         format(if (isPowerSaving) DecodeFormat.PREFER_RGB_565 else DecodeFormat.PREFER_ARGB_8888)
         if (isPowerSaving) {
