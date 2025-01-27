@@ -184,6 +184,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent?.getBooleanExtra("photos_ready", false) == true) {
+            startPhotoDisplay()  // You'll need to implement this method
+        }
+    }
+
     private fun setupPhotoDisplay() {
         lifecycleScope.launch {
             try {
@@ -401,6 +409,48 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("OK") { _, _ -> requestKioskPermissions() }
             .setNegativeButton("Cancel") { _, _ -> disableKioskMode() }
             .show()
+    }
+
+    private fun startPhotoDisplay() {
+        Log.d(TAG, "Starting photo display from onNewIntent")
+        lifecycleScope.launch {
+            try {
+                if (photoManager.getPhotoCount() > 0) {
+                    // Make sure the views are properly initialized
+                    val views = PhotoDisplayManager.Views(
+                        primaryView = binding.primaryImageView,
+                        overlayView = binding.overlayImageView,
+                        clockView = binding.clockView,
+                        dateView = binding.dateView,
+                        locationView = binding.locationView,
+                        loadingIndicator = binding.loadingIndicator,
+                        container = binding.photoContainer
+                    )
+
+                    // Initialize if needed
+                    if (!photoDisplayManager.isInitialized()) {
+                        photoDisplayManager.initialize(views, lifecycleScope)
+
+                        // Update settings
+                        val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                        photoDisplayManager.updateSettings(
+                            showClock = prefs.getBoolean("show_clock", true),
+                            showDate = prefs.getBoolean("show_date", true),
+                            photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
+                            isRandomOrder = prefs.getBoolean("random_order", false)
+                        )
+                    }
+
+                    // Start the photo display
+                    photoDisplayManager.startPhotoDisplay()
+                    Log.d(TAG, "Photo display started with ${photoManager.getPhotoCount()} photos")
+                } else {
+                    Log.w(TAG, "No photos available to display")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting photo display", e)
+            }
+        }
     }
 
     private fun requestKioskPermissions() {

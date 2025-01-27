@@ -29,6 +29,7 @@ import kotlinx.coroutines.CancellationException
 import com.example.screensaver.PhotoSourceState
 import com.example.screensaver.lock.LockScreenPhotoManager
 import kotlinx.coroutines.*
+import com.example.screensaver.MainActivity
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -267,8 +268,10 @@ class PhotoLockScreenService : Service() {
             }
             "AUTH_UPDATED" -> {
                 Log.d(TAG, "Auth updated, photo count: ${photoManager.getPhotoCount()}")
-                isInitialized = false  // Force reinitialization on auth update
-                onAuthenticationUpdated()
+                isInitialized = false  // Reset initialization state
+                initializeService()    // Initialize service to load photos
+                // Removed showLockScreen() as we want photos to show in main view
+                showMainScreen()  // Show main screen instead of lock screen
             }
         }
 
@@ -352,6 +355,21 @@ class PhotoLockScreenService : Service() {
 
         isPreviewMode = false
         Glide.get(applicationContext).clearMemory()
+    }
+
+    private fun showMainScreen() {
+        try {
+            val mainIntent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra("from_service", true)
+                putExtra("photos_ready", true)  // Add this line
+            }
+            startActivity(mainIntent)
+            Log.d(TAG, "Main activity started with photos_ready flag")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing main screen", e)
+        }
     }
 
     private fun showLockScreen(isPreview: Boolean = false) {

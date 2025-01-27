@@ -95,6 +95,10 @@ class PhotoDisplayManager @Inject constructor(
         updateTimeDisplayVisibility()
     }
 
+    fun isInitialized(): Boolean {
+        return views != null && lifecycleScope != null
+    }
+
     private suspend fun ensurePhotosLoaded(): Boolean {
         var retryCount = 0
         val maxRetries = 10  // 5 seconds total
