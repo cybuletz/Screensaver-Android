@@ -5,24 +5,22 @@ import android.app.admin.DevicePolicyManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build
 import android.util.Log
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
+import android.view.*
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.MenuProvider
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
-import androidx.navigation.ui.NavigationUI
-import androidx.navigation.ui.setupActionBarWithNavController
-import androidx.navigation.ui.setupWithNavController
 import androidx.preference.PreferenceManager
 import com.example.screensaver.databinding.ActivityMainBinding
 import com.example.screensaver.kiosk.KioskActivity
@@ -33,14 +31,12 @@ import com.example.screensaver.ui.PhotoDisplayManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import android.view.View
-import kotlinx.coroutines.delay
-import android.widget.TextView
-import com.google.android.material.bottomnavigation.BottomNavigationView
-import androidx.navigation.ui.setupWithNavController
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.example.screensaver.ui.SettingsButtonController
 
 
 
@@ -50,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private val binding get() = _binding!!
     private var _navController: NavController? = null
     private val navController get() = _navController!!
+    private lateinit var settingsButtonController: SettingsButtonController
 
     @Inject
     lateinit var photoManager: LockScreenPhotoManager
@@ -61,6 +58,8 @@ class MainActivity : AppCompatActivity() {
     lateinit var photoDisplayManager: PhotoDisplayManager
 
     private var isDestroyed = false
+    private var lastBackPressTime: Long = 0
+    private val doubleBackPressInterval = 2000L
 
     private val viewLifecycleOwner: LifecycleOwner?
         get() = try {
@@ -88,8 +87,24 @@ class MainActivity : AppCompatActivity() {
         private const val KIOSK_PERMISSION_REQUEST_CODE = 1001
     }
 
+    private fun enableFullScreen() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableFullScreen()
 
         try {
             if (checkKioskMode()) {
@@ -99,9 +114,12 @@ class MainActivity : AppCompatActivity() {
             _binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
 
+            setupFullScreen()
             setupNavigation()
-            setupMenu()
-            initializePhotoDisplayManager() // New method call instead of setupPhotoDisplay
+            setupSettingsButton()
+            initializeClockAndDate()
+            setupTouchListener()
+            initializePhotoDisplayManager()
             startLockScreenService()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
@@ -110,30 +128,112 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupTouchListener() {
+        Log.d(TAG, "Setting up touch listeners")
+
+        binding.root.setOnClickListener {
+            Log.d(TAG, "Root view clicked, current destination: ${navController.currentDestination?.id}")
+            if (navController.currentDestination?.id == R.id.mainFragment) {
+                Log.d(TAG, "Showing settings button")
+                settingsButtonController.show()
+            }
+        }
+
+        binding.screensaverContainer.setOnClickListener {
+            Log.d(TAG, "Screensaver container clicked, current destination: ${navController.currentDestination?.id}")
+            if (navController.currentDestination?.id == R.id.mainFragment) {
+                Log.d(TAG, "Showing settings button")
+                settingsButtonController.show()
+            }
+        }
+    }
+
+    private fun setupSettingsButton() {
+        try {
+            Log.d(TAG, "Setting up settings button")
+            val settingsFab = binding.settingsButton.settingsFab
+
+            // Ensure proper initial state
+            settingsFab.apply {
+                visibility = View.VISIBLE
+                alpha = 0f
+                elevation = 6f
+                translationZ = 6f
+
+                // Add click listener
+                setOnClickListener {
+                    Log.d(TAG, "Settings button clicked")
+                    if (navController.currentDestination?.id == R.id.mainFragment) {
+                        navController.navigate(R.id.action_mainFragment_to_settingsFragment)
+                        settingsButtonController.hide()
+                    }
+                }
+            }
+
+            settingsButtonController = SettingsButtonController(settingsFab)
+
+            // Log initial state
+            Log.d(TAG, "Settings button initial state - visibility: ${settingsFab.visibility}, alpha: ${settingsFab.alpha}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up settings button", e)
+        }
+    }
+
+    private fun setupFullScreen() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let { controller ->
+                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    )
+        }
+    }
+
     private fun initializePhotoDisplayManager() {
         lifecycleScope.launch {
             try {
                 Log.d(TAG, "Initializing photo display manager")
                 val views = PhotoDisplayManager.Views(
-                    primaryView = findViewById(R.id.photoPreview),          // Changed
-                    overlayView = findViewById(R.id.photoPreviewOverlay),   // Changed
-                    clockView = findViewById(R.id.clockOverlay),            // Changed
-                    dateView = findViewById(R.id.dateOverlay),              // Changed
-                    locationView = findViewById(R.id.locationOverlay),      // Changed
-                    loadingIndicator = findViewById(R.id.loadingIndicator),
-                    loadingMessage = findViewById(R.id.loadingMessage),
-                    container = findViewById(R.id.screensaverContainer),    // Changed
-                    overlayMessageContainer = findViewById(R.id.overlayMessageContainer),
-                    overlayMessageText = findViewById(R.id.overlayMessageText)
+                    primaryView = binding.photoPreview,
+                    overlayView = binding.photoPreviewOverlay,
+                    clockView = binding.clockOverlay,
+                    dateView = binding.dateOverlay,
+                    locationView = binding.locationOverlay,
+                    loadingIndicator = binding.loadingIndicator,
+                    loadingMessage = binding.loadingMessage,
+                    container = binding.screensaverContainer,
+                    overlayMessageContainer = binding.overlayMessageContainer,
+                    overlayMessageText = binding.overlayMessageText
                 )
 
                 // Initialize PhotoDisplayManager
                 photoDisplayManager.initialize(views, lifecycleScope)
 
+                // Update settings
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                photoDisplayManager.updateSettings(
+                    showClock = prefs.getBoolean("show_clock", true),
+                    showDate = prefs.getBoolean("show_date", true),
+                    photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
+                    isRandomOrder = prefs.getBoolean("random_order", false)
+                )
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing photo display manager", e)
-                findViewById<View>(R.id.loadingIndicator).visibility = View.VISIBLE
-                findViewById<TextView>(R.id.loadingMessage).apply {
+                binding.loadingIndicator.visibility = View.VISIBLE
+                binding.loadingMessage.apply {
                     text = e.message
                     visibility = View.VISIBLE
                 }
@@ -141,29 +241,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupBackPressHandler() {
-        onBackPressedDispatcher.addCallback(this) {
-            val currentDestination = navController.currentDestination
-            when (currentDestination?.id) {
-                R.id.nav_photos -> {  // Changed from mainFragment to nav_photos
-                    val navHostFragment = supportFragmentManager
-                        .findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
-                    val currentFragment = navHostFragment?.childFragmentManager?.fragments?.firstOrNull()
+    private fun initializeClockAndDate() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val showClock = prefs.getBoolean("lock_screen_clock", true)
+        val showDate = prefs.getBoolean("lock_screen_date", true)
 
-                    if (currentFragment is MainFragment && currentFragment.onBackPressed()) {
-                        return@addCallback
-                    }
-                    if (isTaskRoot) {
-                        finish()
-                    } else {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
-                    }
-                }
-                else -> {
-                    navController.navigate(R.id.nav_photos)  // Changed from mainFragment to nav_photos
+        binding.clockOverlay.visibility = if (showClock) View.VISIBLE else View.GONE
+        binding.dateOverlay.visibility = if (showDate) View.VISIBLE else View.GONE
+
+        // Update PhotoDisplayManager settings
+        photoDisplayManager.updateSettings(
+            showClock = showClock,
+            showDate = showDate
+        )
+    }
+
+    override fun onBackPressed() {
+        when (navController.currentDestination?.id) {
+            R.id.settingsFragment -> {
+                navController.navigateUp()
+            }
+            R.id.mainFragment -> {
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastBackPressTime > doubleBackPressInterval) {
+                    lastBackPressTime = currentTime
+                    Toast.makeText(this, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                } else {
+                    super.onBackPressed()
                 }
             }
+            else -> super.onBackPressed()
         }
     }
 
@@ -173,58 +280,6 @@ class MainActivity : AppCompatActivity() {
             startPhotoDisplay()  // You'll need to implement this method
         }
     }
-
-    private fun setupPhotoDisplay() {
-        lifecycleScope.launch {
-            try {
-                Log.d(TAG, "Setting up photo display")
-                val views = PhotoDisplayManager.Views(
-                    primaryView = binding.photoPreview,
-                    overlayView = binding.photoPreviewOverlay,
-                    clockView = binding.clockOverlay,         // Changed from clockView
-                    dateView = binding.dateOverlay,           // Changed from dateView
-                    locationView = binding.locationOverlay,   // Changed from locationView
-                    loadingIndicator = binding.loadingIndicator,
-                    loadingMessage = binding.loadingMessage,
-                    container = binding.screensaverContainer,
-                    overlayMessageContainer = binding.overlayMessageContainer,
-                    overlayMessageText = binding.overlayMessageText
-                )
-
-                // Initialize with loading state
-                binding.loadingIndicator.visibility = View.VISIBLE  // Changed from isVisible
-
-                // Wait for photo manager to be ready
-                withContext(Dispatchers.IO) {
-                    var attempts = 0
-                    while (attempts < 6 && photoManager.getPhotoCount() == 0) {
-                        delay(500)
-                        attempts++
-                    }
-                }
-
-                photoDisplayManager.initialize(views, lifecycleScope)
-                Log.d(TAG, "PhotoDisplayManager initialized")
-
-                val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                photoDisplayManager.updateSettings(
-                    showClock = prefs.getBoolean("show_clock", true),
-                    showDate = prefs.getBoolean("show_date", true),
-                    photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
-                    isRandomOrder = prefs.getBoolean("random_order", false)
-                )
-
-                // Start display only if we have photos
-                if (photoManager.getPhotoCount() > 0) {
-                    photoDisplayManager.startPhotoDisplay()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in setupPhotoDisplay", e)
-                binding.loadingIndicator?.visibility = View.GONE
-            }
-        }
-    }
-
 
     private fun updateViewVisibility(view: View, visible: Boolean) {
         if (view.visibility == View.VISIBLE && !visible) {
@@ -242,13 +297,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleNavigationVisibility(destinationId: Int) {
-        val isMainScreen = destinationId == R.id.nav_photos
+        val isMainScreen = destinationId == R.id.mainFragment
         Log.d(TAG, "Navigation destination: $destinationId, isMainScreen: $isMainScreen")
 
         listOf(
-            findViewById<View>(R.id.screensaverContainer),  // Changed
-            findViewById<View>(R.id.clockOverlay),          // Changed
-            findViewById<View>(R.id.dateOverlay)            // Changed
+            binding.screensaverContainer,
+            binding.clockOverlay,
+            binding.dateOverlay
         ).forEach { view ->
             updateViewVisibility(view, isMainScreen)
         }
@@ -340,14 +395,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupNavigation() {
         val navHostFragment = supportFragmentManager
-            .findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
-            ?: throw IllegalStateException("Nav host fragment not found")
-
+            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         _navController = navHostFragment.navController
-
-        setupActionBarWithNavController(navController)
-        findViewById<BottomNavigationView>(R.id.bottom_navigation)
-            .setupWithNavController(navController)
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             handleNavigationVisibility(destination.id)
@@ -366,7 +415,7 @@ class MainActivity : AppCompatActivity() {
                 return when (menuItem.itemId) {
                     R.id.action_settings -> {
                         try {
-                            navController.navigate(R.id.nav_settings)  // This matches your nav_graph.xml
+                            navController.navigate(R.id.action_mainFragment_to_settingsFragment)
                             true
                         } catch (e: Exception) {
                             Log.e(TAG, "Error navigating to settings", e)
@@ -408,16 +457,16 @@ class MainActivity : AppCompatActivity() {
             try {
                 if (photoManager.getPhotoCount() > 0) {
                     val views = PhotoDisplayManager.Views(
-                        primaryView = findViewById(R.id.photoPreview),          // Changed
-                        overlayView = findViewById(R.id.photoPreviewOverlay),   // Changed
-                        clockView = findViewById(R.id.clockOverlay),            // Changed
-                        dateView = findViewById(R.id.dateOverlay),              // Changed
-                        locationView = findViewById(R.id.locationOverlay),      // Changed
-                        loadingIndicator = findViewById(R.id.loadingIndicator),
-                        loadingMessage = findViewById(R.id.loadingMessage),
-                        container = findViewById(R.id.screensaverContainer),    // Changed
-                        overlayMessageContainer = findViewById(R.id.overlayMessageContainer),
-                        overlayMessageText = findViewById(R.id.overlayMessageText)
+                        primaryView = binding.photoPreview,
+                        overlayView = binding.photoPreviewOverlay,
+                        clockView = binding.clockOverlay,
+                        dateView = binding.dateOverlay,
+                        locationView = binding.locationOverlay,
+                        loadingIndicator = binding.loadingIndicator,
+                        loadingMessage = binding.loadingMessage,
+                        container = binding.screensaverContainer,
+                        overlayMessageContainer = binding.overlayMessageContainer,
+                        overlayMessageText = binding.overlayMessageText
                     )
 
                     // Initialize if needed
@@ -498,6 +547,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        setupFullScreen()
         if (checkKioskMode()) {
             return
         }
@@ -521,6 +571,10 @@ class MainActivity : AppCompatActivity() {
                 withContext(NonCancellable) {
                     photoDisplayManager.cleanup()
                 }
+            }
+
+            if (::settingsButtonController.isInitialized) {
+                settingsButtonController.cleanup()
             }
 
             _binding = null

@@ -3,49 +3,59 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/nav_photos">
+    app:startDestination="@id/mainFragment">
 
     <fragment
-        android:id="@+id/nav_photos"
+        android:id="@+id/mainFragment"
         android:name="com.example.screensaver.MainFragment"
-        android:label="Photos"
+        android:label="Main"
         tools:layout="@layout/fragment_main">
         <action
-            android:id="@+id/action_nav_photos_to_nav_settings"
-            app:destination="@id/nav_settings"
-            app:enterAnim="@anim/nav_default_enter_anim"
-            app:exitAnim="@anim/nav_default_exit_anim"
-            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
-            app:popExitAnim="@anim/nav_default_pop_exit_anim" />
+            android:id="@+id/action_mainFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment"
+            app:enterAnim="@anim/slide_in_up"
+            app:exitAnim="@anim/slide_out_down"
+            app:popEnterAnim="@anim/slide_in_down"
+            app:popExitAnim="@anim/slide_out_up" />
     </fragment>
 
     <fragment
-        android:id="@+id/nav_settings"
+        android:id="@+id/settingsFragment"
         android:name="com.example.screensaver.settings.SettingsFragment"
         android:label="Settings"
         tools:layout="@layout/fragment_settings">
         <action
-            android:id="@+id/action_nav_settings_to_nav_photos"
-            app:destination="@id/nav_photos"
-            app:enterAnim="@anim/nav_default_enter_anim"
-            app:exitAnim="@anim/nav_default_exit_anim"
-            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
-            app:popExitAnim="@anim/nav_default_pop_exit_anim"
-            app:popUpTo="@id/nav_photos"
-            app:popUpToInclusive="true" />
-        <action
-            android:id="@+id/action_nav_settings_to_albumFragment"
+            android:id="@+id/action_settingsFragment_to_albumFragment"
             app:destination="@id/albumFragment"
-            app:enterAnim="@anim/nav_default_enter_anim"
-            app:exitAnim="@anim/nav_default_exit_anim"
-            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
-            app:popExitAnim="@anim/nav_default_pop_exit_anim" />
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
+        <action
+            android:id="@+id/action_settingsFragment_to_mainFragment"
+            app:destination="@id/mainFragment"
+            app:popUpTo="@id/mainFragment"
+            app:popUpToInclusive="true"
+            app:enterAnim="@anim/slide_in_down"
+            app:exitAnim="@anim/slide_out_up"
+            app:popEnterAnim="@anim/slide_in_up"
+            app:popExitAnim="@anim/slide_out_down" />
     </fragment>
 
-    <activity
+    <fragment
         android:id="@+id/albumFragment"
         android:name="com.example.screensaver.AlbumSelectionActivity"
         android:label="Albums"
-        tools:layout="@layout/activity_album_selection" />
+        tools:layout="@layout/activity_album_selection">
+        <action
+            android:id="@+id/action_albumFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment"
+            app:popUpTo="@id/settingsFragment"
+            app:popUpToInclusive="true"
+            app:enterAnim="@anim/slide_in_left"
+            app:exitAnim="@anim/slide_out_right"
+            app:popEnterAnim="@anim/slide_in_right"
+            app:popExitAnim="@anim/slide_out_left" />
+    </fragment>
 
 </navigation>

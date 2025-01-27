@@ -45,6 +45,14 @@ import android.content.pm.PackageManager
 import com.example.screensaver.kiosk.KioskActivity
 import androidx.fragment.app.viewModels
 import com.example.screensaver.ui.PhotoDisplayManager
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import android.view.View
+import android.widget.FrameLayout
+import androidx.navigation.fragment.findNavController
+import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import androidx.coordinatorlayout.widget.CoordinatorLayout
+import android.view.Gravity
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -63,6 +71,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
         private const val TAG = "SettingsFragment"
         private const val DEFAULT_DISPLAY_MODE = "dream_service"
         private const val LOCK_SCREEN_MODE = "lock_screen"
+    }
+
+    class PreferenceFragment : PreferenceFragmentCompat() {
+        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+            setPreferencesFromResource(R.xml.preferences, rootKey)
+        }
     }
 
     // Device Admin result launcher
@@ -102,23 +116,78 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.IO) {
-                setPreferencesFromResource(R.xml.preferences, rootKey)
+    private fun setupPreferences(container: FrameLayout) {
+        childFragmentManager
+            .beginTransaction()
+            .replace(R.id.settings_container, PreferenceFragment())
+            .commit()
+    }
+
+    private fun saveSettings() {
+        // Save preferences
+        PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .edit()
+            .apply()
+
+        Toast.makeText(context, "Settings saved", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View {
+        val view = super.onCreateView(inflater, container, savedInstanceState)
+
+        // Create a CoordinatorLayout to wrap the preferences and FAB
+        val coordinator = CoordinatorLayout(requireContext()).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // Add the preferences view
+        coordinator.addView(view)
+
+        // Add the FAB
+        val fab = ExtendedFloatingActionButton(requireContext()).apply {
+            id = View.generateViewId()
+            text = getString(R.string.save_settings)
+            setIconResource(R.drawable.ic_save)
+            layoutParams = CoordinatorLayout.LayoutParams(
+                CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+                CoordinatorLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = resources.getDimensionPixelSize(R.dimen.fab_margin)
             }
-            withContext(Dispatchers.Main) {
-                initializeDeviceAdmin()
-                setupPhotoDisplayManager()
-                setupPhotoSourcePreferences()
-                setupGoogleSignIn()
-                setupTestScreensaver()
-                setupDisplayModeSelection()
-                setupLockScreenPreview()
-                setupLockScreenStatus()
-                setupKioskModePreference()
+            setOnClickListener {
+                saveSettings()
+                findNavController().navigateUp()
             }
         }
+        coordinator.addView(fab)
+
+        return coordinator
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        initializeDeviceAdmin()
+        setupPhotoDisplayManager()
+        setupPhotoSourcePreferences()
+        setupGoogleSignIn()
+        setupTestScreensaver()
+        setupDisplayModeSelection()
+        setupLockScreenPreview()
+        setupLockScreenStatus()
+        setupKioskModePreference()
+    }
+
+    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+        setPreferencesFromResource(R.xml.preferences, rootKey)
     }
 
     private fun setupPhotoDisplayManager() {
@@ -709,30 +778,40 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 true
             }
 
-            // Observe preview state
-            viewLifecycleOwner.lifecycleScope.launch {
-                viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                    previewViewModel.previewState.collect { state ->
-                        when (state) {
-                            is PreviewState.Cooldown -> {
-                                isEnabled = false
-                                summary = getString(R.string.preview_cooldown_message,
-                                    state.remainingSeconds)
-                            }
-                            is PreviewState.Error -> {
-                                isEnabled = false
-                                summary = state.message
-                            }
-                            is PreviewState.Initial -> {
-                                isEnabled = true
-                                summary = getString(R.string.preview_available_message,
-                                    previewViewModel.getRemainingPreviews())
-                            }
-                            is PreviewState.Available -> {
-                                isEnabled = true
-                                summary = getString(R.string.preview_available_message,
-                                    state.remainingPreviews)
-                            }
+            // Move the viewLifecycleOwner observation to a separate method
+            observePreviewState(this)
+        }
+    }
+
+    private fun observePreviewState(preference: Preference) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                previewViewModel.previewState.collect { state ->
+                    when (state) {
+                        is PreviewState.Cooldown -> {
+                            preference.isEnabled = false
+                            preference.summary = getString(
+                                R.string.preview_cooldown_message,
+                                state.remainingSeconds
+                            )
+                        }
+                        is PreviewState.Error -> {
+                            preference.isEnabled = false
+                            preference.summary = state.message
+                        }
+                        is PreviewState.Initial -> {
+                            preference.isEnabled = true
+                            preference.summary = getString(
+                                R.string.preview_available_message,
+                                previewViewModel.getRemainingPreviews()
+                            )
+                        }
+                        is PreviewState.Available -> {
+                            preference.isEnabled = true
+                            preference.summary = getString(
+                                R.string.preview_available_message,
+                                state.remainingPreviews
+                            )
                         }
                     }
                 }

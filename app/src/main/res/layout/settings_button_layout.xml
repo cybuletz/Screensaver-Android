@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.floatingactionbutton.FloatingActionButton
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/settings_fab"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_gravity="center"
+    android:alpha="0"
+    android:visibility="visible"
+    android:contentDescription="@string/settings_button_description"
+    app:srcCompat="@drawable/ic_settings"
+    app:fabSize="normal"
+    app:tint="?attr/colorOnPrimary"
+    app:backgroundTint="?attr/colorPrimary"
+    app:elevation="6dp"
+    app:layout_anchorGravity="center"/>

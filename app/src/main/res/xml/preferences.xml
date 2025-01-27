@@ -268,5 +268,4 @@
             app:dependency="kiosk_mode_enabled" />
     </PreferenceCategory>
 
-
 </PreferenceScreen>
