@@ -181,6 +181,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // First restore state
+        restoreSettingsState()
+
+        // Then initialize all components
         initializeDeviceAdmin()
         setupPhotoDisplayManager()
         setupPhotoSourcePreferences()
@@ -190,6 +194,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setupLockScreenPreview()
         setupLockScreenStatus()
         setupKioskModePreference()
+
+        // Observe state changes
+        observeAppState()
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -221,25 +228,33 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun updatePreferencesFromState(state: AppDataState) {
+        // Update display mode
         findPreference<ListPreference>("display_mode_selection")?.value = state.displayMode
-        findPreference<SwitchPreferenceCompat>("show_clock")?.isChecked = state.showClock
-        findPreference<SwitchPreferenceCompat>("show_date")?.isChecked = state.showDate
 
-        // Update transition settings
-        findPreference<ListPreference>("transition_effect")?.value = state.transitionAnimation
-        findPreference<SeekBarPreference>("transition_interval")?.value = state.transitionInterval
-
-        // Update photo source settings
-        val photoSourceSelection = findPreference<MultiSelectListPreference>("photo_source_selection")
-        photoSourceSelection?.values = state.photoSources
+        // Update photo sources
+        findPreference<MultiSelectListPreference>("photo_source_selection")?.values = state.photoSources
 
         // Update Google Photos state
+        val googlePhotosCategory = findPreference<PreferenceCategory>("google_photos_settings")
         val useGooglePhotos = findPreference<SwitchPreferenceCompat>("google_photos_enabled")
-        useGooglePhotos?.isChecked = state.googlePhotosEnabled
+        val selectAlbums = findPreference<Preference>("select_albums")
 
-        // Update screensaver settings
-        findPreference<SwitchPreferenceCompat>("random_order")?.isChecked = state.randomOrder
-        findPreference<ListPreference>("photo_scale")?.value = state.photoScale
+        val isGooglePhotosSource = state.photoSources.contains("google_photos")
+        googlePhotosCategory?.isVisible = isGooglePhotosSource
+        useGooglePhotos?.isVisible = isGooglePhotosSource
+        selectAlbums?.isVisible = isGooglePhotosSource
+
+        if (isGooglePhotosSource) {
+            val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+            val hasRequiredScope = account?.grantedScopes?.contains(
+                Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
+            ) == true
+
+            useGooglePhotos?.isChecked = state.googlePhotosEnabled && hasRequiredScope
+            selectAlbums?.isEnabled = state.googlePhotosEnabled && hasRequiredScope
+        }
+
+        Log.d(TAG, "Preferences updated from state - Google Photos enabled: ${state.googlePhotosEnabled}, Sources: ${state.photoSources}")
     }
 
     private fun setupPhotoDisplayManager() {
@@ -374,7 +389,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         Log.d(TAG, "Setting up photo source preferences")
 
-        // Set initial visibility based on selected sources
+        // Get initial state
         val currentSources = PreferenceManager.getDefaultSharedPreferences(requireContext())
             .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
         Log.d(TAG, "Current photo sources: $currentSources")
@@ -385,21 +400,34 @@ class SettingsFragment : PreferenceFragmentCompat() {
             Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
         ) == true
 
-        // Update UI states
+        // Update UI states immediately
         googlePhotosCategory?.isVisible = currentSources.contains("google_photos")
         useGooglePhotos?.isChecked = account != null && hasRequiredScope
         selectAlbums?.apply {
             isEnabled = account != null && hasRequiredScope
-            isVisible = true
+            isVisible = currentSources.contains("google_photos")
         }
 
         // Handle changes to photo source selection
         photoSourceSelection?.setOnPreferenceChangeListener { _, newValue ->
             @Suppress("UNCHECKED_CAST")
             val selectedSources = newValue as Set<String>
+            val googlePhotosEnabled = selectedSources.contains("google_photos")
+
+            // Update UI immediately
+            googlePhotosCategory?.isVisible = googlePhotosEnabled
+            useGooglePhotos?.isVisible = googlePhotosEnabled
+            selectAlbums?.isVisible = googlePhotosEnabled
+
+            // If Google Photos was just added, reset the switch state
+            if (googlePhotosEnabled && !currentSources.contains("google_photos")) {
+                useGooglePhotos?.isChecked = false
+                selectAlbums?.isEnabled = false
+            }
+
             appDataManager.updateState { it.copy(
                 photoSources = selectedSources,
-                googlePhotosEnabled = selectedSources.contains("google_photos")
+                googlePhotosEnabled = googlePhotosEnabled && useGooglePhotos?.isChecked == true
             )}
             true
         }
@@ -409,7 +437,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             val enabled = newValue as Boolean
             if (enabled) {
                 showGoogleSignInPrompt()
-                false
+                false // Don't update the switch state yet, wait for sign-in result
             } else {
                 appDataManager.updateState { it.copy(googlePhotosEnabled = false) }
                 signOutCompletely()
@@ -431,6 +459,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                             }
                         } else {
                             Toast.makeText(context, "Please sign in with Google first", Toast.LENGTH_SHORT).show()
+                            useGooglePhotos?.isChecked = false
                         }
                     }
                 } catch (e: Exception) {
@@ -685,17 +714,39 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     private fun updateGooglePhotosState(enabled: Boolean) {
         Log.d(TAG, "Updating Google Photos state to: $enabled")
-        findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = enabled
-        findPreference<Preference>("select_albums")?.apply {
-            isEnabled = enabled
-            isVisible = true
-        }
 
-        // Also update visibility of the Google Photos category based on photo source selection
+        // Get current selections
         val currentSources = PreferenceManager.getDefaultSharedPreferences(requireContext())
             .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
-        findPreference<PreferenceCategory>("google_photos_settings")?.isVisible =
-            currentSources.contains("google_photos")
+        val googlePhotosEnabled = currentSources.contains("google_photos")
+
+        // Update Google Photos switch
+        findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.apply {
+            isChecked = enabled
+            isVisible = googlePhotosEnabled
+        }
+
+        // Update albums selection
+        findPreference<Preference>("select_albums")?.apply {
+            isEnabled = enabled && googlePhotosEnabled
+            isVisible = googlePhotosEnabled
+        }
+
+        // Update category visibility
+        findPreference<PreferenceCategory>("google_photos_settings")?.isVisible = googlePhotosEnabled
+
+        // Update app state
+        appDataManager.updateState { it.copy(
+            googlePhotosEnabled = enabled && googlePhotosEnabled,
+            lastSyncTimestamp = if (enabled) System.currentTimeMillis() else it.lastSyncTimestamp
+        )}
+
+        // If disabled, clear selected albums
+        if (!enabled) {
+            appDataManager.updateState { it.copy(selectedAlbums = emptySet()) }
+        }
+
+        Log.d(TAG, "Google Photos state updated - enabled: $enabled, source available: $googlePhotosEnabled")
     }
 
     // Lock Screen Related Methods
@@ -779,6 +830,46 @@ class SettingsFragment : PreferenceFragmentCompat() {
             showFeedback(R.string.dream_service_disable)
         } catch (e: Exception) {
             handleError("Error disabling dream service", e)
+        }
+    }
+
+    private fun restoreSettingsState() {
+        val currentState = appDataManager.getCurrentState()
+
+        // Restore photo source selection
+        findPreference<MultiSelectListPreference>("photo_source_selection")?.values =
+            currentState.photoSources
+
+        // Restore Google Photos state
+        val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+        val hasRequiredScope = account?.grantedScopes?.contains(
+            Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
+        ) == true
+
+        // Update UI based on current state
+        findPreference<PreferenceCategory>("google_photos_settings")?.isVisible =
+            currentState.photoSources.contains("google_photos")
+
+        findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.apply {
+            isChecked = currentState.googlePhotosEnabled && hasRequiredScope
+            isVisible = currentState.photoSources.contains("google_photos")
+        }
+
+        findPreference<Preference>("select_albums")?.apply {
+            isEnabled = currentState.googlePhotosEnabled && hasRequiredScope
+            isVisible = currentState.photoSources.contains("google_photos")
+        }
+
+        Log.d(TAG, "Settings state restored - Google Photos enabled: ${currentState.googlePhotosEnabled}, Sources: ${currentState.photoSources}")
+    }
+
+    private fun observeAppState() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                appDataManager.observeState().collect { state ->
+                    updatePreferencesFromState(state)
+                }
+            }
         }
     }
 

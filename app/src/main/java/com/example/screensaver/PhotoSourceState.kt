@@ -18,6 +18,24 @@ class PhotoSourceState @Inject constructor(
         private const val PREVIEW_COUNT_RESET_INTERVAL = 24 * 60 * 60 * 1000L // 24 hours
     }
 
+    init {
+        // Add this initialization block to load state immediately when created
+        restoreState()
+    }
+
+    private fun restoreState() {
+        val currentState = appDataManager.getCurrentState()
+        // Load saved state immediately
+        hasSelectedSource = currentState.photoSources.isNotEmpty()
+        hasSelectedPhotos = currentState.selectedAlbums.isNotEmpty()
+        isInPreviewMode = currentState.isInPreviewMode
+
+        // Reset preview mode if it was active during force close
+        if (isInPreviewMode) {
+            resetPreviewStats()
+        }
+    }
+
     var hasSelectedSource: Boolean
         get() = appDataManager.getCurrentState().photoSources.isNotEmpty()
         set(value) = appDataManager.updateState {
