@@ -3,62 +3,45 @@ package com.example.screensaver.data
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.example.screensaver.utils.AppPreferences
+import com.example.screensaver.shared.GooglePhotosManager
 
 /**
  * Manages the persistence and retrieval of application data state.
- * Uses both regular and encrypted SharedPreferences for storing sensitive data.
+ * Delegates authentication and sensitive data storage to SecureStorage.
  */
 @Singleton
 class AppDataManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val gson: Gson,
-    private val appPreferences: AppPreferences
+    private val appPreferences: AppPreferences,
+    private val secureStorage: SecureStorage,
+    private val googlePhotosManager: GooglePhotosManager,
+    private val coroutineScope: CoroutineScope
 ) {
-    private val preferences: SharedPreferences
-    private val securePreferences: SharedPreferences
+    private val preferences: SharedPreferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     private val _stateFlow = MutableStateFlow(loadState())
     val stateFlow = _stateFlow.asStateFlow()
 
+    private val _authState = MutableStateFlow<AuthState>(AuthState.NotAuthenticated)
+    val authState: StateFlow<AuthState> = _authState.asStateFlow()
+
     companion object {
         private const val PREFERENCES_NAME = "app_data_preferences"
-        private const val SECURE_PREFERENCES_NAME = "secure_app_data"
         private const val KEY_APP_STATE = "app_state"
-        private const val KEY_GOOGLE_ACCESS_TOKEN = "google_access_token"
-        private const val KEY_GOOGLE_REFRESH_TOKEN = "google_refresh_token"
-        private const val KEY_TOKEN_EXPIRATION = "token_expiration"
         private const val BACKUP_SUFFIX = "_backup"
     }
 
     init {
-        // Initialize regular preferences
-        preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-
-        // Initialize encrypted preferences
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-
-        securePreferences = EncryptedSharedPreferences.create(
-            context,
-            SECURE_PREFERENCES_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-
         // Register listener for state changes
         preferences.registerOnSharedPreferenceChangeListener { _, key ->
             if (key == KEY_APP_STATE) {
@@ -66,8 +49,24 @@ class AppDataManager @Inject constructor(
             }
         }
 
+        // Monitor credentials state changes
+        coroutineScope.launch {
+            secureStorage.credentialsFlow.collect { state ->
+                updateAuthState(state)
+            }
+        }
+
         // Perform initial state validation
         validateAndRepairState()
+    }
+
+    private fun updateAuthState(credentialState: SecureStorage.CredentialState) {
+        _authState.value = when (credentialState) {
+            is SecureStorage.CredentialState.Valid -> AuthState.Authenticated(credentialState.credentials.email)
+            is SecureStorage.CredentialState.Expired -> AuthState.TokenExpired
+            is SecureStorage.CredentialState.NotInitialized -> AuthState.NotAuthenticated
+            is SecureStorage.CredentialState.Error -> AuthState.Error(credentialState.exception)
+        }
     }
 
     /**
@@ -100,46 +99,33 @@ class AppDataManager @Inject constructor(
     fun observeState(): Flow<AppDataState> = stateFlow
 
     /**
-     * Saves Google authentication tokens securely
+     * Signs in a user with Google credentials
      */
-    fun saveGoogleTokens(
-        accessToken: String,
-        refreshToken: String,
-        expirationTime: Long
-    ) {
-        securePreferences.edit {
-            putString(KEY_GOOGLE_ACCESS_TOKEN, accessToken)
-            putString(KEY_GOOGLE_REFRESH_TOKEN, refreshToken)
-            putLong(KEY_TOKEN_EXPIRATION, expirationTime)
-        }
-    }
-
-    /**
-     * Retrieves Google authentication tokens
-     */
-    fun getGoogleTokens(): GoogleTokens? {
+    suspend fun signIn(accessToken: String, refreshToken: String, expirationTime: Long, email: String): Boolean {
         return try {
-            val accessToken = securePreferences.getString(KEY_GOOGLE_ACCESS_TOKEN, null)
-            val refreshToken = securePreferences.getString(KEY_GOOGLE_REFRESH_TOKEN, null)
-            val expiration = securePreferences.getLong(KEY_TOKEN_EXPIRATION, 0)
-
-            if (accessToken != null && refreshToken != null) {
-                GoogleTokens(accessToken, refreshToken, expiration)
-            } else null
+            secureStorage.saveGoogleCredentials(
+                accessToken = accessToken,
+                refreshToken = refreshToken,
+                expirationTime = expirationTime,
+                email = email
+            )
+            true
         } catch (e: Exception) {
-            Timber.e(e, "Failed to retrieve Google tokens")
-            null
+            Timber.e(e, "Failed to save credentials during sign in")
+            false
         }
     }
 
     /**
-     * Clears all Google authentication tokens
+     * Signs out the current user
      */
-    fun clearGoogleTokens() {
-        securePreferences.edit {
-            remove(KEY_GOOGLE_ACCESS_TOKEN)
-            remove(KEY_GOOGLE_REFRESH_TOKEN)
-            remove(KEY_TOKEN_EXPIRATION)
+    suspend fun signOut() {
+        try {
+            googlePhotosManager.cleanup()
+            secureStorage.clearGoogleCredentials()
+            appPreferences.clearSelectedAlbums()
+        } catch (e: Exception) {
+            Timber.e(e, "Error during sign out")
         }
     }
 
@@ -150,7 +136,9 @@ class AppDataManager @Inject constructor(
         val defaultState = AppDataState.createDefault()
         saveState(defaultState)
         _stateFlow.value = defaultState
-        clearGoogleTokens()
+        coroutineScope.launch {
+            signOut()
+        }
     }
 
     private fun saveState(state: AppDataState) {
@@ -228,15 +216,10 @@ class AppDataManager @Inject constructor(
         }
     }
 
-    /**
-     * Data class for Google authentication tokens
-     */
-    data class GoogleTokens(
-        val accessToken: String,
-        val refreshToken: String,
-        val expirationTime: Long
-    ) {
-        val isExpired: Boolean
-            get() = Instant.now().epochSecond >= expirationTime
+    sealed class AuthState {
+        object NotAuthenticated : AuthState()
+        data class Authenticated(val email: String) : AuthState()
+        object TokenExpired : AuthState()
+        data class Error(val exception: Exception) : AuthState()
     }
 }

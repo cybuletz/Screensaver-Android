@@ -95,6 +95,17 @@ class AppPreferences @Inject constructor(
         private const val PREF_BRIGHTNESS = "brightness"
         private const val PREF_ORIENTATION = "orientation"
         private const val PREF_KEEP_SCREEN_ON = "keep_screen_on"
+        private const val PREFERENCES_NAME = "app_preferences"
+        private const val KEY_SELECTED_ALBUMS = "selected_albums"
+    }
+
+    private val sharedPreferences: SharedPreferences = context.getSharedPreferences(
+        PREFERENCES_NAME,
+        Context.MODE_PRIVATE
+    )
+
+    fun clearSelectedAlbums() {
+        sharedPreferences.edit().remove(KEY_SELECTED_ALBUMS).apply()
     }
 
     enum class DisplayMode {

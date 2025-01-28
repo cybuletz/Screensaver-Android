@@ -10,6 +10,7 @@ import com.google.photos.library.v1.PhotosLibrarySettings
 import com.example.screensaver.models.Album
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.utils.AppPreferences
+import com.example.screensaver.data.SecureStorage
 import com.google.photos.library.v1.proto.SearchMediaItemsRequest
 import com.example.screensaver.R
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -26,7 +27,6 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.ensureActive
@@ -36,9 +36,9 @@ import java.util.concurrent.RejectedExecutionException
 
 @Singleton
 class GooglePhotosManager @Inject constructor(
-    @ApplicationContext
-    private val context: Context,
+    @ApplicationContext private val context: Context,
     private val preferences: AppPreferences,
+    private val secureStorage: SecureStorage,
     private val coroutineScope: CoroutineScope
 ) {
     private var photosLibraryClient: PhotosLibraryClient? = null
@@ -73,11 +73,9 @@ class GooglePhotosManager @Inject constructor(
             "https://www.googleapis.com/auth/photos.readonly"
         )
     }
-
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Starting initialization...")
-
             cleanup() // Ensure any existing client is properly cleaned up
 
             if (!hasValidTokens()) {
@@ -116,7 +114,7 @@ class GooglePhotosManager @Inject constructor(
             executorMutex.withLock {
                 val currentExecutor = if (executorService.isShutdown || executorService.isTerminated) {
                     Executors.newScheduledThreadPool(4).also { executorService = it }
-                } else executorService  // Added else branch
+                } else executorService
 
                 PhotosLibrarySettings.newBuilder()
                     .setCredentialsProvider { credentials }
@@ -130,6 +128,114 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
+    private suspend fun getOrRefreshCredentials(): GoogleCredentials? = withContext(Dispatchers.IO) {
+        try {
+            val credentials = secureStorage.getGoogleCredentials()
+            Log.d(TAG, "Checking credentials - Access Token: ${credentials != null}")
+
+            if (credentials == null) {
+                Log.d(TAG, "Missing tokens")
+                return@withContext null
+            }
+
+            if (credentials.needsRefresh) {
+                Log.d(TAG, "Token expired or needs refresh")
+                if (!refreshTokens()) {
+                    return@withContext null
+                }
+                // Get fresh credentials after refresh
+                val updatedCredentials = secureStorage.getGoogleCredentials() ?: return@withContext null
+                return@withContext createGoogleCredentials(updatedCredentials)
+            }
+
+            createGoogleCredentials(credentials)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting/refreshing credentials", e)
+            null
+        }
+    }
+
+    private fun createGoogleCredentials(credentials: SecureStorage.GoogleCredentials): GoogleCredentials {
+        return GoogleCredentials.create(AccessToken(credentials.accessToken, Date(credentials.expirationTime)))
+            .createScoped(REQUIRED_SCOPES)
+    }
+
+    fun hasValidTokens(): Boolean {
+        val credentials = secureStorage.getGoogleCredentials()
+        return credentials != null && !credentials.needsRefresh
+    }
+
+    private suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
+        var connection: HttpURLConnection? = null
+        try {
+            val credentials = secureStorage.getGoogleCredentials()
+                ?: throw Exception("No credentials available")
+
+            val refreshToken = credentials.refreshToken
+            val clientId = context.getString(R.string.google_oauth_client_id)
+            val clientSecret = context.getString(R.string.google_oauth_client_secret)
+
+            connection = (URL("https://oauth2.googleapis.com/token").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            }
+
+            val postData = buildPostData(refreshToken, clientId, clientSecret)
+            connection.outputStream.use { it.write(postData.toByteArray()) }
+
+            secureStorage.recordRefreshAttempt()
+
+            return@withContext when (connection.responseCode) {
+                HttpURLConnection.HTTP_OK -> handleSuccessfulTokenRefresh(connection, credentials)
+                else -> handleFailedTokenRefresh(connection)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error refreshing token", e)
+            false
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    private fun buildPostData(refreshToken: String, clientId: String, clientSecret: String): String =
+        buildString {
+            append("grant_type=refresh_token")
+            append("&refresh_token=").append(refreshToken)
+            append("&client_id=").append(clientId)
+            append("&client_secret=").append(clientSecret)
+        }
+
+    private fun handleSuccessfulTokenRefresh(
+        connection: HttpURLConnection,
+        currentCredentials: SecureStorage.GoogleCredentials
+    ): Boolean {
+        return try {
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            val jsonResponse = JSONObject(response)
+
+            val newAccessToken = jsonResponse.getString("access_token")
+            val expirationTime = System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000)
+
+            secureStorage.saveGoogleCredentials(
+                accessToken = newAccessToken,
+                refreshToken = currentCredentials.refreshToken,
+                expirationTime = expirationTime,
+                email = currentCredentials.email
+            )
+
+            Log.d(TAG, "Successfully refreshed token")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling token refresh response", e)
+            false
+        }
+    }
+
+    private fun handleFailedTokenRefresh(connection: HttpURLConnection): Boolean {
+        Log.e(TAG, "Failed to refresh token: ${connection.responseMessage}")
+        return false
+    }
     suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Getting albums...")
@@ -201,34 +307,11 @@ class GooglePhotosManager @Inject constructor(
             selectedAlbumIds.forEach { albumId ->
                 try {
                     Log.d(TAG, "Starting to load photos for album: $albumId")
-
-                    val request = SearchMediaItemsRequest.newBuilder()
-                        .setAlbumId(albumId)
-                        .setPageSize(100)
-                        .build()
-
-                    photosLibraryClient?.searchMediaItems(request)?.let { response ->
-                        var photoCount = 0
-                        response.iterateAll().forEach { googleMediaItem ->
-                            if (googleMediaItem.mediaMetadata.hasPhoto()) {
-                                googleMediaItem.baseUrl?.let { baseUrl ->
-                                    allPhotos.add(MediaItem(
-                                        id = googleMediaItem.id,
-                                        albumId = albumId,
-                                        baseUrl = "$baseUrl$PHOTO_QUALITY",
-                                        mimeType = googleMediaItem.mimeType,
-                                        width = googleMediaItem.mediaMetadata.width.toInt(),
-                                        height = googleMediaItem.mediaMetadata.height.toInt()
-                                    ))
-                                    photoCount++
-                                    totalProcessed++
-                                    if (totalProcessed % 10 == 0) {
-                                        Log.d(TAG, "Progress: Processed $totalProcessed photos")
-                                    }
-                                }
-                            }
-                        }
-                        Log.d(TAG, "Loaded $photoCount photos from album $albumId")
+                    val albumPhotos = loadAlbumPhotos(albumId)
+                    albumPhotos?.let {
+                        allPhotos.addAll(it)
+                        totalProcessed += it.size
+                        Log.d(TAG, "Added ${it.size} photos from album $albumId")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading photos for album $albumId", e)
@@ -256,27 +339,9 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
-    private suspend fun safeShutdownExecutor() {
-        executorMutex.withLock {
-            try {
-                if (!executorService.isShutdown) {
-                    val currentExecutor = executorService
-                    executorService = Executors.newScheduledThreadPool(4)
-                    currentExecutor.shutdown()
-                    if (!currentExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                        currentExecutor.shutdownNow()
-                    } else {
-                        // Added else branch
-                        Log.d(TAG, "Executor terminated normally")
-                    }
-                } else {
-                    // Added else branch
-                    Log.d(TAG, "Executor already shutdown")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during executor shutdown", e)
-            }
-        }
+    private fun shouldRetryOnError(error: Exception): Boolean {
+        Log.d(TAG, "Checking if should retry for error: ${error.message}")
+        return error.message?.contains("UNAUTHENTICATED") == true
     }
 
     private suspend fun loadAlbumPhotos(albumId: String): List<MediaItem>? =
@@ -350,13 +415,9 @@ class GooglePhotosManager @Inject constructor(
 
         try {
             val mediaItems = client.searchMediaItems(request).iterateAll()
-            Log.d(TAG, "Retrieved ${mediaItems.count()} items from Google Photos API")
-
             mediaItems.forEach { googleMediaItem ->
-                Log.d(TAG, "Processing item: ${googleMediaItem.id}, hasPhoto: ${googleMediaItem.mediaMetadata.hasPhoto()}")
                 if (googleMediaItem.mediaMetadata.hasPhoto()) {
                     googleMediaItem.baseUrl?.let { baseUrl ->
-                        Log.d(TAG, "Adding photo with baseUrl: $baseUrl")
                         items.add(MediaItem(
                             id = googleMediaItem.id,
                             albumId = albumId,
@@ -368,121 +429,10 @@ class GooglePhotosManager @Inject constructor(
                     }
                 }
             }
-
-            Log.d(TAG, "Added ${items.size} photos from album $albumId")
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching photos for album $albumId", e)
             throw e
         }
-    }
-
-    private fun shouldRetryOnError(error: Exception): Boolean {
-        Log.d(TAG, "Checking if should retry for error: ${error.message}")
-        val shouldRetry = error.message?.contains("UNAUTHENTICATED") == true
-        Log.d(TAG, "Should retry: $shouldRetry")
-        return shouldRetry
-    }
-
-    private suspend fun getOrRefreshCredentials(): GoogleCredentials? = withContext(Dispatchers.IO) {
-        try {
-            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val accessToken = prefs.getString("access_token", null)
-            val refreshToken = prefs.getString("refresh_token", null)
-            val tokenExpiration = prefs.getLong("token_expiration", 0)
-
-            Log.d(TAG, "Checking credentials - Access Token: ${accessToken != null}, Refresh Token: ${refreshToken != null}")
-
-            if (accessToken == null || refreshToken == null) {
-                Log.d(TAG, "Missing tokens")
-                return@withContext null
-            }
-
-            if (System.currentTimeMillis() > tokenExpiration - TOKEN_EXPIRY_BUFFER) {
-                Log.d(TAG, "Token expired, refreshing")
-                if (!refreshTokens()) {
-                    return@withContext null
-                }
-            }
-
-            val currentToken = prefs.getString("access_token", null)
-                ?: throw Exception("No access token available")
-
-            val expirationTime = prefs.getLong("token_expiration", 0)
-            GoogleCredentials.create(AccessToken(currentToken, Date(expirationTime)))
-                .createScoped(REQUIRED_SCOPES)  // Changed this line to use REQUIRED_SCOPES
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting/refreshing credentials", e)
-            null
-        }
-    }
-
-    fun hasValidTokens(): Boolean {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val accessToken = prefs.getString("access_token", null)
-        val tokenExpiration = prefs.getLong("token_expiration", 0)
-        return accessToken != null && tokenExpiration > System.currentTimeMillis()
-    }
-
-    private suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
-        var connection: HttpURLConnection? = null
-        try {
-            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val refreshToken = prefs.getString("refresh_token", null)
-                ?: throw Exception("No refresh token available")
-
-            val clientId = context.getString(R.string.google_oauth_client_id)
-            val clientSecret = context.getString(R.string.google_oauth_client_secret)
-
-            connection = (URL("https://oauth2.googleapis.com/token").openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                doOutput = true
-                setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-            }
-
-            val postData = buildPostData(refreshToken, clientId, clientSecret)
-            connection.outputStream.use { it.write(postData.toByteArray()) }
-
-            return@withContext when (connection.responseCode) {
-                HttpURLConnection.HTTP_OK -> handleSuccessfulTokenRefresh(connection, prefs)
-                else -> handleFailedTokenRefresh(connection)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error refreshing token", e)
-            false
-        } finally {
-            connection?.disconnect()
-        }
-    }
-
-    private fun buildPostData(refreshToken: String, clientId: String, clientSecret: String): String =
-        buildString {
-            append("grant_type=refresh_token")
-            append("&refresh_token=").append(refreshToken)
-            append("&client_id=").append(clientId)
-            append("&client_secret=").append(clientSecret)
-        }
-
-    private fun handleSuccessfulTokenRefresh(
-        connection: HttpURLConnection,
-        prefs: android.content.SharedPreferences
-    ): Boolean {
-        val response = connection.inputStream.bufferedReader().use { it.readText() }
-        val jsonResponse = JSONObject(response)
-
-        prefs.edit()
-            .putString("access_token", jsonResponse.getString("access_token"))
-            .putLong(
-                "token_expiration",
-                System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000)
-            )
-            .apply()
-
-        return true
-    }
-
-    private fun handleFailedTokenRefresh(connection: HttpURLConnection): Boolean {
-        Log.e(TAG, "Failed to refresh token: ${connection.responseMessage}")
-        return false
     }
 
     private suspend fun recoverFromExecutorFailure() {
@@ -495,8 +445,28 @@ class GooglePhotosManager @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error recovering from executor failure", e)
-                // Create new executor in case of error
                 executorService = Executors.newScheduledThreadPool(4)
+            }
+        }
+    }
+
+    private suspend fun safeShutdownExecutor() {
+        executorMutex.withLock {
+            try {
+                if (!executorService.isShutdown) {
+                    val currentExecutor = executorService
+                    executorService = Executors.newScheduledThreadPool(4)
+                    currentExecutor.shutdown()
+                    if (!currentExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                        currentExecutor.shutdownNow()
+                    } else {
+                        Log.d(TAG, "Executor terminated normally")
+                    }
+                } else {
+                    Log.d(TAG, "Executor already shutdown")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during executor shutdown", e)
             }
         }
     }
