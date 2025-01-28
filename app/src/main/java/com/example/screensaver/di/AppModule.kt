@@ -40,6 +40,8 @@ object AppModule {
         return appContext
     }
 
+    
+
     @Singleton
     @Provides
     fun providePhotoAnalytics(@ApplicationContext context: Context): PhotoAnalytics {

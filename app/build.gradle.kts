@@ -1,19 +1,15 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    kotlin("android")
+    kotlin("kapt")
+    id("com.google.dagger.hilt.android")
     id("com.google.gms.google-services")
     id("com.google.firebase.crashlytics")
-    id("com.google.dagger.hilt.android")
     id("kotlin-parcelize")
-    id("kotlin-kapt")
 }
 
 kapt {
     correctErrorTypes = true
-    arguments {
-        arg("dagger.hilt.android.internal.disableAndroidSuperclassValidation", "true")
-    }
-    includeCompileClasspath = false
 }
 
 android {
@@ -91,6 +87,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    hilt {
+        enableAggregatingTask = true
+        enableExperimentalClasspathAggregation = true
+    }
+
     kotlinOptions {
         jvmTarget = "17"
     }
@@ -100,7 +101,7 @@ dependencies {
     // Version constants
     val navVersion = "2.7.6"
     val lifecycleVersion = "2.6.2"
-    val hiltVersion = "2.48"
+    val hiltVersion = "2.48.1"
     val coroutinesVersion = "1.7.3"
     val grpcVersion = "1.58.0"
 
@@ -116,7 +117,7 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
 
-
+    // AutoValue
     kapt("com.google.auto.value:auto-value:1.9")
     implementation("com.google.auto.value:auto-value-annotations:1.9")
 
@@ -127,12 +128,17 @@ dependencies {
     androidTestImplementation("androidx.navigation:navigation-testing:$navVersion")
 
     // Hilt
+   // implementation("com.google.dagger:hilt-android:$hiltVersion")
+   // kapt("com.google.dagger:hilt-compiler:$hiltVersion")
+   // kapt("com.google.dagger:hilt-android-compiler:2.48.1")
+   // implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    //implementation("androidx.hilt:hilt-navigation-fragment:1.1.0")
+
+    // Core Hilt dependencies
     implementation("com.google.dagger:hilt-android:$hiltVersion")
-    kapt("com.google.dagger:hilt-android-compiler:2.48")
-    kapt("com.google.dagger:hilt-compiler:$hiltVersion")
-    kapt("androidx.hilt:hilt-compiler:1.0.0")
-    implementation("androidx.hilt:hilt-work:1.0.0")
-    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    kapt("com.google.dagger:hilt-android-compiler:$hiltVersion")
+
+    // Keep only these Hilt-related dependencies
     implementation("androidx.hilt:hilt-navigation-fragment:1.1.0")
 
     // Lifecycle
@@ -142,7 +148,6 @@ dependencies {
 
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.8.1")
-    implementation("androidx.work:work-runtime:2.8.1")
 
     // Timber
     implementation("com.jakewharton.timber:timber:5.0.1")
