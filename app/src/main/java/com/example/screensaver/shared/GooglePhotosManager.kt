@@ -290,8 +290,8 @@ class GooglePhotosManager @Inject constructor(
                 return@withContext null
             }
 
-            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(context)
-                .getStringSet("selected_albums", emptySet()) ?: emptySet()
+            // Use the injected preferences instead of PreferenceManager
+            val selectedAlbumIds = preferences.getSelectedAlbumIds()
 
             Log.d(TAG, "Selected album IDs: $selectedAlbumIds")
 
@@ -307,11 +307,34 @@ class GooglePhotosManager @Inject constructor(
             selectedAlbumIds.forEach { albumId ->
                 try {
                     Log.d(TAG, "Starting to load photos for album: $albumId")
-                    val albumPhotos = loadAlbumPhotos(albumId)
-                    albumPhotos?.let {
-                        allPhotos.addAll(it)
-                        totalProcessed += it.size
-                        Log.d(TAG, "Added ${it.size} photos from album $albumId")
+
+                    val request = SearchMediaItemsRequest.newBuilder()
+                        .setAlbumId(albumId)
+                        .setPageSize(PAGE_SIZE)
+                        .build()
+
+                    photosLibraryClient?.searchMediaItems(request)?.let { response ->
+                        var photoCount = 0
+                        response.iterateAll().forEach { googleMediaItem ->
+                            if (googleMediaItem.mediaMetadata.hasPhoto()) {
+                                googleMediaItem.baseUrl?.let { baseUrl ->
+                                    allPhotos.add(MediaItem(
+                                        id = googleMediaItem.id,
+                                        albumId = albumId,
+                                        baseUrl = "$baseUrl$PHOTO_QUALITY",
+                                        mimeType = googleMediaItem.mimeType,
+                                        width = googleMediaItem.mediaMetadata.width.toInt(),
+                                        height = googleMediaItem.mediaMetadata.height.toInt()
+                                    ))
+                                    photoCount++
+                                    totalProcessed++
+                                    if (totalProcessed % 10 == 0) {
+                                        Log.d(TAG, "Progress: Processed $totalProcessed photos")
+                                    }
+                                }
+                            }
+                        }
+                        Log.d(TAG, "Loaded $photoCount photos from album $albumId")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading photos for album $albumId", e)

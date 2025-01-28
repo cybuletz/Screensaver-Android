@@ -102,6 +102,11 @@ class SecureStorage @Inject constructor(
             val email = securePreferences.getString(KEY_ACCOUNT_EMAIL, null)
             val lastAuth = securePreferences.getLong(KEY_LAST_AUTH, 0)
 
+            Timber.d("Retrieved credentials - Access Token: ${accessToken != null}, " +
+                    "Refresh Token: ${refreshToken != null}, " +
+                    "Expiration Time: $expirationTime, " +
+                    "Email: $email")
+
             if (accessToken != null && refreshToken != null && email != null) {
                 GoogleCredentials(
                     accessToken = accessToken,
