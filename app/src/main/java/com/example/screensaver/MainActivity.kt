@@ -38,7 +38,7 @@ import javax.inject.Inject
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.example.screensaver.ui.SettingsButtonController
 import com.example.screensaver.utils.AppPreferences
-
+import com.example.screensaver.shared.GooglePhotosManager
 
 
 @AndroidEntryPoint
@@ -57,6 +57,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
+
+    @Inject
+    lateinit var googlePhotosManager: GooglePhotosManager
 
     @Inject
     lateinit var preferences: AppPreferences
@@ -139,9 +142,25 @@ class MainActivity : AppCompatActivity() {
                 val selectedAlbums = preferences.getSelectedAlbumIds()
                 if (selectedAlbums.isNotEmpty()) {
                     Log.d(TAG, "Found ${selectedAlbums.size} saved albums, loading photos...")
-                    val photos = photoManager.loadPhotos()
-                    if (photos != null) {
-                        photoDisplayManager.startPhotoDisplay()
+
+                    // First initialize GooglePhotosManager - returns Boolean
+                    val initialized = googlePhotosManager.initialize()
+                    if (initialized) {
+                        // Load photos using the built-in loadPhotos() method
+                        val photos = googlePhotosManager.loadPhotos()
+
+                        if (photos != null && photos.isNotEmpty()) {
+                            // Clear existing photos and add new ones
+                            photoManager.clearPhotos()
+                            photoManager.addPhotos(photos)
+
+                            // Start photo display
+                            photoDisplayManager.startPhotoDisplay()
+                        } else {
+                            Log.e(TAG, "No photos found in selected albums")
+                        }
+                    } else {
+                        Log.e(TAG, "Failed to initialize GooglePhotosManager")
                     }
                 }
             } catch (e: Exception) {

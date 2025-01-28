@@ -57,9 +57,9 @@ object AppModule {
     @Singleton
     fun provideGooglePhotosManager(
         @ApplicationContext context: Context,
-        coroutineScope: CoroutineScope,
         preferences: AppPreferences,
-        secureStorage: SecureStorage
+        secureStorage: SecureStorage,  // Add this
+        coroutineScope: CoroutineScope
     ): GooglePhotosManager {
         return GooglePhotosManager(context, preferences, secureStorage, coroutineScope)
     }

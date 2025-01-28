@@ -30,6 +30,7 @@ import com.example.screensaver.PhotoSourceState
 import com.example.screensaver.lock.LockScreenPhotoManager
 import kotlinx.coroutines.*
 import com.example.screensaver.MainActivity
+import com.example.screensaver.utils.AppPreferences
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -38,13 +39,19 @@ class PhotoLockScreenService : Service() {
     lateinit var photoLoadingManager: PhotoLoadingManager
 
     @Inject
-    lateinit var photoManager: LockScreenPhotoManager
-
-    @Inject
     lateinit var kioskPolicyManager: KioskPolicyManager
 
     @Inject
+    lateinit var preferences: AppPreferences
+
+    @Inject
     lateinit var photoSourceState: PhotoSourceState
+
+    @Inject
+    lateinit var lockScreenPhotoManager: LockScreenPhotoManager  // Main photo manager
+
+    @Inject
+    lateinit var googlePhotosManager: GooglePhotosManager  // Google Photos source
 
     private var isPreviewMode = false
 
@@ -171,20 +178,16 @@ class PhotoLockScreenService : Service() {
         initializationJob?.cancel()
         initializationJob = serviceScope.launch {
             try {
-                val photoCount = photoManager.getPhotoCount()
-                Log.d(TAG, "Initial photo count: $photoCount")
-
-                if (photoCount > 0) {
-                    isInitialized = true
-                    precachePhotos()
-                } else {
-                    Log.w(TAG, "No photos available, checking if photos can be loaded")
-                    val loadedPhotos = photoManager.loadPhotos()
-                    if (loadedPhotos != null && loadedPhotos.isNotEmpty()) {
-                        isInitialized = true
-                        precachePhotos()
-                    } else {
-                        Log.w(TAG, "No photos available after loading attempt")
+                val selectedAlbums = preferences.getSelectedAlbumIds()
+                if (selectedAlbums.isNotEmpty()) {
+                    if (googlePhotosManager.initialize()) {
+                        val photos = googlePhotosManager.loadPhotos()
+                        if (photos != null) {
+                            lockScreenPhotoManager.clearPhotos()
+                            lockScreenPhotoManager.addPhotos(photos)
+                            isInitialized = true
+                            precachePhotos()
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -209,14 +212,14 @@ class PhotoLockScreenService : Service() {
 
         withContext(Dispatchers.IO) {
             try {
-                val photoCount = photoManager.getPhotoCount()
+                val photoCount = lockScreenPhotoManager.getPhotoCount()
                 Log.d(TAG, "Starting precache with $photoCount available photos")
 
                 when {
                     photoCount > 0 -> {
                         val countToPreload = minOf(PRECACHE_COUNT, photoCount)
                         repeat(countToPreload) { index ->
-                            photoManager.getPhotoUrl(index)?.let { url ->
+                            lockScreenPhotoManager.getPhotoUrl(index)?.let { url ->
                                 val mediaItem = MediaItem(
                                     id = index.toString(),
                                     albumId = "lock_screen",
@@ -267,10 +270,9 @@ class PhotoLockScreenService : Service() {
                 handlePreviewStop()
             }
             "AUTH_UPDATED" -> {
-                Log.d(TAG, "Auth updated, photo count: ${photoManager.getPhotoCount()}")
+                Log.d(TAG, "Auth updated, photo count: ${lockScreenPhotoManager.getPhotoCount()}")
                 isInitialized = false  // Reset initialization state
                 initializeService()    // Initialize service to load photos
-                // Removed showLockScreen() as we want photos to show in main view
                 showMainScreen()  // Show main screen instead of lock screen
             }
         }
@@ -282,16 +284,16 @@ class PhotoLockScreenService : Service() {
             serviceScope.launch {
                 try {
                     initializeService()
-                    val photoCount = photoManager.getPhotoCount()
+                    val photoCount = lockScreenPhotoManager.getPhotoCount()  // Changed from photoManager
                     Log.d(TAG, "Service initialized, photo count: $photoCount")
                     if (photoCount == 0) {
                         Log.d(TAG, "No photos available, attempting to load")
                         serviceScope.launch {
-                            photoManager.loadPhotos()?.let { photos ->
-                                if (photos.isNotEmpty()) {
-                                    Log.d(TAG, "Successfully loaded ${photos.size} photos")
-                                    precachePhotos()
-                                }
+                            val photos = googlePhotosManager.loadPhotos()  // Changed from photoManager
+                            if (photos?.isNotEmpty() == true) {
+                                lockScreenPhotoManager.addPhotos(photos)  // Add photos to lockScreenPhotoManager
+                                Log.d(TAG, "Successfully loaded ${photos.size} photos")
+                                precachePhotos()
                             }
                         }
                     }
@@ -300,7 +302,7 @@ class PhotoLockScreenService : Service() {
                 }
             }
         } else {
-            Log.d(TAG, "Service already initialized, photo count: ${photoManager.getPhotoCount()}")
+            Log.d(TAG, "Service already initialized, photo count: ${lockScreenPhotoManager.getPhotoCount()}")  // Changed from photoManager
         }
 
         return START_STICKY
@@ -346,7 +348,8 @@ class PhotoLockScreenService : Service() {
 
         initializationJob?.cancel()
         serviceScope.cancel()
-        photoManager.cleanup()
+        googlePhotosManager.cleanup()
+        lockScreenPhotoManager.cleanup()
         isInitialized = false
 
         if (isKioskMode) {
