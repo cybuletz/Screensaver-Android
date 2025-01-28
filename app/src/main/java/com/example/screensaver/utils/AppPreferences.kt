@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.screensaver.data.AppDataManager
+import javax.annotation.PostConstruct
 
 /**
  * Manages application preferences and settings.
@@ -16,7 +18,10 @@ import javax.inject.Singleton
 
 
 @Singleton
-class AppPreferences @Inject constructor(context: Context) {
+class AppPreferences @Inject constructor(
+    context: Context,
+    private val appDataManager: AppDataManager
+) {
 
     private val prefs: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
     private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -41,9 +46,7 @@ class AppPreferences @Inject constructor(context: Context) {
     private val _clockFormatFlow = MutableStateFlow(getClockFormat())
     private val _selectedAlbumsFlow = MutableStateFlow(getSelectedAlbumIds())
     private val _kioskModeEnabledFlow = MutableStateFlow(isKioskModeEnabled())
-
     private val _previewCountFlow = MutableStateFlow(getPreviewCount())
-    val previewCountFlow = _previewCountFlow.asStateFlow()
 
 
     // Public flows
@@ -55,8 +58,10 @@ class AppPreferences @Inject constructor(context: Context) {
     val clockFormatFlow = _clockFormatFlow.asStateFlow()
     val selectedAlbumsFlow = _selectedAlbumsFlow.asStateFlow()
     val kioskModeEnabledFlow = _kioskModeEnabledFlow.asStateFlow()
+    val previewCountFlow = _previewCountFlow.asStateFlow()
 
-    init {
+    @PostConstruct
+    fun initialize() {
         prefs.registerOnSharedPreferenceChangeListener(prefsChangeListener)
     }
 
@@ -93,6 +98,10 @@ class AppPreferences @Inject constructor(context: Context) {
         private const val MAX_PREVIEW_COUNT = 5
         private const val PREVIEW_COOLDOWN_DURATION = 3600000L
 
+        private const val PREF_BRIGHTNESS = "brightness"
+        private const val PREF_ORIENTATION = "orientation"
+        private const val PREF_KEEP_SCREEN_ON = "keep_screen_on"
+
     }
 
     enum class DisplayMode {
@@ -106,6 +115,41 @@ class AppPreferences @Inject constructor(context: Context) {
     enum class ClockFormat {
         FORMAT_12H, FORMAT_24H
     }
+
+    private fun updateBoth(operation: SharedPreferences.Editor.() -> Unit) {
+        prefs.edit().apply {
+            operation()
+            apply()
+        }
+        // Sync changes to AppDataManager
+        syncToAppDataManager()
+    }
+
+    private fun syncToAppDataManager() {
+        appDataManager.updateState { currentState ->
+            currentState.copy(
+                displayMode = getDisplayMode().toString(),
+                transitionInterval = getTransitionInterval(),
+                transitionAnimation = getTransitionAnimation().toString(),
+                showClock = isShowClock(),
+                clockFormat = getClockFormat().toString(),
+                selectedAlbums = getSelectedAlbumIds(),
+                // Update these to use the correct preference methods
+                showPhotoInfo = isShowPhotoInfo(),
+                darkMode = getDarkMode(),
+                kioskModeEnabled = isKioskModeEnabled(),
+                // Add any other fields that need to be synced
+                showDate = getShowDate(),
+                brightness = getBrightness(),
+                orientation = getOrientation(),
+                keepScreenOn = getKeepScreenOn()
+            )
+        }
+    }
+
+    fun getBrightness(): Int = prefs.getInt(PREF_BRIGHTNESS, 50)
+    fun getOrientation(): String = prefs.getString(PREF_ORIENTATION, "auto") ?: "auto"
+    fun getKeepScreenOn(): Boolean = prefs.getBoolean(PREF_KEEP_SCREEN_ON, false)
 
     fun getLong(key: String, defaultValue: Long): Long = prefs.getLong(key, defaultValue)
 
@@ -166,7 +210,7 @@ class AppPreferences @Inject constructor(context: Context) {
     }
 
     fun setDisplayMode(mode: DisplayMode) {
-        prefs.edit {
+        updateBoth {
             putString(PREF_DISPLAY_MODE, when(mode) {
                 DisplayMode.LOCK_SCREEN -> "lock_screen"
                 DisplayMode.DREAM_SERVICE -> "dream_service"
@@ -178,7 +222,7 @@ class AppPreferences @Inject constructor(context: Context) {
         prefs.getInt(PREF_TRANSITION_DURATION, 30)
 
     fun setTransitionDuration(duration: Int) {
-        prefs.edit { putInt(PREF_TRANSITION_DURATION, duration) }
+        updateBoth { putInt(PREF_TRANSITION_DURATION, duration) }
     }
 
     fun getPhotoQuality(): Int =

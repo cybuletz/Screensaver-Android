@@ -1,15 +1,17 @@
 package com.example.screensaver
 
 import android.content.Context
-import android.content.SharedPreferences
+import com.example.screensaver.data.AppDataManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class PhotoSourceState @Inject constructor(@ApplicationContext context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("photo_source_prefs", Context.MODE_PRIVATE)
-
+class PhotoSourceState @Inject constructor(
+    @ApplicationContext context: Context,
+    private val appDataManager: AppDataManager
+) {
     companion object {
         private const val MAX_DAILY_PREVIEWS = 10
         private const val MIN_PREVIEW_INTERVAL = 5000L // 5 seconds between previews
@@ -17,39 +19,57 @@ class PhotoSourceState @Inject constructor(@ApplicationContext context: Context)
     }
 
     var hasSelectedSource: Boolean
-        get() = prefs.getBoolean("has_selected_source", false)
-        set(value) = prefs.edit().putBoolean("has_selected_source", value).apply()
+        get() = appDataManager.getCurrentState().photoSources.isNotEmpty()
+        set(value) = appDataManager.updateState {
+            if (value && it.photoSources.isEmpty()) {
+                it.copy(photoSources = setOf("local"))
+            } else if (!value) {
+                it.copy(photoSources = emptySet())
+            } else it
+        }
 
     var hasSelectedPhotos: Boolean
-        get() = prefs.getBoolean("has_selected_photos", false)
-        set(value) = prefs.edit().putBoolean("has_selected_photos", value).apply()
+        get() = appDataManager.getCurrentState().selectedAlbums.isNotEmpty()
+        set(value) = appDataManager.updateState {
+            if (!value) it.copy(selectedAlbums = emptySet()) else it
+        }
 
     var lastPreviewTimestamp: Long
-        get() = prefs.getLong("last_preview_timestamp", 0)
-        private set(value) = prefs.edit().putLong("last_preview_timestamp", value).apply()
+        get() = appDataManager.getCurrentState().lastPreviewTimestamp
+        private set(value) = appDataManager.updateState {
+            it.copy(lastPreviewTimestamp = value)
+        }
 
     var previewCount: Int
-        get() = prefs.getInt("preview_count", 0)
-        private set(value) = prefs.edit().putInt("preview_count", value).apply()
+        get() = appDataManager.getCurrentState().previewCount
+        private set(value) = appDataManager.updateState {
+            it.copy(previewCount = value)
+        }
 
     private var lastPreviewResetTime: Long
-        get() = prefs.getLong("last_preview_reset_time", 0)
-        set(value) = prefs.edit().putLong("last_preview_reset_time", value).apply()
+        get() = appDataManager.getCurrentState().lastPreviewResetTime
+        set(value) = appDataManager.updateState {
+            it.copy(lastPreviewResetTime = value)
+        }
 
     var isInPreviewMode: Boolean
-        get() = prefs.getBoolean("is_in_preview_mode", false)
-        set(value) = prefs.edit().putBoolean("is_in_preview_mode", value).apply()
+        get() = appDataManager.getCurrentState().isInPreviewMode
+        set(value) = appDataManager.updateState {
+            it.copy(isInPreviewMode = value)
+        }
 
     fun reset() {
-        prefs.edit().apply {
-            remove("has_selected_source")
-            remove("has_selected_photos")
-            remove("last_preview_timestamp")
-            remove("preview_count")
-            remove("last_preview_reset_time")
-            remove("is_in_preview_mode")
-            apply()
+        appDataManager.updateState {
+            it.copy(
+                photoSources = emptySet(),
+                selectedAlbums = emptySet(),
+                lastPreviewTimestamp = 0,
+                previewCount = 0,
+                lastPreviewResetTime = 0,
+                isInPreviewMode = false
+            )
         }
+        Timber.d("PhotoSourceState reset completed")
     }
 
     fun isScreensaverReady(): Boolean {
@@ -68,10 +88,12 @@ class PhotoSourceState @Inject constructor(@ApplicationContext context: Context)
         lastPreviewTimestamp = System.currentTimeMillis()
         previewCount++
         isInPreviewMode = true
+        Timber.d("Preview started: count=$previewCount")
     }
 
     fun recordPreviewEnded() {
         isInPreviewMode = false
+        Timber.d("Preview ended")
     }
 
     fun getTimeSinceLastPreview(): Long {
@@ -101,15 +123,18 @@ class PhotoSourceState @Inject constructor(@ApplicationContext context: Context)
         if (currentTime - lastPreviewResetTime >= PREVIEW_COUNT_RESET_INTERVAL) {
             resetPreviewStats()
             lastPreviewResetTime = currentTime
+            Timber.d("Daily preview count reset")
         }
     }
 
     fun resetPreviewStats() {
-        prefs.edit().apply {
-            remove("last_preview_timestamp")
-            remove("preview_count")
-            remove("is_in_preview_mode")
-            apply()
+        appDataManager.updateState {
+            it.copy(
+                lastPreviewTimestamp = 0,
+                previewCount = 0,
+                isInPreviewMode = false
+            )
         }
+        Timber.d("Preview stats reset")
     }
 }

@@ -6,7 +6,6 @@ plugins {
     id("com.google.dagger.hilt.android")
     id("kotlin-parcelize")
     id("kotlin-kapt")
-    id("androidx.navigation.safeargs.kotlin") // Add Safe Args plugin
 }
 
 kapt {
@@ -202,4 +201,6 @@ dependencies {
 
     // If you need the Jetty ALPN boot library
     implementation("org.eclipse.jetty.alpn:alpn-api:1.1.3.v20160715")
+
+    implementation("com.google.api-client:google-api-client-gson:2.2.0")
 }

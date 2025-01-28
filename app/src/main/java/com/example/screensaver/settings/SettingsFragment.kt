@@ -53,6 +53,9 @@ import androidx.navigation.fragment.findNavController
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import android.view.Gravity
+import com.example.screensaver.data.AppDataManager
+import com.example.screensaver.data.AppDataState
+
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -61,6 +64,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
+
+    @Inject
+    lateinit var appDataManager: AppDataManager
 
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
@@ -187,7 +193,53 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        setPreferencesFromResource(R.xml.preferences, rootKey)
+        lifecycleScope.launch(Dispatchers.IO) {
+            // Load preferences in background
+            withContext(Dispatchers.IO) {
+                setPreferencesFromResource(R.xml.preferences, rootKey)
+            }
+            // Setup UI on main thread
+            withContext(Dispatchers.Main) {
+                initializeDeviceAdmin()
+                setupPhotoSourcePreferences()
+                setupGoogleSignIn()
+                setupTestScreensaver()
+                setupDisplayModeSelection()
+                setupLockScreenPreview()
+                setupLockScreenStatus()
+                observeAppDataState() // New function
+            }
+        }
+    }
+
+    private fun observeAppDataState() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            appDataManager.observeState().collect { state ->
+                updatePreferencesFromState(state)
+            }
+        }
+    }
+
+    private fun updatePreferencesFromState(state: AppDataState) {
+        findPreference<ListPreference>("display_mode_selection")?.value = state.displayMode
+        findPreference<SwitchPreferenceCompat>("show_clock")?.isChecked = state.showClock
+        findPreference<SwitchPreferenceCompat>("show_date")?.isChecked = state.showDate
+
+        // Update transition settings
+        findPreference<ListPreference>("transition_effect")?.value = state.transitionAnimation
+        findPreference<SeekBarPreference>("transition_interval")?.value = state.transitionInterval
+
+        // Update photo source settings
+        val photoSourceSelection = findPreference<MultiSelectListPreference>("photo_source_selection")
+        photoSourceSelection?.values = state.photoSources
+
+        // Update Google Photos state
+        val useGooglePhotos = findPreference<SwitchPreferenceCompat>("google_photos_enabled")
+        useGooglePhotos?.isChecked = state.googlePhotosEnabled
+
+        // Update screensaver settings
+        findPreference<SwitchPreferenceCompat>("random_order")?.isChecked = state.randomOrder
+        findPreference<ListPreference>("photo_scale")?.value = state.photoScale
     }
 
     private fun setupPhotoDisplayManager() {
@@ -275,15 +327,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun setupDisplayModeSelection() {
         findPreference<ListPreference>("display_mode_selection")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
-                when (newValue as String) {
-                    DEFAULT_DISPLAY_MODE -> {
+                val mode = newValue as String
+                appDataManager.updateState { it.copy(displayMode = mode) }
+                when (mode) {
+                    "dream_service" -> {
                         lifecycleScope.launch {
                             disableLockScreenMode()
                             enableDreamService()
                         }
                         true
                     }
-                    LOCK_SCREEN_MODE -> {
+                    "lock_screen" -> {
                         lifecycleScope.launch {
                             if (enableLockScreenMode()) {
                                 disableDreamService()
@@ -343,22 +397,21 @@ class SettingsFragment : PreferenceFragmentCompat() {
         photoSourceSelection?.setOnPreferenceChangeListener { _, newValue ->
             @Suppress("UNCHECKED_CAST")
             val selectedSources = newValue as Set<String>
-            Log.d(TAG, "Photo sources changed to: $selectedSources")
-            googlePhotosCategory?.isVisible = selectedSources.contains("google_photos")
-            if (!selectedSources.contains("google_photos")) {
-                signOutCompletely()
-            }
+            appDataManager.updateState { it.copy(
+                photoSources = selectedSources,
+                googlePhotosEnabled = selectedSources.contains("google_photos")
+            )}
             true
         }
 
         // Handle Google Sign-in
         useGooglePhotos?.setOnPreferenceChangeListener { _, newValue ->
             val enabled = newValue as Boolean
-            Log.d(TAG, "Google Photos sign-in state changing to: $enabled")
             if (enabled) {
                 showGoogleSignInPrompt()
-                false // Don't update the switch until sign-in is successful
+                false
             } else {
+                appDataManager.updateState { it.copy(googlePhotosEnabled = false) }
                 signOutCompletely()
                 true
             }
@@ -515,30 +568,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun handleSignInResult(completedTask: Task<GoogleSignInAccount>) {
         try {
             val account = completedTask.getResult(ApiException::class.java)
-            Log.d(TAG, "Sign in result received: ${completedTask.result.id}")
 
-            // First update UI state
-            updateGooglePhotosState(true)
+            // Update state first
+            appDataManager.updateState { it.copy(
+                googlePhotosEnabled = true,
+                lastSyncTimestamp = System.currentTimeMillis()
+            )}
 
             // Then handle auth code exchange
             account?.serverAuthCode?.let { authCode ->
                 account.email?.let { email ->
                     exchangeAuthCode(authCode, email)
-                    // Notify service of authentication update
-                    Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
-                        intent.action = "AUTH_UPDATED"
-                        requireContext().startService(intent)
-                    }
                 }
-            } ?: run {
-                Log.e(TAG, "No server auth code received")
-                Toast.makeText(context, "Failed to get auth code", Toast.LENGTH_SHORT).show()
-                updateGooglePhotosState(false)
             }
         } catch (e: ApiException) {
             Log.e(TAG, "Sign in failed", e)
-            Toast.makeText(context, "Sign in failed: ${e.message}", Toast.LENGTH_SHORT).show()
-            updateGooglePhotosState(false)
+            appDataManager.updateState { it.copy(googlePhotosEnabled = false) }
+            showFeedback(R.string.sign_in_failed)
         }
     }
 

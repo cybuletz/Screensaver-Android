@@ -14,19 +14,24 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.example.screensaver.lock.LockScreenPhotoManager
+import com.example.screensaver.data.AppDataManager
+import com.example.screensaver.data.SecureStorage
+import com.example.screensaver.recovery.StateRecoveryManager
+import com.example.screensaver.recovery.StateRestoration
 
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
 
-    @Singleton
     @Provides
+    @Singleton
     fun provideApplicationScope(): CoroutineScope {
-        return CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        return CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
 
     @Singleton
@@ -41,10 +46,13 @@ object AppModule {
         return PhotoAnalytics(context)
     }
 
-    @Singleton
     @Provides
-    fun provideAppPreferences(@ApplicationContext context: Context): AppPreferences {
-        return AppPreferences(context)
+    @Singleton
+    fun provideAppPreferences(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager
+    ): AppPreferences {
+        return AppPreferences(context, appDataManager)
     }
 
     @Provides
@@ -61,12 +69,6 @@ object AppModule {
     @Singleton
     fun provideNotificationHelper(@ApplicationContext context: Context): NotificationHelper {
         return NotificationHelper(context)
-    }
-
-    @Provides
-    @Singleton
-    fun providePhotoSourceState(@ApplicationContext context: Context): PhotoSourceState {
-        return PhotoSourceState(context)
     }
 
     @Provides
@@ -94,4 +96,41 @@ object AppModule {
     ): PhotoDisplayManager {
         return PhotoDisplayManager(lockScreenPhotoManager, context)
     }
+
+    @Provides
+    @Singleton
+    fun provideStateRecoveryManager(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager
+    ): StateRecoveryManager {
+        return StateRecoveryManager(context, appDataManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideStateRestoration(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager,
+        secureStorage: SecureStorage
+    ): StateRestoration {
+        return StateRestoration(context, appDataManager, secureStorage)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSecureStorage(
+        @ApplicationContext context: Context
+    ): SecureStorage {
+        return SecureStorage(context)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoSourceState(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager  // Add this parameter
+    ): PhotoSourceState {
+        return PhotoSourceState(context, appDataManager)
+    }
+
 }
