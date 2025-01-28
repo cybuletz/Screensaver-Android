@@ -240,40 +240,31 @@ class AlbumSelectionActivity : AppCompatActivity() {
         preferences.setSelectedAlbumIds(selectedAlbums)
 
         lifecycleScope.launch {
-            Log.d(TAG, "Starting photo loading process...")
             try {
-                withContext(NonCancellable) {
-                    val photos = photoManager.loadPhotos()
-                    if (photos != null) {
-                        Log.d(TAG, "Successfully loaded ${photos.size} photos from Google Photos")
+                val photos = photoManager.loadPhotos()
+                if (photos != null) {
+                    // Clear existing photos first
+                    lockScreenPhotoManager.clearPhotos()
+                    lockScreenPhotoManager.addPhotos(photos)
 
-                        // Transfer photos to lock screen manager
-                        lockScreenPhotoManager.clearPhotos()
-                        lockScreenPhotoManager.addPhotos(photos)
-                        Log.d(TAG, "Photos transferred to LockScreenPhotoManager")
-
-                        // Precache photos
-                        withContext(Dispatchers.IO) {
-                            precachePhotos()
-                        }
-
-                        // Start the lock screen service
-                        val serviceIntent = Intent(this@AlbumSelectionActivity, PhotoLockScreenService::class.java).apply {
-                            action = "AUTH_UPDATED"
-                        }
-                        startService(serviceIntent)
-
-                        withContext(Dispatchers.Main) {
-                            setResult(Activity.RESULT_OK)
-                            Log.d(TAG, "Photo loading complete, finishing activity")
-                            finish()
-                        }
-                    } else {
-                        Log.e(TAG, "Failed to load photos - null result")
-                        withContext(Dispatchers.Main) {
-                            showError(getString(R.string.photos_load_failed))
-                        }
+                    // Start precaching
+                    withContext(Dispatchers.IO) {
+                        precachePhotos()
                     }
+
+                    // Update service
+                    val serviceIntent = Intent(this@AlbumSelectionActivity, PhotoLockScreenService::class.java).apply {
+                        action = "AUTH_UPDATED"
+                    }
+                    startService(serviceIntent)
+
+                    // Update main activity
+                    val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        putExtra("photos_ready", true)
+                    }
+                    startActivity(mainIntent)
+                    finish()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading photos", e)

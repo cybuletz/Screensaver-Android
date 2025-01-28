@@ -37,6 +37,7 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.example.screensaver.ui.SettingsButtonController
+import com.example.screensaver.utils.AppPreferences
 
 
 
@@ -56,6 +57,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
+
+    @Inject
+    lateinit var preferences: AppPreferences
 
     private var isDestroyed = false
     private var lastBackPressTime: Long = 0
@@ -121,10 +125,28 @@ class MainActivity : AppCompatActivity() {
             setupTouchListener()
             initializePhotoDisplayManager()
             startLockScreenService()
+            initializePhotos()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
+        }
+    }
+
+    private fun initializePhotos() {
+        lifecycleScope.launch {
+            try {
+                val selectedAlbums = preferences.getSelectedAlbumIds()
+                if (selectedAlbums.isNotEmpty()) {
+                    Log.d(TAG, "Found ${selectedAlbums.size} saved albums, loading photos...")
+                    val photos = photoManager.loadPhotos()
+                    if (photos != null) {
+                        photoDisplayManager.startPhotoDisplay()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing photos", e)
+            }
         }
     }
 

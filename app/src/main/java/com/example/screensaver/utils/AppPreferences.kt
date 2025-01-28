@@ -97,16 +97,13 @@ class AppPreferences @Inject constructor(
         private const val PREF_KEEP_SCREEN_ON = "keep_screen_on"
         private const val PREFERENCES_NAME = "app_preferences"
         private const val KEY_SELECTED_ALBUMS = "selected_albums"
+        private const val KEY_LAST_PHOTO_SYNC = "last_photo_sync"
     }
 
     private val sharedPreferences: SharedPreferences = context.getSharedPreferences(
         PREFERENCES_NAME,
         Context.MODE_PRIVATE
     )
-
-    fun clearSelectedAlbums() {
-        sharedPreferences.edit().remove(KEY_SELECTED_ALBUMS).apply()
-    }
 
     enum class DisplayMode {
         DREAM_SERVICE, LOCK_SCREEN
@@ -118,6 +115,45 @@ class AppPreferences @Inject constructor(
 
     enum class ClockFormat {
         FORMAT_12H, FORMAT_24H
+    }
+
+    fun getSelectedAlbumIds(): Set<String> {
+        return prefs.getStringSet(PREF_SELECTED_ALBUMS, emptySet()) ?: emptySet()
+    }
+
+    fun setSelectedAlbumIds(albumIds: Set<String>) {
+        prefs.edit {
+            putStringSet(PREF_SELECTED_ALBUMS, albumIds)
+            putLong(PREF_LAST_SYNC, System.currentTimeMillis())
+        }
+        _selectedAlbumsFlow.value = albumIds
+    }
+
+    fun addSelectedAlbumId(albumId: String) {
+        val currentIds = getSelectedAlbumIds().toMutableSet()
+        if (currentIds.add(albumId)) {  // Only update if the set changed
+            setSelectedAlbumIds(currentIds)
+        }
+    }
+
+    fun removeSelectedAlbumId(albumId: String) {
+        val currentIds = getSelectedAlbumIds().toMutableSet()
+        if (currentIds.remove(albumId)) {  // Only update if the set changed
+            setSelectedAlbumIds(currentIds)
+        }
+    }
+
+    fun clearSelectedAlbums() {
+        setSelectedAlbumIds(emptySet())
+    }
+
+    // Album Sync Methods
+    fun updateLastSync() {
+        prefs.edit().putLong(PREF_LAST_SYNC, System.currentTimeMillis()).apply()
+    }
+
+    fun getLastSync(): Long {
+        return prefs.getLong(PREF_LAST_SYNC, 0)
     }
 
     private fun updatePreference(operation: SharedPreferences.Editor.() -> Unit) {
@@ -290,31 +326,6 @@ class AppPreferences @Inject constructor(
                 ClockFormat.FORMAT_24H -> "24h"
             })
         }
-    }
-
-    fun getSelectedAlbumIds(): Set<String> =
-        prefs.getStringSet(PREF_SELECTED_ALBUMS, emptySet()) ?: emptySet()
-
-    fun setSelectedAlbumIds(albumIds: Set<String>) {
-        updatePreference { putStringSet(PREF_SELECTED_ALBUMS, albumIds) }
-    }
-
-    fun addSelectedAlbumId(albumId: String) {
-        val currentIds = getSelectedAlbumIds().toMutableSet()
-        currentIds.add(albumId)
-        setSelectedAlbumIds(currentIds)
-    }
-
-    fun removeSelectedAlbumId(albumId: String) {
-        val currentIds = getSelectedAlbumIds().toMutableSet()
-        currentIds.remove(albumId)
-        setSelectedAlbumIds(currentIds)
-    }
-
-    fun getLastSyncTimestamp(): Long = prefs.getLong(PREF_LAST_SYNC, 0)
-
-    fun updateLastSyncTimestamp() {
-        updatePreference { putLong(PREF_LAST_SYNC, System.currentTimeMillis()) }
     }
 
     fun resetToDefaults() {

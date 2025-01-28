@@ -362,6 +362,10 @@ class GooglePhotosManager @Inject constructor(
         }
     }
 
+    fun hasSavedAlbums(): Boolean {
+        return preferences.getSelectedAlbumIds().isNotEmpty()
+    }
+
     private fun shouldRetryOnError(error: Exception): Boolean {
         Log.d(TAG, "Checking if should retry for error: ${error.message}")
         return error.message?.contains("UNAUTHENTICATED") == true

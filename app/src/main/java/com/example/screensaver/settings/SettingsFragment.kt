@@ -55,6 +55,7 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import android.view.Gravity
 import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.AppDataState
+import com.example.screensaver.data.SecureStorage
 
 
 @AndroidEntryPoint
@@ -67,6 +68,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var appDataManager: AppDataManager
+
+    @Inject
+    lateinit var secureStorage: SecureStorage
 
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
@@ -667,16 +671,22 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 val accessToken = jsonResponse.getString("access_token")
                 val refreshToken = jsonResponse.getString("refresh_token")
                 val expiresIn = jsonResponse.getLong("expires_in")
+                val expirationTime = System.currentTimeMillis() + (expiresIn * 1000)
 
                 withContext(Dispatchers.Main) {
-                    PreferenceManager.getDefaultSharedPreferences(requireContext())
-                        .edit()
-                        .putString("access_token", accessToken)
-                        .putString("refresh_token", refreshToken)
-                        .putLong("token_expiration", System.currentTimeMillis() + (expiresIn * 1000))
-                        .apply()
-
-                    updateGooglePhotosState(true)  // Changed from updateSignInState
+                    try {
+                        secureStorage.saveGoogleCredentials(
+                            accessToken = accessToken,
+                            refreshToken = refreshToken,
+                            expirationTime = expirationTime,
+                            email = email
+                        )
+                        updateGooglePhotosState(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error saving credentials to SecureStorage", e)
+                        updateGooglePhotosState(false)
+                        showFeedback(R.string.sign_in_failed)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error exchanging auth code", e)
@@ -686,7 +696,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         "Failed to sign in: ${e.message}",
                         Toast.LENGTH_SHORT
                     ).show()
-                    updateGooglePhotosState(false)  // Changed from updateSignInState
+                    updateGooglePhotosState(false)
                 }
             }
         }
