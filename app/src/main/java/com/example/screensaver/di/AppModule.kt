@@ -22,6 +22,7 @@ import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.recovery.StateRecoveryManager
 import com.example.screensaver.recovery.StateRestoration
+import com.example.screensaver.data.PhotoCache
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -122,5 +123,13 @@ object AppModule {
         appDataManager: AppDataManager
     ): PhotoSourceState {
         return PhotoSourceState(context, appDataManager)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoCache(
+        @ApplicationContext context: Context
+    ): PhotoCache {
+        return PhotoCache(context)
     }
 }
