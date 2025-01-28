@@ -14,6 +14,7 @@ import timber.log.Timber
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.screensaver.utils.AppPreferences
 
 /**
  * Manages the persistence and retrieval of application data state.
@@ -22,7 +23,8 @@ import javax.inject.Singleton
 @Singleton
 class AppDataManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val gson: Gson
+    private val gson: Gson,
+    private val appPreferences: AppPreferences
 ) {
     private val preferences: SharedPreferences
     private val securePreferences: SharedPreferences

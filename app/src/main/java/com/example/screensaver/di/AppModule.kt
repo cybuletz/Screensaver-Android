@@ -14,7 +14,6 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
-import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,8 +39,6 @@ object AppModule {
         return appContext
     }
 
-    
-
     @Singleton
     @Provides
     fun providePhotoAnalytics(@ApplicationContext context: Context): PhotoAnalytics {
@@ -51,10 +48,9 @@ object AppModule {
     @Provides
     @Singleton
     fun provideAppPreferences(
-        @ApplicationContext context: Context,
-        appDataManager: AppDataManager
+        @ApplicationContext context: Context
     ): AppPreferences {
-        return AppPreferences(context, appDataManager)
+        return AppPreferences(context)
     }
 
     @Provides
@@ -120,19 +116,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideSecureStorage(
-        @ApplicationContext context: Context
-    ): SecureStorage {
-        return SecureStorage(context)
-    }
-
-    @Provides
-    @Singleton
     fun providePhotoSourceState(
         @ApplicationContext context: Context,
-        appDataManager: AppDataManager  // Add this parameter
+        appDataManager: AppDataManager
     ): PhotoSourceState {
         return PhotoSourceState(context, appDataManager)
     }
-
 }

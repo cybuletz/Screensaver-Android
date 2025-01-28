@@ -3,6 +3,7 @@ package com.example.screensaver.di
 import android.content.Context
 import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.SecureStorage
+import com.example.screensaver.utils.AppPreferences
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
@@ -32,8 +33,9 @@ object DataModule {
     @Singleton
     fun provideAppDataManager(
         @ApplicationContext context: Context,
-        gson: Gson
+        gson: Gson,
+        appPreferences: AppPreferences
     ): AppDataManager {
-        return AppDataManager(context, gson)
+        return AppDataManager(context, gson, appPreferences)
     }
 }

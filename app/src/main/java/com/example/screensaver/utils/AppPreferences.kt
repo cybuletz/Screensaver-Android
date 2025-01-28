@@ -8,21 +8,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
-import com.example.screensaver.data.AppDataManager
 import javax.annotation.PostConstruct
 
 /**
  * Manages application preferences and settings.
  * Handles persistence and provides type-safe access to user preferences.
  */
-
-
 @Singleton
 class AppPreferences @Inject constructor(
-    context: Context,
-    private val appDataManager: AppDataManager
+    context: Context
 ) {
-
     private val prefs: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
     private val prefsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
@@ -47,7 +42,6 @@ class AppPreferences @Inject constructor(
     private val _selectedAlbumsFlow = MutableStateFlow(getSelectedAlbumIds())
     private val _kioskModeEnabledFlow = MutableStateFlow(isKioskModeEnabled())
     private val _previewCountFlow = MutableStateFlow(getPreviewCount())
-
 
     // Public flows
     val displayModeFlow = _displayModeFlow.asStateFlow()
@@ -101,7 +95,6 @@ class AppPreferences @Inject constructor(
         private const val PREF_BRIGHTNESS = "brightness"
         private const val PREF_ORIENTATION = "orientation"
         private const val PREF_KEEP_SCREEN_ON = "keep_screen_on"
-
     }
 
     enum class DisplayMode {
@@ -116,34 +109,10 @@ class AppPreferences @Inject constructor(
         FORMAT_12H, FORMAT_24H
     }
 
-    private fun updateBoth(operation: SharedPreferences.Editor.() -> Unit) {
+    private fun updatePreference(operation: SharedPreferences.Editor.() -> Unit) {
         prefs.edit().apply {
             operation()
             apply()
-        }
-        // Sync changes to AppDataManager
-        syncToAppDataManager()
-    }
-
-    private fun syncToAppDataManager() {
-        appDataManager.updateState { currentState ->
-            currentState.copy(
-                displayMode = getDisplayMode().toString(),
-                transitionInterval = getTransitionInterval(),
-                transitionAnimation = getTransitionAnimation().toString(),
-                showClock = isShowClock(),
-                clockFormat = getClockFormat().toString(),
-                selectedAlbums = getSelectedAlbumIds(),
-                // Update these to use the correct preference methods
-                showPhotoInfo = isShowPhotoInfo(),
-                darkMode = getDarkMode(),
-                kioskModeEnabled = isKioskModeEnabled(),
-                // Add any other fields that need to be synced
-                showDate = getShowDate(),
-                brightness = getBrightness(),
-                orientation = getOrientation(),
-                keepScreenOn = getKeepScreenOn()
-            )
         }
     }
 
@@ -203,14 +172,13 @@ class AppPreferences @Inject constructor(
         _previewCountFlow.value = 0
     }
 
-    // Display Mode
     fun getDisplayMode(): DisplayMode = when(prefs.getString(PREF_DISPLAY_MODE, DEFAULT_DISPLAY_MODE)) {
         "lock_screen" -> DisplayMode.LOCK_SCREEN
         else -> DisplayMode.DREAM_SERVICE
     }
 
     fun setDisplayMode(mode: DisplayMode) {
-        updateBoth {
+        updatePreference {
             putString(PREF_DISPLAY_MODE, when(mode) {
                 DisplayMode.LOCK_SCREEN -> "lock_screen"
                 DisplayMode.DREAM_SERVICE -> "dream_service"
@@ -222,63 +190,61 @@ class AppPreferences @Inject constructor(
         prefs.getInt(PREF_TRANSITION_DURATION, 30)
 
     fun setTransitionDuration(duration: Int) {
-        updateBoth { putInt(PREF_TRANSITION_DURATION, duration) }
+        updatePreference { putInt(PREF_TRANSITION_DURATION, duration) }
     }
 
     fun getPhotoQuality(): Int =
         prefs.getInt(PREF_PHOTO_QUALITY, 1)
 
     fun setPhotoQuality(quality: Int) {
-        prefs.edit { putInt(PREF_PHOTO_QUALITY, quality) }
+        updatePreference { putInt(PREF_PHOTO_QUALITY, quality) }
     }
 
     fun getRandomOrder(): Boolean =
         prefs.getBoolean(PREF_RANDOM_ORDER, true)
 
     fun setRandomOrder(enabled: Boolean) {
-        prefs.edit { putBoolean(PREF_RANDOM_ORDER, enabled) }
+        updatePreference { putBoolean(PREF_RANDOM_ORDER, enabled) }
     }
 
     fun getShowLocation(): Boolean =
         prefs.getBoolean(PREF_SHOW_LOCATION, false)
 
     fun setShowLocation(enabled: Boolean) {
-        prefs.edit { putBoolean(PREF_SHOW_LOCATION, enabled) }
+        updatePreference { putBoolean(PREF_SHOW_LOCATION, enabled) }
     }
 
     fun getShowDate(): Boolean =
         prefs.getBoolean(PREF_SHOW_DATE, true)
 
     fun setShowDate(enabled: Boolean) {
-        prefs.edit { putBoolean(PREF_SHOW_DATE, enabled) }
+        updatePreference { putBoolean(PREF_SHOW_DATE, enabled) }
     }
 
     fun getEnableTransitions(): Boolean =
         prefs.getBoolean(PREF_ENABLE_TRANSITIONS, true)
 
     fun setEnableTransitions(enabled: Boolean) {
-        prefs.edit { putBoolean(PREF_ENABLE_TRANSITIONS, enabled) }
+        updatePreference { putBoolean(PREF_ENABLE_TRANSITIONS, enabled) }
     }
 
     fun getDarkMode(): Boolean =
         prefs.getBoolean(PREF_DARK_MODE, false)
 
     fun setDarkMode(enabled: Boolean) {
-        prefs.edit { putBoolean(PREF_DARK_MODE, enabled) }
+        updatePreference { putBoolean(PREF_DARK_MODE, enabled) }
     }
 
-    // Transition Interval
     fun getTransitionInterval(): Int =
         prefs.getInt(PREF_TRANSITION_INTERVAL, DEFAULT_TRANSITION_INTERVAL)
 
     fun setTransitionInterval(seconds: Int) {
-        prefs.edit { putInt(PREF_TRANSITION_INTERVAL, seconds) }
+        updatePreference { putInt(PREF_TRANSITION_INTERVAL, seconds) }
     }
 
-    // Transition Animation
     fun getTransitionAnimation(): TransitionAnimation {
         val prefValue = getString("transition_animation", "fade")
-        return when (prefValue?.lowercase()) {
+        return when (prefValue.lowercase()) { // Remove the ?. operator
             "slide" -> TransitionAnimation.SLIDE
             "zoom" -> TransitionAnimation.ZOOM
             else -> TransitionAnimation.FADE
@@ -286,31 +252,28 @@ class AppPreferences @Inject constructor(
     }
 
     fun setTransitionAnimation(animation: TransitionAnimation) {
-        prefs.edit { putString(PREF_TRANSITION_ANIMATION, animation.name.lowercase()) }
+        updatePreference { putString(PREF_TRANSITION_ANIMATION, animation.name.lowercase()) }
     }
 
-    // Photo Info Display
     fun isShowPhotoInfo(): Boolean = prefs.getBoolean(PREF_SHOW_PHOTO_INFO, true)
 
     fun setShowPhotoInfo(show: Boolean) {
-        prefs.edit { putBoolean(PREF_SHOW_PHOTO_INFO, show) }
+        updatePreference { putBoolean(PREF_SHOW_PHOTO_INFO, show) }
     }
 
-    // Clock Display
     fun isShowClock(): Boolean = prefs.getBoolean(PREF_SHOW_CLOCK, true)
 
     fun setShowClock(show: Boolean) {
-        prefs.edit { putBoolean(PREF_SHOW_CLOCK, show) }
+        updatePreference { putBoolean(PREF_SHOW_CLOCK, show) }
     }
 
-    // Clock Format
     fun getClockFormat(): ClockFormat = when(prefs.getString(PREF_CLOCK_FORMAT, DEFAULT_CLOCK_FORMAT)) {
         "12h" -> ClockFormat.FORMAT_12H
         else -> ClockFormat.FORMAT_24H
     }
 
     fun setClockFormat(format: ClockFormat) {
-        prefs.edit {
+        updatePreference {
             putString(PREF_CLOCK_FORMAT, when(format) {
                 ClockFormat.FORMAT_12H -> "12h"
                 ClockFormat.FORMAT_24H -> "24h"
@@ -318,12 +281,11 @@ class AppPreferences @Inject constructor(
         }
     }
 
-    // Selected Albums
     fun getSelectedAlbumIds(): Set<String> =
         prefs.getStringSet(PREF_SELECTED_ALBUMS, emptySet()) ?: emptySet()
 
     fun setSelectedAlbumIds(albumIds: Set<String>) {
-        prefs.edit { putStringSet(PREF_SELECTED_ALBUMS, albumIds) }
+        updatePreference { putStringSet(PREF_SELECTED_ALBUMS, albumIds) }
     }
 
     fun addSelectedAlbumId(albumId: String) {
@@ -338,19 +300,14 @@ class AppPreferences @Inject constructor(
         setSelectedAlbumIds(currentIds)
     }
 
-    // Last Sync Time
     fun getLastSyncTimestamp(): Long = prefs.getLong(PREF_LAST_SYNC, 0)
 
     fun updateLastSyncTimestamp() {
-        prefs.edit { putLong(PREF_LAST_SYNC, System.currentTimeMillis()) }
+        updatePreference { putLong(PREF_LAST_SYNC, System.currentTimeMillis()) }
     }
 
-    /**
-     * Resets all preferences to their default values
-     */
     fun resetToDefaults() {
-        prefs.edit {
-            // ... existing reset preferences ...
+        updatePreference {
             putInt(PREF_TRANSITION_DURATION, 30)
             putInt(PREF_PHOTO_QUALITY, 1)
             putBoolean(PREF_RANDOM_ORDER, true)
@@ -363,19 +320,18 @@ class AppPreferences @Inject constructor(
         }
     }
 
-    // Kiosk Mode
     fun isKioskModeEnabled(): Boolean =
         prefs.getBoolean(PREF_KIOSK_MODE_ENABLED, false)
 
     fun setKioskModeEnabled(enabled: Boolean) {
-        prefs.edit { putBoolean(PREF_KIOSK_MODE_ENABLED, enabled) }
+        updatePreference { putBoolean(PREF_KIOSK_MODE_ENABLED, enabled) }
     }
 
     fun getKioskSettingsTimeout(): Int =
         prefs.getInt(PREF_KIOSK_SETTINGS_TIMEOUT, 5)
 
     fun setKioskSettingsTimeout(seconds: Int) {
-        prefs.edit { putInt(PREF_KIOSK_SETTINGS_TIMEOUT, seconds) }
+        updatePreference { putInt(PREF_KIOSK_SETTINGS_TIMEOUT, seconds) }
     }
 
     fun getString(key: String, defaultValue: String): String {
