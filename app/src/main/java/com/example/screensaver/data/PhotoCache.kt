@@ -12,6 +12,13 @@ import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ConcurrentHashMap
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Singleton
 class PhotoCache @Inject constructor(
@@ -25,18 +32,27 @@ class PhotoCache @Inject constructor(
         ERROR("Cache error occurred"),
         CLEANING("Cleaning cache"),
         LOW_SPACE("Low cache space"),
-        INITIALIZING("Initializing cache")
+        INITIALIZING("Initializing cache"),
+        PRELOADING("Preloading photos"),
+        PRELOAD_COMPLETE("Preload complete"),
+        PRELOAD_CANCELLED("Preload cancelled")
     }
 
     // Add status monitoring
     private val _cacheStatus = MutableStateFlow<CacheStatus>(CacheStatus.IDLE)
     val cacheStatus: StateFlow<CacheStatus> = _cacheStatus
 
+    private val preloadQueue = ConcurrentLinkedQueue<String>()
+    private val preloadJob = AtomicReference<Job?>()
+    private val preloadedPhotos = ConcurrentHashMap<String, Long>()
+
     // Add cache statistics
     data class CacheStats(
         val totalSize: Long = 0,
         val fileCount: Int = 0,
-        val lastUpdated: Long = 0
+        val lastUpdated: Long = 0,
+        val preloadedCount: Int = 0,
+        val preloadQueueSize: Int = 0
     )
 
     private val _cacheStats = MutableStateFlow(CacheStats())
@@ -75,7 +91,9 @@ class PhotoCache @Inject constructor(
             _cacheStats.value = CacheStats(
                 totalSize = totalSize,
                 fileCount = fileCount,
-                lastUpdated = System.currentTimeMillis()
+                lastUpdated = System.currentTimeMillis(),
+                preloadedCount = preloadedPhotos.size,
+                preloadQueueSize = preloadQueue.size
             )
 
             // Check for low space
@@ -86,6 +104,95 @@ class PhotoCache @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error updating cache stats", e)
         }
+    }
+
+    suspend fun preloadPhoto(url: String): Boolean {
+        if (isPhotoCached(url) || url in preloadQueue) {
+            return false
+        }
+
+        try {
+            _cacheStatus.value = CacheStatus.PRELOADING
+            preloadQueue.offer(url)
+            startPreloading()
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error queuing photo for preload: $url", e)
+            _cacheStatus.value = CacheStatus.ERROR
+            return false
+        }
+    }
+
+    private suspend fun downloadPhoto(url: String): Bitmap {
+        return withContext(Dispatchers.IO) {
+            try {
+                val connection = URL(url).openConnection() as HttpURLConnection
+                connection.doInput = true
+                connection.connect()
+                BitmapFactory.decodeStream(connection.inputStream)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error downloading photo: $url", e)
+                throw e
+            }
+        }
+    }
+
+    private suspend fun cachePhotoBitmap(url: String, bitmap: Bitmap) {
+        withContext(Dispatchers.IO) {
+            try {
+                val file = getPhotoFile(url)
+                FileOutputStream(file).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                }
+                updateCacheStats()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error caching photo bitmap", e)
+                throw e
+            }
+        }
+    }
+
+    private fun startPreloading() {
+        if (preloadJob.get()?.isActive == true) return
+
+        preloadJob.set(scope.launch {
+            try {
+                while (isActive && preloadQueue.isNotEmpty()) {
+                    val url = preloadQueue.poll() ?: continue
+                    try {
+                        if (!isPhotoCached(url)) {
+                            // Download and cache photo
+                            val bitmap = downloadPhoto(url)
+                            cachePhotoBitmap(url, bitmap)
+                            preloadedPhotos[url] = System.currentTimeMillis()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error preloading photo: $url", e)
+                    }
+                }
+                _cacheStatus.value = CacheStatus.PRELOAD_COMPLETE
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in preload job", e)
+                _cacheStatus.value = CacheStatus.ERROR
+            }
+        })
+    }
+
+
+
+    fun cancelPreloading() {
+        preloadJob.get()?.cancel()
+        preloadQueue.clear()
+        _cacheStatus.value = CacheStatus.PRELOAD_CANCELLED
+    }
+
+    private fun isPhotoCached(url: String): Boolean {
+        return getPhotoFile(url).exists()
+    }
+
+    private fun getPhotoFile(url: String): File {
+        val fileName = url.hashCode().toString()
+        return File(cacheDir, fileName)
     }
 
     suspend fun cacheLastPhotoUrl(url: String) = withContext(Dispatchers.IO) {
@@ -120,11 +227,12 @@ class PhotoCache @Inject constructor(
         }
     }
 
-    suspend fun cacheLastPhotoBitmap(bitmap: Bitmap) = withContext(Dispatchers.IO) {
+    suspend fun cacheLastPhotoBitmap(bitmap: Bitmap) = withContext(Dispatchers.IO + NonCancellable) {
         try {
             _cacheStatus.value = CacheStatus.WRITING
             FileOutputStream(lastPhotoFile).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                out.flush()  // Ensure immediate write
             }
             Log.d(TAG, "Cached photo bitmap successfully")
             updateCacheStats()
@@ -136,7 +244,7 @@ class PhotoCache @Inject constructor(
         }
     }
 
-    suspend fun getLastCachedPhotoBitmap(): Bitmap? = withContext(Dispatchers.IO) {
+    suspend fun getLastCachedPhotoBitmap(): Bitmap? = withContext(Dispatchers.IO + SupervisorJob()) {
         if (!lastPhotoFile.exists()) return@withContext null
 
         try {

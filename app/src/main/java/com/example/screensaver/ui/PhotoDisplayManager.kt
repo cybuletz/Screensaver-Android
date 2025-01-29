@@ -50,6 +50,8 @@ class PhotoDisplayManager @Inject constructor(
     private val _cacheStatusMessage = MutableStateFlow<String?>(null)
     val cacheStatusMessage: StateFlow<String?> = _cacheStatusMessage
 
+    private val preloadLimit = 3
+
     data class Views(
         val primaryView: ImageView,
         val overlayView: ImageView,
@@ -132,7 +134,20 @@ class PhotoDisplayManager @Inject constructor(
         return photoCache.getCacheDebugInfo()
     }
 
-    //fun preloadNextPhotos(urls: List<String>, limit: Int = 3)
+    fun preloadNextPhotos(urls: List<String>, limit: Int = preloadLimit) {
+        managerScope.launch {
+            try {
+                val startIndex = (currentPhotoIndex + 1).coerceAtMost(urls.size - 1)
+                val endIndex = (startIndex + limit).coerceAtMost(urls.size)
+
+                for (i in startIndex until endIndex) {
+                    photoCache.preloadPhoto(urls[i])
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to preload photos", e)
+            }
+        }
+    }
 
     fun initialize(views: Views, scope: LifecycleCoroutineScope) {
         Log.d(TAG, "Initializing PhotoDisplayManager")
@@ -145,37 +160,33 @@ class PhotoDisplayManager @Inject constructor(
         val currentScope = scope
         currentScope.launch {
             try {
-                // Try to load cached photo first
-                val cachedUrl = photoCache.getLastCachedPhotoUrl()
-                if (cachedUrl != null) {
-                    Log.d(TAG, "Found cached photo URL, loading immediately")
-                    loadAndDisplayPhoto(cachedUrl, true) // true indicates it's from cache
-                } else {
-                    val cachedBitmap = photoCache.getLastCachedPhotoBitmap()
-                    if (cachedBitmap != null) {
-                        Log.d(TAG, "Found cached photo bitmap, displaying immediately")
+                // First, try to show cached photo immediately
+                val cachedBitmap = photoCache.getLastCachedPhotoBitmap()
+                if (cachedBitmap != null) {
+                    withContext(Dispatchers.Main) {
+                        Log.d(TAG, "Showing cached photo immediately")
                         views.primaryView.setImageBitmap(cachedBitmap)
+                        // Hide loading indicators since we're showing something
+                        hideLoadingOverlay()
+                        hideAllMessages()
                     }
+                } else {
+                    // If no cached bitmap, show default photo while loading
+                    showDefaultPhotoWithLoadingMessage()
                 }
 
+                // Then check for fresh photos
                 if (photoManager.getPhotoCount() > 0) {
-                    // If photos are already available, start display
                     startPhotoDisplay()
                 } else {
-                    // Only show default photo and message if no photos are available and no cache
-                    if (cachedUrl == null && photoCache.getLastCachedPhotoBitmap() == null) {
-                        showDefaultPhoto()
-                    }
                     checkForPhotosInBackground()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error during initialization", e)
                 _photoLoadingState.value = LoadingState.ERROR(e.message ?: "Unknown error")
+                showDefaultPhoto()
             }
         }
-
-        setupPhotoManagerObserver()
-        updateTimeDisplayVisibility()
     }
 
     fun showLoadingOverlay(message: String) {
@@ -207,12 +218,13 @@ class PhotoDisplayManager @Inject constructor(
     private fun showDefaultPhotoWithLoadingMessage() {
         views?.let { views ->
             try {
-                // Show default photo
                 views.primaryView.post {
-                    views.primaryView.setImageResource(R.drawable.default_photo)
+                    Glide.with(context)
+                        .load(R.drawable.default_photo)
+                        .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                        .into(views.primaryView)
                 }
 
-                // Show overlay message with animation
                 views.overlayMessageContainer?.apply {
                     visibility = View.VISIBLE
                     alpha = 0f
@@ -223,7 +235,6 @@ class PhotoDisplayManager @Inject constructor(
                 }
 
                 views.overlayMessageText?.text = context.getString(R.string.loading_photos_friendly)
-
                 updateLoadingState(true)
             } catch (e: Exception) {
                 Log.e(TAG, "Error showing default photo with message", e)
@@ -352,7 +363,7 @@ class PhotoDisplayManager @Inject constructor(
                     hideAllMessages()
 
                     // Initial photo display
-                    loadAndDisplayPhoto()
+                    loadAndDisplayPhoto(false)
 
                     while (isActive) {
                         delay(photoInterval)
@@ -388,136 +399,96 @@ class PhotoDisplayManager @Inject constructor(
             ?.start()
     }
 
-    private suspend fun loadAndDisplayPhoto(specificUrl: String? = null, isFromCache: Boolean = false) {
+    private suspend fun loadAndDisplayPhoto(fromCache: Boolean = false) {
         if (isTransitioning) return
 
-        try {
-            val photoCount = photoManager.getPhotoCount()
-            if (photoCount == 0 && specificUrl == null) {
-                Log.w(TAG, "No photos available to display")
-                handleCacheLoadFailure()
-                return
-            }
+        val photoCount = photoManager.getPhotoCount()
+        if (photoCount == 0) return
 
-            val nextIndex = if (specificUrl == null) {
-                if (isRandomOrder) {
-                    Random.nextInt(photoCount)
-                } else {
-                    (currentPhotoIndex + 1) % photoCount
-                }
-            } else {
-                currentPhotoIndex
-            }
+        val nextIndex = if (isRandomOrder) {
+            Random.nextInt(photoCount)
+        } else {
+            (currentPhotoIndex + 1) % photoCount
+        }
 
-            val nextUrl = specificUrl ?: photoManager.getPhotoUrl(nextIndex) ?: run {
-                Log.e(TAG, "Failed to get photo URL for index: $nextIndex")
-                handleCacheLoadFailure()
-                return
-            }
+        val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: return
+        val startTime = System.currentTimeMillis()
 
-            views?.let { views ->
-                isTransitioning = true
-                try {
-                    withContext(NonCancellable) {
-                        withContext(Dispatchers.Main) {
-                            val startTime = System.currentTimeMillis()
+        views?.let { views ->
+            isTransitioning = true
+            try {
+                withContext(NonCancellable) {
+                    withContext(Dispatchers.Main) {
+                        Glide.with(context)
+                            .load(nextUrl)
+                            .diskCacheStrategy(DiskCacheStrategy.ALL)
+                            .priority(Priority.IMMEDIATE)
+                            .listener(object : RequestListener<Drawable> {
+                                override fun onLoadFailed(
+                                    e: GlideException?,
+                                    model: Any?,
+                                    target: Target<Drawable>,
+                                    isFirstResource: Boolean
+                                ): Boolean {
+                                    Log.e(TAG, "Failed to load photo: $nextUrl", e)
+                                    isTransitioning = false
+                                    return false
+                                }
 
-                            Glide.with(context)
-                                .load(nextUrl)
-                                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                                .priority(if (isFromCache) Priority.IMMEDIATE else Priority.HIGH)
-                                .transition(DrawableTransitionOptions.withCrossFade(
-                                    if (isFromCache) 0 else transitionDuration.toInt()
-                                ))
-                                .listener(object : RequestListener<Drawable> {
-                                    override fun onLoadFailed(
-                                        e: GlideException?,
-                                        model: Any?,
-                                        target: Target<Drawable>,
-                                        isFirstResource: Boolean
-                                    ): Boolean {
-                                        Log.e(TAG, "Failed to load photo: $nextUrl", e)
-                                        isTransitioning = false
+                                override fun onResourceReady(
+                                    resource: Drawable,
+                                    model: Any,
+                                    target: Target<Drawable>,
+                                    dataSource: DataSource,
+                                    isFirstResource: Boolean
+                                ): Boolean {
+                                    views.overlayView.alpha = 0f
+                                    views.overlayView.visibility = View.VISIBLE
 
-                                        if (isFromCache) {
-                                            handleCacheLoadFailure(e)
-                                        } else {
-                                            handleNetworkError(e)
+                                    views.overlayView.animate()
+                                        .alpha(1f)
+                                        .setDuration(transitionDuration)
+                                        .withEndAction {
+                                            views.primaryView.setImageDrawable(resource)
+                                            views.overlayView.alpha = 0f
+                                            views.overlayView.visibility = View.INVISIBLE
+                                            isTransitioning = false
+                                            currentPhotoIndex = nextIndex
+
+                                            // Track load time
+                                            trackPhotoLoadTime(fromCache, System.currentTimeMillis() - startTime)
+
+                                            // Preload next batch
+                                            preloadNextBatch(nextIndex, photoCount)
                                         }
-                                        return false
-                                    }
+                                        .start()
+                                    return false
+                                }
+                            })
+                            .into(views.overlayView)
 
-                                    override fun onResourceReady(
-                                        resource: Drawable,
-                                        model: Any,
-                                        target: Target<Drawable>,
-                                        dataSource: DataSource,
-                                        isFirstResource: Boolean
-                                    ): Boolean {
-                                        val loadTime = System.currentTimeMillis() - startTime
-                                        Log.d(TAG, "Photo loaded in ${loadTime}ms (from ${if (isFromCache) "cache" else "network"})")
-
-                                        views.overlayView.alpha = 0f
-                                        views.overlayView.visibility = View.VISIBLE
-
-                                        // Cache the URL and bitmap
-                                        lifecycleScope?.launch(Dispatchers.IO) {
-                                            try {
-                                                photoCache.cacheLastPhotoUrl(nextUrl)
-                                                resource.toBitmap()?.let { bitmap ->
-                                                    photoCache.cacheLastPhotoBitmap(bitmap)
-                                                }
-                                            } catch (e: Exception) {
-                                                Log.e(TAG, "Error caching photo", e)
-                                                // Continue with display even if caching fails
-                                            }
-                                        }
-
-                                        views.overlayView.animate()
-                                            .alpha(1f)
-                                            .setDuration(if (isFromCache) 0 else transitionDuration)
-                                            .withEndAction {
-                                                try {
-                                                    views.primaryView.setImageDrawable(resource)
-                                                    views.overlayView.alpha = 0f
-                                                    views.overlayView.visibility = View.INVISIBLE
-                                                    isTransitioning = false
-                                                    if (!isFromCache) {
-                                                        currentPhotoIndex = nextIndex
-                                                    }
-                                                } catch (e: Exception) {
-                                                    Log.e(TAG, "Error in animation end action", e)
-                                                    isTransitioning = false
-                                                    handleLowMemory()
-                                                }
-                                            }
-                                            .start()
-                                        return false
-                                    }
-                                })
-                                .into(views.overlayView)
-
-                            hideLoadingOverlay()
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error loading photo", e)
-                    isTransitioning = false
-                    when {
-                        e is OutOfMemoryError || e.cause is OutOfMemoryError -> handleLowMemory()
-                        isFromCache -> handleCacheLoadFailure(e)
-                        else -> handleNetworkError(e)
+                        hideLoadingOverlay()
                     }
                 }
-            } ?: run {
-                Log.e(TAG, "Views not initialized")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading photo", e)
                 isTransitioning = false
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Fatal error in loadAndDisplayPhoto", e)
-            isTransitioning = false
-            showDefaultPhoto()
-            showLoadingOverlay("Unable to display photos. Please try again.")
+        }
+    }
+
+    private fun preloadNextBatch(currentIndex: Int, totalPhotos: Int) {
+        managerScope.launch {
+            try {
+                for (i in 1..preloadLimit) {
+                    val nextIndex = (currentIndex + i) % totalPhotos
+                    photoManager.getPhotoUrl(nextIndex)?.let { url ->
+                        photoCache.preloadPhoto(url)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error preloading next batch", e)
+            }
         }
     }
 
@@ -749,7 +720,7 @@ class PhotoDisplayManager @Inject constructor(
                 // Try to use cached photo if available
                 val cachedUrl = photoCache.getLastCachedPhotoUrl()
                 if (cachedUrl != null) {
-                    loadAndDisplayPhoto(cachedUrl, true)
+                    loadAndDisplayPhoto(true) // Pass true for fromCache
                     showLoadingOverlay("Using cached photo - Check your connection")
                 } else {
                     val cachedBitmap = photoCache.getLastCachedPhotoBitmap()
