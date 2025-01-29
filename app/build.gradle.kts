@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
-    kotlin("android")
-    kotlin("kapt")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.kapt") // Add this line to properly enable kapt
     id("com.google.dagger.hilt.android")
     id("com.google.gms.google-services")
     id("com.google.firebase.crashlytics")
@@ -94,6 +94,13 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        freeCompilerArgs += listOf(
+            "-Xjvm-default=all"
+            // Remove the "-Xuse-k2" flag as it's deprecated
+        )
+        // Add explicit language version
+        languageVersion = "1.9"
+        apiVersion = "1.9"
     }
 }
 
@@ -126,13 +133,6 @@ dependencies {
     implementation("androidx.navigation:navigation-ui-ktx:$navVersion")
     implementation("androidx.navigation:navigation-dynamic-features-fragment:$navVersion")
     androidTestImplementation("androidx.navigation:navigation-testing:$navVersion")
-
-    // Hilt
-   // implementation("com.google.dagger:hilt-android:$hiltVersion")
-   // kapt("com.google.dagger:hilt-compiler:$hiltVersion")
-   // kapt("com.google.dagger:hilt-android-compiler:2.48.1")
-   // implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
-    //implementation("androidx.hilt:hilt-navigation-fragment:1.1.0")
 
     // Core Hilt dependencies
     implementation("com.google.dagger:hilt-android:$hiltVersion")
@@ -169,7 +169,6 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics-ktx")
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
     implementation("com.google.api:gax:2.19.5")
-
 
     // Google Photos Library
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")

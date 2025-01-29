@@ -92,6 +92,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val KIOSK_PERMISSION_REQUEST_CODE = 1001
+        private const val MENU_CLEAR_CACHE = Menu.FIRST + 1
     }
 
     private fun enableFullScreen() {
@@ -598,6 +599,42 @@ class MainActivity : AppCompatActivity() {
         if (!isDestroyed && photoManager.getPhotoCount() > 0) {
             photoDisplayManager.startPhotoDisplay()
         }
+    }
+
+    // Case 1: When user logs out
+    private fun handleLogout() {
+        photoDisplayManager.cleanup(clearCache = true) // Clear cache on logout
+        // ... other logout logic
+    }
+
+    // Case 2: When user changes photo sources
+    private fun handlePhotoSourceChange() {
+        photoDisplayManager.clearPhotoCache() // Clear only cache
+        initializePhotos() // Reinitialize with new source
+    }
+
+    // Case 3: Add a menu option for users to manually clear cache
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        menu.add(Menu.NONE, MENU_CLEAR_CACHE, Menu.NONE, "Clear Photo Cache")
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            MENU_CLEAR_CACHE -> {
+                photoDisplayManager.clearPhotoCache()
+                showToast("Photo cache cleared")
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    // Case 4: Handle cache cleanup on low memory
+    override fun onLowMemory() {
+        super.onLowMemory()
+        photoDisplayManager.handleLowMemory()
     }
 
     override fun onDestroy() {

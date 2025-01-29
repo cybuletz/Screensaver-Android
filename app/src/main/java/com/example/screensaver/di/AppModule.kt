@@ -92,9 +92,14 @@ object AppModule {
     @Singleton
     fun providePhotoDisplayManager(
         lockScreenPhotoManager: LockScreenPhotoManager,
+        photoCache: PhotoCache,  // Add this parameter
         @ApplicationContext context: Context
     ): PhotoDisplayManager {
-        return PhotoDisplayManager(lockScreenPhotoManager, context)
+        return PhotoDisplayManager(
+            photoManager = lockScreenPhotoManager,
+            photoCache = photoCache,
+            context = context
+        )
     }
 
     @Provides
