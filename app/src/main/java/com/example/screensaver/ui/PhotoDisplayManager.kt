@@ -34,6 +34,9 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
+import android.os.Looper
+import kotlinx.coroutines.CompletableDeferred
+
 
 @Singleton
 class PhotoDisplayManager @Inject constructor(
@@ -51,6 +54,10 @@ class PhotoDisplayManager @Inject constructor(
     val cacheStatusMessage: StateFlow<String?> = _cacheStatusMessage
 
     private val preloadLimit = 3
+    private var hasVerifiedPhotos = false
+    private var photoCount: Int = 0
+
+    private var hasLoadedPhotos = false
 
     data class Views(
         val primaryView: ImageView,
@@ -150,92 +157,107 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
-    fun initialize(views: Views, scope: LifecycleCoroutineScope) {
-        Log.d(TAG, "Initializing PhotoDisplayManager")
-        this.views = views
-        this.lifecycleScope = scope
+    private data class InitialState(
+        val cachedBitmap: Bitmap?,
+        val photoCount: Int
+    )
 
-        views.overlayView.alpha = 0f
+    private fun isMainThread(): Boolean {
+        return Looper.myLooper() == Looper.getMainLooper()
+    }
 
-        val currentScope = scope
-        currentScope.launch(Dispatchers.Main) {
+    private fun startBackgroundPhotoLoad() {
+        lifecycleScope?.launch(Dispatchers.IO) {
             try {
-                // Immediately check if we have no photos configured
-                if (photoManager.getPhotoCount() == 0 && photoCache.getLastCachedPhotoUrl() == null) {
-                    showSettingsMessage()
-                    return@launch
+                if (!hasVerifiedPhotos) {
+                    photoManager.loadPhotos()
+                    hasVerifiedPhotos = true
                 }
 
-                // Try to show cached photo immediately - do this synchronously
-                val cachedBitmap = withContext(Dispatchers.IO) {
-                    photoCache.getLastCachedPhotoBitmap()
-                }
+                val photoCount = photoManager.getPhotoCount()
 
-                if (cachedBitmap != null) {
-                    // Have cached photo - show it immediately
-                    Log.d(TAG, "Showing cached photo immediately")
-                    views.primaryView.setImageBitmap(cachedBitmap)
-                    hideAllMessages()
-
-                    // Start background loading with subtle indicator
-                    startBackgroundPhotoLoad()
-                } else {
-                    // No cache - check if we have photos configured
-                    if (photoManager.getPhotoCount() > 0) {
-                        showLoadingOverlay(context.getString(R.string.loading_photos_friendly))
+                withContext(Dispatchers.Main) {
+                    if (photoCount > 0) {
                         startPhotoDisplay()
                     } else {
                         showSettingsMessage()
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error during initialization", e)
+                Log.e(TAG, "Error in background photo load", e)
+            }
+        }
+    }
+
+    fun initialize(views: Views, scope: LifecycleCoroutineScope) {
+        Log.d(TAG, "Initializing PhotoDisplayManager")
+        this.views = views
+        this.lifecycleScope = scope
+        views.overlayView.alpha = 0f
+
+        showDefaultPhoto() // Show default first
+
+        scope.launch(Dispatchers.Main) {
+            try {
+                // First check for cached photos
+                val photoCount = photoManager.getPhotoCount()
+                Log.d(TAG, "Initial photo count: $photoCount")
+
+                if (photoCount > 0) {
+                    Log.d(TAG, "Found cached photos, starting display")
+                    hasVerifiedPhotos = true
+                    startPhotoDisplay()
+                    return@launch
+                }
+
+                // No cached photos, show settings if needed
+                if (!photoManager.hadPhotos()) {
+                    Log.d(TAG, "No previous photos, showing settings")
+                    hasVerifiedPhotos = true
+                    showSettingsMessage()
+                } else {
+                    // Had photos before, wait for service to load them
+                    Log.d(TAG, "Waiting for photos to load")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in initialization", e)
                 showSettingsMessage()
             }
         }
     }
 
-    private fun showSettingsMessage() {
-        views?.apply {
-            loadingIndicator?.visibility = View.GONE
-            showDefaultPhoto()
-            overlayMessageContainer?.visibility = View.VISIBLE
-            overlayMessageText?.text = context.getString(R.string.no_photo_source)
-        }
-    }
-
-    private fun startBackgroundPhotoLoad() {
-        views?.backgroundLoadingIndicator?.visibility = View.VISIBLE
-
+    private fun loadPhotosInBackground() {
         lifecycleScope?.launch(Dispatchers.IO) {
             try {
                 photoManager.loadPhotos()
-                if (photoManager.getPhotoCount() > 0) {
+                val photoCount = photoManager.getPhotoCount()
+
+                if (photoCount > 0) {
+                    photoCache.savePhotoState(true, photoManager.getPhotoUrl(0))
                     withContext(Dispatchers.Main) {
-                        views?.backgroundLoadingIndicator?.visibility = View.GONE
                         startPhotoDisplay()
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error in background photo load", e)
-                withContext(Dispatchers.Main) {
-                    views?.backgroundLoadingIndicator?.visibility = View.GONE
-                }
+                Log.e(TAG, "Error loading photos in background", e)
             }
         }
     }
 
-    fun showLoadingOverlay(message: String) {
+    private fun showSettingsMessage() {
         views?.let { views ->
-            views.overlayMessageText?.text = message
+            if (!isMainThread()) {
+                views.container.post { showSettingsMessage() }
+                return
+            }
+
+            // Always show message container
             views.overlayMessageContainer?.apply {
                 visibility = View.VISIBLE
-                alpha = 0f
-                animate()
-                    .alpha(1f)
-                    .setDuration(300)
-                    .start()
-            }
+                alpha = 1f
+                views.overlayMessageText?.text = context.getString(R.string.no_photo_source)
+                Log.d(TAG, "Settings message displayed")
+            } ?: Log.e(TAG, "Message container is null")
         }
     }
 
@@ -251,49 +273,6 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
-    private fun showDefaultPhotoWithLoadingMessage() {
-        views?.let { views ->
-            try {
-                views.primaryView.post {
-                    Glide.with(context)
-                        .load(R.drawable.default_photo)
-                        .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
-                        .into(views.primaryView)
-                }
-
-                views.overlayMessageContainer?.apply {
-                    visibility = View.VISIBLE
-                    alpha = 0f
-                    animate()
-                        .alpha(1f)
-                        .setDuration(300)
-                        .start()
-                }
-
-                views.overlayMessageText?.text = context.getString(R.string.loading_photos_friendly)
-                updateLoadingState(true)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error showing default photo with message", e)
-                updateLoadingState(false, context.getString(R.string.no_photos_message))
-            }
-        }
-    }
-
-    private fun checkForPhotosInBackground() {
-        lifecycleScope?.launch(Dispatchers.IO) {
-            try {
-                photoManager.loadPhotos() // Assuming this is your method to load photos
-                if (photoManager.getPhotoCount() > 0) {
-                    withContext(Dispatchers.Main) {
-                        startPhotoDisplay()
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading photos in background", e)
-            }
-        }
-    }
-
     private fun updateLoadingState(isLoading: Boolean, message: String? = null) {
         views?.apply {
             loadingIndicator?.visibility = if (isLoading) View.VISIBLE else View.GONE
@@ -306,26 +285,6 @@ class PhotoDisplayManager @Inject constructor(
 
     fun isInitialized(): Boolean {
         return views != null && lifecycleScope != null
-    }
-
-    private suspend fun ensurePhotosLoaded(): Boolean {
-        var retryCount = 0
-        val maxRetries = 10
-
-        while (photoManager.getPhotoCount() == 0 && retryCount < maxRetries) {
-            Log.d(TAG, "Waiting for photos to load... attempt ${retryCount + 1}")
-            delay(500)
-            retryCount++
-        }
-
-        val photoCount = photoManager.getPhotoCount()
-        Log.d(TAG, "Photos available after waiting: $photoCount")
-
-        if (photoCount == 0) {
-            showDefaultPhoto()
-            return false
-        }
-        return true
     }
 
     private fun setupPhotoManagerObserver() {
@@ -387,39 +346,24 @@ class PhotoDisplayManager @Inject constructor(
 
     fun startPhotoDisplay() {
         val currentScope = lifecycleScope ?: return
+        Log.d(TAG, "Starting photo display with ${photoManager.getPhotoCount()} photos")
+
+        // Cancel any existing display job
         displayJob?.cancel()
 
         displayJob = currentScope.launch {
             try {
-                val photoCount = photoManager.getPhotoCount()
-                Log.d(TAG, "Starting photo display with $photoCount photos")
+                // Start with first photo immediately
+                loadAndDisplayPhoto(false)
 
-                if (photoCount > 0) {
-                    // Hide all messages before starting photo display
-                    hideAllMessages()
-
-                    // Initial photo display
-                    loadAndDisplayPhoto(false)
-
-                    while (isActive) {
-                        delay(photoInterval)
-                        val currentCount = photoManager.getPhotoCount()
-                        if (currentCount > 0) {
-                            loadAndDisplayPhoto()
-                        } else {
-                            Log.w(TAG, "No photos available during display loop")
-                            break
-                        }
-                    }
-                } else {
-                    showDefaultPhoto()
-                    Log.w(TAG, "No photos available to display")
-                    _photoLoadingState.value = LoadingState.ERROR("No photos available")
+                // Then continue with regular interval
+                while (isActive) {
+                    delay(photoInterval)
+                    loadAndDisplayPhoto()
                 }
             } catch (e: Exception) {
                 if (e !is CancellationException) {
                     Log.e(TAG, "Error in photo display loop", e)
-                    showDefaultPhoto()
                 }
             }
         }
@@ -643,41 +587,42 @@ class PhotoDisplayManager @Inject constructor(
     private fun showDefaultPhoto() {
         views?.let { views ->
             try {
-                // Use Glide to load the default photo
+                // Hide any existing messages first
+                hideAllMessages()
+
+                // Load default photo without animation
                 Glide.with(context)
                     .load(R.drawable.default_photo)
                     .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
                     .into(views.primaryView)
-
-                if (photoManager.getPhotoCount() == 0) {
-                    // Only show the message if there are no photos
-                    views.loadingMessage?.apply {
-                        text = context.getString(R.string.no_photo_source)
-                        visibility = View.VISIBLE
-                    }
-                } else {
-                    // Hide all messages if photos are available
-                    views.loadingMessage?.visibility = View.GONE
-                    views.overlayMessageContainer?.visibility = View.GONE
-                }
-
-                // Always hide the loading indicator
-                views.loadingIndicator?.visibility = View.GONE
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading default photo", e)
-                views.loadingMessage?.apply {
-                    text = context.getString(R.string.no_photos_message)
-                    visibility = View.VISIBLE
-                }
             }
         }
     }
 
     private fun hideAllMessages() {
-        views?.apply {
-            loadingMessage?.visibility = View.GONE
-            loadingIndicator?.visibility = View.GONE
-            overlayMessageContainer?.visibility = View.GONE
+        views?.let { views ->
+            try {
+                // Make sure we're on main thread
+                if (!isMainThread()) {
+                    views.container.post { hideAllMessages() }
+                    return
+                }
+
+                // Cancel any running animations
+                views.overlayMessageContainer?.animate()?.cancel()
+                views.backgroundLoadingIndicator?.animate()?.cancel()
+                views.loadingIndicator?.animate()?.cancel()
+
+                // Hide all messages immediately
+                views.loadingIndicator?.visibility = View.GONE
+                views.loadingMessage?.visibility = View.GONE
+                views.overlayMessageContainer?.visibility = View.GONE
+                views.backgroundLoadingIndicator?.visibility = View.GONE
+            } catch (e: Exception) {
+                Log.e(TAG, "Error hiding messages", e)
+            }
         }
     }
 
@@ -714,36 +659,35 @@ class PhotoDisplayManager @Inject constructor(
         displayJob = null
     }
 
-
-
     private fun handleCacheLoadFailure(exception: Throwable? = null) {
         Log.w(TAG, "Cache load failed", exception)
 
         lifecycleScope?.launch {
             try {
-                // Hide any existing loading messages
-                hideLoadingOverlay()
+                // Keep showing default photo
+                showDefaultPhoto()
 
-                // Show a brief loading message
-                showLoadingOverlay("Loading fresh photos...")
+                // Try to load photos
+                withContext(Dispatchers.IO) {
+                    if (!hasVerifiedPhotos) {
+                        photoManager.loadPhotos()
+                        hasVerifiedPhotos = true
+                    }
+                }
 
-                // If we have photos available, start fresh display
-                if (photoManager.getPhotoCount() > 0) {
+                // Check if we have photos after loading
+                val photoCount = photoManager.getPhotoCount()
+                if (photoCount > 0) {
                     startPhotoDisplay()
                 } else {
-                    // Try to reload photos
-                    val reloadSuccess = ensurePhotosLoaded()
-                    if (reloadSuccess) {
-                        startPhotoDisplay()
-                    } else {
-                        // If all attempts fail, show default photo
-                        showDefaultPhoto()
-                        showLoadingOverlay("Please check your photo settings")
-                    }
+                    showSettingsMessage()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling cache failure", e)
                 showDefaultPhoto()
+                if (!hasVerifiedPhotos) {
+                    showSettingsMessage()
+                }
             }
         }
     }
@@ -757,20 +701,23 @@ class PhotoDisplayManager @Inject constructor(
                 val cachedUrl = photoCache.getLastCachedPhotoUrl()
                 if (cachedUrl != null) {
                     loadAndDisplayPhoto(true) // Pass true for fromCache
-                    showLoadingOverlay("Using cached photo - Check your connection")
                 } else {
                     val cachedBitmap = photoCache.getLastCachedPhotoBitmap()
                     if (cachedBitmap != null) {
                         views?.primaryView?.setImageBitmap(cachedBitmap)
-                        showLoadingOverlay("Using cached photo - Check your connection")
                     } else {
                         showDefaultPhoto()
-                        showLoadingOverlay("Unable to load photos - Check your connection")
+                        if (!hasVerifiedPhotos) {
+                            showSettingsMessage()
+                        }
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling network error", e)
                 showDefaultPhoto()
+                if (!hasVerifiedPhotos) {
+                    showSettingsMessage()
+                }
             }
         }
     }

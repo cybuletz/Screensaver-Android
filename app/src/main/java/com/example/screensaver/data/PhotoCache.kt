@@ -24,6 +24,8 @@ import kotlinx.coroutines.withContext
 class PhotoCache @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    private var maxCachedPhotos: Int = 10 // Default value
+    private val cachedPhotosQueue = ConcurrentLinkedQueue<String>()
     // Add CacheStatus enum
     enum class CacheStatus(val message: String) {
         IDLE("Cache idle"),
@@ -67,6 +69,12 @@ class PhotoCache @Inject constructor(
     private val MAX_CACHE_SIZE = 50 * 1024 * 1024 // 50MB
     private val MAX_CACHE_AGE = 24 * 60 * 60 * 1000 // 24 hours
 
+    private val PREFS_NAME = "photo_cache_prefs"
+    private val KEY_HAS_PHOTOS = "has_photos"
+    private val KEY_LAST_KNOWN_PHOTO = "last_known_photo"
+
+    private var cachedBitmapInMemory: Bitmap? = null
+
     companion object {
         private const val TAG = "PhotoCache"
     }
@@ -78,6 +86,22 @@ class PhotoCache @Inject constructor(
         }
         updateCacheStats()
         _cacheStatus.value = CacheStatus.IDLE
+    }
+
+    fun savePhotoState(hasPhotos: Boolean, lastPhotoUrl: String?) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HAS_PHOTOS, hasPhotos)
+            .putString(KEY_LAST_KNOWN_PHOTO, lastPhotoUrl)
+            .apply()
+    }
+
+    fun getPhotoState(): Pair<Boolean, String?> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return Pair(
+            prefs.getBoolean(KEY_HAS_PHOTOS, false),
+            prefs.getString(KEY_LAST_KNOWN_PHOTO, null)
+        )
     }
 
     private fun updateCacheStats() {
@@ -140,10 +164,19 @@ class PhotoCache @Inject constructor(
     private suspend fun cachePhotoBitmap(url: String, bitmap: Bitmap) {
         withContext(Dispatchers.IO) {
             try {
+                // Check if we need to remove old cached photos
+                while (cachedPhotosQueue.size >= maxCachedPhotos) {
+                    val oldestUrl = cachedPhotosQueue.poll()
+                    oldestUrl?.let {
+                        getPhotoFile(it).delete()
+                    }
+                }
+
                 val file = getPhotoFile(url)
                 FileOutputStream(file).use { out ->
                     bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
                 }
+                cachedPhotosQueue.offer(url)
                 updateCacheStats()
             } catch (e: Exception) {
                 Log.e(TAG, "Error caching photo bitmap", e)
@@ -178,7 +211,10 @@ class PhotoCache @Inject constructor(
         })
     }
 
-
+    fun setMaxCachedPhotos(count: Int) {
+        maxCachedPhotos = count
+        performSmartCleanup() // Clean up if we're over the new limit
+    }
 
     fun cancelPreloading() {
         preloadJob.get()?.cancel()
@@ -244,14 +280,32 @@ class PhotoCache @Inject constructor(
         }
     }
 
-    suspend fun getLastCachedPhotoBitmap(): Bitmap? = withContext(Dispatchers.IO + SupervisorJob()) {
-        if (!lastPhotoFile.exists()) return@withContext null
-
+    suspend fun getLastCachedPhotoBitmap(): Bitmap? = withContext(Dispatchers.IO) {
         try {
             _cacheStatus.value = CacheStatus.READING
-            BitmapFactory.decodeFile(lastPhotoFile.absolutePath).also {
-                _cacheStatus.value = CacheStatus.IDLE
+
+            // First check memory cache
+            cachedBitmapInMemory?.let {
+                Log.d(TAG, "Returning cached bitmap from memory")
+                return@withContext it
             }
+
+            // Then check disk cache
+            if (!lastPhotoFile.exists()) {
+                Log.d(TAG, "No cached photo file exists")
+                return@withContext null
+            }
+
+            BitmapFactory.decodeFile(lastPhotoFile.absolutePath)?.also {
+                Log.d(TAG, "Loaded bitmap from disk cache")
+                // Store in memory for faster access
+                cachedBitmapInMemory = it
+                _cacheStatus.value = CacheStatus.IDLE
+                return@withContext it
+            }
+
+            Log.d(TAG, "Failed to load bitmap from disk")
+            null
         } catch (e: Exception) {
             Log.e(TAG, "Error loading cached photo bitmap", e)
             _cacheStatus.value = CacheStatus.ERROR
@@ -263,20 +317,24 @@ class PhotoCache @Inject constructor(
         scope.launch(Dispatchers.IO) {
             try {
                 _cacheStatus.value = CacheStatus.CLEANING
-                val currentTime = System.currentTimeMillis()
-                var totalSize = 0L
 
-                cacheDir.listFiles()?.sortedBy { it.lastModified() }?.forEach { file ->
-                    val age = currentTime - file.lastModified()
-                    val isLastPhoto = file == lastPhotoFile || file == lastPhotoUrlFile
+                // Keep only the most recent photos up to maxCachedPhotos
+                val files = cacheDir.listFiles()?.sortedByDescending { it.lastModified() } ?: return@launch
 
-                    when {
-                        isLastPhoto -> totalSize += file.length()
-                        age > MAX_CACHE_AGE -> file.delete()
-                        totalSize + file.length() > MAX_CACHE_SIZE -> file.delete()
-                        else -> totalSize += file.length()
-                    }
+                // Always keep last photo file
+                val filesToKeep = files.take(maxCachedPhotos)
+                val filesToDelete = files.drop(maxCachedPhotos).filter {
+                    it != lastPhotoFile && it != lastPhotoUrlFile
                 }
+
+                filesToDelete.forEach { it.delete() }
+
+                // Update cached photos queue
+                cachedPhotosQueue.clear()
+                filesToKeep.forEach { file ->
+                    cachedPhotosQueue.offer(file.nameWithoutExtension)
+                }
+
                 updateCacheStats()
                 _cacheStatus.value = CacheStatus.IDLE
             } catch (e: Exception) {

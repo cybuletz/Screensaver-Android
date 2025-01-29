@@ -56,6 +56,7 @@ import android.view.Gravity
 import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.AppDataState
 import com.example.screensaver.data.SecureStorage
+import com.example.screensaver.data.PhotoCache
 
 
 @AndroidEntryPoint
@@ -71,6 +72,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var secureStorage: SecureStorage
+
+    @Inject
+    lateinit var photoCache: PhotoCache
 
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
@@ -218,7 +222,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 setupDisplayModeSelection()
                 setupLockScreenPreview()
                 setupLockScreenStatus()
-                observeAppDataState() // New function
+                setupCacheSettings(preferenceScreen) // Add this line
+                observeAppDataState()
             }
         }
     }
@@ -700,6 +705,24 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 }
             }
         }
+    }
+
+    private fun setupCacheSettings(screen: PreferenceScreen) {
+        val cachePref = ListPreference(requireContext()).apply {
+            key = "cache_size"
+            title = getString(R.string.pref_cache_size_title)
+            summary = getString(R.string.pref_cache_size_summary)
+            entries = arrayOf("5", "10", "20", "30", "50")
+            entryValues = arrayOf("5", "10", "20", "30", "50")
+            setDefaultValue("10")
+
+            setOnPreferenceChangeListener { _, newValue ->
+                val size = (newValue as String).toInt()
+                photoCache.setMaxCachedPhotos(size)
+                true
+            }
+        }
+        screen.addPreference(cachePref)
     }
 
     private fun signOutCompletely() {
