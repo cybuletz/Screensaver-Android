@@ -40,6 +40,23 @@
             android:contentDescription="@string/photo_overlay_description"/>
 
         <FrameLayout
+            android:id="@+id/backgroundLoadingIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="16dp"
+            android:padding="8dp"
+            android:background="@drawable/subtle_loading_background"
+            android:elevation="4dp"
+            android:visibility="gone">
+
+            <ProgressBar
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:indeterminateTint="@android:color/white"/>
+        </FrameLayout>
+
+        <FrameLayout
             android:id="@+id/overlayMessageContainer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"

@@ -257,7 +257,8 @@ class MainActivity : AppCompatActivity() {
                     loadingMessage = binding.loadingMessage,
                     container = binding.screensaverContainer,
                     overlayMessageContainer = binding.overlayMessageContainer,
-                    overlayMessageText = binding.overlayMessageText
+                    overlayMessageText = binding.overlayMessageText,
+                    backgroundLoadingIndicator = binding.backgroundLoadingIndicator
                 )
 
                 // Initialize PhotoDisplayManager
@@ -508,7 +509,8 @@ class MainActivity : AppCompatActivity() {
                         loadingMessage = binding.loadingMessage,
                         container = binding.screensaverContainer,
                         overlayMessageContainer = binding.overlayMessageContainer,
-                        overlayMessageText = binding.overlayMessageText
+                        overlayMessageText = binding.overlayMessageText,
+                        backgroundLoadingIndicator = binding.backgroundLoadingIndicator
                     )
 
                     // Initialize if needed
