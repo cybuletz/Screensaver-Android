@@ -195,34 +195,92 @@ class PhotoDisplayManager @Inject constructor(
         this.lifecycleScope = scope
         views.overlayView.alpha = 0f
 
-        showDefaultPhoto() // Show default first
+        // Show default photo first
+        showDefaultPhoto()
 
         scope.launch(Dispatchers.Main) {
             try {
-                // First check for cached photos
-                val photoCount = photoManager.getPhotoCount()
-                Log.d(TAG, "Initial photo count: $photoCount")
-
-                if (photoCount > 0) {
-                    Log.d(TAG, "Found cached photos, starting display")
-                    hasVerifiedPhotos = true
-                    startPhotoDisplay()
+                // First check if we've ever had photos
+                if (!photoManager.hadPhotos()) {
+                    Log.d(TAG, "First time user - showing welcome message")
+                    showWelcomeMessage()
                     return@launch
                 }
 
-                // No cached photos, show settings if needed
-                if (!photoManager.hadPhotos()) {
-                    Log.d(TAG, "No previous photos, showing settings")
-                    hasVerifiedPhotos = true
-                    showSettingsMessage()
+                // Check for cached photos
+                val photoCount = photoManager.getPhotoCount()
+                if (photoCount > 0) {
+                    Log.d(TAG, "Welcome back - found ${photoCount} photos")
+                    showWelcomeBackMessage(photoCount)
+                    startPhotoDisplay()
                 } else {
-                    // Had photos before, wait for service to load them
-                    Log.d(TAG, "Waiting for photos to load")
+                    Log.d(TAG, "Welcome back - waiting for photos to load")
+                    showWelcomeBackMessage(0)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error in initialization", e)
-                showSettingsMessage()
+                Log.e(TAG, "Error during initialization", e)
+                showErrorMessage(e.message ?: "Unknown error occurred")
             }
+        }
+    }
+
+    private fun showWelcomeMessage() {
+        views?.let { views ->
+            if (!isMainThread()) {
+                views.container.post { showWelcomeMessage() }
+                return
+            }
+
+            views.overlayMessageContainer?.apply {
+                visibility = View.VISIBLE
+                alpha = 1f
+                views.overlayMessageText?.text = context.getString(R.string.welcome_message)
+                Log.d(TAG, "Welcome message displayed")
+            } ?: Log.e(TAG, "Message container is null")
+        }
+    }
+
+    private fun showWelcomeBackMessage(photoCount: Int) {
+        views?.let { views ->
+            if (!isMainThread()) {
+                views.container.post { showWelcomeBackMessage(photoCount) }
+                return
+            }
+
+            views.overlayMessageContainer?.apply {
+                visibility = View.VISIBLE
+                alpha = 1f
+                val message = if (photoCount > 0) {
+                    context.getString(R.string.welcome_back_with_photos, photoCount)
+                } else {
+                    context.getString(R.string.welcome_back_no_photos)
+                }
+                views.overlayMessageText?.text = message
+                Log.d(TAG, "Welcome back message displayed: $message")
+
+                // Auto-hide message after 3 seconds if we have photos
+                if (photoCount > 0) {
+                    postDelayed({
+                        hideLoadingOverlay()
+                    }, 3000)
+                }
+            } ?: Log.e(TAG, "Message container is null")
+        }
+    }
+
+    private fun showErrorMessage(error: String) {
+        views?.let { views ->
+            if (!isMainThread()) {
+                views.container.post { showErrorMessage(error) }
+                return
+            }
+
+            views.overlayMessageContainer?.apply {
+                visibility = View.VISIBLE
+                alpha = 1f
+                views.overlayMessageText?.text = context.getString(R.string.error_message, error)
+                Log.d(TAG, "Error message displayed: $error")
+            } ?: Log.e(TAG, "Message container is null")
         }
     }
 

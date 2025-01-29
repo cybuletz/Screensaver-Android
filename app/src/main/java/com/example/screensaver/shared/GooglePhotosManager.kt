@@ -38,9 +38,12 @@ import java.util.concurrent.RejectedExecutionException
 class GooglePhotosManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val preferences: AppPreferences,
-    private val secureStorage: SecureStorage,
-    private val coroutineScope: CoroutineScope
+    private val secureStorage: SecureStorage
 ) {
+    private val albumCache = mutableMapOf<String, GoogleAlbum>()
+    private val albumCacheExpiry = 5 * 60 * 1000 // 5 minutes
+    private var lastAlbumFetch: Long = 0
+
     private var photosLibraryClient: PhotosLibraryClient? = null
     private val mediaItems = mutableListOf<MediaItem>()
 
@@ -113,14 +116,14 @@ class GooglePhotosManager @Inject constructor(
         return withContext(Dispatchers.IO) {
             executorMutex.withLock {
                 val currentExecutor = if (executorService.isShutdown || executorService.isTerminated) {
-                    Executors.newScheduledThreadPool(4).also { executorService = it }
+                    Executors.newScheduledThreadPool(8).also { executorService = it }
                 } else executorService
 
                 PhotosLibrarySettings.newBuilder()
                     .setCredentialsProvider { credentials }
                     .setExecutorProvider(
                         InstantiatingExecutorProvider.newBuilder()
-                            .setExecutorThreadCount(4)
+                            .setExecutorThreadCount(8)
                             .build()
                     )
                     .build()
@@ -236,35 +239,76 @@ class GooglePhotosManager @Inject constructor(
         Log.e(TAG, "Failed to refresh token: ${connection.responseMessage}")
         return false
     }
-    suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
+
+    private fun shouldUseCache(): Boolean {
+        val now = System.currentTimeMillis()
+        return albumCache.isNotEmpty() && (now - lastAlbumFetch < albumCacheExpiry)
+    }
+
+    fun prewarmCache() {
+        managerScope.launch {
+            try {
+                getAlbums() // Now using managerScope instead of scope
+            } catch (e: Exception) {
+                Log.e(TAG, "Error prewarming cache", e)
+            }
+        }
+    }
+
+    suspend fun getAlbums(): List<GoogleAlbum> = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "Getting albums...")
+            if (shouldUseCache()) {
+                Log.d(TAG, "Using cached albums")
+                return@withContext albumCache.values.toList()
+            }
+
             if (!initialize()) {
-                Log.e(TAG, "Failed to initialize before getting albums")
+                Log.e(TAG, "Failed to initialize Google Photos client")
                 return@withContext emptyList()
             }
 
-            val albums = photosLibraryClient?.listAlbums()?.iterateAll()?.map { googleAlbum ->
-                Log.d(TAG, "Found album: ${googleAlbum.title} with ${googleAlbum.mediaItemsCount} items")
+            photosLibraryClient?.let { client ->
+                try {
+                    val startTime = System.currentTimeMillis()
+                    Log.d(TAG, "Starting album fetch")
 
-                val coverPhotoUrl = if (!googleAlbum.coverPhotoMediaItemId.isNullOrEmpty()) {
-                    photosLibraryClient?.getMediaItem(googleAlbum.coverPhotoMediaItemId)?.baseUrl + PHOTO_QUALITY
-                } else {
-                    ""
+                    // Use a larger batch size
+                    val batchSize = 100
+                    val albumItems = client.listAlbums(false)
+                        .iterateAll()
+                        .toList()
+
+                    // Process albums in batches
+                    coroutineScope {
+                        val results = albumItems.chunked(batchSize).map { batch ->
+                            async {
+                                batch.map { album ->
+                                    GoogleAlbum(
+                                        id = album.id,
+                                        title = album.title,
+                                        coverPhotoUrl = album.coverPhotoBaseUrl,
+                                        mediaItemsCount = album.mediaItemsCount
+                                    )
+                                }
+                            }
+                        }.awaitAll().flatten()
+
+                        // Update cache
+                        albumCache.clear()
+                        albumCache.putAll(results.associateBy { it.id })
+                        lastAlbumFetch = System.currentTimeMillis()
+
+                        val duration = System.currentTimeMillis() - startTime
+                        Log.d(TAG, "Loaded ${results.size} albums in ${duration}ms")
+                        results
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error fetching albums", e)
+                    emptyList()
                 }
-
-                Album(
-                    id = googleAlbum.id,
-                    title = googleAlbum.title,
-                    coverPhotoUrl = coverPhotoUrl,
-                    mediaItemsCount = googleAlbum.mediaItemsCount.toInt()
-                )
-            }?.toList() ?: emptyList()
-
-            Log.d(TAG, "Retrieved ${albums.size} albums")
-            albums
+            } ?: emptyList()
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting albums", e)
+            Log.e(TAG, "Error in getAlbums", e)
             emptyList()
         }
     }
@@ -466,13 +510,13 @@ class GooglePhotosManager @Inject constructor(
         executorMutex.withLock {
             try {
                 executorService = if (executorService.isShutdown || executorService.isTerminated) {
-                    Executors.newScheduledThreadPool(4)
+                    Executors.newScheduledThreadPool(8)
                 } else {
                     executorService
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error recovering from executor failure", e)
-                executorService = Executors.newScheduledThreadPool(4)
+                executorService = Executors.newScheduledThreadPool(8)
             }
         }
     }

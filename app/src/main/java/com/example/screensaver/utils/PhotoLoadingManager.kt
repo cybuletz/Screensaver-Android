@@ -32,6 +32,7 @@ class PhotoLoadingManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val scope: CoroutineScope
 ) {
+    private val requestManager = Glide.with(context)
 
     private val glideRequestManager: RequestManager = Glide.with(context)
     private lateinit var diskCache: File
@@ -64,16 +65,13 @@ class PhotoLoadingManager @Inject constructor(
 
     fun loadPhoto(mediaItem: MediaItem, imageView: ImageView) {
         try {
-            if (mediaItem.baseUrl.startsWith("http")) {
-                Glide.with(imageView.context)
-                    .load(mediaItem.baseUrl)
-                    .apply(getRequestOptions())
-                    .into(imageView)
-            } else {
-                imageView.setImageResource(R.drawable.ic_error)
-            }
+            Glide.with(imageView.context) // Use imageView.context instead of global context
+                .load(mediaItem.baseUrl)
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                .skipMemoryCache(false)
+                .into(imageView)
         } catch (e: Exception) {
-            imageView.setImageResource(R.drawable.ic_error)
+            Log.e(TAG, "Error loading photo: ${mediaItem.id}", e)
         }
     }
 
@@ -152,14 +150,13 @@ class PhotoLoadingManager @Inject constructor(
         .placeholder(R.drawable.ic_photo_placeholder)
         .error(R.drawable.ic_error)
 
-    suspend fun preloadPhoto(mediaItem: MediaItem) {
+    fun preloadPhoto(mediaItem: MediaItem) {
         try {
-            withContext(Dispatchers.IO) {
-                Glide.with(context)
-                    .load(mediaItem.baseUrl)
-                    .diskCacheStrategy(DiskCacheStrategy.ALL)
-                    .preload()
-            }
+            requestManager
+                .load(mediaItem.baseUrl)
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                .skipMemoryCache(false)
+                .preload()
         } catch (e: Exception) {
             Log.e(TAG, "Error preloading photo: ${mediaItem.id}", e)
         }

@@ -11,37 +11,54 @@ import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.Glide
+import com.bumptech.glide.RequestManager
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
-import com.bumptech.glide.request.target.CustomTarget
-import com.bumptech.glide.request.transition.Transition
 import com.example.screensaver.R
 import com.example.screensaver.models.Album
 
 class AlbumAdapter(
+    private val glideRequestManager: RequestManager,
     private val onAlbumClick: (Album) -> Unit
 ) : ListAdapter<Album, AlbumAdapter.AlbumViewHolder>(AlbumDiffCallback()) {
 
+    private val holders = mutableSetOf<AlbumViewHolder>()
+
     companion object {
         private const val TAG = "AlbumAdapter"
-        private const val OVERLAY_ALPHA = 0.5f
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AlbumViewHolder {
         return AlbumViewHolder(
             LayoutInflater.from(parent.context)
                 .inflate(R.layout.item_album, parent, false),
+            glideRequestManager,
             onAlbumClick
-        )
+        ).also { holders.add(it) }
     }
 
     override fun onBindViewHolder(holder: AlbumViewHolder, position: Int) {
         holder.bind(getItem(position))
     }
 
+    fun clearAllHolders() {
+        holders.forEach { it.clear() }
+        holders.clear()
+    }
+
+    override fun onViewRecycled(holder: AlbumViewHolder) {
+        super.onViewRecycled(holder)
+        holder.clear()
+    }
+
+    override fun onViewDetachedFromWindow(holder: AlbumViewHolder) {
+        super.onViewDetachedFromWindow(holder)
+        holder.clear()
+    }
+
     class AlbumViewHolder(
         itemView: View,
+        private val glideRequestManager: RequestManager,
         private val onAlbumClick: (Album) -> Unit
     ) : RecyclerView.ViewHolder(itemView) {
         private val titleTextView: TextView = itemView.findViewById(R.id.albumTitle)
@@ -50,10 +67,6 @@ class AlbumAdapter(
         private val selectedOverlay: View = itemView.findViewById(R.id.selectedOverlay)
         private val checkmarkIcon: ImageView = itemView.findViewById(R.id.checkmark)
         private val checkbox: CheckBox = itemView.findViewById(R.id.albumCheckbox)
-
-        private var currentLoadingJob: Any? = null
-        private var isBinding = false
-
 
         init {
             itemView.setOnClickListener {
@@ -67,18 +80,15 @@ class AlbumAdapter(
         }
 
         fun bind(album: Album) {
-            if (isBinding) return // Prevent concurrent bindings
-            isBinding = true
+            titleTextView.text = album.title
+            setPhotoCount(album.mediaItemsCount)
+            loadAlbumCover(album)
+            updateSelectionState(album)
+        }
 
-            try {
-                titleTextView.text = album.title
-                setPhotoCount(album.mediaItemsCount)
-                loadAlbumCover(album)
-                updateSelectionState(album)
-                checkbox.isChecked = album.isSelected
-            } finally {
-                isBinding = false
-            }
+        fun clear() {
+            glideRequestManager.clear(coverImageView)
+            coverImageView.setImageDrawable(null)
         }
 
         private fun setPhotoCount(count: Int) {
@@ -90,63 +100,22 @@ class AlbumAdapter(
         }
 
         private fun loadAlbumCover(album: Album) {
-            cancelCurrentLoading()
-
             if (bindingAdapterPosition == RecyclerView.NO_POSITION) return
 
-            currentLoadingJob = Glide.with(itemView.context)
-                .load(album.coverPhotoUrl)
-                .transition(DrawableTransitionOptions.withCrossFade())
-                .placeholder(R.drawable.placeholder_album)
-                .error(R.drawable.placeholder_album_error)
-                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .timeout(10000)
-                .centerCrop()
-                .into(object : CustomTarget<Drawable>() {
-                    override fun onResourceReady(
-                        resource: Drawable,
-                        transition: Transition<in Drawable>?
-                    ) {
-                        if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                            coverImageView.post {
-                                if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                                    coverImageView.setImageDrawable(resource)
-                                }
-                            }
-                        }
-                        currentLoadingJob = null
-                    }
+            clear() // Clear any existing load
 
-                    override fun onLoadCleared(placeholder: Drawable?) {
-                        coverImageView.post {
-                            if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                                coverImageView.setImageDrawable(placeholder)
-                            }
-                        }
-                        currentLoadingJob = null
-                    }
-
-                    override fun onLoadFailed(errorDrawable: Drawable?) {
-                        coverImageView.post {
-                            if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                                coverImageView.setImageDrawable(errorDrawable)
-                                Log.e(TAG, "Failed to load cover for ${album.title}")
-                            }
-                        }
-                        currentLoadingJob = null
-                    }
-                })
-        }
-
-        private fun cancelCurrentLoading() {
-            try {
-                currentLoadingJob?.let {
-                    Glide.with(itemView.context).clear(coverImageView)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error cancelling image load", e)
-            } finally {
-                currentLoadingJob = null
+            // Use safe call operator and orEmpty()
+            if (album.coverPhotoUrl?.isNotEmpty() == true) {
+                glideRequestManager
+                    .load(album.coverPhotoUrl)
+                    .placeholder(R.drawable.placeholder_album)
+                    .error(R.drawable.placeholder_album_error)
+                    .diskCacheStrategy(DiskCacheStrategy.ALL)
+                    .centerCrop()
+                    .transition(DrawableTransitionOptions.withCrossFade())
+                    .into(coverImageView)
+            } else {
+                coverImageView.setImageResource(R.drawable.placeholder_album)
             }
         }
 
