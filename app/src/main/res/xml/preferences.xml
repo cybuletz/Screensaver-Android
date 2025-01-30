@@ -49,10 +49,10 @@
             android:title="@string/pref_select_local_photos_title"
             android:summary="@string/pref_select_local_photos_summary" />
 
-        <MultiSelectListPreference
+        <Preference
             android:key="photo_folders"
             android:title="@string/pref_photo_folders_title"
-            android:summary="@string/pref_photo_folders_summary"
+            android:summary="@string/pref_photo_folders_summary" />
             android:entries="@array/empty_array"
             android:entryValues="@array/empty_array" />
     </PreferenceCategory>
@@ -113,20 +113,36 @@
             android:defaultValue="true" />
 
         <ListPreference
-            android:key="lock_screen_transition"
-            android:title="@string/pref_lock_screen_transition_title"
-            android:summary="@string/pref_lock_screen_transition_summary"
+            android:key="transition_effect"
+            android:title="@string/pref_transition_effect_title"
+            android:summary="@string/pref_transition_effect_summary"
             android:entries="@array/transition_effects"
             android:entryValues="@array/transition_effects_values"
-            android:defaultValue="fade" />
+            android:defaultValue="fade"/>
 
+        <!-- Transition animation duration -->
         <SeekBarPreference
-            android:key="lock_screen_interval"
-            android:title="@string/pref_lock_screen_interval_title"
-            android:summary="@string/pref_lock_screen_interval_summary"
+            android:key="transition_duration"
+            android:title="@string/pref_transition_duration_title"
+            android:summary="@string/pref_transition_duration_summary"
+            app:min="1"
+            android:max="5"
+            android:defaultValue="2"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true" />
+
+        <!-- Photo change interval -->
+        <SeekBarPreference
+            android:key="photo_interval"
+            android:title="@string/pref_photo_interval_title"
+            android:summary="@string/pref_photo_interval_summary"
             app:min="5"
             android:max="60"
-            android:defaultValue="10" />
+            android:defaultValue="15"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true" />
 
         <Preference
             android:key="preview_lock_screen"
@@ -158,22 +174,6 @@
             app:min="1"
             android:max="30"
             android:defaultValue="5" />
-
-        <ListPreference
-            android:key="transition_effect"
-            android:title="@string/pref_transition_effect_title"
-            android:summary="@string/pref_transition_effect_summary"
-            android:entries="@array/transition_effects"
-            android:entryValues="@array/transition_effects_values"
-            android:defaultValue="fade"/>
-
-        <ListPreference
-            android:key="refresh_interval"
-            android:title="@string/pref_refresh_interval_title"
-            android:summary="@string/pref_refresh_interval_summary"
-            android:entries="@array/refresh_intervals"
-            android:entryValues="@array/refresh_interval_values"
-            android:defaultValue="300"/>
     </PreferenceCategory>
 
     <PreferenceCategory

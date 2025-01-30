@@ -48,7 +48,6 @@ import com.example.screensaver.ui.PhotoDisplayManager
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.view.View
-import android.widget.FrameLayout
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import androidx.coordinatorlayout.widget.CoordinatorLayout
@@ -63,19 +62,9 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceCategory
 import androidx.preference.MultiSelectListPreference
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
-import androidx.preference.*
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import androidx.fragment.app.viewModels
-import androidx.navigation.fragment.findNavController
 import com.example.screensaver.lock.LockScreenPhotoManager
-import com.example.screensaver.models.AlbumInfo
-import com.example.screensaver.models.MediaItem
 import android.os.Build
 import androidx.core.content.ContextCompat
-import android.Manifest
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -109,6 +98,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
         private const val DEFAULT_DISPLAY_MODE = "dream_service"
         private const val LOCK_SCREEN_MODE = "lock_screen"
         private const val REQUEST_SELECT_PHOTOS = 1001
+        const val EXTRA_PHOTO_SOURCE = "photo_source"
+        const val SOURCE_GOOGLE_PHOTOS = "google_photos"
+        const val SOURCE_LOCAL_PHOTOS = "local_photos"
     }
 
     private val storagePermissionLauncher = registerForActivityResult(
@@ -116,10 +108,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
     ) { permissions ->
         when {
             permissions.getOrDefault(android.Manifest.permission.READ_EXTERNAL_STORAGE, false) -> {
-                showLocalAlbumDialog()
+                launchAlbumSelection()  // Changed from showLocalAlbumDialog() to launchAlbumSelection()
             }
             permissions.getOrDefault(android.Manifest.permission.READ_MEDIA_IMAGES, false) -> {
-                showLocalAlbumDialog()
+                launchAlbumSelection()  // Changed from showLocalAlbumDialog() to launchAlbumSelection()
             }
             else -> {
                 showError(
@@ -148,7 +140,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         val localPhotosCategory = findPreference<PreferenceCategory>("local_photos_settings")
         val selectLocalPhotos = findPreference<Preference>("select_local_photos")
-        val photoFolders = findPreference<Preference>("photo_folders")
+        val photoFolders = findPreference<Preference>("photo_folders") // Changed from MultiSelectListPreference to Preference
 
         // Get current photo sources
         val currentSources = PreferenceManager.getDefaultSharedPreferences(requireContext())
@@ -166,34 +158,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        // Update folders preference to show album selection
         photoFolders?.apply {
             isEnabled = true
             setOnPreferenceClickListener {
                 Log.d(TAG, "Photo folders clicked")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    // Android 13+
-                    if (ContextCompat.checkSelfPermission(
-                            requireContext(),
-                            android.Manifest.permission.READ_MEDIA_IMAGES
-                        ) == PackageManager.PERMISSION_GRANTED
-                    ) {
-                        showLocalAlbumDialog()
-                    } else {
-                        storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES))
-                    }
-                } else {
-                    // Below Android 13
-                    if (ContextCompat.checkSelfPermission(
-                            requireContext(),
-                            android.Manifest.permission.READ_EXTERNAL_STORAGE
-                        ) == PackageManager.PERMISSION_GRANTED
-                    ) {
-                        showLocalAlbumDialog()
-                    } else {
-                        storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE))
-                    }
-                }
+                checkAndRequestPermissions() // This will handle the permission check and launch the activity
                 true
             }
 
@@ -204,6 +173,36 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 getString(R.string.pref_photo_folders_summary)
             } else {
                 getString(R.string.photos_selected, selectedAlbumIds.size)
+            }
+        }
+    }
+
+    private fun launchAlbumSelection() {
+        startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java).apply {
+            putExtra(EXTRA_PHOTO_SOURCE, SOURCE_LOCAL_PHOTOS)
+        })
+    }
+
+    private fun checkAndRequestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    requireContext(),
+                    android.Manifest.permission.READ_MEDIA_IMAGES
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                launchAlbumSelection()
+            } else {
+                storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES))
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(
+                    requireContext(),
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                launchAlbumSelection()
+            } else {
+                storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE))
             }
         }
     }
@@ -220,101 +219,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         } catch (e: Exception) {
             Log.e(TAG, "Error launching LocalPhotoSelectionActivity", e)
             showError("Failed to launch photo selection", e)
-        }
-    }
-
-    private fun showLocalAlbumDialog() {
-        Log.d(TAG, "Starting showLocalAlbumDialog")
-        lifecycleScope.launch {
-            try {
-                val albums = photoManager.getLocalAlbums()
-                Log.d(TAG, "Retrieved ${albums.size} albums")
-
-                if (albums.isEmpty()) {
-                    Log.d(TAG, "No albums found")
-                    withContext(Dispatchers.Main) {
-                        MaterialAlertDialogBuilder(requireContext())
-                            .setTitle(R.string.no_albums_found)
-                            .setMessage(R.string.no_albums_found_message)
-                            .setPositiveButton(android.R.string.ok, null)
-                            .show()
-                    }
-                    return@launch
-                }
-
-                val albumNames = albums.map { "${it.name} (${it.photosCount} photos)" }.toTypedArray()
-                Log.d(TAG, "Album names: ${albumNames.joinToString()}")
-
-                val checkedItems = BooleanArray(albums.size) { false }
-                val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    .getStringSet("selected_album_ids", emptySet()) ?: emptySet()
-                Log.d(TAG, "Previously selected album IDs: $selectedAlbumIds")
-
-                albums.forEachIndexed { index, album ->
-                    checkedItems[index] = selectedAlbumIds.contains(album.id.toString())
-                }
-
-                withContext(Dispatchers.Main) {
-                    MaterialAlertDialogBuilder(requireContext())
-                        .setTitle(R.string.select_photo_albums)
-                        .setMultiChoiceItems(albumNames, checkedItems) { _, which, isChecked ->
-                            Log.d(TAG, "Album selection changed: ${albumNames[which]} is now ${if (isChecked) "checked" else "unchecked"}")
-                            checkedItems[which] = isChecked
-                        }
-                        .setPositiveButton(android.R.string.ok) { _, _ ->
-                            val selectedIds = albums.filterIndexed { index, _ ->
-                                checkedItems[index]
-                            }.map {
-                                it.id.toString()
-                            }.toSet()
-                            Log.d(TAG, "Selected album IDs: $selectedIds")
-
-                            PreferenceManager.getDefaultSharedPreferences(requireContext())
-                                .edit()
-                                .putStringSet("selected_album_ids", selectedIds)
-                                .apply()
-
-                            updateSelectedAlbums(albums.filter { selectedIds.contains(it.id.toString()) })
-                        }
-                        .setNegativeButton(android.R.string.cancel) { dialog, _ ->
-                            Log.d(TAG, "Album selection cancelled")
-                            dialog.dismiss()
-                        }
-                        .show()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error showing album dialog", e)
-                withContext(Dispatchers.Main) {
-                    showError("Failed to load albums", e)
-                }
-            }
-        }
-    }
-
-    private fun updateSelectedAlbums(selectedAlbums: List<AlbumInfo>) {
-        lifecycleScope.launch {
-            try {
-                val allPhotos = mutableListOf<MediaItem>()
-
-                withContext(Dispatchers.IO) {
-                    selectedAlbums.forEach { album ->
-                        allPhotos.addAll(photoManager.getPhotosFromAlbum(album.id.toString()))
-                    }
-                }
-
-                // Update preference summary
-                findPreference<Preference>("photo_folders")?.summary =
-                    "${selectedAlbums.size} albums selected (${allPhotos.size} photos)"
-
-                // Update photo manager with new photos
-                photoManager.addPhotos(allPhotos)
-
-                // Update photo display
-                photoDisplayManager.updatePhotoSources()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating selected albums", e)
-                showError("Failed to update selected albums", e)
-            }
         }
     }
 
@@ -365,7 +269,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun updateLocalPhotosUI() {
-        findPreference<MultiSelectListPreference>("photo_folders")?.apply {
+        findPreference<Preference>("photo_folders")?.apply {
             val selectedPhotos = PreferenceManager.getDefaultSharedPreferences(requireContext())
                 .getStringSet("selected_local_photos", emptySet()) ?: emptySet()
             summary = if (selectedPhotos.isEmpty()) {
@@ -544,75 +448,75 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun setupPhotoDisplayManager() {
-        // Connect transition settings
+        // Connect transition effect and duration settings
         findPreference<ListPreference>("transition_effect")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
+                val transitionTime = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .getInt("transition_duration", 2)
+
                 photoDisplayManager.updateSettings(
-                    transitionDuration = when(newValue as String) {
-                        "fade" -> 1000L
-                        "slide" -> 500L
-                        "zoom" -> 1500L
-                        else -> 1000L
-                    }
+                    transitionDuration = transitionTime * 1000L
                 )
                 true
             }
         }
 
-        // Connect refresh interval settings
-        findPreference<ListPreference>("refresh_interval")?.apply {
+        // Connect transition time settings
+        findPreference<SeekBarPreference>("transition_duration")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
+                val transitionSeconds = (newValue as Int)
                 photoDisplayManager.updateSettings(
-                    photoInterval = (newValue.toString().toLong() * 1000)
+                    transitionDuration = transitionSeconds * 1000L
                 )
+                summary = "$transitionSeconds seconds for transition animation"
                 true
             }
+
+            val currentValue = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getInt("transition_duration", 2)
+            summary = "$currentValue seconds for transition animation"
         }
 
-        // Connect clock display setting
-        findPreference<SwitchPreferenceCompat>("lock_screen_clock")?.apply {
+        // Connect photo change interval settings
+        findPreference<SeekBarPreference>("photo_interval")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
-                photoDisplayManager.updateSettings(
-                    showClock = newValue as Boolean
-                )
+                val intervalSeconds = (newValue as Int)
+                // Force restart the photo display with new interval
+                photoDisplayManager.apply {
+                    stopPhotoDisplay() // Stop current display
+                    updateSettings(photoInterval = intervalSeconds * 1000L)
+                    startPhotoDisplay() // Restart with new interval
+                }
+                Log.d(TAG, "Setting new photo interval to $intervalSeconds seconds")
+                summary = "Display each photo for $intervalSeconds seconds"
                 true
             }
-        }
 
-        // Connect date display setting
-        findPreference<SwitchPreferenceCompat>("lock_screen_date")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                photoDisplayManager.updateSettings(
-                    showDate = newValue as Boolean
-                )
-                true
-            }
-        }
-
-        // Connect random order setting
-        findPreference<SwitchPreferenceCompat>("random_order")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                photoDisplayManager.updateSettings(
-                    isRandomOrder = newValue as Boolean
-                )
-                true
-            }
+            // Set initial summary and value
+            val currentValue = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getInt("photo_interval", 15)
+            summary = "Display each photo for $currentValue seconds"
         }
 
         // Initialize PhotoDisplayManager with current settings
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-        photoDisplayManager.updateSettings(
-            transitionDuration = when(prefs.getString("transition_effect", "fade")) {
-                "fade" -> 1000L
-                "slide" -> 500L
-                "zoom" -> 1500L
-                else -> 1000L
-            },
-            photoInterval = (prefs.getString("refresh_interval", "300")?.toLong() ?: 300L) * 1000,
-            showClock = prefs.getBoolean("lock_screen_clock", true),
-            showDate = prefs.getBoolean("lock_screen_date", true),
-            isRandomOrder = prefs.getBoolean("random_order", true)
-        )
+        val transitionTime = prefs.getInt("transition_duration", 2)
+        val photoInterval = prefs.getInt("photo_interval", 15)
+
+        // Force stop and restart with correct settings
+        photoDisplayManager.apply {
+            stopPhotoDisplay()
+            updateSettings(
+                transitionDuration = transitionTime * 1000L,
+                photoInterval = photoInterval * 1000L,
+                showClock = prefs.getBoolean("lock_screen_clock", true),
+                showDate = prefs.getBoolean("lock_screen_date", true),
+                isRandomOrder = prefs.getBoolean("random_order", true)
+            )
+            startPhotoDisplay()
+        }
+
+        Log.d(TAG, "PhotoDisplayManager initialized with interval: ${photoInterval} seconds")
     }
 
     override fun onResume() {

@@ -72,8 +72,8 @@ class GooglePhotosManager @Inject constructor(
 
         private val REQUIRED_SCOPES = listOf(
             "https://www.googleapis.com/auth/photoslibrary.readonly",
-            "https://www.googleapis.com/auth/photoslibrary",
-            "https://www.googleapis.com/auth/photos.readonly"
+            //"https://www.googleapis.com/auth/photoslibrary",
+            //"https://www.googleapis.com/auth/photos.readonly"
         )
     }
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {

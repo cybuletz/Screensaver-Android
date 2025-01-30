@@ -22,8 +22,8 @@ class GooglePhotosManager(private val context: Context) {
         private const val TAG = "GooglePhotosManager"
         private val REQUIRED_SCOPES = listOf(
             "https://www.googleapis.com/auth/photoslibrary.readonly",
-            "https://www.googleapis.com/auth/photoslibrary",
-            "https://www.googleapis.com/auth/photos.readonly"
+           // "https://www.googleapis.com/auth/photoslibrary",
+           // "https://www.googleapis.com/auth/photos.readonly"
         )
     }
 
