@@ -176,6 +176,21 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
+    private fun handleError(message: String) {
+        showToast(message)
+        binding.retryButton.visibility = View.VISIBLE
+    }
+
+    private fun showToast(message: String) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            Toast.makeText(
+                this@AlbumSelectionActivity,
+                message,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     private suspend fun loadAlbums() {
         try {
             viewModel.setLoading(true)
@@ -190,7 +205,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                         Album(
                             id = googleAlbum.id,
                             title = googleAlbum.title,
-                            coverPhotoUrl = googleAlbum.coverPhotoUrl.orEmpty(), // Use orEmpty() instead of ?: ""
+                            coverPhotoUrl = googleAlbum.coverPhotoUrl.orEmpty(),
                             mediaItemsCount = googleAlbum.mediaItemsCount.toInt(),
                             isSelected = selectedAlbumIds.contains(googleAlbum.id)
                         ).also { album ->
@@ -200,7 +215,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                                     MediaItem(
                                         id = album.id,
                                         albumId = "album_covers",
-                                        baseUrl = url, // Use the non-null url directly
+                                        baseUrl = url,
                                         mimeType = "image/jpeg",
                                         width = 512,
                                         height = 512
@@ -243,6 +258,12 @@ class AlbumSelectionActivity : AppCompatActivity() {
         if (shouldBeSelected) {
             preferences.addSelectedAlbumId(album.id)
         } else {
+            // Only check if this would leave us with no albums selected
+            val currentSelected = preferences.getSelectedAlbumIds()
+            if (currentSelected.size == 1 && currentSelected.contains(album.id)) {
+                showToast(getString(R.string.keep_one_album))
+                return
+            }
             preferences.removeSelectedAlbumId(album.id)
         }
 
@@ -253,8 +274,10 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
         if (position != -1) {
             currentList[position] = updatedAlbum
-            albumAdapter.submitList(currentList)
-            updateConfirmButtonState()
+            albumAdapter.submitList(currentList) {
+                // Update confirm button state after the list update is complete
+                updateConfirmButtonState()
+            }
             showSelectionToast(updatedAlbum)
         }
 
@@ -309,13 +332,13 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 }
 
                 if (photos == null) {
-                    showError("No photos found in selected albums")
+                    showToast("No photos found in selected albums")
                     return@launch
                 }
 
                 val photoList = photos.toList()
                 if (photoList.isEmpty()) {
-                    showError("No photos found in selected albums")
+                    showToast("No photos found in selected albums")
                     return@launch
                 }
 
@@ -350,7 +373,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 finish()
             } catch (e: Exception) {
                 Log.e(TAG, "Error during album selection save", e)
-                showError(getString(R.string.save_error))
+                showToast(getString(R.string.save_error))
             } finally {
                 viewModel.setLoading(false)
             }
@@ -415,14 +438,19 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun updateConfirmButtonState() {
-        val isEnabled = !viewModel.isLoading.value &&  // Remove Elvis operator since value is non-null
-                albumAdapter.currentList.any { it.isSelected }
-        binding.confirmButton.isEnabled = isEnabled
-    }
+        val selectedCount = preferences.getSelectedAlbumIds().size
+        val isEnabled = !viewModel.isLoading.value && selectedCount > 0
 
-    private fun handleError(message: String) {
-        showError(message)
-        binding.retryButton.visibility = View.VISIBLE
+        binding.confirmButton.apply {
+            this.isEnabled = isEnabled
+            text = if (isEnabled) {
+                getString(R.string.confirm_selection)
+            } else {
+                getString(R.string.select_at_least_one)
+            }
+        }
+
+        Log.d(TAG, "Updated confirm button state: enabled=$isEnabled, selectedCount=$selectedCount")
     }
 
     private fun showError(message: String) {
