@@ -81,6 +81,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private var googleSignInClient: GoogleSignInClient? = null
     private val previewViewModel: PreviewViewModel by viewModels()
 
+    private val collapsedCategories = mutableSetOf<String>()
+
     companion object {
         private const val TAG = "SettingsFragment"
         private const val DEFAULT_DISPLAY_MODE = "dream_service"

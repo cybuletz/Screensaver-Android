@@ -4,8 +4,85 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
+        android:title="@string/pref_category_photo_sources"
+        android:key="photo_sources"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
+
+        <MultiSelectListPreference
+            android:key="photo_source_selection"
+            android:title="@string/pref_photo_sources_title"
+            android:summary="@string/pref_photo_sources_summary"
+            android:entries="@array/photo_source_entries"
+            android:entryValues="@array/photo_source_values" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_google_photos"
+        android:key="google_photos_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false"
+        app:dependency="photo_source_selection">
+
+        <SwitchPreferenceCompat
+            android:key="google_photos_enabled"
+            android:title="@string/pref_google_photos_signin_title"
+            android:summary="@string/pref_google_photos_signin_summary"
+            android:defaultValue="false" />
+
+        <Preference
+            android:key="select_albums"
+            android:title="@string/pref_select_albums_title"
+            android:summary="@string/pref_select_albums_summary"
+            android:enabled="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_local_photos"
+        android:key="local_photos_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false"
+        app:dependency="photo_source_selection">
+
+        <Preference
+            android:key="select_local_photos"
+            android:title="@string/pref_select_local_photos_title"
+            android:summary="@string/pref_select_local_photos_summary" />
+
+        <MultiSelectListPreference
+            android:key="photo_folders"
+            android:title="@string/pref_photo_folders_title"
+            android:summary="@string/pref_photo_folders_summary"
+            android:entries="@array/empty_array"
+            android:entryValues="@array/empty_array" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_common"
+        android:key="common_photo_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat
+            android:key="random_order"
+            android:title="@string/pref_random_order_title"
+            android:summary="@string/pref_random_order_summary"
+            android:defaultValue="true" />
+
+        <ListPreference
+            android:key="photo_scale"
+            android:title="@string/pref_photo_scale_title"
+            android:summary="@string/pref_photo_scale_summary"
+            android:entries="@array/photo_scale_options"
+            android:entryValues="@array/photo_scale_values"
+            android:defaultValue="fill" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:title="@string/pref_category_display_mode"
-        android:key="display_mode">
+        android:key="display_mode"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
 
         <ListPreference
             android:key="display_mode_selection"
@@ -17,9 +94,11 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:key="lock_screen_settings"
         android:title="@string/pref_category_lock_screen"
-        app:dependency="display_mode_selection">
+        android:key="lock_screen_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false"
+        android:dependency="display_mode_selection">
 
         <SwitchPreferenceCompat
             android:key="lock_screen_clock"
@@ -61,75 +140,10 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="@string/pref_category_photo_sources"
-        android:key="photo_sources">
-
-        <MultiSelectListPreference
-            android:key="photo_source_selection"
-            android:title="@string/pref_photo_sources_title"
-            android:summary="@string/pref_photo_sources_summary"
-            android:entries="@array/photo_source_entries"
-            android:entryValues="@array/photo_source_values"
-            android:defaultValue="@array/default_photo_sources" />
-
-        <PreferenceCategory
-            android:title="@string/pref_category_google_photos"
-            android:key="google_photos_settings">
-
-            <SwitchPreferenceCompat
-                android:key="google_photos_enabled"
-                android:title="@string/pref_google_photos_signin_title"
-                android:summary="@string/pref_google_photos_signin_summary"
-                android:defaultValue="false" />
-
-            <Preference
-                android:key="select_albums"
-                android:title="@string/pref_select_albums_title"
-                android:summary="@string/pref_select_albums_summary"
-                android:enabled="false" />
-        </PreferenceCategory>
-
-        <PreferenceCategory
-            android:title="@string/pref_category_local_photos"
-            android:key="local_photos_settings"
-            app:dependency="photo_source_selection">
-
-            <Preference
-                android:key="select_local_photos"
-                android:title="@string/pref_select_local_photos_title"
-                android:summary="@string/pref_select_local_photos_summary" />
-
-            <MultiSelectListPreference
-                android:key="photo_folders"
-                android:title="@string/pref_photo_folders_title"
-                android:summary="@string/pref_photo_folders_summary"
-                android:entries="@array/empty_array"
-                android:entryValues="@array/empty_array" />
-        </PreferenceCategory>
-
-        <PreferenceCategory
-            android:title="@string/pref_category_common"
-            android:key="common_photo_settings">
-
-            <SwitchPreferenceCompat
-                android:key="random_order"
-                android:title="@string/pref_random_order_title"
-                android:summary="@string/pref_random_order_summary"
-                android:defaultValue="true" />
-
-            <ListPreference
-                android:key="photo_scale"
-                android:title="@string/pref_photo_scale_title"
-                android:summary="@string/pref_photo_scale_summary"
-                android:entries="@array/photo_scale_options"
-                android:entryValues="@array/photo_scale_values"
-                android:defaultValue="fill" />
-        </PreferenceCategory>
-    </PreferenceCategory>
-
-    <PreferenceCategory
         android:title="@string/pref_category_screensaver"
-        android:key="screensaver_settings">
+        android:key="screensaver_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
 
         <SwitchPreferenceCompat
             android:key="screensaver_enabled"
@@ -164,7 +178,9 @@
 
     <PreferenceCategory
         android:title="@string/pref_category_display"
-        android:key="display_settings">
+        android:key="display_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
 
         <SwitchPreferenceCompat
             android:key="keep_screen_on"
@@ -191,7 +207,9 @@
 
     <PreferenceCategory
         android:title="@string/pref_category_schedule"
-        android:key="schedule_settings">
+        android:key="schedule_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
 
         <SwitchPreferenceCompat
             android:key="schedule_enabled"
@@ -220,7 +238,9 @@
 
     <PreferenceCategory
         android:title="@string/pref_category_debug"
-        android:key="debug_settings">
+        android:key="debug_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
 
         <Preference
             android:key="test_screensaver"
@@ -240,8 +260,10 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="@string/pref_category_kiosk_mode"
-        android:key="kiosk_mode_settings">
+        android:title="@string/pref_category_kiosk"
+        android:key="kiosk_mode_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
 
         <SwitchPreferenceCompat
             android:key="kiosk_mode_enabled"
