@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Screensaver.PhotoSelection" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+        <item name="toolbarStyle">@style/Widget.MaterialComponents.Toolbar.Primary</item>
+    </style>
+</resources>
