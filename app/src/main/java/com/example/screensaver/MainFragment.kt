@@ -9,8 +9,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.fragment.app.Fragment
@@ -27,6 +25,10 @@ import androidx.preference.PreferenceManager
 import com.example.screensaver.ui.PhotoDisplayManager
 import com.example.screensaver.lock.LockScreenPhotoManager
 import kotlinx.coroutines.flow.collectLatest
+import android.os.Build
+import android.webkit.WebSettings
+import android.webkit.WebView
+import androidx.annotation.RequiresApi
 
 @AndroidEntryPoint
 class MainFragment : Fragment() {
@@ -124,7 +126,8 @@ class MainFragment : Fragment() {
                 loadingMessage = binding.loadingMessage,
                 container = binding.screensaverContainer,
                 overlayMessageContainer = binding.overlayMessageContainer,
-                overlayMessageText = binding.overlayMessageText
+                overlayMessageText = binding.overlayMessageText,
+                backgroundLoadingIndicator = binding.backgroundLoadingIndicator
             ),
             viewLifecycleOwner.lifecycleScope
         )
@@ -278,22 +281,55 @@ class MainFragment : Fragment() {
         }
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebViewSettings() {
         binding.webView.settings.apply {
+            // Basic access settings
             allowFileAccess = true
             allowContentAccess = false
-            allowFileAccessFromFileURLs = false
-            allowUniversalAccessFromFileURLs = false
             javaScriptEnabled = true
+
+            // Storage and cache settings
             domStorageEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
+
+            // Zoom control settings
             setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+
+            // Content handling settings
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            }
+
+            // Security settings - using suppressions for deprecated APIs
+            @Suppress("DEPRECATION")
+            allowFileAccessFromFileURLs = false
+            @Suppress("DEPRECATION")
+            allowUniversalAccessFromFileURLs = false
+
+            // Media settings
             mediaPlaybackRequiresUserGesture = true
+
+            // Display settings
             useWideViewPort = true
             loadWithOverviewMode = true
+
+            // Database and form settings
+            databaseEnabled = false
+            @Suppress("DEPRECATION")
+            saveFormData = false
+            @Suppress("DEPRECATION")
+            savePassword = false
+        }
+
+        // Additional security settings for newer API levels
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            binding.webView.setRendererPriorityPolicy(
+                WebView.RENDERER_PRIORITY_BOUND,
+                true
+            )
         }
     }
 

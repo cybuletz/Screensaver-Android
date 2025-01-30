@@ -9,4 +9,8 @@
     <color name="white">#FFFFFFFF</color>
     <color name="gradient_start">#1a237e</color> <!-- Deep Blue -->
     <color name="gradient_end">#311b92</color>   <!-- Deep Purple -->
+    <color name="preference_background">#FAFAFA</color>
+    <color name="preference_category_text">@color/material_dynamic_primary40</color>
+    <color name="preference_item_background">#FFFFFF</color>
+    <color name="preference_divider">#1F000000</color>
 </resources>

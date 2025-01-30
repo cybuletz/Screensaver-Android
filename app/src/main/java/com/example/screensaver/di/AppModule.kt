@@ -18,15 +18,20 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.example.screensaver.lock.LockScreenPhotoManager
+import com.example.screensaver.data.AppDataManager
+import com.example.screensaver.data.SecureStorage
+import com.example.screensaver.recovery.StateRecoveryManager
+import com.example.screensaver.recovery.StateRestoration
+import com.example.screensaver.data.PhotoCache
 
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
 
-    @Singleton
     @Provides
+    @Singleton
     fun provideApplicationScope(): CoroutineScope {
-        return CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        return CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
 
     @Singleton
@@ -41,9 +46,11 @@ object AppModule {
         return PhotoAnalytics(context)
     }
 
-    @Singleton
     @Provides
-    fun provideAppPreferences(@ApplicationContext context: Context): AppPreferences {
+    @Singleton
+    fun provideAppPreferences(
+        @ApplicationContext context: Context
+    ): AppPreferences {
         return AppPreferences(context)
     }
 
@@ -51,22 +58,16 @@ object AppModule {
     @Singleton
     fun provideGooglePhotosManager(
         @ApplicationContext context: Context,
-        coroutineScope: CoroutineScope,
-        preferences: AppPreferences
+        preferences: AppPreferences,
+        secureStorage: SecureStorage
     ): GooglePhotosManager {
-        return GooglePhotosManager(context, preferences, coroutineScope)
+        return GooglePhotosManager(context, preferences, secureStorage)
     }
 
     @Provides
     @Singleton
     fun provideNotificationHelper(@ApplicationContext context: Context): NotificationHelper {
         return NotificationHelper(context)
-    }
-
-    @Provides
-    @Singleton
-    fun providePhotoSourceState(@ApplicationContext context: Context): PhotoSourceState {
-        return PhotoSourceState(context)
     }
 
     @Provides
@@ -90,8 +91,49 @@ object AppModule {
     @Singleton
     fun providePhotoDisplayManager(
         lockScreenPhotoManager: LockScreenPhotoManager,
+        photoCache: PhotoCache,  // Add this parameter
         @ApplicationContext context: Context
     ): PhotoDisplayManager {
-        return PhotoDisplayManager(lockScreenPhotoManager, context)
+        return PhotoDisplayManager(
+            photoManager = lockScreenPhotoManager,
+            photoCache = photoCache,
+            context = context
+        )
+    }
+
+    @Provides
+    @Singleton
+    fun provideStateRecoveryManager(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager
+    ): StateRecoveryManager {
+        return StateRecoveryManager(context, appDataManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideStateRestoration(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager,
+        secureStorage: SecureStorage
+    ): StateRestoration {
+        return StateRestoration(context, appDataManager, secureStorage)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoSourceState(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager
+    ): PhotoSourceState {
+        return PhotoSourceState(context, appDataManager)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoCache(
+        @ApplicationContext context: Context
+    ): PhotoCache {
+        return PhotoCache(context)
     }
 }

@@ -17,19 +17,19 @@
 
     <!-- Kiosk Mode -->
     <string-array name="kiosk_actions">
-        <item>Allow Settings Access</item>
-        <item>Allow Manual Photo Change</item>
-        <item>Allow Brightness Control</item>
+        <item>Touch to Next Photo</item>
+        <item>Show Settings</item>
+        <item>Show System UI</item>
     </string-array>
 
     <string-array name="kiosk_actions_values">
+        <item>next_photo</item>
         <item>settings</item>
-        <item>photo_change</item>
-        <item>brightness</item>
+        <item>system_ui</item>
     </string-array>
 
     <string-array name="default_kiosk_actions">
-        <item>photo_change</item>
+        <item>next_photo</item>
     </string-array>
 
     <!-- Transition Effects -->

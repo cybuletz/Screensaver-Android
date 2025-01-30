@@ -20,6 +20,8 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import com.example.screensaver.data.AppDataManager
+
 
 /**
  * Custom Application class for initialization and global state management
@@ -32,6 +34,9 @@ class ScreensaverApplication : Application() {
 
     @Inject
     lateinit var photoSourceState: PhotoSourceState
+
+    @Inject
+    lateinit var appDataManager: AppDataManager
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var firebaseAnalytics: FirebaseAnalytics
@@ -60,7 +65,25 @@ class ScreensaverApplication : Application() {
         initializeTheme()
         initializeWorkManager()
         initializePhotoSourceState()
+        // Add new initialization
+        initializeAppData()
         logApplicationStart()
+    }
+
+    private fun initializeAppData() {
+        applicationScope.launch {
+            try {
+                val currentState = appDataManager.getCurrentState()
+                // Track in analytics
+                firebaseAnalytics.setUserProperty(
+                    "app_data_ready",
+                    currentState.isScreensaverReady.toString()
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize AppDataManager")
+                FirebaseCrashlytics.getInstance().recordException(e)
+            }
+        }
     }
 
     private fun initializePhotoSourceState() {
@@ -176,12 +199,15 @@ class ScreensaverApplication : Application() {
     }
 
     private fun logApplicationStart() {
+        val currentState = appDataManager.getCurrentState()
         val params = Bundle().apply {
             putString("version_name", VERSION_NAME)
             putInt("version_code", VERSION_CODE)
             putString("build_type", BuildConfig.BUILD_TYPE)
             putBoolean("debug_mode", BuildConfig.DEBUG)
-            putBoolean("screensaver_ready", photoSourceState.isScreensaverReady())
+            putBoolean("screensaver_ready", currentState.isScreensaverReady)
+            // Add new analytics data
+            putBoolean("app_data_ready", currentState.isScreensaverReady)
         }
 
         firebaseAnalytics.logEvent("app_start", params)
@@ -192,8 +218,8 @@ class ScreensaverApplication : Application() {
         super.onLowMemory()
         Timber.w("Low memory condition detected")
         clearNonEssentialCaches()
-        // End preview mode if active
-        if (photoSourceState.isInPreviewMode) {
+        // Update to use appDataManager
+        if (appDataManager.getCurrentState().isScreensaverReady) {
             photoSourceState.recordPreviewEnded()
         }
     }

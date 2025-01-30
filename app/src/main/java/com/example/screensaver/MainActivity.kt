@@ -37,7 +37,8 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.example.screensaver.ui.SettingsButtonController
-
+import com.example.screensaver.utils.AppPreferences
+import com.example.screensaver.shared.GooglePhotosManager
 
 
 @AndroidEntryPoint
@@ -47,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private var _navController: NavController? = null
     private val navController get() = _navController!!
     private lateinit var settingsButtonController: SettingsButtonController
+    private var isPhotoTransitionInProgress = false
 
     @Inject
     lateinit var photoManager: LockScreenPhotoManager
@@ -56,6 +58,12 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
+
+    @Inject
+    lateinit var googlePhotosManager: GooglePhotosManager
+
+    @Inject
+    lateinit var preferences: AppPreferences
 
     private var isDestroyed = false
     private var lastBackPressTime: Long = 0
@@ -85,6 +93,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val KIOSK_PERMISSION_REQUEST_CODE = 1001
+        private const val MENU_CLEAR_CACHE = Menu.FIRST + 1
+        private const val PHOTO_TRANSITION_DELAY = 500L
     }
 
     private fun enableFullScreen() {
@@ -121,10 +131,48 @@ class MainActivity : AppCompatActivity() {
             setupTouchListener()
             initializePhotoDisplayManager()
             startLockScreenService()
+            initializePhotos()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
+        }
+    }
+
+    private fun initializePhotos() {
+        lifecycleScope.launch {
+            try {
+                val selectedAlbums = preferences.getSelectedAlbumIds()
+                if (selectedAlbums.isNotEmpty()) {
+                    Log.d(TAG, "Found ${selectedAlbums.size} saved albums, loading photos...")
+
+                    // First initialize GooglePhotosManager
+                    val initialized = googlePhotosManager.initialize()
+                    if (initialized) {
+                        // Load photos
+                        val photos = googlePhotosManager.loadPhotos()
+
+                        if (photos != null && photos.isNotEmpty()) {
+                            withContext(Dispatchers.Main) {
+                                // Clear existing photos and add new ones
+                                photoManager.clearPhotos()
+                                photoManager.addPhotos(photos)
+
+                                // Start photo display if we're on the main fragment
+                                if (navController.currentDestination?.id == R.id.mainFragment) {
+                                    photoDisplayManager.startPhotoDisplay()
+                                }
+                            }
+                        } else {
+                            Log.e(TAG, "No photos found in selected albums")
+                        }
+                    } else {
+                        Log.e(TAG, "Failed to initialize GooglePhotosManager")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing photos", e)
+            }
         }
     }
 
@@ -215,7 +263,8 @@ class MainActivity : AppCompatActivity() {
                     loadingMessage = binding.loadingMessage,
                     container = binding.screensaverContainer,
                     overlayMessageContainer = binding.overlayMessageContainer,
-                    overlayMessageText = binding.overlayMessageText
+                    overlayMessageText = binding.overlayMessageText,
+                    backgroundLoadingIndicator = binding.backgroundLoadingIndicator
                 )
 
                 // Initialize PhotoDisplayManager
@@ -274,10 +323,54 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun ensurePhotoDisplay() {
+        if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
+            navController.currentDestination?.id == R.id.mainFragment) {
+            lifecycleScope.launch {
+                try {
+                    photoDisplayManager.startPhotoDisplay()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error ensuring photo display", e)
+                }
+            }
+        }
+    }
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        setIntent(intent)
+
         if (intent?.getBooleanExtra("photos_ready", false) == true) {
-            startPhotoDisplay()  // You'll need to implement this method
+            val photoCount = intent.getIntExtra("photo_count", 0)
+            val timestamp = intent.getLongExtra("timestamp", 0L)
+            Log.d(TAG, "Photos ready with count: $photoCount, timestamp: $timestamp")
+
+            if (photoCount > 0) {
+                lifecycleScope.launch {
+                    try {
+                        // Ensure we're on the main fragment
+                        if (navController.currentDestination?.id != R.id.mainFragment) {
+                            Log.d(TAG, "Not on main fragment, navigating there first")
+                            navController.navigate(R.id.mainFragment)
+                        }
+
+                        // Stop current display
+                        photoDisplayManager.stopPhotoDisplay()
+
+                        // Small delay to ensure everything is ready
+                        delay(500)
+
+                        // Start photo display
+                        photoDisplayManager.startPhotoDisplay()
+                        Log.d(TAG, "Photo display started")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error starting photo display", e)
+                        showToast("Error starting photo display")
+                    }
+                }
+            } else {
+                Log.w(TAG, "Received photos_ready but count is 0")
+            }
         }
     }
 
@@ -453,9 +546,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun startPhotoDisplay() {
         Log.d(TAG, "Starting photo display from onNewIntent")
+        if (isDestroyed || isPhotoTransitionInProgress) {
+            Log.d(TAG, "Skipping photo display start - activity destroyed or transition in progress")
+            return
+        }
+
         lifecycleScope.launch {
             try {
-                if (photoManager.getPhotoCount() > 0) {
+                // Ensure we have photos before proceeding
+                val photoCount = photoManager.getPhotoCount()
+                if (photoCount <= 0) {
+                    Log.w(TAG, "No photos available to display")
+                    return@launch
+                }
+
+                // Initialize PhotoDisplayManager if needed
+                if (!photoDisplayManager.isInitialized()) {
                     val views = PhotoDisplayManager.Views(
                         primaryView = binding.photoPreview,
                         overlayView = binding.photoPreviewOverlay,
@@ -466,30 +572,33 @@ class MainActivity : AppCompatActivity() {
                         loadingMessage = binding.loadingMessage,
                         container = binding.screensaverContainer,
                         overlayMessageContainer = binding.overlayMessageContainer,
-                        overlayMessageText = binding.overlayMessageText
+                        overlayMessageText = binding.overlayMessageText,
+                        backgroundLoadingIndicator = binding.backgroundLoadingIndicator
                     )
 
-                    // Initialize if needed
-                    if (!photoDisplayManager.isInitialized()) {
-                        photoDisplayManager.initialize(views, lifecycleScope)
+                    photoDisplayManager.initialize(views, lifecycleScope)
 
-                        // Update settings
-                        val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                        photoDisplayManager.updateSettings(
-                            showClock = prefs.getBoolean("show_clock", true),
-                            showDate = prefs.getBoolean("show_date", true),
-                            photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
-                            isRandomOrder = prefs.getBoolean("random_order", false)
-                        )
-                    }
-
-                    photoDisplayManager.startPhotoDisplay()
-                    Log.d(TAG, "Photo display started with ${photoManager.getPhotoCount()} photos")
-                } else {
-                    Log.w(TAG, "No photos available to display")
+                    // Update settings
+                    val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                    photoDisplayManager.updateSettings(
+                        showClock = prefs.getBoolean("show_clock", true),
+                        showDate = prefs.getBoolean("show_date", true),
+                        photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
+                        isRandomOrder = prefs.getBoolean("random_order", false)
+                    )
                 }
+
+                // Ensure cleanup before starting new display
+                withContext(Dispatchers.IO) {
+                    photoDisplayManager.clearPhotoCache()
+                    delay(100) // Small delay to ensure cleanup is complete
+                }
+
+                photoDisplayManager.startPhotoDisplay()
+                Log.d(TAG, "Photo display started with $photoCount photos")
             } catch (e: Exception) {
                 Log.e(TAG, "Error starting photo display", e)
+                showToast("Error starting photo display")
             }
         }
     }
@@ -535,6 +644,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun handlePhotosUpdate() {
+        if (isPhotoTransitionInProgress) {
+            Log.d(TAG, "Photo update already in progress, skipping")
+            return
+        }
+
+        isPhotoTransitionInProgress = true
+        lifecycleScope.launch {
+            try {
+                // Stop current display
+                photoDisplayManager.stopPhotoDisplay()
+
+                // Allow time for cleanup
+                delay(PHOTO_TRANSITION_DELAY)
+
+                // Start new display
+                startPhotoDisplay()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling photo update", e)
+                showToast("Error updating photos")
+            } finally {
+                isPhotoTransitionInProgress = false
+            }
+        }
+    }
+
     private fun showToast(message: String) {
         if (!isDestroyed) {
             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
@@ -554,9 +689,47 @@ class MainActivity : AppCompatActivity() {
 
         updateLockScreenService("CHECK_KIOSK_MODE")
 
-        if (!isDestroyed && photoManager.getPhotoCount() > 0) {
+        // Check if we should start photo display
+        if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
+            navController.currentDestination?.id == R.id.mainFragment) {
             photoDisplayManager.startPhotoDisplay()
         }
+    }
+
+    // Case 1: When user logs out
+    private fun handleLogout() {
+        photoDisplayManager.cleanup(clearCache = true) // Clear cache on logout
+        // ... other logout logic
+    }
+
+    // Case 2: When user changes photo sources
+    private fun handlePhotoSourceChange() {
+        photoDisplayManager.clearPhotoCache() // Clear only cache
+        initializePhotos() // Reinitialize with new source
+    }
+
+    // Case 3: Add a menu option for users to manually clear cache
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        menu.add(Menu.NONE, MENU_CLEAR_CACHE, Menu.NONE, "Clear Photo Cache")
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            MENU_CLEAR_CACHE -> {
+                photoDisplayManager.clearPhotoCache()
+                showToast("Photo cache cleared")
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    // Case 4: Handle cache cleanup on low memory
+    override fun onLowMemory() {
+        super.onLowMemory()
+        photoDisplayManager.handleLowMemory()
     }
 
     override fun onDestroy() {
