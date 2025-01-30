@@ -132,6 +132,18 @@ class MainActivity : AppCompatActivity() {
             initializePhotoDisplayManager()
             startLockScreenService()
             initializePhotos()
+
+            // Update photo sources and start display
+            photoDisplayManager.updatePhotoSources()
+
+            // Add this line to ensure photos are displayed
+            if (navController.currentDestination?.id == R.id.mainFragment) {
+                lifecycleScope.launch {
+                    delay(500) // Small delay to ensure everything is initialized
+                    photoDisplayManager.startPhotoDisplay()
+                }
+            }
+
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")

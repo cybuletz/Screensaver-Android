@@ -36,6 +36,8 @@ import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import android.os.Looper
 import kotlinx.coroutines.CompletableDeferred
+import android.net.Uri
+import androidx.preference.PreferenceManager
 
 
 @Singleton
@@ -298,6 +300,62 @@ class PhotoDisplayManager @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading photos in background", e)
+            }
+        }
+    }
+
+    private fun loadLocalPhotos(): List<Uri> {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+            .getStringSet("selected_local_photos", emptySet())
+            ?.mapNotNull { uriString ->
+                try {
+                    Uri.parse(uriString)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing URI: $uriString", e)
+                    null
+                }
+            } ?: emptyList()
+    }
+
+    fun updatePhotoSources() {
+        val currentSources = PreferenceManager.getDefaultSharedPreferences(context)
+            .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
+
+        val photos = mutableListOf<Uri>()
+
+        if (currentSources.contains("local")) {
+            photos.addAll(loadLocalPhotos())
+        }
+
+        if (photos.isNotEmpty()) {
+            displayPhotos(photos)
+        } else {
+            Log.w(TAG, "No photos available to display")
+        }
+    }
+
+    private fun displayPhotos(photos: List<Uri>) {
+        Log.d(TAG, "Displaying ${photos.size} photos")
+
+        lifecycleScope?.launch {
+            try {
+                // Stop any existing display
+                stopPhotoDisplay()
+
+                // Convert URIs to strings and add as photo URLs
+                val photoUrls = photos.map { it.toString() }
+                photoManager.addPhotoUrls(photoUrls)  // Use the new method
+
+                currentPhotoIndex = 0
+                hasLoadedPhotos = true
+
+                // Start displaying photos
+                startPhotoDisplay()
+
+                Log.d(TAG, "Photo display started with ${photos.size} photos")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting photo display", e)
+                showDefaultPhoto()
             }
         }
     }

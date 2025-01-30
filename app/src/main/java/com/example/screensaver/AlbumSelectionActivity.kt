@@ -65,9 +65,14 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     private val viewModel: AlbumSelectionViewModel by viewModels()
 
+
+
     companion object {
         private const val TAG = "AlbumSelectionActivity"
         private const val PRECACHE_COUNT = 5
+        const val EXTRA_PHOTO_SOURCE = "photo_source"
+        const val SOURCE_GOOGLE_PHOTOS = "google_photos"
+        const val SOURCE_LOCAL_PHOTOS = "local_photos"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
