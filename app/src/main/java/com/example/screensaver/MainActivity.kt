@@ -443,10 +443,12 @@ class MainActivity : AppCompatActivity() {
 
                 // Update settings
                 val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                val intervalInt = prefs.getInt("photo_interval", 10000)
+
                 photoDisplayManager.updateSettings(
                     showClock = prefs.getBoolean("show_clock", true),
                     showDate = prefs.getBoolean("show_date", true),
-                    photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
+                    photoInterval = intervalInt.toLong(),
                     isRandomOrder = prefs.getBoolean("random_order", false)
                 )
 
@@ -521,6 +523,31 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
 
+        if (intent?.getBooleanExtra("albums_saved", false) == true) {
+            val photoCount = intent.getIntExtra("photo_count", 0)
+            val timestamp = intent.getLongExtra("timestamp", 0L)
+            Log.d(TAG, "Albums saved with count: $photoCount, timestamp: $timestamp")
+
+            if (photoCount > 0) {
+                lifecycleScope.launch {
+                    try {
+                        // Navigate to settings instead of starting slideshow
+                        if (navController.currentDestination?.id != R.id.settingsFragment) {
+                            Log.d(TAG, "Navigating to settings fragment")
+                            navController.navigate(R.id.action_mainFragment_to_settingsFragment)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error navigating to settings", e)
+                        showToast("Error navigating to settings")
+                    }
+                }
+            } else {
+                Log.w(TAG, "Received albums_saved but count is 0")
+            }
+            return
+        }
+
+        // Handle legacy "photos_ready" intent for backward compatibility
         if (intent?.getBooleanExtra("photos_ready", false) == true) {
             val photoCount = intent.getIntExtra("photo_count", 0)
             val timestamp = intent.getLongExtra("timestamp", 0L)
@@ -529,30 +556,93 @@ class MainActivity : AppCompatActivity() {
             if (photoCount > 0) {
                 lifecycleScope.launch {
                     try {
-                        // Ensure we're on the main fragment
-                        if (navController.currentDestination?.id != R.id.mainFragment) {
-                            Log.d(TAG, "Not on main fragment, navigating there first")
-                            navController.navigate(R.id.mainFragment)
+                        // First navigate to settings fragment
+                        if (navController.currentDestination?.id != R.id.settingsFragment) {
+                            Log.d(TAG, "Navigating to settings fragment")
+                            navController.navigate(R.id.action_mainFragment_to_settingsFragment)
                         }
 
                         // Stop current display
                         photoDisplayManager.stopPhotoDisplay()
 
-                        // Small delay to ensure everything is ready
-                        delay(500)
+                        // Update visibility settings
+                        val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                        val showClock = prefs.getBoolean("show_clock", true)
+                        val showDate = prefs.getBoolean("show_date", true)
+                        val intervalInt = prefs.getInt("photo_interval", 10000)
 
-                        // Start photo display
-                        photoDisplayManager.startPhotoDisplay()
-                        Log.d(TAG, "Photo display started")
+                        // Ensure proper visibility of clock and date views
+                        binding.clockOverlay.apply {
+                            visibility = if (showClock) View.VISIBLE else View.GONE
+                            alpha = 1f
+                            bringToFront()
+                        }
+
+                        binding.dateOverlay.apply {
+                            visibility = if (showDate) View.VISIBLE else View.GONE
+                            alpha = 1f
+                            bringToFront()
+                        }
+
+                        // Initialize PhotoDisplayManager with views
+                        val views = PhotoDisplayManager.Views(
+                            primaryView = binding.photoPreview,
+                            overlayView = binding.photoPreviewOverlay,
+                            clockView = binding.clockOverlay,
+                            dateView = binding.dateOverlay,
+                            locationView = binding.locationOverlay,
+                            loadingIndicator = binding.loadingIndicator,
+                            loadingMessage = binding.loadingMessage,
+                            container = binding.screensaverContainer,
+                            overlayMessageContainer = binding.overlayMessageContainer,
+                            overlayMessageText = binding.overlayMessageText,
+                            backgroundLoadingIndicator = binding.backgroundLoadingIndicator
+                        )
+
+                        // Re-initialize PhotoDisplayManager
+                        photoDisplayManager.initialize(views, lifecycleScope)
+
+                        // Update PhotoDisplayManager settings
+                        photoDisplayManager.updateSettings(
+                            showClock = showClock,
+                            showDate = showDate,
+                            photoInterval = intervalInt.toLong(),
+                            isRandomOrder = prefs.getBoolean("random_order", false)
+                        )
+
+                        // Let the settings screen handle starting the slideshow
+                        Log.d(TAG, "Ready for settings configuration with clock: $showClock, date: $showDate, interval: $intervalInt")
+
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error starting photo display", e)
-                        showToast("Error starting photo display")
+                        Log.e(TAG, "Error handling photos ready", e)
+                        showToast("Error preparing display")
                     }
                 }
             } else {
                 Log.w(TAG, "Received photos_ready but count is 0")
             }
         }
+    }
+
+    private fun ensureClockAndDateVisibility() {
+        binding.clockOverlay.apply {
+            visibility = View.VISIBLE
+            alpha = 1f
+            bringToFront()
+        }
+        binding.dateOverlay.apply {
+            visibility = View.VISIBLE
+            alpha = 1f
+            bringToFront()
+        }
+        binding.infoContainer.apply {
+            visibility = View.VISIBLE
+            alpha = 1f
+            bringToFront()
+            elevation = 12f
+            translationZ = 8f
+        }
+        Log.d(TAG, "Enforced clock/date visibility - clock: ${binding.clockOverlay.visibility}, date: ${binding.dateOverlay.visibility}")
     }
 
     private fun updateViewVisibility(view: View, visible: Boolean) {
@@ -768,7 +858,7 @@ class MainActivity : AppCompatActivity() {
                     photoDisplayManager.updateSettings(
                         showClock = prefs.getBoolean("show_clock", true),
                         showDate = prefs.getBoolean("show_date", true),
-                        photoInterval = prefs.getString("photo_interval", "10000")?.toLongOrNull() ?: 10000L,
+                        photoInterval = prefs.getInt("photo_interval", 10000).toLong(), // Changed to getInt
                         isRandomOrder = prefs.getBoolean("random_order", false)
                     )
                 }
@@ -779,6 +869,10 @@ class MainActivity : AppCompatActivity() {
                     delay(100) // Small delay to ensure cleanup is complete
                 }
 
+                // Ensure clock and date visibility
+                ensureClockAndDateVisibility()
+
+                // Start the photo display
                 photoDisplayManager.startPhotoDisplay()
                 Log.d(TAG, "Photo display started with $photoCount photos")
             } catch (e: Exception) {
@@ -787,6 +881,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
 
     private fun requestKioskPermissions() {
         requestPermissions(

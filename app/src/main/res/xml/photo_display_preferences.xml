@@ -24,7 +24,9 @@
             android:max="60000"
             app:min="5000"
             app:showSeekBarValue="true"
-            app:iconSpaceReserved="false" />
+            app:iconSpaceReserved="false"
+            app:seekBarIncrement="1000"
+            android:persistent="true" />
 
         <SwitchPreferenceCompat
             android:key="show_clock"

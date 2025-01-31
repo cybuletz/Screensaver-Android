@@ -8,6 +8,7 @@ import androidx.preference.SwitchPreferenceCompat
 import com.example.screensaver.R
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import android.util.Log
 
 @AndroidEntryPoint
 class PhotoDisplaySettingsFragment : PreferenceFragmentCompat() {
@@ -17,7 +18,24 @@ class PhotoDisplaySettingsFragment : PreferenceFragmentCompat() {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.photo_display_preferences, rootKey)
-        setupPreferenceListeners()
+
+        // Find the photo_interval preference
+        findPreference<SeekBarPreference>("photo_interval")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                try {
+                    // Ensure the value is saved as an integer
+                    val intValue = (newValue as? Int) ?: (newValue.toString().toInt())
+                    PreferenceManager.getDefaultSharedPreferences(requireContext())
+                        .edit()
+                        .putInt("photo_interval", intValue)
+                        .apply()
+                    true
+                } catch (e: Exception) {
+                    Log.e("PhotoDisplaySettings", "Error saving interval", e)
+                    false
+                }
+            }
+        }
     }
 
     private fun setupPreferenceListeners() {

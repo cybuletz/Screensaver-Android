@@ -437,10 +437,10 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     saveGooglePhotos()
                 }
 
-                // 4. Return to MainActivity
+                // 4. Return to MainActivity but don't start slideshow
                 val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    putExtra("photos_ready", true)
+                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("albums_saved", true) // Changed from "photos_ready" to "albums_saved"
                     putExtra("photo_count", lockScreenPhotoManager.getPhotoCount())
                     putExtra("timestamp", System.currentTimeMillis())
                 }
