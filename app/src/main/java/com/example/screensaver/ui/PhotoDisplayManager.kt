@@ -191,24 +191,18 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Initializing PhotoDisplayManager")
         this.views = views
         this.lifecycleScope = scope
-        views.overlayView.alpha = 0f
 
-        // Show default photo first
-        showDefaultPhoto()
+        // Verify views are properly set
+        views.clockView?.let {
+            Log.d(TAG, "Clock view initialized with visibility: ${it.visibility}")
+        } ?: Log.e(TAG, "Clock view is null during initialization")
 
-        scope.launch(Dispatchers.Main) {
-            try {
-                // Check for cached photos
-                val photoCount = photoManager.getPhotoCount()
-                if (photoCount > 0) {
-                    Log.d(TAG, "Found ${photoCount} photos")
-                    startPhotoDisplay()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during initialization", e)
-                showErrorMessage(e.message ?: "Unknown error occurred")
-            }
-        }
+        views.dateView?.let {
+            Log.d(TAG, "Date view initialized with visibility: ${it.visibility}")
+        } ?: Log.e(TAG, "Date view is null during initialization")
+
+        // Update visibility immediately after initialization
+        updateTimeDisplayVisibility()
     }
 
     private fun showErrorMessage(error: String) {
@@ -396,7 +390,8 @@ class PhotoDisplayManager @Inject constructor(
 
         val photoCount = photoManager.getPhotoCount()
         if (photoCount == 0) {
-            Log.d(TAG, "No photos available")
+            Log.d(TAG, "No photos available, showing default photo")
+            showDefaultPhoto()
             return
         }
 
@@ -849,6 +844,10 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Updating settings - showClock: $showClock, showDate: $showDate")
         var shouldRestartDisplay = false
 
+        // Store previous values for logging
+        val previousShowClock = this.showClock
+        val previousShowDate = this.showDate
+
         transitionDuration?.let {
             this.transitionDuration = it
         }
@@ -858,11 +857,11 @@ class PhotoDisplayManager @Inject constructor(
         }
         showClock?.let {
             this.showClock = it
-            Log.d(TAG, "Clock visibility setting updated to: $it")
+            Log.d(TAG, "Clock visibility setting updated from $previousShowClock to: $it")
         }
         showDate?.let {
             this.showDate = it
-            Log.d(TAG, "Date visibility setting updated to: $it")
+            Log.d(TAG, "Date visibility setting updated from $previousShowDate to: $it")
         }
         showLocation?.let { this.showLocation = it }
         isRandomOrder?.let { this.isRandomOrder = it }
@@ -870,8 +869,12 @@ class PhotoDisplayManager @Inject constructor(
         // Update visibility immediately
         updateTimeDisplayVisibility()
 
+        // Verify the changes took effect
+        Log.d(TAG, "After settings update - showClock: ${this.showClock}, showDate: ${this.showDate}")
+
         // Restart photo display if interval changed
         if (shouldRestartDisplay) {
+            Log.d(TAG, "Restarting photo display due to interval change")
             stopPhotoDisplay()
             startPhotoDisplay()
         }
@@ -879,23 +882,55 @@ class PhotoDisplayManager @Inject constructor(
 
     private fun updateTimeDisplayVisibility() {
         Log.d(TAG, "Updating time display visibility - showClock: $showClock, showDate: $showDate")
-        views?.apply {
-            clockView?.apply {
-                visibility = if (showClock) View.VISIBLE else View.GONE
-                alpha = if (showClock) 1f else 0f
-                Log.d(TAG, "Clock visibility updated to: ${if (showClock) "VISIBLE" else "GONE"}")
-            }
-            dateView?.apply {
-                visibility = if (showDate) View.VISIBLE else View.GONE
-                alpha = if (showDate) 1f else 0f
-                Log.d(TAG, "Date visibility updated to: ${if (showDate) "VISIBLE" else "GONE"}")
+        if (views == null) {
+            Log.e(TAG, "Views are null when trying to update visibility")
+            return
+        }
+
+        val clockView = views?.clockView
+        if (clockView == null) {
+            Log.e(TAG, "Clock view is null when trying to update visibility")
+            return
+        }
+
+        val dateView = views?.dateView
+        if (dateView == null) {
+            Log.e(TAG, "Date view is null when trying to update visibility")
+            return
+        }
+
+        clockView.apply {
+            visibility = if (showClock) View.VISIBLE else View.GONE
+            alpha = if (showClock) 1f else 0f
+            bringToFront()  // Add this to ensure it's on top
+            Log.d(TAG, "Clock visibility updated to: ${if (showClock) "VISIBLE" else "GONE"}, actual visibility: ${visibility == View.VISIBLE}")
+        }
+
+        dateView.apply {
+            visibility = if (showDate) View.VISIBLE else View.GONE
+            alpha = if (showDate) 1f else 0f
+            bringToFront()  // Add this to ensure it's on top
+            Log.d(TAG, "Date visibility updated to: ${if (showDate) "VISIBLE" else "GONE"}, actual visibility: ${visibility == View.VISIBLE}")
+        }
+
+        // Ensure the container is visible and on top
+        views?.clockView?.parent?.let { parent ->
+            if (parent is View) {
+                parent.apply {
+                    visibility = View.VISIBLE
+                    alpha = 1f
+                    bringToFront()
+                }
+                Log.d(TAG, "Brought clock/date container to front")
             }
         }
 
         // Ensure time updates are running if needed
         if ((showClock || showDate) && timeUpdateJob?.isActive != true) {
+            Log.d(TAG, "Starting time updates")
             startTimeUpdates()
         } else if (!showClock && !showDate) {
+            Log.d(TAG, "Cancelling time updates")
             timeUpdateJob?.cancel()
             timeUpdateJob = null
         }
@@ -921,10 +956,17 @@ class PhotoDisplayManager @Inject constructor(
                 hideAllMessages()
 
                 // Load default photo without animation
-                Glide.with(context)
-                    .load(R.drawable.default_photo)
-                    .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
-                    .into(views.primaryView)
+                views.primaryView.post {
+                    Glide.with(context)
+                        .load(R.drawable.default_photo)
+                        .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                        .into(views.primaryView)
+
+                    // Ensure the view is visible
+                    views.primaryView.visibility = View.VISIBLE
+                }
+
+                Log.d(TAG, "Default photo loaded")
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading default photo", e)
             }
