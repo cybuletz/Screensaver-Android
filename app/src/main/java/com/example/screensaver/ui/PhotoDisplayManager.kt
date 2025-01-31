@@ -352,6 +352,9 @@ class PhotoDisplayManager @Inject constructor(
         // Cancel any existing display job
         displayJob?.cancel()
 
+        // Make sure to update time display visibility before starting
+        updateTimeDisplayVisibility()
+
         displayJob = currentScope.launch {
             try {
                 // Start with first photo immediately
@@ -367,6 +370,11 @@ class PhotoDisplayManager @Inject constructor(
                     Log.e(TAG, "Error in photo display loop", e)
                 }
             }
+        }
+
+        // Start time updates if needed
+        if (showClock || showDate) {
+            startTimeUpdates()
         }
     }
 
@@ -753,7 +761,7 @@ class PhotoDisplayManager @Inject constructor(
             visibility = View.INVISIBLE
         }
 
-        // Ensure clock and date are visible if enabled
+        // Update time display visibility after transition
         updateTimeDisplayVisibility()
 
         // Hide any remaining messages
@@ -838,23 +846,28 @@ class PhotoDisplayManager @Inject constructor(
         showLocation: Boolean? = null,
         isRandomOrder: Boolean? = null
     ) {
-        Log.d(TAG, "Updating settings")
+        Log.d(TAG, "Updating settings - showClock: $showClock, showDate: $showDate")
         var shouldRestartDisplay = false
 
         transitionDuration?.let {
             this.transitionDuration = it
-            Log.d(TAG, "Updated transition duration to: $it ms")
         }
         photoInterval?.let {
             this.photoInterval = it
             shouldRestartDisplay = true
-            Log.d(TAG, "Updated photo interval to: $it ms")
         }
-        showClock?.let { this.showClock = it }
-        showDate?.let { this.showDate = it }
+        showClock?.let {
+            this.showClock = it
+            Log.d(TAG, "Clock visibility setting updated to: $it")
+        }
+        showDate?.let {
+            this.showDate = it
+            Log.d(TAG, "Date visibility setting updated to: $it")
+        }
         showLocation?.let { this.showLocation = it }
         isRandomOrder?.let { this.isRandomOrder = it }
 
+        // Update visibility immediately
         updateTimeDisplayVisibility()
 
         // Restart photo display if interval changed
@@ -865,22 +878,22 @@ class PhotoDisplayManager @Inject constructor(
     }
 
     private fun updateTimeDisplayVisibility() {
+        Log.d(TAG, "Updating time display visibility - showClock: $showClock, showDate: $showDate")
         views?.apply {
             clockView?.apply {
                 visibility = if (showClock) View.VISIBLE else View.GONE
-                alpha = 1f // Ensure clock is fully visible
+                alpha = if (showClock) 1f else 0f
+                Log.d(TAG, "Clock visibility updated to: ${if (showClock) "VISIBLE" else "GONE"}")
             }
             dateView?.apply {
                 visibility = if (showDate) View.VISIBLE else View.GONE
-                alpha = 1f // Ensure date is fully visible
-            }
-            locationView?.apply {
-                visibility = if (showLocation) View.VISIBLE else View.GONE
-                alpha = 1f // Ensure location is fully visible
+                alpha = if (showDate) 1f else 0f
+                Log.d(TAG, "Date visibility updated to: ${if (showDate) "VISIBLE" else "GONE"}")
             }
         }
 
-        if ((showClock || showDate) && timeUpdateJob == null) {
+        // Ensure time updates are running if needed
+        if ((showClock || showDate) && timeUpdateJob?.isActive != true) {
             startTimeUpdates()
         } else if (!showClock && !showDate) {
             timeUpdateJob?.cancel()

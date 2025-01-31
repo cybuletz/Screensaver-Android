@@ -103,12 +103,12 @@
             android:id="@+id/infoContainer"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom|start"
+            android:layout_gravity="top|start"
             android:orientation="vertical"
             android:padding="16dp"
             android:layout_margin="16dp"
             android:background="@drawable/info_background"
-            android:elevation="4dp">
+            android:elevation="8dp">
 
             <TextView
                 android:id="@+id/clockOverlay"
@@ -116,11 +116,13 @@
                 android:layout_height="wrap_content"
                 android:textColor="@android:color/white"
                 android:textSize="48sp"
-                android:shadowColor="@android:color/black"
-                android:shadowRadius="3"
-                android:shadowDx="1"
-                android:shadowDy="1"
-                android:visibility="gone"
+                android:fontFamily="sans-serif-light"
+                android:shadowColor="#40000000"
+                android:shadowRadius="4"
+                android:shadowDx="0"
+                android:shadowDy="2"
+                android:visibility="visible"
+                android:includeFontPadding="false"
                 tools:text="12:34"/>
 
             <TextView
@@ -129,12 +131,14 @@
                 android:layout_height="wrap_content"
                 android:textColor="@android:color/white"
                 android:textSize="24sp"
-                android:shadowColor="@android:color/black"
-                android:shadowRadius="2"
-                android:shadowDx="1"
-                android:shadowDy="1"
-                android:visibility="gone"
+                android:fontFamily="sans-serif-light"
+                android:shadowColor="#40000000"
+                android:shadowRadius="4"
+                android:shadowDx="0"
+                android:shadowDy="2"
+                android:visibility="visible"
                 android:layout_marginTop="4dp"
+                android:includeFontPadding="false"
                 tools:text="January 27, 2025"/>
 
             <TextView
@@ -143,10 +147,11 @@
                 android:layout_height="wrap_content"
                 android:textColor="@android:color/white"
                 android:textSize="16sp"
-                android:shadowColor="@android:color/black"
-                android:shadowRadius="2"
-                android:shadowDx="1"
-                android:shadowDy="1"
+                android:fontFamily="sans-serif-light"
+                android:shadowColor="#40000000"
+                android:shadowRadius="4"
+                android:shadowDx="0"
+                android:shadowDy="2"
                 android:visibility="gone"
                 android:layout_marginTop="4dp"
                 tools:text="Location"/>

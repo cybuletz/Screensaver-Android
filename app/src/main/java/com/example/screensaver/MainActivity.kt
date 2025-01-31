@@ -529,7 +529,7 @@ class MainActivity : AppCompatActivity() {
             if (photoCount > 0) {
                 lifecycleScope.launch {
                     try {
-                        // Ensure we're on the main fragment
+                        // First navigate to main fragment if needed
                         if (navController.currentDestination?.id != R.id.mainFragment) {
                             Log.d(TAG, "Not on main fragment, navigating there first")
                             navController.navigate(R.id.mainFragment)
@@ -538,12 +538,61 @@ class MainActivity : AppCompatActivity() {
                         // Stop current display
                         photoDisplayManager.stopPhotoDisplay()
 
+                        // Update visibility settings
+                        val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                        val showClock = prefs.getBoolean("show_clock", true)
+                        val showDate = prefs.getBoolean("show_date", true)
+
+                        // Get interval as int and convert to long
+                        val intervalInt = prefs.getInt("photo_interval", 10000)
+                        val intervalLong = intervalInt.toLong()
+
+                        // Ensure proper visibility of clock and date views
+                        binding.clockOverlay.apply {
+                            visibility = if (showClock) View.VISIBLE else View.GONE
+                            alpha = 1f
+                            bringToFront()
+                        }
+
+                        binding.dateOverlay.apply {
+                            visibility = if (showDate) View.VISIBLE else View.GONE
+                            alpha = 1f
+                            bringToFront()
+                        }
+
+                        // Initialize PhotoDisplayManager with views
+                        val views = PhotoDisplayManager.Views(
+                            primaryView = binding.photoPreview,
+                            overlayView = binding.photoPreviewOverlay,
+                            clockView = binding.clockOverlay,
+                            dateView = binding.dateOverlay,
+                            locationView = binding.locationOverlay,
+                            loadingIndicator = binding.loadingIndicator,
+                            loadingMessage = binding.loadingMessage,
+                            container = binding.screensaverContainer,
+                            overlayMessageContainer = binding.overlayMessageContainer,
+                            overlayMessageText = binding.overlayMessageText,
+                            backgroundLoadingIndicator = binding.backgroundLoadingIndicator
+                        )
+
+                        // Re-initialize PhotoDisplayManager
+                        photoDisplayManager.initialize(views, lifecycleScope)
+
+                        // Update PhotoDisplayManager settings
+                        photoDisplayManager.updateSettings(
+                            showClock = showClock,
+                            showDate = showDate,
+                            photoInterval = intervalLong,
+                            isRandomOrder = prefs.getBoolean("random_order", false)
+                        )
+
                         // Small delay to ensure everything is ready
                         delay(500)
 
                         // Start photo display
                         photoDisplayManager.startPhotoDisplay()
-                        Log.d(TAG, "Photo display started")
+                        Log.d(TAG, "Photo display started with clock: $showClock, date: $showDate, interval: $intervalLong")
+
                     } catch (e: Exception) {
                         Log.e(TAG, "Error starting photo display", e)
                         showToast("Error starting photo display")
