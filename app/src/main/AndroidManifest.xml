@@ -271,5 +271,9 @@
                 android:value="androidx.startup" />
         </provider>
 
+        <meta-data
+            android:name="com.example.screensaver.glide.PhotosGlideModule"
+            android:value="GlideModule" />
+
     </application>
 </manifest>

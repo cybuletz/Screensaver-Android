@@ -13,17 +13,24 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import org.json.JSONArray
 import org.json.JSONObject
+import com.example.screensaver.shared.GooglePhotosManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 @Singleton
 class LockScreenPhotoManager @Inject constructor(
-    private val context: Context
-) {
+    private val context: Context,
+    private val googlePhotosManager: GooglePhotosManager
+    ) {
     private val mediaItems = mutableListOf<MediaItem>()
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
     val loadingState: StateFlow<LoadingState> = _loadingState
     private val KEY_HAS_PHOTOS = "has_photos"
     private val KEY_MEDIA_ITEMS = "media_items"
     private val preferences = context.getSharedPreferences("photo_manager", Context.MODE_PRIVATE)
+
+    suspend fun refreshTokens(): Boolean {
+        return googlePhotosManager.refreshTokens()
+    }
 
     companion object {
         private const val TAG = "LockScreenPhotoManager"

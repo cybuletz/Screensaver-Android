@@ -246,35 +246,53 @@ class MainActivity : AppCompatActivity() {
                 if (selectedAlbums.isNotEmpty()) {
                     Log.d(TAG, "Found ${selectedAlbums.size} saved albums, loading photos...")
 
-                    // First initialize GooglePhotosManager
-                    val initialized = googlePhotosManager.initialize()
-                    if (initialized) {
-                        // Load photos
-                        val photos = googlePhotosManager.loadPhotos()
-
-                        if (photos != null && photos.isNotEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                // Clear existing photos and add new ones
-                                photoManager.clearPhotos()
-                                photoManager.addPhotos(photos)
-
-                                // Start photo display if we're on the main fragment
-                                if (navController.currentDestination?.id == R.id.mainFragment) {
-                                    photoDisplayManager.startPhotoDisplay()
+                    withContext(Dispatchers.IO) {
+                        try {
+                            // First initialize GooglePhotosManager
+                            if (googlePhotosManager.initialize()) {
+                                // Load photos with error handling
+                                val photos = try {
+                                    googlePhotosManager.loadPhotos()
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error loading photos", e)
+                                    null
                                 }
+
+                                if (photos != null && photos.isNotEmpty()) {
+                                    withContext(Dispatchers.Main) {
+                                        try {
+                                            // Clear existing photos and add new ones
+                                            photoManager.clearPhotos()
+                                            photoManager.addPhotos(photos)
+
+                                            // Start photo display if we're on the main fragment
+                                            if (!isDestroyed &&
+                                                navController.currentDestination?.id == R.id.mainFragment) {
+                                                photoDisplayManager.startPhotoDisplay()
+                                            } else {
+                                                Log.d(TAG, "Skipping photo display - activity destroyed or not on main fragment")
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Error updating UI with photos", e)
+                                        }
+                                    }
+                                } else {
+                                    Log.e(TAG, "No photos found in selected albums")
+                                }
+                            } else {
+                                Log.e(TAG, "Failed to initialize GooglePhotosManager")
                             }
-                        } else {
-                            Log.e(TAG, "No photos found in selected albums")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error in photo initialization", e)
                         }
-                    } else {
-                        Log.e(TAG, "Failed to initialize GooglePhotosManager")
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error initializing photos", e)
+                Log.e(TAG, "Error in initializePhotos", e)
             }
         }
     }
+
 
     private fun setupTouchListener() {
         Log.d(TAG, "Setting up touch listeners")
@@ -903,6 +921,18 @@ class MainActivity : AppCompatActivity() {
         try {
             isDestroyed = true
 
+            // Cancel any ongoing photo operations
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO) {
+                    try {
+                        googlePhotosManager.cleanup()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error cleaning up GooglePhotosManager", e)
+                    }
+                }
+            }
+
+            // Existing cleanup code
             if (PreferenceManager.getDefaultSharedPreferences(this)
                     .getBoolean("kiosk_mode_enabled", false)) {
                 startKioskMode()

@@ -108,7 +108,7 @@ dependencies {
     // Version constants
     val navVersion = "2.7.6"
     val lifecycleVersion = "2.6.2"
-    val hiltVersion = "2.48"
+    val hiltVersion = "2.48.1"
     val coroutinesVersion = "1.7.3"
     val grpcVersion = "1.58.0"
 
@@ -123,6 +123,7 @@ dependencies {
     implementation("androidx.databinding:databinding-runtime:8.1.4")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
+    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
     // AutoValue
     kapt("com.google.auto.value:auto-value:1.9")
@@ -181,7 +182,9 @@ dependencies {
 
     // Glide
     implementation("com.github.bumptech.glide:glide:4.16.0")
+    implementation("com.github.bumptech.glide:okhttp3-integration:4.16.0")
     kapt("com.github.bumptech.glide:compiler:4.16.0")
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
 
     // RecyclerView
     implementation("androidx.recyclerview:recyclerview:1.3.2")

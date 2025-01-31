@@ -38,6 +38,13 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
 import android.animation.Animator
 import android.animation.ObjectAnimator
+import com.bumptech.glide.annotation.GlideModule
+import com.bumptech.glide.load.HttpException
+import com.example.screensaver.glide.GlideApp
+import okhttp3.OkHttpClient
+import okhttp3.Interceptor
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 
 @Singleton
@@ -403,72 +410,109 @@ class PhotoDisplayManager @Inject constructor(
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
                 val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
 
-                // Cancel any ongoing animations
-                views.overlayView.animate().cancel()
-                views.primaryView.animate().cancel()
-
                 // Reset view properties
-                views.overlayView.apply {
-                    alpha = 0f
-                    scaleX = 1f
-                    scaleY = 1f
-                    translationX = 0f
-                    translationY = 0f
-                    rotationX = 0f
-                    rotationY = 0f
-                    rotation = 0f
-                    translationZ = 0f
-                    visibility = View.VISIBLE
-                }
+                resetViewProperties(views)
 
-                // Load the image
-                Glide.with(context)
+                // Load the image using GlideApp
+                GlideApp.with(context)
                     .load(nextUrl)
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
-                    .listener(object : RequestListener<Drawable> {
-                        override fun onLoadFailed(
-                            e: GlideException?,
-                            model: Any?,
-                            target: Target<Drawable>,
-                            isFirstResource: Boolean
-                        ): Boolean {
-                            Log.e(TAG, "Failed to load photo: $nextUrl", e)
-                            isTransitioning = false
-                            return false
-                        }
-
-                        override fun onResourceReady(
-                            resource: Drawable,
-                            model: Any,
-                            target: Target<Drawable>,
-                            dataSource: DataSource,
-                            isFirstResource: Boolean
-                        ): Boolean {
-                            Log.d(TAG, "Photo loaded, starting transition: $transitionEffect")
-
-                            // Set camera distance for 3D effects
-                            views.overlayView.cameraDistance = views.overlayView.width * 3f
-
-                            when (transitionEffect) {
-                                "slide" -> performSlideTransition(views, resource, nextIndex)
-                                "zoom" -> performZoomTransition(views, resource, nextIndex)
-                                "flip" -> performFlipTransition(views, resource, nextIndex)
-                                "rotate" -> performRotateTransition(views, resource, nextIndex)
-                                "depth" -> performDepthTransition(views, resource, nextIndex)
-                                "cube" -> performCubeTransition(views, resource, nextIndex)
-                                else -> performFadeTransition(views, resource, nextIndex)
-                            }
-
-                            trackPhotoLoadTime(fromCache, System.currentTimeMillis() - startTime)
-                            return false
-                        }
-                    })
+                    .error(R.drawable.default_photo)
+                    .listener(createGlideListener(views, nextIndex, startTime, transitionEffect))
                     .into(views.overlayView)
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error in loadAndDisplayPhoto", e)
                 isTransitioning = false
             }
+        }
+    }
+
+    private fun resetViewProperties(views: Views) {
+        // Cancel any ongoing animations
+        views.overlayView.animate().cancel()
+        views.primaryView.animate().cancel()
+
+        // Reset view properties
+        views.overlayView.apply {
+            alpha = 0f
+            scaleX = 1f
+            scaleY = 1f
+            translationX = 0f
+            translationY = 0f
+            rotationX = 0f
+            rotationY = 0f
+            rotation = 0f
+            translationZ = 0f
+            visibility = View.VISIBLE
+        }
+    }
+
+    private fun createGlideListener(
+        views: Views,
+        nextIndex: Int,
+        startTime: Long,
+        transitionEffect: String
+    ) = object : RequestListener<Drawable> {
+        override fun onLoadFailed(
+            e: GlideException?,
+            model: Any?,
+            target: Target<Drawable>,
+            isFirstResource: Boolean
+        ): Boolean {
+            Log.e(TAG, "Failed to load photo: $model", e)
+            isTransitioning = false
+
+            // If we get a 403, try refreshing the token and retrying
+            if (e?.rootCauses?.any { it is HttpException && it.statusCode == 403 } == true) {
+                lifecycleScope?.launch {
+                    try {
+                        if (photoManager.refreshTokens()) {
+                            // Add a small delay before retrying
+                            delay(500)
+                            // Clear Glide's memory cache for this URL to force a new request
+                            model?.toString()?.let { url ->
+                                Glide.get(context).clearMemory()
+                                GlideApp.with(context).clear(views.overlayView)
+                            }
+                            // Retry the load after token refresh
+                            loadAndDisplayPhoto(true)
+                        } else {
+                            Log.e(TAG, "Failed to refresh tokens")
+                            showErrorMessage("Failed to refresh authentication")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error during token refresh", e)
+                        showErrorMessage("Authentication error")
+                    }
+                }
+            }
+
+            return false
+        }
+
+        override fun onResourceReady(
+            resource: Drawable,
+            model: Any,
+            target: Target<Drawable>,
+            dataSource: DataSource,
+            isFirstResource: Boolean
+        ): Boolean {
+            Log.d(TAG, "Photo loaded, starting transition: $transitionEffect")
+            views.overlayView.cameraDistance = views.overlayView.width * 3f
+
+            when (transitionEffect) {
+                "slide" -> performSlideTransition(views, resource, nextIndex)
+                "zoom" -> performZoomTransition(views, resource, nextIndex)
+                "flip" -> performFlipTransition(views, resource, nextIndex)
+                "rotate" -> performRotateTransition(views, resource, nextIndex)
+                "depth" -> performDepthTransition(views, resource, nextIndex)
+                "cube" -> performCubeTransition(views, resource, nextIndex)
+                else -> performFadeTransition(views, resource, nextIndex)
+            }
+
+            trackPhotoLoadTime(dataSource == DataSource.MEMORY_CACHE, System.currentTimeMillis() - startTime)
+            return false
         }
     }
 
