@@ -108,7 +108,7 @@ dependencies {
     // Version constants
     val navVersion = "2.7.6"
     val lifecycleVersion = "2.6.2"
-    val hiltVersion = "2.48.1"
+    val hiltVersion = "2.48"
     val coroutinesVersion = "1.7.3"
     val grpcVersion = "1.58.0"
 

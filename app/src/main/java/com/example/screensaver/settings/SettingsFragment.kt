@@ -401,6 +401,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 setupKioskModePreference()
                 setupCacheSettings(preferenceScreen)
                 setupLocalPhotoPreferences()
+                setupChargingPreference() // Add this line
 
                 // Observe state changes
                 observeAppState()
@@ -580,9 +581,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         Log.d(TAG, "Setting up photo source preferences")
 
-        // Get initial state
+        // Get current state without default value
         val currentSources = PreferenceManager.getDefaultSharedPreferences(requireContext())
-            .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
+            .getStringSet("photo_source_selection", null) ?: emptySet()
         Log.d(TAG, "Current photo sources: $currentSources")
 
         // Get current Google sign-in state
@@ -591,7 +592,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
         ) == true
 
-        // Update UI states immediately
+        // Update UI states
         googlePhotosCategory?.isVisible = currentSources.contains("google_photos")
         localPhotosCategory?.isVisible = currentSources.contains("local")
         useGooglePhotos?.isChecked = account != null && hasRequiredScope
@@ -814,6 +815,76 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun setupChargingPreference() {
+        Log.d(TAG, "Setting up charging preference")
+        findPreference<SwitchPreferenceCompat>("start_on_charge")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                Log.d(TAG, "Charging preference changed to: $enabled")
+
+                // Update the preference
+                PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .edit()
+                    .putBoolean("start_on_charge", enabled)
+                    .apply()
+
+                // Show feedback
+                val message = if (enabled) {
+                    "Auto-start on charging enabled"
+                } else {
+                    "Auto-start on charging disabled"
+                }
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+
+                true
+            }
+
+            // Log current state
+            val currentState = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getBoolean("start_on_charge", false)
+            Log.d(TAG, "Current charging preference state: $currentState")
+        }
+    }
+
+    private fun showChargingFeatureDialog() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.start_on_charge_dialog_title)
+            .setMessage(R.string.start_on_charge_dialog_message)
+            .setPositiveButton(R.string.enable) { _, _ ->
+                updateChargingPreference(true)
+            }
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                // Reset the switch
+                findPreference<SwitchPreferenceCompat>("start_on_charge")?.isChecked = false
+            }
+            .show()
+    }
+
+    private fun updateChargingPreference(enabled: Boolean) {
+        try {
+            // Update preference
+            PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .edit()
+                .putBoolean("start_on_charge", enabled)
+                .apply()
+
+            // Update switch state
+            findPreference<SwitchPreferenceCompat>("start_on_charge")?.isChecked = enabled
+
+            // Show feedback
+            val messageResId = if (enabled) {
+                R.string.start_on_charge_enabled
+            } else {
+                R.string.start_on_charge_disabled
+            }
+            showFeedback(messageResId)
+
+            Log.d(TAG, "Charging preference updated: $enabled")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating charging preference", e)
+            handleError("Failed to update charging preference", e)
+        }
+    }
 
     private fun showKioskModeConfirmation() {
         MaterialAlertDialogBuilder(requireContext())

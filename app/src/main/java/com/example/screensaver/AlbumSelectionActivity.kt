@@ -1,6 +1,5 @@
 package com.example.screensaver
 
-import android.app.Activity
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -8,7 +7,6 @@ import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
 import com.example.screensaver.adapters.AlbumAdapter
 import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
@@ -22,7 +20,6 @@ import com.example.screensaver.utils.AppPreferences
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -31,15 +28,13 @@ import javax.inject.Inject
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
 import android.content.Intent
-import androidx.activity.viewModels
-import androidx.lifecycle.lifecycleScope
 import com.example.screensaver.lock.LockScreenPhotoManager
-import com.example.screensaver.lock.PhotoLockScreenService
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.collectLatest
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestManager
-import kotlinx.coroutines.launch
+import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.request.RequestOptions
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 
 
 @AndroidEntryPoint
@@ -85,8 +80,18 @@ class AlbumSelectionActivity : AppCompatActivity() {
         // Get photo source from intent
         photoSource = intent.getStringExtra(EXTRA_PHOTO_SOURCE) ?: SOURCE_GOOGLE_PHOTOS
 
-        // Initialize Glide RequestManager
+        // Initialize Glide RequestManager with optimized settings
         glideRequestManager = Glide.with(this)
+            .setDefaultRequestOptions(
+                RequestOptions()
+                    .diskCacheStrategy(DiskCacheStrategy.ALL) // Cache both original & resized images
+                    .skipMemoryCache(false) // Use memory cache
+                    .centerCrop() // Consistent cropping
+                    .dontAnimate() // Prevent animation issues
+                    .timeout(10000) // 10 second timeout
+                    .placeholder(R.drawable.placeholder_album)
+                    .error(R.drawable.placeholder_album_error)
+            )
 
         dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
 
@@ -162,33 +167,67 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        albumAdapter = AlbumAdapter(
-            glideRequestManager = glideRequestManager,  // Add glideRequestManager here
-            onAlbumClick = { album ->
+        binding.albumRecyclerView.apply {
+            setItemViewCacheSize(30) // Increase cache size
+            recycledViewPool.setMaxRecycledViews(0, 30)
+
+            layoutManager = GridLayoutManager(this@AlbumSelectionActivity, 2).apply {
+                recycleChildrenOnDetach = true
+            }
+            // Remove this line as it's redundant - you already set the layoutManager above
+            // this.layoutManager = layoutManager
+
+            // Initialize the adapter
+            albumAdapter = AlbumAdapter(glideRequestManager) { album ->
                 if (!viewModel.isLoading.value) {
                     toggleAlbumSelection(album)
                 }
             }
-        )
 
-        binding.albumRecyclerView.apply {
-            layoutManager = GridLayoutManager(this@AlbumSelectionActivity, 2)
             adapter = albumAdapter
-            setItemViewCacheSize(20)
-            setHasFixedSize(true)
+
+            // Add scroll state listener for debugging
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                    super.onScrollStateChanged(recyclerView, newState)
+                    when (newState) {
+                        RecyclerView.SCROLL_STATE_IDLE -> {
+                            Log.d(TAG, "Scroll IDLE - resuming image loading")
+                            glideRequestManager.resumeRequests()
+                        }
+                        RecyclerView.SCROLL_STATE_DRAGGING -> {
+                            Log.d(TAG, "Scroll DRAGGING")
+                        }
+                        RecyclerView.SCROLL_STATE_SETTLING -> {
+                            Log.d(TAG, "Scroll SETTLING")
+                        }
+                    }
+                }
+            })
         }
     }
+
 
     private fun setupConfirmButton() {
         binding.confirmButton.apply {
             isEnabled = false
+            extend() // Ensure it starts extended
             setOnClickListener {
                 if (!viewModel.isLoading.value) {
                     saveSelectedAlbums()
-                    // Remove setResult and finish from here
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        binding.confirmButton.extend()
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        binding.confirmButton.extend()
     }
 
     private fun setupRetryButton() {
@@ -219,9 +258,10 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        Log.d(TAG, "Activity onStop - clearing RecyclerView")
         try {
-            Glide.get(applicationContext).clearMemory()
-            binding.albumRecyclerView.recycledViewPool.clear()
+            // Don't clear memory cache, just pending requests
+            glideRequestManager.pauseRequests()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onStop", e)
         }
@@ -554,6 +594,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        Log.d(TAG, "Activity onDestroy")
         // Clear all image loads first
         glideRequestManager.clear(binding.albumRecyclerView)
         binding.albumRecyclerView.adapter = null
@@ -562,7 +603,11 @@ class AlbumSelectionActivity : AppCompatActivity() {
             try {
                 withContext(NonCancellable) {
                     photoManager.cleanup()
-                    photoLoadingManager.clearMemory()
+                    // Only clear memory if the activity is actually being destroyed
+                    if (isFinishing) {
+                        Log.d(TAG, "Clearing Glide memory cache")
+                        Glide.get(applicationContext).clearMemory()
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error during cleanup", e)

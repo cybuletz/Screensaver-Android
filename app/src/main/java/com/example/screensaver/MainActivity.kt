@@ -28,6 +28,7 @@ import com.example.screensaver.kiosk.KioskPolicyManager
 import com.example.screensaver.lock.LockScreenPhotoManager
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.ui.PhotoDisplayManager
+import com.example.screensaver.receivers.ChargingReceiver
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -39,6 +40,10 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.example.screensaver.ui.SettingsButtonController
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.shared.GooglePhotosManager
+import android.content.IntentFilter
+import android.content.BroadcastReceiver
+import android.os.BatteryManager
+import android.net.Uri
 
 
 @AndroidEntryPoint
@@ -68,6 +73,8 @@ class MainActivity : AppCompatActivity() {
     private var isDestroyed = false
     private var lastBackPressTime: Long = 0
     private val doubleBackPressInterval = 2000L
+
+    private val PREF_FIRST_LAUNCH = "first_launch"
 
     private val viewLifecycleOwner: LifecycleOwner?
         get() = try {
@@ -117,6 +124,11 @@ class MainActivity : AppCompatActivity() {
         enableFullScreen()
 
         try {
+            // Handle start from charging receiver
+            if (intent?.getBooleanExtra("start_screensaver", false) == true) {
+                Log.d(TAG, "Started from charging receiver at ${intent?.getLongExtra("timestamp", 0L)}")
+            }
+
             if (checkKioskMode()) {
                 return
             }
@@ -125,6 +137,7 @@ class MainActivity : AppCompatActivity() {
             setContentView(binding.root)
 
             setupFullScreen()
+            setupFirstLaunchUI()
             setupNavigation()
             setupSettingsButton()
             initializeClockAndDate()
@@ -136,7 +149,10 @@ class MainActivity : AppCompatActivity() {
             // Update photo sources and start display
             photoDisplayManager.updatePhotoSources()
 
-            // Add this line to ensure photos are displayed
+            // Check initial charging state
+            checkInitialChargingState()
+
+            // Start photo display if on main fragment
             if (navController.currentDestination?.id == R.id.mainFragment) {
                 lifecycleScope.launch {
                     delay(500) // Small delay to ensure everything is initialized
@@ -144,10 +160,82 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            // If started from charging, ensure we're in proper state
+            if (intent?.getBooleanExtra("start_screensaver", false) == true) {
+                lifecycleScope.launch {
+                    try {
+                        // Ensure we're on main fragment
+                        if (navController.currentDestination?.id != R.id.mainFragment) {
+                            navController.navigate(R.id.mainFragment)
+                        }
+                        delay(500) // Give time for navigation
+                        setupFullScreen() // Ensure fullscreen
+                        photoDisplayManager.startPhotoDisplay()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error handling charging start", e)
+                    }
+                }
+            }
+
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
+        }
+    }
+
+    private fun setupFirstLaunchUI() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val isFirstLaunch = prefs.getBoolean(PREF_FIRST_LAUNCH, true)
+
+        Log.d(TAG, "Setting up first launch UI - isFirstLaunch: $isFirstLaunch")
+
+        if (isFirstLaunch) {
+            // Hide info container (which contains clock and date)
+            binding.infoContainer.apply {
+                visibility = View.GONE
+                Log.d(TAG, "Info container visibility set to GONE")
+            }
+
+            // Show setup message
+            binding.initialSetupMessage.apply {
+                visibility = View.VISIBLE
+                bringToFront()
+                Log.d(TAG, "Initial setup message visibility set to VISIBLE")
+            }
+
+            // Show legal links
+            binding.legalLinksContainer.apply {
+                visibility = View.VISIBLE
+                bringToFront()
+                Log.d(TAG, "Legal links container visibility set to VISIBLE")
+            }
+
+            // Setup click listeners for links
+            binding.termsLink.setOnClickListener {
+                Log.d(TAG, "Terms link clicked")
+                openUrl("https://photostreamr.cybu.site/terms")
+            }
+
+            binding.privacyLink.setOnClickListener {
+                Log.d(TAG, "Privacy link clicked")
+                openUrl("https://photostreamr.cybu.site/privacy")
+            }
+        } else {
+            binding.infoContainer.visibility = View.VISIBLE
+            binding.initialSetupMessage.visibility = View.GONE
+            binding.legalLinksContainer.visibility = View.GONE
+            Log.d(TAG, "Not first launch - normal UI setup complete")
+        }
+    }
+
+    private fun openUrl(url: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error opening URL: $url", e)
+            showToast("Could not open link")
         }
     }
 
@@ -220,10 +308,16 @@ class MainActivity : AppCompatActivity() {
                 elevation = 6f
                 translationZ = 6f
 
-                // Add click listener
+                // Add click listener with first launch handling
                 setOnClickListener {
                     Log.d(TAG, "Settings button clicked")
                     if (navController.currentDestination?.id == R.id.mainFragment) {
+                        // Mark first launch as completed when user goes to settings
+                        PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                            .edit()
+                            .putBoolean(PREF_FIRST_LAUNCH, false)
+                            .apply()
+
                         navController.navigate(R.id.action_mainFragment_to_settingsFragment)
                         settingsButtonController.hide()
                     }
@@ -258,6 +352,53 @@ class MainActivity : AppCompatActivity() {
                             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                             or View.SYSTEM_UI_FLAG_FULLSCREEN
                     )
+        }
+    }
+
+    private fun checkInitialChargingState() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val startOnCharge = prefs.getBoolean("start_on_charge", false)
+
+        if (startOnCharge) {
+            val batteryStatus = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == BatteryManager.BATTERY_STATUS_FULL
+
+            Log.d(TAG, "Initial charging state check - startOnCharge: $startOnCharge, isCharging: $isCharging")
+
+            if (isCharging) {
+                handleChargingState(true)
+            }
+        }
+    }
+
+    fun handleChargingState(isCharging: Boolean) {
+        if (isDestroyed) return
+
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val startOnCharge = prefs.getBoolean("start_on_charge", false)
+
+        Log.d(TAG, "Handling charging state: charging=$isCharging, startOnCharge=$startOnCharge")
+
+        if (isCharging && startOnCharge) {
+            lifecycleScope.launch {
+                try {
+                    // Navigate to main fragment if needed
+                    if (navController.currentDestination?.id != R.id.mainFragment) {
+                        navController.navigate(R.id.mainFragment)
+                    }
+
+                    // Ensure fullscreen
+                    setupFullScreen()
+
+                    // Start photo display
+                    photoDisplayManager.startPhotoDisplay()
+                    Log.d(TAG, "Started photo display due to charging")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error starting photo display on charging", e)
+                }
+            }
         }
     }
 
@@ -304,17 +445,27 @@ class MainActivity : AppCompatActivity() {
 
     private fun initializeClockAndDate() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val showClock = prefs.getBoolean("lock_screen_clock", true)
-        val showDate = prefs.getBoolean("lock_screen_date", true)
+        val isFirstLaunch = prefs.getBoolean(PREF_FIRST_LAUNCH, true)
 
-        binding.clockOverlay.visibility = if (showClock) View.VISIBLE else View.GONE
-        binding.dateOverlay.visibility = if (showDate) View.VISIBLE else View.GONE
+        if (!isFirstLaunch) {
+            val showClock = prefs.getBoolean("lock_screen_clock", true)
+            val showDate = prefs.getBoolean("lock_screen_date", true)
 
-        // Update PhotoDisplayManager settings
-        photoDisplayManager.updateSettings(
-            showClock = showClock,
-            showDate = showDate
-        )
+            binding.clockOverlay.visibility = if (showClock) View.VISIBLE else View.GONE
+            binding.dateOverlay.visibility = if (showDate) View.VISIBLE else View.GONE
+
+            // Update PhotoDisplayManager settings
+            photoDisplayManager.updateSettings(
+                showClock = showClock,
+                showDate = showDate
+            )
+        } else {
+            binding.clockOverlay.visibility = View.GONE
+            binding.dateOverlay.visibility = View.GONE
+            binding.infoContainer.visibility = View.GONE
+        }
+
+        Log.d(TAG, "Initialized clock and date - isFirstLaunch: $isFirstLaunch")
     }
 
     override fun onBackPressed() {
@@ -403,15 +554,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleNavigationVisibility(destinationId: Int) {
         val isMainScreen = destinationId == R.id.mainFragment
-        Log.d(TAG, "Navigation destination: $destinationId, isMainScreen: $isMainScreen")
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val isFirstLaunch = prefs.getBoolean(PREF_FIRST_LAUNCH, true)
 
-        listOf(
-            binding.screensaverContainer,
-            binding.clockOverlay,
-            binding.dateOverlay
-        ).forEach { view ->
-            updateViewVisibility(view, isMainScreen)
-        }
+        // Update visibility based on both navigation and first launch state
+        binding.screensaverContainer.visibility = if (isMainScreen) View.VISIBLE else View.GONE
+
+        // Only show clock/date if not first launch
+        binding.clockOverlay.visibility = if (isMainScreen && !isFirstLaunch) View.VISIBLE else View.GONE
+        binding.dateOverlay.visibility = if (isMainScreen && !isFirstLaunch) View.VISIBLE else View.GONE
+
+        // Keep setup message and legal links visible only on first launch
+        binding.initialSetupMessage.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
+        binding.legalLinksContainer.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
     }
 
     private fun checkKioskMode(): Boolean {
@@ -747,6 +902,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         try {
             isDestroyed = true
+
             if (PreferenceManager.getDefaultSharedPreferences(this)
                     .getBoolean("kiosk_mode_enabled", false)) {
                 startKioskMode()
