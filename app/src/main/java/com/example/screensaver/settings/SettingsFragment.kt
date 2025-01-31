@@ -48,7 +48,6 @@ import com.example.screensaver.ui.PhotoDisplayManager
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.view.View
-import android.widget.FrameLayout
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import androidx.coordinatorlayout.widget.CoordinatorLayout
@@ -57,7 +56,15 @@ import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.AppDataState
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.data.PhotoCache
-
+import android.app.Activity
+import com.example.screensaver.localphotos.LocalPhotoSelectionActivity
+import androidx.preference.Preference
+import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.PreferenceCategory
+import androidx.preference.MultiSelectListPreference
+import com.example.screensaver.lock.LockScreenPhotoManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -76,6 +83,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
     @Inject
     lateinit var photoCache: PhotoCache
 
+    @Inject
+    lateinit var photoManager: LockScreenPhotoManager
+
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
     private var googleSignInClient: GoogleSignInClient? = null
@@ -87,11 +97,28 @@ class SettingsFragment : PreferenceFragmentCompat() {
         private const val TAG = "SettingsFragment"
         private const val DEFAULT_DISPLAY_MODE = "dream_service"
         private const val LOCK_SCREEN_MODE = "lock_screen"
+        private const val REQUEST_SELECT_PHOTOS = 1001
+        const val EXTRA_PHOTO_SOURCE = "photo_source"
+        const val SOURCE_GOOGLE_PHOTOS = "google_photos"
+        const val SOURCE_LOCAL_PHOTOS = "local_photos"
     }
 
-    class PreferenceFragment : PreferenceFragmentCompat() {
-        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-            setPreferencesFromResource(R.xml.preferences, rootKey)
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        when {
+            permissions.getOrDefault(android.Manifest.permission.READ_EXTERNAL_STORAGE, false) -> {
+                launchAlbumSelection()  // Changed from showLocalAlbumDialog() to launchAlbumSelection()
+            }
+            permissions.getOrDefault(android.Manifest.permission.READ_MEDIA_IMAGES, false) -> {
+                launchAlbumSelection()  // Changed from showLocalAlbumDialog() to launchAlbumSelection()
+            }
+            else -> {
+                showError(
+                    "Permission required",
+                    Exception("Storage permission is required to access local photos")
+                )
+            }
         }
     }
 
@@ -108,7 +135,153 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun setupLocalPhotoPreferences() {
+        Log.d(TAG, "Setting up local photo preferences")
 
+        val localPhotosCategory = findPreference<PreferenceCategory>("local_photos_settings")
+        val selectLocalPhotos = findPreference<Preference>("select_local_photos")
+        val photoFolders = findPreference<Preference>("photo_folders") // Changed from MultiSelectListPreference to Preference
+
+        // Get current photo sources
+        val currentSources = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
+
+        // Update visibility based on current sources
+        localPhotosCategory?.isVisible = currentSources.contains("local")
+
+        selectLocalPhotos?.apply {
+            isEnabled = true // Always enable the selection button if visible
+            setOnPreferenceClickListener {
+                Log.d(TAG, "Local photos selection clicked")
+                launchLocalPhotoSelection()
+                true
+            }
+        }
+
+        photoFolders?.apply {
+            isEnabled = true
+            setOnPreferenceClickListener {
+                Log.d(TAG, "Photo folders clicked")
+                checkAndRequestPermissions() // This will handle the permission check and launch the activity
+                true
+            }
+
+            // Update summary with current selection
+            val selectedAlbumIds = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getStringSet("selected_album_ids", emptySet()) ?: emptySet()
+            summary = if (selectedAlbumIds.isEmpty()) {
+                getString(R.string.pref_photo_folders_summary)
+            } else {
+                getString(R.string.photos_selected, selectedAlbumIds.size)
+            }
+        }
+    }
+
+    private fun launchAlbumSelection() {
+        startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java).apply {
+            putExtra(EXTRA_PHOTO_SOURCE, SOURCE_LOCAL_PHOTOS)
+        })
+    }
+
+    private fun checkAndRequestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    requireContext(),
+                    android.Manifest.permission.READ_MEDIA_IMAGES
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                launchAlbumSelection()
+            } else {
+                storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES))
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(
+                    requireContext(),
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                launchAlbumSelection()
+            } else {
+                storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE))
+            }
+        }
+    }
+
+    private fun launchLocalPhotoSelection() {
+        Log.d(TAG, "Launching local photo selection")
+        try {
+            val intent = Intent(requireContext(), LocalPhotoSelectionActivity::class.java)
+            // Pass currently selected photos to maintain state
+            val selectedPhotos = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getStringSet("selected_local_photos", emptySet())
+            intent.putExtra("selected_photos", ArrayList(selectedPhotos ?: emptySet()))
+            startActivityForResult(intent, REQUEST_SELECT_PHOTOS)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching LocalPhotoSelectionActivity", e)
+            showError("Failed to launch photo selection", e)
+        }
+    }
+
+    private fun showError(message: String, error: Exception) {
+        Log.e(TAG, "$message: ${error.message}", error)
+        view?.let { v ->
+            Snackbar.make(v, "$message: ${error.localizedMessage}", Snackbar.LENGTH_LONG)
+                .setAction(R.string.details) {
+                    showErrorDialog(error)
+                }.show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            REQUEST_SELECT_PHOTOS -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    Log.d(TAG, "Local photos selection successful")
+                    val selectedPhotos = data?.getStringArrayListExtra("selected_photos")
+                    Log.d(TAG, "Selected photos: ${selectedPhotos?.size}")
+
+                    if (selectedPhotos != null) {
+                        // Save selected photos to preferences
+                        PreferenceManager.getDefaultSharedPreferences(requireContext())
+                            .edit()
+                            .putStringSet("selected_local_photos", selectedPhotos.toSet())
+                            .apply()
+
+                        updateLocalPhotosUI()
+
+                        // Update app state
+                        appDataManager.updateState { currentState ->
+                            currentState.copy(
+                                photoSources = currentState.photoSources + "local",
+                                lastSyncTimestamp = System.currentTimeMillis()
+                            )
+                        }
+
+                        // Force update of photo display
+                        photoDisplayManager.updatePhotoSources()
+                    }
+                } else {
+                    Log.d(TAG, "Local photos selection cancelled or failed")
+                }
+            }
+        }
+    }
+
+    private fun updateLocalPhotosUI() {
+        findPreference<Preference>("photo_folders")?.apply {
+            val selectedPhotos = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getStringSet("selected_local_photos", emptySet()) ?: emptySet()
+            summary = if (selectedPhotos.isEmpty()) {
+                getString(R.string.pref_photo_folders_summary)
+            } else {
+                getString(R.string.photos_selected, selectedPhotos.size)
+            }
+
+            // Trigger photo display update
+            photoDisplayManager.updatePhotoSources()
+        }
+    }
 
     // Google Sign-in result launcher
     private val signInLauncher = registerForActivityResult(
@@ -130,13 +303,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 updateGooglePhotosState(false)
             }
         }
-    }
-
-    private fun setupPreferences(container: FrameLayout) {
-        childFragmentManager
-            .beginTransaction()
-            .replace(R.id.settings_container, PreferenceFragment())
-            .commit()
     }
 
     private fun saveSettings() {
@@ -210,21 +376,35 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+        Log.d(TAG, "Setting up preferences")
+
         lifecycleScope.launch(Dispatchers.IO) {
             // Load preferences in background
             withContext(Dispatchers.IO) {
                 setPreferencesFromResource(R.xml.preferences, rootKey)
             }
+
             // Setup UI on main thread
             withContext(Dispatchers.Main) {
+                // First restore state
+                restoreSettingsState()
+
+                // Then initialize all components
                 initializeDeviceAdmin()
+                setupPhotoDisplayManager()
                 setupPhotoSourcePreferences()
                 setupGoogleSignIn()
                 setupTestScreensaver()
                 setupDisplayModeSelection()
                 setupLockScreenPreview()
                 setupLockScreenStatus()
-                setupCacheSettings(preferenceScreen) // Add this line
+                setupKioskModePreference()
+                setupCacheSettings(preferenceScreen)
+                setupLocalPhotoPreferences()
+                setupChargingPreference() // Add this line
+
+                // Observe state changes
+                observeAppState()
                 observeAppDataState()
             }
         }
@@ -269,75 +449,75 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun setupPhotoDisplayManager() {
-        // Connect transition settings
+        // Connect transition effect and duration settings
         findPreference<ListPreference>("transition_effect")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
+                val transitionTime = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .getInt("transition_duration", 2)
+
                 photoDisplayManager.updateSettings(
-                    transitionDuration = when(newValue as String) {
-                        "fade" -> 1000L
-                        "slide" -> 500L
-                        "zoom" -> 1500L
-                        else -> 1000L
-                    }
+                    transitionDuration = transitionTime * 1000L
                 )
                 true
             }
         }
 
-        // Connect refresh interval settings
-        findPreference<ListPreference>("refresh_interval")?.apply {
+        // Connect transition time settings
+        findPreference<SeekBarPreference>("transition_duration")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
+                val transitionSeconds = (newValue as Int)
                 photoDisplayManager.updateSettings(
-                    photoInterval = (newValue.toString().toLong() * 1000)
+                    transitionDuration = transitionSeconds * 1000L
                 )
+                summary = "$transitionSeconds seconds for transition animation"
                 true
             }
+
+            val currentValue = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getInt("transition_duration", 2)
+            summary = "$currentValue seconds for transition animation"
         }
 
-        // Connect clock display setting
-        findPreference<SwitchPreferenceCompat>("lock_screen_clock")?.apply {
+        // Connect photo change interval settings
+        findPreference<SeekBarPreference>("photo_interval")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
-                photoDisplayManager.updateSettings(
-                    showClock = newValue as Boolean
-                )
+                val intervalSeconds = (newValue as Int)
+                // Force restart the photo display with new interval
+                photoDisplayManager.apply {
+                    stopPhotoDisplay() // Stop current display
+                    updateSettings(photoInterval = intervalSeconds * 1000L)
+                    startPhotoDisplay() // Restart with new interval
+                }
+                Log.d(TAG, "Setting new photo interval to $intervalSeconds seconds")
+                summary = "Display each photo for $intervalSeconds seconds"
                 true
             }
-        }
 
-        // Connect date display setting
-        findPreference<SwitchPreferenceCompat>("lock_screen_date")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                photoDisplayManager.updateSettings(
-                    showDate = newValue as Boolean
-                )
-                true
-            }
-        }
-
-        // Connect random order setting
-        findPreference<SwitchPreferenceCompat>("random_order")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                photoDisplayManager.updateSettings(
-                    isRandomOrder = newValue as Boolean
-                )
-                true
-            }
+            // Set initial summary and value
+            val currentValue = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getInt("photo_interval", 15)
+            summary = "Display each photo for $currentValue seconds"
         }
 
         // Initialize PhotoDisplayManager with current settings
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-        photoDisplayManager.updateSettings(
-            transitionDuration = when(prefs.getString("transition_effect", "fade")) {
-                "fade" -> 1000L
-                "slide" -> 500L
-                "zoom" -> 1500L
-                else -> 1000L
-            },
-            photoInterval = (prefs.getString("refresh_interval", "300")?.toLong() ?: 300L) * 1000,
-            showClock = prefs.getBoolean("lock_screen_clock", true),
-            showDate = prefs.getBoolean("lock_screen_date", true),
-            isRandomOrder = prefs.getBoolean("random_order", true)
-        )
+        val transitionTime = prefs.getInt("transition_duration", 2)
+        val photoInterval = prefs.getInt("photo_interval", 15)
+
+        // Force stop and restart with correct settings
+        photoDisplayManager.apply {
+            stopPhotoDisplay()
+            updateSettings(
+                transitionDuration = transitionTime * 1000L,
+                photoInterval = photoInterval * 1000L,
+                showClock = prefs.getBoolean("lock_screen_clock", true),
+                showDate = prefs.getBoolean("lock_screen_date", true),
+                isRandomOrder = prefs.getBoolean("random_order", true)
+            )
+            startPhotoDisplay()
+        }
+
+        Log.d(TAG, "PhotoDisplayManager initialized with interval: ${photoInterval} seconds")
     }
 
     override fun onResume() {
@@ -395,14 +575,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun setupPhotoSourcePreferences() {
         val photoSourceSelection = findPreference<MultiSelectListPreference>("photo_source_selection")
         val googlePhotosCategory = findPreference<PreferenceCategory>("google_photos_settings")
+        val localPhotosCategory = findPreference<PreferenceCategory>("local_photos_settings")
         val useGooglePhotos = findPreference<SwitchPreferenceCompat>("google_photos_enabled")
         val selectAlbums = findPreference<Preference>("select_albums")
 
         Log.d(TAG, "Setting up photo source preferences")
 
-        // Get initial state
+        // Get current state without default value
         val currentSources = PreferenceManager.getDefaultSharedPreferences(requireContext())
-            .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
+            .getStringSet("photo_source_selection", null) ?: emptySet()
         Log.d(TAG, "Current photo sources: $currentSources")
 
         // Get current Google sign-in state
@@ -411,8 +592,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
             Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
         ) == true
 
-        // Update UI states immediately
+        // Update UI states
         googlePhotosCategory?.isVisible = currentSources.contains("google_photos")
+        localPhotosCategory?.isVisible = currentSources.contains("local")
         useGooglePhotos?.isChecked = account != null && hasRequiredScope
         selectAlbums?.apply {
             isEnabled = account != null && hasRequiredScope
@@ -424,9 +606,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
             @Suppress("UNCHECKED_CAST")
             val selectedSources = newValue as Set<String>
             val googlePhotosEnabled = selectedSources.contains("google_photos")
+            val localPhotosEnabled = selectedSources.contains("local")
 
             // Update UI immediately
             googlePhotosCategory?.isVisible = googlePhotosEnabled
+            localPhotosCategory?.isVisible = localPhotosEnabled
             useGooglePhotos?.isVisible = googlePhotosEnabled
             selectAlbums?.isVisible = googlePhotosEnabled
 
@@ -436,10 +620,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 selectAlbums?.isEnabled = false
             }
 
+            // Update app state
             appDataManager.updateState { it.copy(
                 photoSources = selectedSources,
                 googlePhotosEnabled = googlePhotosEnabled && useGooglePhotos?.isChecked == true
             )}
+
+            Log.d(TAG, "Photo sources updated: $selectedSources")
             true
         }
 
@@ -628,6 +815,76 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun setupChargingPreference() {
+        Log.d(TAG, "Setting up charging preference")
+        findPreference<SwitchPreferenceCompat>("start_on_charge")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                Log.d(TAG, "Charging preference changed to: $enabled")
+
+                // Update the preference
+                PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .edit()
+                    .putBoolean("start_on_charge", enabled)
+                    .apply()
+
+                // Show feedback
+                val message = if (enabled) {
+                    "Auto-start on charging enabled"
+                } else {
+                    "Auto-start on charging disabled"
+                }
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+
+                true
+            }
+
+            // Log current state
+            val currentState = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getBoolean("start_on_charge", false)
+            Log.d(TAG, "Current charging preference state: $currentState")
+        }
+    }
+
+    private fun showChargingFeatureDialog() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.start_on_charge_dialog_title)
+            .setMessage(R.string.start_on_charge_dialog_message)
+            .setPositiveButton(R.string.enable) { _, _ ->
+                updateChargingPreference(true)
+            }
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                // Reset the switch
+                findPreference<SwitchPreferenceCompat>("start_on_charge")?.isChecked = false
+            }
+            .show()
+    }
+
+    private fun updateChargingPreference(enabled: Boolean) {
+        try {
+            // Update preference
+            PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .edit()
+                .putBoolean("start_on_charge", enabled)
+                .apply()
+
+            // Update switch state
+            findPreference<SwitchPreferenceCompat>("start_on_charge")?.isChecked = enabled
+
+            // Show feedback
+            val messageResId = if (enabled) {
+                R.string.start_on_charge_enabled
+            } else {
+                R.string.start_on_charge_disabled
+            }
+            showFeedback(messageResId)
+
+            Log.d(TAG, "Charging preference updated: $enabled")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating charging preference", e)
+            handleError("Failed to update charging preference", e)
+        }
+    }
 
     private fun showKioskModeConfirmation() {
         MaterialAlertDialogBuilder(requireContext())
@@ -871,9 +1128,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun restoreSettingsState() {
         val currentState = appDataManager.getCurrentState()
 
+        Log.d(TAG, "Restoring settings state - Sources: ${currentState.photoSources}")
+
         // Restore photo source selection
         findPreference<MultiSelectListPreference>("photo_source_selection")?.values =
             currentState.photoSources
+
+        // Restore Local Photos state
+        findPreference<PreferenceCategory>("local_photos_settings")?.apply {
+            isVisible = currentState.photoSources.contains("local")
+            updateLocalPhotosUI() // Update UI to show selected photos count
+        }
 
         // Restore Google Photos state
         val account = GoogleSignIn.getLastSignedInAccount(requireContext())
@@ -881,7 +1146,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
         ) == true
 
-        // Update UI based on current state
+        // Update Google Photos UI based on current state
         findPreference<PreferenceCategory>("google_photos_settings")?.isVisible =
             currentState.photoSources.contains("google_photos")
 
@@ -895,7 +1160,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
             isVisible = currentState.photoSources.contains("google_photos")
         }
 
-        Log.d(TAG, "Settings state restored - Google Photos enabled: ${currentState.googlePhotosEnabled}, Sources: ${currentState.photoSources}")
+        // Restore display mode
+        findPreference<ListPreference>("display_mode_selection")?.value = currentState.displayMode
+
+        Log.d(TAG, "Settings state restored - Google Photos enabled: ${currentState.googlePhotosEnabled}, Local Photos visible: ${currentState.photoSources.contains("local")}")
     }
 
     private fun observeAppState() {

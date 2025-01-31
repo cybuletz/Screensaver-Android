@@ -37,14 +37,20 @@
         <item>@string/transition_fade</item>
         <item>@string/transition_slide</item>
         <item>@string/transition_zoom</item>
-        <item>@string/transition_blur</item>
+        <item>@string/transition_flip</item>
+        <item>@string/transition_rotate</item>
+        <item>@string/transition_depth</item>
+        <item>@string/transition_cube</item>
     </string-array>
 
     <string-array name="transition_effects_values">
         <item>fade</item>
         <item>slide</item>
         <item>zoom</item>
-        <item>blur</item>
+        <item>flip</item>
+        <item>rotate</item>
+        <item>depth</item>
+        <item>cube</item>
     </string-array>
 
     <!-- Photo Scale Options -->

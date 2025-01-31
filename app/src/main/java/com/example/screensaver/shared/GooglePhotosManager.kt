@@ -72,10 +72,11 @@ class GooglePhotosManager @Inject constructor(
 
         private val REQUIRED_SCOPES = listOf(
             "https://www.googleapis.com/auth/photoslibrary.readonly",
-            "https://www.googleapis.com/auth/photoslibrary",
-            "https://www.googleapis.com/auth/photos.readonly"
+            //"https://www.googleapis.com/auth/photoslibrary",
+            //"https://www.googleapis.com/auth/photos.readonly"
         )
     }
+
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Starting initialization...")
@@ -168,7 +169,7 @@ class GooglePhotosManager @Inject constructor(
         return credentials != null && !credentials.needsRefresh
     }
 
-    private suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         try {
             val credentials = secureStorage.getGoogleCredentials()

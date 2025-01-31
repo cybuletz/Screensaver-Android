@@ -1,25 +1,36 @@
 package com.example.screensaver.lock
 
+import android.content.ContentUris
 import android.content.Context
+import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
 import com.example.screensaver.models.MediaItem
+import com.example.screensaver.models.AlbumInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 import org.json.JSONArray
 import org.json.JSONObject
+import com.example.screensaver.shared.GooglePhotosManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 @Singleton
 class LockScreenPhotoManager @Inject constructor(
-    private val context: Context
-) {
+    private val context: Context,
+    private val googlePhotosManager: GooglePhotosManager
+    ) {
     private val mediaItems = mutableListOf<MediaItem>()
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
     val loadingState: StateFlow<LoadingState> = _loadingState
     private val KEY_HAS_PHOTOS = "has_photos"
     private val KEY_MEDIA_ITEMS = "media_items"
     private val preferences = context.getSharedPreferences("photo_manager", Context.MODE_PRIVATE)
+
+    suspend fun refreshTokens(): Boolean {
+        return googlePhotosManager.refreshTokens()
+    }
 
     companion object {
         private const val TAG = "LockScreenPhotoManager"
@@ -33,11 +44,146 @@ class LockScreenPhotoManager @Inject constructor(
     }
 
     init {
-        // Load cached items on init
         loadCachedItems()
-        // Check if we had photos before
         val hasPhotos = preferences.getBoolean(KEY_HAS_PHOTOS, false)
         Log.d(TAG, "Initializing with previous photo state: $hasPhotos")
+    }
+
+    fun getLocalAlbums(): List<AlbumInfo> {
+        val albums = mutableListOf<AlbumInfo>()
+
+        val projection = arrayOf(
+            MediaStore.Images.Media.BUCKET_ID,
+            MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
+            MediaStore.Images.Media._ID
+        )
+
+        val selection = "${MediaStore.Images.Media.SIZE} > 0"
+
+        try {
+            val cursor = context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                "${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} ASC"
+            )
+
+            cursor?.use {
+                val bucketIdColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
+                val bucketNameColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+                val idColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+
+                val processedBuckets = mutableSetOf<String>()
+
+                while (it.moveToNext()) {
+                    val bucketId = it.getString(bucketIdColumn)
+                    if (!processedBuckets.contains(bucketId)) {
+                        processedBuckets.add(bucketId)
+
+                        val bucketName = it.getString(bucketNameColumn) ?: "Unknown Album"
+                        val photoId = it.getLong(idColumn)
+
+                        val coverPhotoUri = ContentUris.withAppendedId(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            photoId
+                        )
+
+                        val photoCount = getPhotoCountForAlbum(bucketId)
+
+                        albums.add(AlbumInfo(
+                            id = bucketId.toLong(),
+                            name = bucketName,
+                            photosCount = photoCount,
+                            coverPhotoUri = coverPhotoUri
+                        ))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading albums", e)
+        }
+
+        return albums
+    }
+
+    private fun getPhotoCountForAlbum(bucketId: String): Int {
+        var count = 0
+        val selection = "${MediaStore.Images.Media.BUCKET_ID} = ?"
+        val selectionArgs = arrayOf(bucketId)
+
+        try {
+            val cursor = context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                null,
+                selection,
+                selectionArgs,
+                null
+            )
+
+            count = cursor?.count ?: 0
+            cursor?.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error counting photos in album", e)
+        }
+
+        return count
+    }
+
+    fun getPhotosFromAlbum(albumId: String): List<MediaItem> {
+        val photos = mutableListOf<MediaItem>()
+        val selection = "${MediaStore.Images.Media.BUCKET_ID} = ?"
+        val selectionArgs = arrayOf(albumId)
+
+        try {
+            val cursor = context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(
+                    MediaStore.Images.Media._ID,
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    MediaStore.Images.Media.DATE_ADDED,
+                    MediaStore.Images.Media.MIME_TYPE,
+                    MediaStore.Images.Media.WIDTH,
+                    MediaStore.Images.Media.HEIGHT
+                ),
+                selection,
+                selectionArgs,
+                "${MediaStore.Images.Media.DATE_ADDED} DESC"
+            )
+
+            cursor?.use {
+                val idColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val nameColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                val dateColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+                val mimeColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
+                val widthColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH)
+                val heightColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT)
+
+                while (it.moveToNext()) {
+                    val id = it.getLong(idColumn)
+                    val contentUri = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        id
+                    )
+
+                    photos.add(MediaItem(
+                        id = id.toString(),
+                        albumId = albumId,
+                        baseUrl = contentUri.toString(),
+                        mimeType = it.getString(mimeColumn),
+                        width = it.getInt(widthColumn),
+                        height = it.getInt(heightColumn),
+                        description = it.getString(nameColumn),
+                        createdAt = it.getLong(dateColumn) * 1000, // Convert to milliseconds
+                        loadState = MediaItem.LoadState.IDLE
+                    ))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading photos from album", e)
+        }
+
+        return photos
     }
 
     private fun saveItems() {
@@ -105,7 +251,7 @@ class LockScreenPhotoManager @Inject constructor(
         _loadingState.value = LoadingState.LOADING
         return try {
             if (mediaItems.isEmpty()) {
-                loadCachedItems() // Try loading from cache if empty
+                loadCachedItems()
             }
             val photos = mediaItems.toList()
             _loadingState.value = LoadingState.SUCCESS
@@ -121,8 +267,26 @@ class LockScreenPhotoManager @Inject constructor(
     fun addPhotos(photos: List<MediaItem>) {
         mediaItems.clear()
         mediaItems.addAll(photos)
-        saveItems() // Save to preferences
+        saveItems()
         Log.d(TAG, "Added ${photos.size} photos, total count: ${mediaItems.size}")
+    }
+
+    fun addPhotoUrls(urls: List<String>) {
+        val items = urls.mapIndexed { index, url ->
+            MediaItem(
+                id = index.toString(),
+                albumId = "local",
+                baseUrl = url,
+                mimeType = "image/*",
+                width = 0,
+                height = 0,
+                description = null,
+                createdAt = System.currentTimeMillis(),
+                loadState = MediaItem.LoadState.IDLE
+            )
+        }
+        addPhotos(items)
+        Log.d(TAG, "Added ${items.size} photo URLs as MediaItems")
     }
 
     fun hadPhotos(): Boolean {

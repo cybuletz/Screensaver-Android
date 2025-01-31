@@ -73,6 +73,31 @@
             android:alpha="0"
             android:contentDescription="@string/photo_preview_transition_description"/>
 
+        <!-- Initial Setup Message -->
+        <TextView
+            android:id="@+id/initialSetupMessage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/goto_settings_text"
+            android:textAlignment="center"
+            android:gravity="center"
+            android:textColor="@android:color/white"
+            android:textSize="20sp"
+            android:fontFamily="sans-serif-medium"
+            android:shadowColor="@android:color/black"
+            android:shadowRadius="3"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:padding="32dp"
+            android:background="@drawable/message_background"
+            android:layout_marginStart="32dp"
+            android:layout_marginEnd="32dp"
+            android:layout_marginTop="32dp"
+            android:layout_marginBottom="32dp"
+            android:elevation="4dp"
+            android:layout_gravity="center"
+            android:visibility="gone"/>
+
         <!-- Info Overlay Container -->
         <LinearLayout
             android:id="@+id/infoContainer"
@@ -171,6 +196,52 @@
                 android:shadowDx="1"
                 android:shadowDy="1"/>
         </FrameLayout>
+
+        <!-- Terms and Privacy Footer -->
+        <LinearLayout
+            android:id="@+id/legalLinksContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:padding="16dp"
+            android:background="@drawable/footer_background"
+            android:visibility="gone"
+            android:layout_gravity="bottom">
+
+            <TextView
+                android:id="@+id/termsLink"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/terms_of_use"
+                android:textColor="@color/link_color"
+                android:padding="8dp"
+                android:textSize="16sp"
+                android:shadowColor="@android:color/black"
+                android:shadowRadius="2"
+                android:shadowDx="1"
+                android:shadowDy="1"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="•"
+                android:textColor="@android:color/white"
+                android:padding="8dp"/>
+
+            <TextView
+                android:id="@+id/privacyLink"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/privacy_policy"
+                android:textColor="@color/link_color"
+                android:padding="8dp"
+                android:textSize="16sp"
+                android:shadowColor="@android:color/black"
+                android:shadowRadius="2"
+                android:shadowDx="1"
+                android:shadowDy="1"/>
+        </LinearLayout>
     </FrameLayout>
 
     <!-- Preview Controls -->

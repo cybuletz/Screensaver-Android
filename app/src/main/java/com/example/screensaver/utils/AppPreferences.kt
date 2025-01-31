@@ -328,6 +328,16 @@ class AppPreferences @Inject constructor(
         }
     }
 
+    fun setSelectedLocalPhotos(uris: Set<String>) {
+        edit {
+            putStringSet("selected_local_photos", uris)
+        }
+    }
+
+    fun getSelectedLocalPhotos(): Set<String> {
+        return prefs.getStringSet("selected_local_photos", emptySet()) ?: emptySet()
+    }
+
     fun resetToDefaults() {
         updatePreference {
             putInt(PREF_TRANSITION_DURATION, 30)

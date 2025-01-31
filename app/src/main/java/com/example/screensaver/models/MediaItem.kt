@@ -1,8 +1,20 @@
 package com.example.screensaver.models
 
+import android.net.Uri
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 import java.util.UUID
+
+/**
+ * Represents information about a photo album
+ */
+@Parcelize
+data class AlbumInfo(
+    val id: Long,
+    val name: String,
+    val photosCount: Int,
+    val coverPhotoUri: Uri?
+) : Parcelable
 
 /**
  * Represents a media item (photo) in the application.
@@ -56,6 +68,18 @@ data class MediaItem(
             width = 0,
             height = 0
         )
+
+        /**
+         * Creates a MediaItem from a local URI
+         */
+        fun fromLocalUri(uri: Uri, albumId: String): MediaItem = MediaItem(
+            albumId = albumId,
+            baseUrl = uri.toString(),
+            mimeType = "image/*",  // Default mime type for local images
+            width = 0,  // These will be updated when the image is loaded
+            height = 0,
+            createdAt = System.currentTimeMillis()
+        )
     }
 
     init {
@@ -87,15 +111,19 @@ data class MediaItem(
     /**
      * Gets the URL for the full-quality version of the media item
      */
-    fun getFullQualityUrl(): String = "$baseUrl=w$width-h$height-q$DEFAULT_QUALITY"
+    fun getFullQualityUrl(): String = baseUrl
 
     /**
      * Gets the URL for a preview version of the media item
      * @param maxDimension Maximum dimension (width or height) for the preview
      */
     fun getPreviewUrl(maxDimension: Int): String {
-        val (previewWidth, previewHeight) = calculatePreviewDimensions(maxDimension)
-        return "$baseUrl=w$previewWidth-h$previewHeight-q$PREVIEW_QUALITY"
+        return if (baseUrl.startsWith("content://")) {
+            baseUrl // Return as-is for local content URIs
+        } else {
+            val (previewWidth, previewHeight) = calculatePreviewDimensions(maxDimension)
+            "$baseUrl=w$previewWidth-h$previewHeight-q$PREVIEW_QUALITY"
+        }
     }
 
     /**
@@ -103,7 +131,11 @@ data class MediaItem(
      * @param size Desired size (width and height) for the thumbnail
      */
     fun getThumbnailUrl(size: Int): String =
-        "$baseUrl=w$size-h$size-c-q$THUMBNAIL_QUALITY"
+        if (baseUrl.startsWith("content://")) {
+            baseUrl // Return as-is for local content URIs
+        } else {
+            "$baseUrl=w$size-h$size-c-q$THUMBNAIL_QUALITY"
+        }
 
     /**
      * Calculates preview dimensions maintaining aspect ratio
@@ -167,3 +199,6 @@ fun List<MediaItem>.filterLandscape(): List<MediaItem> =
 
 fun List<MediaItem>.byLoadState(state: MediaItem.LoadState): List<MediaItem> =
     filter { it.loadState == state }
+
+fun List<MediaItem>.filterByAlbum(albumId: String): List<MediaItem> =
+    filter { it.albumId == albumId }

@@ -13,19 +13,28 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.RequestManager
 import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.example.screensaver.R
 import com.example.screensaver.models.Album
+
 
 class AlbumAdapter(
     private val glideRequestManager: RequestManager,
     private val onAlbumClick: (Album) -> Unit
 ) : ListAdapter<Album, AlbumAdapter.AlbumViewHolder>(AlbumDiffCallback()) {
 
+    init {
+        setHasStableIds(true)
+    }
+
+    override fun getItemId(position: Int): Long {
+        return getItem(position).id.hashCode().toLong()
+    }
+
     private val holders = mutableSetOf<AlbumViewHolder>()
 
     companion object {
         private const val TAG = "AlbumAdapter"
+        private const val DEBUG = false
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AlbumViewHolder {
@@ -41,19 +50,17 @@ class AlbumAdapter(
         holder.bind(getItem(position))
     }
 
-    fun clearAllHolders() {
-        holders.forEach { it.clear() }
-        holders.clear()
-    }
-
     override fun onViewRecycled(holder: AlbumViewHolder) {
         super.onViewRecycled(holder)
-        holder.clear()
+        holders.remove(holder)
+        if (DEBUG) Log.d(TAG, "View recycled at position: ${holder.bindingAdapterPosition}")
+        // Don't clear the image here
     }
 
     override fun onViewDetachedFromWindow(holder: AlbumViewHolder) {
         super.onViewDetachedFromWindow(holder)
-        holder.clear()
+        if (DEBUG) Log.d(TAG, "View detached at position: ${holder.bindingAdapterPosition}")
+        // Don't clear the image here
     }
 
     class AlbumViewHolder(
@@ -86,11 +93,6 @@ class AlbumAdapter(
             updateSelectionState(album)
         }
 
-        fun clear() {
-            glideRequestManager.clear(coverImageView)
-            coverImageView.setImageDrawable(null)
-        }
-
         private fun setPhotoCount(count: Int) {
             countTextView.text = itemView.context.resources.getQuantityString(
                 R.plurals.photo_count,
@@ -100,21 +102,26 @@ class AlbumAdapter(
         }
 
         private fun loadAlbumCover(album: Album) {
-            if (bindingAdapterPosition == RecyclerView.NO_POSITION) return
+            if (bindingAdapterPosition == RecyclerView.NO_POSITION) {
+                if (DEBUG) Log.d(TAG, "Skip loading: invalid position for album ${album.title}")
+                return
+            }
 
-            clear() // Clear any existing load
+            if (DEBUG) Log.d(TAG, "Starting to load cover for album: ${album.title}")
 
-            // Use safe call operator and orEmpty()
             if (album.coverPhotoUrl?.isNotEmpty() == true) {
+                if (DEBUG) Log.d(TAG, "Loading URL: ${album.coverPhotoUrl} for album: ${album.title}")
+
                 glideRequestManager
                     .load(album.coverPhotoUrl)
                     .placeholder(R.drawable.placeholder_album)
                     .error(R.drawable.placeholder_album_error)
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .centerCrop()
-                    .transition(DrawableTransitionOptions.withCrossFade())
+                    .dontAnimate()
                     .into(coverImageView)
             } else {
+                if (DEBUG) Log.w(TAG, "No cover URL for album: ${album.title}")
                 coverImageView.setImageResource(R.drawable.placeholder_album)
             }
         }

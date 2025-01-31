@@ -8,7 +8,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.core.view.isVisible
 import com.example.screensaver.utils.AppPreferences
-import kotlin.math.abs
+import android.animation.AnimatorSet
 
 /**
  * Manages transitions between photos in the screensaver and lock screen.
@@ -69,17 +69,36 @@ class PhotoTransitionManager(
         nextImage.alpha = 0f
         nextImage.isVisible = true
 
-        val fadeOut = ObjectAnimator.ofFloat(currentImage, View.ALPHA, 1f, 0f)
-        val fadeIn = ObjectAnimator.ofFloat(nextImage, View.ALPHA, 0f, 1f)
+        animatePhotoTransition(currentImage, nextImage, onComplete)
+        currentAnimation = null
+    }
 
-        fadeOut.duration = DEFAULT_ANIMATION_DURATION
-        fadeIn.duration = DEFAULT_ANIMATION_DURATION
+    private fun animatePhotoTransition(currentView: ImageView, nextView: ImageView, onComplete: () -> Unit) {
+        val duration = preferences.getTransitionDuration() * 1000L // Convert seconds to milliseconds
 
-        fadeIn.addListener(createAnimatorListener(onComplete))
+        val fadeOut = ObjectAnimator.ofFloat(currentView, View.ALPHA, 1f, 0f).apply {
+            this.duration = duration
+        }
 
-        fadeOut.start()
-        fadeIn.start()
-        currentAnimation = fadeIn
+        val fadeIn = ObjectAnimator.ofFloat(nextView, View.ALPHA, 0f, 1f).apply {
+            this.duration = duration
+        }
+
+        AnimatorSet().apply {
+            playTogether(fadeOut, fadeIn)
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    isTransitioning = false
+                    currentView.alpha = 0f
+                    nextView.alpha = 1f
+                    // Swap references if needed
+                    this@PhotoTransitionManager.currentView = nextView
+                    this@PhotoTransitionManager.nextView = currentView
+                    onComplete()  // Call the completion callback
+                }
+            })
+            start()
+        }
     }
 
     /**

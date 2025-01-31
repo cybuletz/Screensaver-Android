@@ -123,6 +123,7 @@ dependencies {
     implementation("androidx.databinding:databinding-runtime:8.1.4")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
+    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
     // AutoValue
     kapt("com.google.auto.value:auto-value:1.9")
@@ -158,7 +159,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 
     // Material Design
-    implementation("com.google.android.material:material:1.11.0")
+    implementation("com.google.android.material:material:1.9.0")
 
     // Google Services
     implementation("com.google.android.gms:play-services-base:18.2.0")
@@ -181,7 +182,9 @@ dependencies {
 
     // Glide
     implementation("com.github.bumptech.glide:glide:4.16.0")
+    implementation("com.github.bumptech.glide:okhttp3-integration:4.16.0")
     kapt("com.github.bumptech.glide:compiler:4.16.0")
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
 
     // RecyclerView
     implementation("androidx.recyclerview:recyclerview:1.3.2")

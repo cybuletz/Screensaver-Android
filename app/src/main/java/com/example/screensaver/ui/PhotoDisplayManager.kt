@@ -15,7 +15,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -28,14 +27,24 @@ import com.bumptech.glide.request.target.Target
 import kotlin.random.Random
 import kotlinx.coroutines.delay
 import com.example.screensaver.R
-import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
-import com.bumptech.glide.Priority
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import com.bumptech.glide.request.target.CustomTarget
-import com.bumptech.glide.request.transition.Transition
 import android.os.Looper
-import kotlinx.coroutines.CompletableDeferred
+import android.net.Uri
+import androidx.preference.PreferenceManager
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.animation.AnimatorListenerAdapter
+import android.animation.AnimatorSet
+import android.animation.Animator
+import android.animation.ObjectAnimator
+import com.bumptech.glide.annotation.GlideModule
+import com.bumptech.glide.load.HttpException
+import com.example.screensaver.glide.GlideApp
+import okhttp3.OkHttpClient
+import okhttp3.Interceptor
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 
 @Singleton
@@ -120,6 +129,18 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    // Add this method to check if screensaver is running
+    fun isScreensaverRunning(): Boolean {
+        return displayJob?.isActive == true
+    }
+
+    // Add this method to handle auto-start
+    fun handleAutoStart() {
+        if (!isScreensaverRunning()) {
+            startPhotoDisplay()
+        }
+    }
+
     private fun handleCacheError() {
         lifecycleScope?.launch {
             try {
@@ -166,29 +187,6 @@ class PhotoDisplayManager @Inject constructor(
         return Looper.myLooper() == Looper.getMainLooper()
     }
 
-    private fun startBackgroundPhotoLoad() {
-        lifecycleScope?.launch(Dispatchers.IO) {
-            try {
-                if (!hasVerifiedPhotos) {
-                    photoManager.loadPhotos()
-                    hasVerifiedPhotos = true
-                }
-
-                val photoCount = photoManager.getPhotoCount()
-
-                withContext(Dispatchers.Main) {
-                    if (photoCount > 0) {
-                        startPhotoDisplay()
-                    } else {
-                        showSettingsMessage()
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in background photo load", e)
-            }
-        }
-    }
-
     fun initialize(views: Views, scope: LifecycleCoroutineScope) {
         Log.d(TAG, "Initializing PhotoDisplayManager")
         this.views = views
@@ -200,71 +198,16 @@ class PhotoDisplayManager @Inject constructor(
 
         scope.launch(Dispatchers.Main) {
             try {
-                // First check if we've ever had photos
-                if (!photoManager.hadPhotos()) {
-                    Log.d(TAG, "First time user - showing welcome message")
-                    showWelcomeMessage()
-                    return@launch
-                }
-
                 // Check for cached photos
                 val photoCount = photoManager.getPhotoCount()
                 if (photoCount > 0) {
-                    Log.d(TAG, "Welcome back - found ${photoCount} photos")
-                    showWelcomeBackMessage(photoCount)
+                    Log.d(TAG, "Found ${photoCount} photos")
                     startPhotoDisplay()
-                } else {
-                    Log.d(TAG, "Welcome back - waiting for photos to load")
-                    showWelcomeBackMessage(0)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error during initialization", e)
                 showErrorMessage(e.message ?: "Unknown error occurred")
             }
-        }
-    }
-
-    private fun showWelcomeMessage() {
-        views?.let { views ->
-            if (!isMainThread()) {
-                views.container.post { showWelcomeMessage() }
-                return
-            }
-
-            views.overlayMessageContainer?.apply {
-                visibility = View.VISIBLE
-                alpha = 1f
-                views.overlayMessageText?.text = context.getString(R.string.welcome_message)
-                Log.d(TAG, "Welcome message displayed")
-            } ?: Log.e(TAG, "Message container is null")
-        }
-    }
-
-    private fun showWelcomeBackMessage(photoCount: Int) {
-        views?.let { views ->
-            if (!isMainThread()) {
-                views.container.post { showWelcomeBackMessage(photoCount) }
-                return
-            }
-
-            views.overlayMessageContainer?.apply {
-                visibility = View.VISIBLE
-                alpha = 1f
-                val message = if (photoCount > 0) {
-                    context.getString(R.string.welcome_back_with_photos, photoCount)
-                } else {
-                    context.getString(R.string.welcome_back_no_photos)
-                }
-                views.overlayMessageText?.text = message
-                Log.d(TAG, "Welcome back message displayed: $message")
-
-                // Auto-hide message after 3 seconds if we have photos
-                if (photoCount > 0) {
-                    postDelayed({
-                        hideLoadingOverlay()
-                    }, 3000)
-                }
-            } ?: Log.e(TAG, "Message container is null")
         }
     }
 
@@ -302,32 +245,85 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
-    private fun showSettingsMessage() {
-        views?.let { views ->
-            if (!isMainThread()) {
-                views.container.post { showSettingsMessage() }
-                return
-            }
+    private fun loadLocalPhotos(): List<Uri> {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+            .getStringSet("selected_local_photos", emptySet())
+            ?.mapNotNull { uriString ->
+                try {
+                    Uri.parse(uriString)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing URI: $uriString", e)
+                    null
+                }
+            } ?: emptyList()
+    }
 
-            // Always show message container
-            views.overlayMessageContainer?.apply {
-                visibility = View.VISIBLE
-                alpha = 1f
-                views.overlayMessageText?.text = context.getString(R.string.no_photo_source)
-                Log.d(TAG, "Settings message displayed")
-            } ?: Log.e(TAG, "Message container is null")
+    fun updatePhotoSources() {
+        val currentSources = PreferenceManager.getDefaultSharedPreferences(context)
+            .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
+
+        val photos = mutableListOf<Uri>()
+
+        if (currentSources.contains("local")) {
+            photos.addAll(loadLocalPhotos())
+        }
+
+        if (photos.isNotEmpty()) {
+            displayPhotos(photos)
+        } else {
+            Log.w(TAG, "No photos available to display")
+        }
+    }
+
+    private fun displayPhotos(photos: List<Uri>) {
+        Log.d(TAG, "Displaying ${photos.size} photos")
+
+        lifecycleScope?.launch {
+            try {
+                // Stop any existing display
+                stopPhotoDisplay()
+
+                // Convert URIs to strings and add as photo URLs
+                val photoUrls = photos.map { it.toString() }
+                photoManager.addPhotoUrls(photoUrls)  // Use the new method
+
+                currentPhotoIndex = 0
+                hasLoadedPhotos = true
+
+                // Start displaying photos
+                startPhotoDisplay()
+
+                Log.d(TAG, "Photo display started with ${photos.size} photos")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting photo display", e)
+                showDefaultPhoto()
+            }
         }
     }
 
     fun hideLoadingOverlay() {
         views?.let { views ->
-            views.overlayMessageContainer?.animate()
-                ?.alpha(0f)
-                ?.setDuration(300)
-                ?.withEndAction {
-                    views.overlayMessageContainer.visibility = View.GONE
-                }
-                ?.start()
+            if (!isMainThread()) {
+                views.container.post { hideLoadingOverlay() }
+                return
+            }
+
+            views.overlayMessageContainer?.let { container ->
+                // Cancel any pending animations
+                container.animate().cancel()
+
+                // Animate fade out
+                container.animate()
+                    .alpha(0f)
+                    .setDuration(300)
+                    .withEndAction {
+                        container.visibility = View.GONE
+                        views.overlayMessageText?.text = ""
+                    }
+                    .start()
+
+                Log.d(TAG, "Hiding loading overlay")
+            }
         }
     }
 
@@ -345,66 +341,13 @@ class PhotoDisplayManager @Inject constructor(
         return views != null && lifecycleScope != null
     }
 
-    private fun setupPhotoManagerObserver() {
-        managerScope.launch {
-            photoManager.loadingState.collect { state ->
-                when (state) {
-                    LockScreenPhotoManager.LoadingState.SUCCESS -> {
-                        if (photoManager.getPhotoCount() > 0 && views != null) {
-                            updateLoadingState(false)
-                            startPhotoDisplay()
-                        } else {
-                            updateLoadingState(false, context.getString(R.string.no_photos_message))
-                        }
-                    }
-                    LockScreenPhotoManager.LoadingState.LOADING -> {
-                        updateLoadingState(true, context.getString(R.string.loading_photos_message))
-                        _photoLoadingState.value = LoadingState.LOADING
-                    }
-                    LockScreenPhotoManager.LoadingState.ERROR -> {
-                        updateLoadingState(false, context.getString(R.string.photos_load_error))
-                        _photoLoadingState.value = LoadingState.ERROR("Failed to load photos")
-                    }
-                    else -> { /* Handle other states */ }
-                }
-            }
-        }
-    }
-
-    private suspend fun handlePhotoManagerState(state: LockScreenPhotoManager.LoadingState) {
-        views?.loadingIndicator?.isVisible = state == LockScreenPhotoManager.LoadingState.LOADING
-
-        when (state) {
-            LockScreenPhotoManager.LoadingState.LOADING -> {
-                _photoLoadingState.value = LoadingState.LOADING
-            }
-            LockScreenPhotoManager.LoadingState.SUCCESS -> {
-                val count = photoManager.getPhotoCount()
-                Log.d(TAG, "Success state with $count photos")
-                if (count > 0) {
-                    _photoLoadingState.value = LoadingState.SUCCESS
-                    if (displayJob == null) {
-                        withContext(NonCancellable) {
-                            startPhotoDisplay()
-                        }
-                    }
-                }
-            }
-            LockScreenPhotoManager.LoadingState.ERROR -> {
-                _photoLoadingState.value = LoadingState.ERROR("Failed to load photos")
-            }
-            LockScreenPhotoManager.LoadingState.IDLE -> {
-                _photoLoadingState.value = LoadingState.IDLE
-                if (photoManager.getPhotoCount() == 0) {
-                    photoManager.loadPhotos()
-                }
-            }
-        }
-    }
-
     fun startPhotoDisplay() {
         val currentScope = lifecycleScope ?: return
-        Log.d(TAG, "Starting photo display with ${photoManager.getPhotoCount()} photos")
+        Log.d(TAG, "Starting photo display with interval: ${photoInterval}ms")
+
+        // Hide any existing messages immediately
+        hideLoadingOverlay()
+        hideAllMessages()
 
         // Cancel any existing display job
         displayJob?.cancel()
@@ -437,11 +380,17 @@ class PhotoDisplayManager @Inject constructor(
             ?.start()
     }
 
-    private suspend fun loadAndDisplayPhoto(fromCache: Boolean = false) {
-        if (isTransitioning) return
+    private fun loadAndDisplayPhoto(fromCache: Boolean = false) {
+        if (isTransitioning) {
+            Log.d(TAG, "Skipping photo load - transition in progress")
+            return
+        }
 
         val photoCount = photoManager.getPhotoCount()
-        if (photoCount == 0) return
+        if (photoCount == 0) {
+            Log.d(TAG, "No photos available")
+            return
+        }
 
         val nextIndex = if (isRandomOrder) {
             Random.nextInt(photoCount)
@@ -450,69 +399,397 @@ class PhotoDisplayManager @Inject constructor(
         }
 
         val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: return
+        Log.d(TAG, "Loading photo $nextIndex: $nextUrl")
         val startTime = System.currentTimeMillis()
 
         views?.let { views ->
             isTransitioning = true
+
             try {
-                withContext(NonCancellable) {
-                    withContext(Dispatchers.Main) {
-                        Glide.with(context)
-                            .load(nextUrl)
-                            .diskCacheStrategy(DiskCacheStrategy.ALL)
-                            .priority(Priority.IMMEDIATE)
-                            .listener(object : RequestListener<Drawable> {
-                                override fun onLoadFailed(
-                                    e: GlideException?,
-                                    model: Any?,
-                                    target: Target<Drawable>,
-                                    isFirstResource: Boolean
-                                ): Boolean {
-                                    Log.e(TAG, "Failed to load photo: $nextUrl", e)
-                                    isTransitioning = false
-                                    return false
-                                }
+                // Get the current transition effect from preferences
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
 
-                                override fun onResourceReady(
-                                    resource: Drawable,
-                                    model: Any,
-                                    target: Target<Drawable>,
-                                    dataSource: DataSource,
-                                    isFirstResource: Boolean
-                                ): Boolean {
-                                    views.overlayView.alpha = 0f
-                                    views.overlayView.visibility = View.VISIBLE
+                // Reset view properties
+                resetViewProperties(views)
 
-                                    views.overlayView.animate()
-                                        .alpha(1f)
-                                        .setDuration(transitionDuration)
-                                        .withEndAction {
-                                            views.primaryView.setImageDrawable(resource)
-                                            views.overlayView.alpha = 0f
-                                            views.overlayView.visibility = View.INVISIBLE
-                                            isTransitioning = false
-                                            currentPhotoIndex = nextIndex
+                // Load the image using GlideApp
+                GlideApp.with(context)
+                    .load(nextUrl)
+                    .diskCacheStrategy(DiskCacheStrategy.ALL)
+                    .error(R.drawable.default_photo)
+                    .listener(createGlideListener(views, nextIndex, startTime, transitionEffect))
+                    .into(views.overlayView)
 
-                                            // Track load time
-                                            trackPhotoLoadTime(fromCache, System.currentTimeMillis() - startTime)
-
-                                            // Preload next batch
-                                            preloadNextBatch(nextIndex, photoCount)
-                                        }
-                                        .start()
-                                    return false
-                                }
-                            })
-                            .into(views.overlayView)
-
-                        hideLoadingOverlay()
-                    }
-                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading photo", e)
+                Log.e(TAG, "Error in loadAndDisplayPhoto", e)
                 isTransitioning = false
             }
         }
+    }
+
+    private fun resetViewProperties(views: Views) {
+        // Cancel any ongoing animations
+        views.overlayView.animate().cancel()
+        views.primaryView.animate().cancel()
+
+        // Reset view properties
+        views.overlayView.apply {
+            alpha = 0f
+            scaleX = 1f
+            scaleY = 1f
+            translationX = 0f
+            translationY = 0f
+            rotationX = 0f
+            rotationY = 0f
+            rotation = 0f
+            translationZ = 0f
+            visibility = View.VISIBLE
+        }
+    }
+
+    private fun createGlideListener(
+        views: Views,
+        nextIndex: Int,
+        startTime: Long,
+        transitionEffect: String
+    ) = object : RequestListener<Drawable> {
+        override fun onLoadFailed(
+            e: GlideException?,
+            model: Any?,
+            target: Target<Drawable>,
+            isFirstResource: Boolean
+        ): Boolean {
+            Log.e(TAG, "Failed to load photo: $model", e)
+            isTransitioning = false
+
+            // If we get a 403, try refreshing the token and retrying
+            if (e?.rootCauses?.any { it is HttpException && it.statusCode == 403 } == true) {
+                lifecycleScope?.launch {
+                    try {
+                        if (photoManager.refreshTokens()) {
+                            // Add a small delay before retrying
+                            delay(500)
+                            // Clear Glide's memory cache for this URL to force a new request
+                            model?.toString()?.let { url ->
+                                Glide.get(context).clearMemory()
+                                GlideApp.with(context).clear(views.overlayView)
+                            }
+                            // Retry the load after token refresh
+                            loadAndDisplayPhoto(true)
+                        } else {
+                            Log.e(TAG, "Failed to refresh tokens")
+                            showErrorMessage("Failed to refresh authentication")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error during token refresh", e)
+                        showErrorMessage("Authentication error")
+                    }
+                }
+            }
+
+            return false
+        }
+
+        override fun onResourceReady(
+            resource: Drawable,
+            model: Any,
+            target: Target<Drawable>,
+            dataSource: DataSource,
+            isFirstResource: Boolean
+        ): Boolean {
+            Log.d(TAG, "Photo loaded, starting transition: $transitionEffect")
+            views.overlayView.cameraDistance = views.overlayView.width * 3f
+
+            when (transitionEffect) {
+                "slide" -> performSlideTransition(views, resource, nextIndex)
+                "zoom" -> performZoomTransition(views, resource, nextIndex)
+                "flip" -> performFlipTransition(views, resource, nextIndex)
+                "rotate" -> performRotateTransition(views, resource, nextIndex)
+                "depth" -> performDepthTransition(views, resource, nextIndex)
+                "cube" -> performCubeTransition(views, resource, nextIndex)
+                else -> performFadeTransition(views, resource, nextIndex)
+            }
+
+            trackPhotoLoadTime(dataSource == DataSource.MEMORY_CACHE, System.currentTimeMillis() - startTime)
+            return false
+        }
+    }
+
+    private fun performFadeTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        views.overlayView.apply {
+            alpha = 0f
+            animate()
+                .alpha(1f)
+                .setDuration(transitionDuration)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction { completeTransition(views, resource, nextIndex) }
+                .start()
+        }
+    }
+
+    private fun performSlideTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        views.overlayView.apply {
+            alpha = 1f
+            translationX = width.toFloat()
+            animate()
+                .translationX(0f)
+                .setDuration(transitionDuration)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction { completeTransition(views, resource, nextIndex) }
+                .start()
+        }
+    }
+
+    private fun performZoomTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        views.overlayView.apply {
+            alpha = 0f
+            scaleX = 1.2f
+            scaleY = 1.2f
+            animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(transitionDuration)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction { completeTransition(views, resource, nextIndex) }
+                .start()
+        }
+    }
+
+    private fun performFlipTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        // Ensure both views are visible and have correct initial state
+        views.primaryView.apply {
+            visibility = View.VISIBLE
+            alpha = 1f
+            rotationY = 0f
+        }
+
+        views.overlayView.apply {
+            visibility = View.VISIBLE
+            alpha = 1f
+            rotationY = 90f
+            setImageDrawable(resource)
+        }
+
+        // Set camera distance to prevent clipping
+        val distance = views.overlayView.width * 3f
+        views.primaryView.cameraDistance = distance
+        views.overlayView.cameraDistance = distance
+
+        // Create AnimatorSet for synchronized animations
+        val animatorSet = AnimatorSet()
+
+        // Create overlay view animation (new image)
+        val overlayFlip = ObjectAnimator.ofFloat(views.overlayView, View.ROTATION_Y, 90f, 0f)
+
+        // Create primary view animation (old image)
+        val primaryFlip = ObjectAnimator.ofFloat(views.primaryView, View.ROTATION_Y, 0f, -90f)
+
+        // Configure animations
+        animatorSet.apply {
+            playTogether(overlayFlip, primaryFlip)
+            duration = transitionDuration
+            interpolator = AccelerateDecelerateInterpolator()
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    completeTransition(views, resource, nextIndex)
+                }
+            })
+        }
+
+        // Start the animation
+        animatorSet.start()
+    }
+
+    private fun performRotateTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        views.overlayView.apply {
+            alpha = 0f
+            rotation = -180f
+            scaleX = 0.5f
+            scaleY = 0.5f
+            animate()
+                .alpha(1f)
+                .rotation(0f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(transitionDuration)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .withEndAction { completeTransition(views, resource, nextIndex) }
+                .start()
+        }
+    }
+
+    private fun performDepthTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        // Set initial states
+        views.primaryView.apply {
+            visibility = View.VISIBLE
+            alpha = 1f
+            scaleX = 1f
+            scaleY = 1f
+        }
+
+        views.overlayView.apply {
+            visibility = View.VISIBLE
+            setImageDrawable(resource)
+            alpha = 0f
+            scaleX = 1.5f
+            scaleY = 1.5f
+            translationZ = -1000f
+        }
+
+        // Create AnimatorSet for synchronized animations
+        val animatorSet = AnimatorSet()
+
+        // Animations for the new image (overlay)
+        val overlayAlpha = ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f)
+        val overlayScaleX = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_X, 1.5f, 1f)
+        val overlayScaleY = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_Y, 1.5f, 1f)
+        val overlayZ = ObjectAnimator.ofFloat(views.overlayView, View.TRANSLATION_Z, -1000f, 0f)
+
+        // Animations for the old image (primary)
+        val primaryAlpha = ObjectAnimator.ofFloat(views.primaryView, View.ALPHA, 1f, 0f)
+        val primaryScaleX = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_X, 1f, 0.5f)
+        val primaryScaleY = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_Y, 1f, 0.5f)
+        val primaryZ = ObjectAnimator.ofFloat(views.primaryView, View.TRANSLATION_Z, 0f, -500f)
+
+        // Configure animations
+        animatorSet.apply {
+            playTogether(
+                overlayAlpha, overlayScaleX, overlayScaleY, overlayZ,
+                primaryAlpha, primaryScaleX, primaryScaleY, primaryZ
+            )
+            duration = transitionDuration
+            interpolator = DecelerateInterpolator()
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    completeTransition(views, resource, nextIndex)
+                }
+            })
+        }
+
+        // Start the animation
+        animatorSet.start()
+    }
+
+    private fun performCubeTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        // Ensure both views are visible and have correct initial state
+        views.primaryView.apply {
+            visibility = View.VISIBLE
+            alpha = 1f
+            rotationY = 0f
+            translationX = 0f
+        }
+
+        views.overlayView.apply {
+            visibility = View.VISIBLE
+            alpha = 1f
+            rotationY = 90f
+            translationX = width.toFloat()
+            setImageDrawable(resource)
+        }
+
+        // Create AnimatorSet for synchronized animations
+        val animatorSet = AnimatorSet()
+
+        // Create overlay view animations
+        val overlayAnim = ObjectAnimator.ofFloat(views.overlayView, View.ROTATION_Y, 90f, 0f)
+        val overlayTranslation = ObjectAnimator.ofFloat(views.overlayView, View.TRANSLATION_X,
+            views.overlayView.width.toFloat(), 0f)
+
+        // Create primary view animations
+        val primaryAnim = ObjectAnimator.ofFloat(views.primaryView, View.ROTATION_Y, 0f, -90f)
+        val primaryTranslation = ObjectAnimator.ofFloat(views.primaryView, View.TRANSLATION_X,
+            0f, -views.primaryView.width.toFloat())
+
+        // Configure animations
+        animatorSet.apply {
+            playTogether(overlayAnim, overlayTranslation, primaryAnim, primaryTranslation)
+            duration = transitionDuration
+            interpolator = AccelerateDecelerateInterpolator()
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    completeTransition(views, resource, nextIndex)
+                }
+            })
+        }
+
+        // Start the animation
+        animatorSet.start()
+    }
+
+    private fun completeTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        if (!isMainThread()) {
+            views.container.post { completeTransition(views, resource, nextIndex) }
+            return
+        }
+
+        // Update primary view
+        views.primaryView.apply {
+            setImageDrawable(resource)
+            alpha = 1f
+            scaleX = 1f
+            scaleY = 1f
+            translationX = 0f
+            translationY = 0f
+            rotationX = 0f
+            rotationY = 0f
+            rotation = 0f
+            translationZ = 0f
+            visibility = View.VISIBLE
+        }
+
+        // Reset overlay view
+        views.overlayView.apply {
+            alpha = 0f
+            scaleX = 1f
+            scaleY = 1f
+            translationX = 0f
+            translationY = 0f
+            rotationX = 0f
+            rotationY = 0f
+            rotation = 0f
+            translationZ = 0f
+            visibility = View.INVISIBLE
+        }
+
+        // Ensure clock and date are visible if enabled
+        updateTimeDisplayVisibility()
+
+        // Hide any remaining messages
+        hideAllMessages()
+
+        isTransitioning = false
+        currentPhotoIndex = nextIndex
+        Log.d(TAG, "Transition completed to photo $nextIndex")
+    }
+
+    private fun finishTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        views.primaryView.setImageDrawable(resource)
+        views.overlayView.apply {
+            alpha = 0f
+            scaleX = 1f
+            scaleY = 1f
+            translationX = 0f
+            translationY = 0f
+            rotationX = 0f
+            rotationY = 0f
+            rotation = 0f
+            translationZ = 0f
+        }
+        views.primaryView.apply {
+            alpha = 1f
+            scaleX = 1f
+            scaleY = 1f
+            translationX = 0f
+            translationY = 0f
+            rotationX = 0f
+            rotationY = 0f
+            rotation = 0f
+            translationZ = 0f
+        }
+        isTransitioning = false
+        currentPhotoIndex = nextIndex
     }
 
     private fun preloadNextBatch(currentIndex: Int, totalPhotos: Int) {
@@ -553,50 +830,6 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
-    private suspend fun loadPhotoWithGlide(url: String, views: Views) {
-        withContext(Dispatchers.Main) {
-            Glide.with(context)
-                .load(url)
-                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .listener(createGlideListener(url))
-                .into(views.overlayView)
-
-            views.overlayView.animate()
-                .alpha(1f)
-                .setDuration(transitionDuration)
-                .withEndAction {
-                    views.primaryView.setImageDrawable(views.overlayView.drawable)
-                    views.overlayView.alpha = 0f
-                    isTransitioning = false
-                    currentPhotoIndex = (currentPhotoIndex + 1) % photoManager.getPhotoCount()
-                }
-                .start()
-        }
-    }
-
-    private fun createGlideListener(url: String) = object : RequestListener<Drawable> {
-        override fun onLoadFailed(
-            e: GlideException?,
-            model: Any?,
-            target: Target<Drawable>,
-            isFirstResource: Boolean
-        ): Boolean {
-            Log.e(TAG, "Failed to load photo: $url", e)
-            isTransitioning = false
-            return false
-        }
-
-        override fun onResourceReady(
-            resource: Drawable,
-            model: Any,
-            target: Target<Drawable>,
-            dataSource: DataSource,
-            isFirstResource: Boolean
-        ): Boolean {
-            return false
-        }
-    }
-
     fun updateSettings(
         transitionDuration: Long? = null,
         photoInterval: Long? = null,
@@ -606,21 +839,45 @@ class PhotoDisplayManager @Inject constructor(
         isRandomOrder: Boolean? = null
     ) {
         Log.d(TAG, "Updating settings")
-        transitionDuration?.let { this.transitionDuration = it }
-        photoInterval?.let { this.photoInterval = it }
+        var shouldRestartDisplay = false
+
+        transitionDuration?.let {
+            this.transitionDuration = it
+            Log.d(TAG, "Updated transition duration to: $it ms")
+        }
+        photoInterval?.let {
+            this.photoInterval = it
+            shouldRestartDisplay = true
+            Log.d(TAG, "Updated photo interval to: $it ms")
+        }
         showClock?.let { this.showClock = it }
         showDate?.let { this.showDate = it }
         showLocation?.let { this.showLocation = it }
         isRandomOrder?.let { this.isRandomOrder = it }
 
         updateTimeDisplayVisibility()
+
+        // Restart photo display if interval changed
+        if (shouldRestartDisplay) {
+            stopPhotoDisplay()
+            startPhotoDisplay()
+        }
     }
 
     private fun updateTimeDisplayVisibility() {
         views?.apply {
-            clockView?.isVisible = showClock
-            dateView?.isVisible = showDate
-            locationView?.isVisible = showLocation
+            clockView?.apply {
+                visibility = if (showClock) View.VISIBLE else View.GONE
+                alpha = 1f // Ensure clock is fully visible
+            }
+            dateView?.apply {
+                visibility = if (showDate) View.VISIBLE else View.GONE
+                alpha = 1f // Ensure date is fully visible
+            }
+            locationView?.apply {
+                visibility = if (showLocation) View.VISIBLE else View.GONE
+                alpha = 1f // Ensure location is fully visible
+            }
         }
 
         if ((showClock || showDate) && timeUpdateJob == null) {
@@ -630,6 +887,8 @@ class PhotoDisplayManager @Inject constructor(
             timeUpdateJob = null
         }
     }
+
+    fun getTransitionDuration(): Long = transitionDuration
 
     private fun preloadDefaultPhoto() {
         try {
@@ -678,6 +937,11 @@ class PhotoDisplayManager @Inject constructor(
                 views.loadingMessage?.visibility = View.GONE
                 views.overlayMessageContainer?.visibility = View.GONE
                 views.backgroundLoadingIndicator?.visibility = View.GONE
+                views.overlayMessageText?.text = ""
+
+                // Ensure clock and date are visible if enabled
+                updateTimeDisplayVisibility()
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error hiding messages", e)
             }
@@ -715,69 +979,6 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Stopping photo display")
         displayJob?.cancel()
         displayJob = null
-    }
-
-    private fun handleCacheLoadFailure(exception: Throwable? = null) {
-        Log.w(TAG, "Cache load failed", exception)
-
-        lifecycleScope?.launch {
-            try {
-                // Keep showing default photo
-                showDefaultPhoto()
-
-                // Try to load photos
-                withContext(Dispatchers.IO) {
-                    if (!hasVerifiedPhotos) {
-                        photoManager.loadPhotos()
-                        hasVerifiedPhotos = true
-                    }
-                }
-
-                // Check if we have photos after loading
-                val photoCount = photoManager.getPhotoCount()
-                if (photoCount > 0) {
-                    startPhotoDisplay()
-                } else {
-                    showSettingsMessage()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling cache failure", e)
-                showDefaultPhoto()
-                if (!hasVerifiedPhotos) {
-                    showSettingsMessage()
-                }
-            }
-        }
-    }
-
-    private fun handleNetworkError(exception: Throwable? = null) {
-        Log.w(TAG, "Network error while loading photos", exception)
-
-        lifecycleScope?.launch {
-            try {
-                // Try to use cached photo if available
-                val cachedUrl = photoCache.getLastCachedPhotoUrl()
-                if (cachedUrl != null) {
-                    loadAndDisplayPhoto(true) // Pass true for fromCache
-                } else {
-                    val cachedBitmap = photoCache.getLastCachedPhotoBitmap()
-                    if (cachedBitmap != null) {
-                        views?.primaryView?.setImageBitmap(cachedBitmap)
-                    } else {
-                        showDefaultPhoto()
-                        if (!hasVerifiedPhotos) {
-                            showSettingsMessage()
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling network error", e)
-                showDefaultPhoto()
-                if (!hasVerifiedPhotos) {
-                    showSettingsMessage()
-                }
-            }
-        }
     }
 
     fun handleLowMemory() { // Change from private to public
