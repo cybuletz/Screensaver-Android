@@ -80,6 +80,12 @@ class PhotoCache @Inject constructor(
     }
 
     init {
+        scope.launch {
+            initializeCacheDirectory()
+        }
+    }
+
+    private suspend fun initializeCacheDirectory() = withContext(Dispatchers.IO) {
         _cacheStatus.value = CacheStatus.INITIALIZING
         if (!cacheDir.exists()) {
             cacheDir.mkdirs()

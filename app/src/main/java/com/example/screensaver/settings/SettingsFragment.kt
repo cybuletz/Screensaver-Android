@@ -312,6 +312,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
             .apply()
 
         Toast.makeText(context, "Settings saved", Toast.LENGTH_SHORT).show()
+
+        // Start photo display after saving settings
+        photoDisplayManager.updatePhotoSources()
+        photoDisplayManager.startPhotoDisplay()
     }
 
     override fun onCreateView(
@@ -478,15 +482,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
             summary = "$currentValue seconds for transition animation"
         }
 
-        findPreference<ListPreference>("widget_position")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                photoDisplayManager.updateSettings(
-                    widgetPosition = newValue as String
-                )
-                true
-            }
-        }
-
         // Connect photo change interval settings
         findPreference<SeekBarPreference>("photo_interval")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
@@ -507,26 +502,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 .getInt("photo_interval", 15)
             summary = "Display each photo for $currentValue seconds"
         }
-
-        // Initialize PhotoDisplayManager with current settings
-        val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-        val transitionTime = prefs.getInt("transition_duration", 2)
-        val photoInterval = prefs.getInt("photo_interval", 15)
-
-        // Force stop and restart with correct settings
-        photoDisplayManager.apply {
-            stopPhotoDisplay()
-            updateSettings(
-                transitionDuration = transitionTime * 1000L,
-                photoInterval = photoInterval * 1000L,
-                showClock = prefs.getBoolean("lock_screen_clock", true),
-                showDate = prefs.getBoolean("lock_screen_date", true),
-                isRandomOrder = prefs.getBoolean("random_order", true)
-            )
-            startPhotoDisplay()
-        }
-
-        Log.d(TAG, "PhotoDisplayManager initialized with interval: ${photoInterval} seconds")
     }
 
     override fun onResume() {

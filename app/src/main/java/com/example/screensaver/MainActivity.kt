@@ -84,7 +84,12 @@ class MainActivity : AppCompatActivity() {
         get() = try {
             val navHostFragment = supportFragmentManager
                 .findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
-            navHostFragment?.viewLifecycleOwner
+            // Add a check for the Fragment's view lifecycle state
+            navHostFragment?.let {
+                if (it.view != null && it.viewLifecycleOwnerLiveData.value != null) {
+                    it.viewLifecycleOwner
+                } else null
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error getting viewLifecycleOwner", e)
             null
@@ -132,8 +137,9 @@ class MainActivity : AppCompatActivity() {
             setContentView(binding.root)
 
             setupFullScreen()
-            setupNavigation()  // Move navigation setup earlier
-            setupSettingsButton()
+            setupSettingsButton()  // Move this before navigation setup
+            setupNavigation()
+            setupNavigationHandling()
             setupFirstLaunchUI()
             initializePhotoDisplayManager()
 
@@ -145,7 +151,6 @@ class MainActivity : AppCompatActivity() {
                 photoDisplayManager.updatePhotoSources()
             }
 
-            // Check initial charging state
             checkInitialChargingState()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
@@ -173,14 +178,16 @@ class MainActivity : AppCompatActivity() {
             // Hide Terms & Privacy
             binding.termsPrivacyContainer.visibility = View.GONE
 
-            // Show settings button
-            binding.settingsButton.settingsFab.apply {
-                visibility = View.VISIBLE
-                alpha = 1f
-            }
-
             // Navigate to settings to set up Google Photos
             navController.navigate(R.id.action_mainFragment_to_settingsFragment)
+        }
+
+        // Add URL handlers for terms and privacy
+        binding.termsButton.setOnClickListener {
+            openUrl("https://photostreamr.cybu.site/terms")
+        }
+        binding.privacyButton.setOnClickListener {
+            openUrl("https://photostreamr.cybu.site/privacy")
         }
     }
 
@@ -312,28 +319,58 @@ class MainActivity : AppCompatActivity() {
                 elevation = 6f
                 translationZ = 6f
 
-                // Add click listener with first launch handling
+                // Add click listener directly to the FAB
                 setOnClickListener {
                     Log.d(TAG, "Settings button clicked")
                     if (navController.currentDestination?.id == R.id.mainFragment) {
-                        // Mark first launch as completed when user goes to settings
-                        PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                            .edit()
-                            .putBoolean(PREF_FIRST_LAUNCH, false)
-                            .apply()
-
                         navController.navigate(R.id.action_mainFragment_to_settingsFragment)
                         settingsButtonController.hide()
                     }
                 }
             }
 
+            // Create the controller after setting up the button
             settingsButtonController = SettingsButtonController(settingsFab)
 
             // Log initial state
             Log.d(TAG, "Settings button initial state - visibility: ${settingsFab.visibility}, alpha: ${settingsFab.alpha}")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up settings button", e)
+        }
+    }
+
+    private fun updatePhotoDisplayState(shouldStart: Boolean) {
+        if (isDestroyed || isPhotoTransitionInProgress) return
+
+        lifecycleScope.launch {
+            try {
+                if (shouldStart) {
+                    photoDisplayManager.startPhotoDisplay()
+                } else {
+                    photoDisplayManager.stopPhotoDisplay()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating photo display state", e)
+            }
+        }
+    }
+
+    private fun setupNavigationHandling() {
+        navController.addOnDestinationChangedListener { _, destination, _ ->
+            when (destination.id) {
+                R.id.mainFragment -> {
+                    binding.screensaverContainer.visibility = View.VISIBLE
+                    if (::settingsButtonController.isInitialized) {
+                        settingsButtonController.show()
+                    }
+                }
+                R.id.settingsFragment -> {
+                    binding.screensaverContainer.visibility = View.GONE
+                    if (::settingsButtonController.isInitialized) {
+                        settingsButtonController.hide()
+                    }
+                }
+            }
         }
     }
 
@@ -746,6 +783,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun createPhotoDisplayViews(): PhotoDisplayManager.Views {
+        return PhotoDisplayManager.Views(
+            primaryView = binding.photoPreview,
+            overlayView = binding.photoPreviewOverlay,
+            clockView = binding.clockOverlay,
+            dateView = binding.dateOverlay,
+            locationView = binding.locationOverlay,
+            loadingIndicator = binding.loadingIndicator,
+            loadingMessage = binding.loadingMessage,
+            container = binding.screensaverContainer,
+            infoContainer = binding.infoContainer,
+            overlayMessageContainer = binding.overlayMessageContainer,
+            overlayMessageText = binding.overlayMessageText,
+            backgroundLoadingIndicator = binding.backgroundLoadingIndicator
+        )
+    }
+
     private fun setupMenu() {
         addMenuProvider(object : MenuProvider {
             override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
@@ -1009,9 +1063,19 @@ class MainActivity : AppCompatActivity() {
                 startKioskMode()
             }
 
-            viewLifecycleOwner?.lifecycleScope?.launch(Dispatchers.Main) {
-                withContext(NonCancellable) {
-                    photoDisplayManager.cleanup()
+            // Safely handle viewLifecycleOwner cleanup
+            viewLifecycleOwner?.let { lifecycleOwner ->
+                lifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
+                    withContext(NonCancellable) {
+                        photoDisplayManager.cleanup()
+                    }
+                }
+            } ?: run {
+                // Fallback cleanup if viewLifecycleOwner is not available
+                lifecycleScope.launch(Dispatchers.Main) {
+                    withContext(NonCancellable) {
+                        photoDisplayManager.cleanup()
+                    }
                 }
             }
 

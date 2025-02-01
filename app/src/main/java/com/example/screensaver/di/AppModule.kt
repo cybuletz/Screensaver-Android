@@ -17,6 +17,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.runBlocking
 import com.example.screensaver.lock.LockScreenPhotoManager
 import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.SecureStorage
@@ -146,6 +147,8 @@ object AppModule {
     fun providePhotoCache(
         @ApplicationContext context: Context
     ): PhotoCache {
-        return PhotoCache(context)
+        return runBlocking {
+            PhotoCache(context)
+        }
     }
 }
