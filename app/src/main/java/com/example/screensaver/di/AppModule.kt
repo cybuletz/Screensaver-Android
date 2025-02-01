@@ -23,6 +23,7 @@ import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.recovery.StateRecoveryManager
 import com.example.screensaver.recovery.StateRestoration
 import com.example.screensaver.data.PhotoCache
+import com.example.screensaver.widget.ClockWidgetManager
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -86,6 +87,14 @@ object AppModule {
         googlePhotosManager: GooglePhotosManager
     ): LockScreenPhotoManager {
         return LockScreenPhotoManager(context, googlePhotosManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideClockWidgetManager(
+        @ApplicationContext context: Context
+    ): ClockWidgetManager {
+        return ClockWidgetManager(context)
     }
 
     @Provides

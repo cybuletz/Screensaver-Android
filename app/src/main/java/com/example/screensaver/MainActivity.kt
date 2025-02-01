@@ -70,6 +70,9 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var preferences: AppPreferences
 
+    @Inject
+    lateinit var clockWidgetManager: ClockWidgetManager
+
     private var isDestroyed = false
     private var lastBackPressTime: Long = 0
     private val doubleBackPressInterval = 2000L
@@ -467,25 +470,35 @@ class MainActivity : AppCompatActivity() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val isFirstLaunch = prefs.getBoolean(PREF_FIRST_LAUNCH, true)
 
-        if (!isFirstLaunch) {
-            val showClock = prefs.getBoolean("lock_screen_clock", true)
-            val showDate = prefs.getBoolean("lock_screen_date", true)
-
-            binding.clockOverlay.visibility = if (showClock) View.VISIBLE else View.GONE
-            binding.dateOverlay.visibility = if (showDate) View.VISIBLE else View.GONE
-
-            // Update PhotoDisplayManager settings
-            photoDisplayManager.updateSettings(
-                showClock = showClock,
-                showDate = showDate
-            )
-        } else {
+        if (isFirstLaunch) {
             binding.clockOverlay.visibility = View.GONE
             binding.dateOverlay.visibility = View.GONE
             binding.infoContainer.visibility = View.GONE
+            showFirstLaunchUI()
+        } else {
+            clockWidgetManager.updateWidgetVisibility(
+                binding.infoContainer,
+                binding.clockOverlay,
+                binding.dateOverlay
+            )
         }
+    }
 
-        Log.d(TAG, "Initialized clock and date - isFirstLaunch: $isFirstLaunch")
+    private fun showFirstLaunchUI() {
+        binding.termsPrivacyContainer.visibility = View.VISIBLE
+        binding.termsLink.setOnClickListener {
+            openUrl("https://photostreamr.cybu.site/terms")
+        }
+        binding.privacyLink.setOnClickListener {
+            openUrl("https://photostreamr.cybu.site/privacy")
+        }
+        binding.acceptButton.setOnClickListener {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            prefs.edit()
+                .putBoolean(PREF_FIRST_LAUNCH, false)
+                .apply()
+            binding.termsPrivacyContainer.visibility = View.GONE
+        }
     }
 
     override fun onBackPressed() {

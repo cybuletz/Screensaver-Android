@@ -53,6 +53,10 @@ class PhotoDisplayManager @Inject constructor(
     private val photoCache: PhotoCache,
     private val context: Context
 ) {
+
+    @Inject
+    lateinit var clockWidgetManager: ClockWidgetManager
+
     private val managerJob = SupervisorJob()
     private val managerScope = CoroutineScope(Dispatchers.Main + managerJob)
 
@@ -833,51 +837,160 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    private fun updateWidgetVisibility() {
+        views?.let { views ->
+            clockWidgetManager.updateWidgetVisibility(
+                views.infoContainer,
+                views.clockView,
+                views.dateView
+            )
+        }
+    }
+
     fun updateSettings(
         transitionDuration: Long? = null,
         photoInterval: Long? = null,
         showClock: Boolean? = null,
         showDate: Boolean? = null,
         showLocation: Boolean? = null,
-        isRandomOrder: Boolean? = null
+        isRandomOrder: Boolean? = null,
+        widgetPosition: String? = null
     ) {
-        Log.d(TAG, "Updating settings - showClock: $showClock, showDate: $showDate")
+        Log.d(TAG, "Updating settings - showClock: $showClock, showDate: $showDate, position: $widgetPosition")
         var shouldRestartDisplay = false
+        var shouldUpdateWidget = false
 
         // Store previous values for logging
         val previousShowClock = this.showClock
         val previousShowDate = this.showDate
+        val previousPosition = PreferenceManager.getDefaultSharedPreferences(context)
+            .getString("widget_position", ClockWidgetManager.POSITION_BOTTOM_LEFT)
 
-        transitionDuration?.let {
-            this.transitionDuration = it
-        }
-        photoInterval?.let {
-            this.photoInterval = it
-            shouldRestartDisplay = true
-        }
-        showClock?.let {
-            this.showClock = it
-            Log.d(TAG, "Clock visibility setting updated from $previousShowClock to: $it")
-        }
-        showDate?.let {
-            this.showDate = it
-            Log.d(TAG, "Date visibility setting updated from $previousShowDate to: $it")
-        }
-        showLocation?.let { this.showLocation = it }
-        isRandomOrder?.let { this.isRandomOrder = it }
+        try {
+            // Update transition settings
+            transitionDuration?.let {
+                if (it in 500..3000) { // Validate duration range
+                    this.transitionDuration = it
+                    Log.d(TAG, "Transition duration updated to: $it ms")
+                } else {
+                    Log.w(TAG, "Invalid transition duration: $it")
+                }
+            }
 
-        // Update visibility immediately
-        updateTimeDisplayVisibility()
+            // Update interval settings
+            photoInterval?.let {
+                if (it >= 5000) { // Minimum 5 seconds
+                    this.photoInterval = it
+                    shouldRestartDisplay = true
+                    Log.d(TAG, "Photo interval updated to: $it ms")
+                } else {
+                    Log.w(TAG, "Invalid photo interval: $it")
+                }
+            }
 
-        // Verify the changes took effect
-        Log.d(TAG, "After settings update - showClock: ${this.showClock}, showDate: ${this.showDate}")
+            // Update visibility settings
+            showClock?.let {
+                this.showClock = it
+                shouldUpdateWidget = true
+                Log.d(TAG, "Clock visibility updated from $previousShowClock to: $it")
 
-        // Restart photo display if interval changed
-        if (shouldRestartDisplay) {
-            Log.d(TAG, "Restarting photo display due to interval change")
-            stopPhotoDisplay()
-            startPhotoDisplay()
+                // Save to preferences
+                PreferenceManager.getDefaultSharedPreferences(context)
+                    .edit()
+                    .putBoolean("show_clock", it)
+                    .apply()
+            }
+
+            showDate?.let {
+                this.showDate = it
+                shouldUpdateWidget = true
+                Log.d(TAG, "Date visibility updated from $previousShowDate to: $it")
+
+                // Save to preferences
+                PreferenceManager.getDefaultSharedPreferences(context)
+                    .edit()
+                    .putBoolean("show_date", it)
+                    .apply()
+            }
+
+            // Update location visibility
+            showLocation?.let {
+                this.showLocation = it
+                shouldUpdateWidget = true
+                Log.d(TAG, "Location visibility updated to: $it")
+
+                // Save to preferences
+                PreferenceManager.getDefaultSharedPreferences(context)
+                    .edit()
+                    .putBoolean("show_location", it)
+                    .apply()
+            }
+
+            // Update widget position
+            widgetPosition?.let {
+                if (it != previousPosition) {
+                    shouldUpdateWidget = true
+                    Log.d(TAG, "Widget position updated from $previousPosition to: $it")
+
+                    // Save to preferences
+                    PreferenceManager.getDefaultSharedPreferences(context)
+                        .edit()
+                        .putString("widget_position", it)
+                        .apply()
+                }
+            }
+
+            // Update random order setting
+            isRandomOrder?.let {
+                this.isRandomOrder = it
+                Log.d(TAG, "Random order updated to: $it")
+
+                // Save to preferences
+                PreferenceManager.getDefaultSharedPreferences(context)
+                    .edit()
+                    .putBoolean("random_order", it)
+                    .apply()
+            }
+
+            // Update widget if needed
+            if (shouldUpdateWidget) {
+                updateWidgetDisplay()
+            }
+
+            // Verify and log the changes
+            Log.d(TAG, """
+            Settings update complete:
+            - Clock: ${this.showClock}
+            - Date: ${this.showDate}
+            - Location: ${this.showLocation}
+            - Position: ${PreferenceManager.getDefaultSharedPreferences(context).getString("widget_position", "bottom_left")}
+            - Random: ${this.isRandomOrder}
+        """.trimIndent())
+
+            // Restart display if needed
+            if (shouldRestartDisplay) {
+                Log.d(TAG, "Restarting photo display due to interval change")
+                stopPhotoDisplay()
+                startPhotoDisplay()
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating settings", e)
+            // Revert to previous values if there was an error
+            this.showClock = previousShowClock
+            this.showDate = previousShowDate
+            updateWidgetDisplay()
         }
+    }
+
+    private fun updateWidgetDisplay() {
+        views?.let { views ->
+            clockWidgetManager.updateWidgetVisibility(
+                container = views.container,
+                clock = views.clockView,
+                date = views.dateView
+            )
+        } ?: Log.w(TAG, "Cannot update widget display - views not initialized")
     }
 
     private fun updateTimeDisplayVisibility() {
