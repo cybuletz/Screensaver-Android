@@ -81,7 +81,9 @@
             android:padding="16dp"
             android:layout_margin="16dp"
             android:background="@drawable/info_background"
-            android:elevation="4dp">
+            android:elevation="12dp"
+            android:translationZ="8dp"
+            android:stateListAnimator="@null">
 
             <TextView
                 android:id="@+id/clockOverlay"

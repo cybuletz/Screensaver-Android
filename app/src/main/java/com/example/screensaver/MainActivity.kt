@@ -40,6 +40,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.example.screensaver.ui.SettingsButtonController
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.shared.GooglePhotosManager
+import com.example.screensaver.widget.ClockWidgetManager
 import android.content.IntentFilter
 import android.content.BroadcastReceiver
 import android.os.BatteryManager
@@ -127,59 +128,25 @@ class MainActivity : AppCompatActivity() {
         enableFullScreen()
 
         try {
-            // Handle start from charging receiver
-            if (intent?.getBooleanExtra("start_screensaver", false) == true) {
-                Log.d(TAG, "Started from charging receiver at ${intent?.getLongExtra("timestamp", 0L)}")
-            }
-
-            if (checkKioskMode()) {
-                return
-            }
-
             _binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
 
             setupFullScreen()
-            setupFirstLaunchUI()
-            setupNavigation()
+            setupNavigation()  // Move navigation setup earlier
             setupSettingsButton()
-            initializeClockAndDate()
-            setupTouchListener()
+            setupFirstLaunchUI()
             initializePhotoDisplayManager()
-            startLockScreenService()
-            initializePhotos()
 
-            // Update photo sources and start display
-            photoDisplayManager.updatePhotoSources()
+            // Only start these if not first launch
+            if (!PreferenceManager.getDefaultSharedPreferences(this)
+                    .getBoolean(PREF_FIRST_LAUNCH, true)) {
+                startLockScreenService()
+                initializePhotos()
+                photoDisplayManager.updatePhotoSources()
+            }
 
             // Check initial charging state
             checkInitialChargingState()
-
-            // Start photo display if on main fragment
-            if (navController.currentDestination?.id == R.id.mainFragment) {
-                lifecycleScope.launch {
-                    delay(500) // Small delay to ensure everything is initialized
-                    photoDisplayManager.startPhotoDisplay()
-                }
-            }
-
-            // If started from charging, ensure we're in proper state
-            if (intent?.getBooleanExtra("start_screensaver", false) == true) {
-                lifecycleScope.launch {
-                    try {
-                        // Ensure we're on main fragment
-                        if (navController.currentDestination?.id != R.id.mainFragment) {
-                            navController.navigate(R.id.mainFragment)
-                        }
-                        delay(500) // Give time for navigation
-                        setupFullScreen() // Ensure fullscreen
-                        photoDisplayManager.startPhotoDisplay()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error handling charging start", e)
-                    }
-                }
-            }
-
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
@@ -193,43 +160,66 @@ class MainActivity : AppCompatActivity() {
 
         Log.d(TAG, "Setting up first launch UI - isFirstLaunch: $isFirstLaunch")
 
-        if (isFirstLaunch) {
-            // Hide info container (which contains clock and date)
-            binding.infoContainer.apply {
-                visibility = View.GONE
-                Log.d(TAG, "Info container visibility set to GONE")
-            }
-
-            // Show setup message
-            binding.initialSetupMessage.apply {
-                visibility = View.VISIBLE
-                bringToFront()
-                Log.d(TAG, "Initial setup message visibility set to VISIBLE")
-            }
-
-            // Show legal links
-            binding.legalLinksContainer.apply {
-                visibility = View.VISIBLE
-                bringToFront()
-                Log.d(TAG, "Legal links container visibility set to VISIBLE")
-            }
-
-            // Setup click listeners for links
-            binding.termsLink.setOnClickListener {
-                Log.d(TAG, "Terms link clicked")
-                openUrl("https://photostreamr.cybu.site/terms")
-            }
-
-            binding.privacyLink.setOnClickListener {
-                Log.d(TAG, "Privacy link clicked")
-                openUrl("https://photostreamr.cybu.site/privacy")
-            }
-        } else {
-            binding.infoContainer.visibility = View.VISIBLE
-            binding.initialSetupMessage.visibility = View.GONE
-            binding.legalLinksContainer.visibility = View.GONE
-            Log.d(TAG, "Not first launch - normal UI setup complete")
+        binding.termsPrivacyContainer.apply {
+            visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
         }
+
+        binding.acceptButton.setOnClickListener {
+            // Save first launch complete
+            prefs.edit()
+                .putBoolean(PREF_FIRST_LAUNCH, false)
+                .apply()
+
+            // Hide Terms & Privacy
+            binding.termsPrivacyContainer.visibility = View.GONE
+
+            // Show settings button
+            binding.settingsButton.settingsFab.apply {
+                visibility = View.VISIBLE
+                alpha = 1f
+            }
+
+            // Navigate to settings to set up Google Photos
+            navController.navigate(R.id.action_mainFragment_to_settingsFragment)
+        }
+    }
+
+    private fun initializeWidgetDefaults() {
+        // Set default preferences (widget hidden)
+        PreferenceManager.getDefaultSharedPreferences(this)
+            .edit()
+            .putBoolean("show_clock", false)
+            .putBoolean("show_date", false)
+            .putString("widget_position", ClockWidgetManager.POSITION_BOTTOM_LEFT)
+            .apply()
+
+        // Initialize widget with defaults
+        clockWidgetManager.updateWidgetVisibility(
+            binding.infoContainer,
+            binding.clockOverlay,
+            binding.dateOverlay
+        )
+    }
+
+    private fun initializeWidgetFromSettings() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val showClock = prefs.getBoolean("show_clock", false)
+        val showDate = prefs.getBoolean("show_date", false)
+        val position = prefs.getString("widget_position", ClockWidgetManager.POSITION_BOTTOM_LEFT)
+
+        // Update PhotoDisplayManager settings
+        photoDisplayManager.updateSettings(
+            showClock = showClock,
+            showDate = showDate,
+            widgetPosition = position
+        )
+
+        // Initialize widget with saved settings
+        clockWidgetManager.updateWidgetVisibility(
+            binding.infoContainer,
+            binding.clockOverlay,
+            binding.dateOverlay
+        )
     }
 
     private fun openUrl(url: String) {
@@ -300,14 +290,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupTouchListener() {
         Log.d(TAG, "Setting up touch listeners")
 
-        binding.root.setOnClickListener {
-            Log.d(TAG, "Root view clicked, current destination: ${navController.currentDestination?.id}")
-            if (navController.currentDestination?.id == R.id.mainFragment) {
-                Log.d(TAG, "Showing settings button")
-                settingsButtonController.show()
-            }
-        }
-
+        // Using a single touch listener for the screensaver container
         binding.screensaverContainer.setOnClickListener {
             Log.d(TAG, "Screensaver container clicked, current destination: ${navController.currentDestination?.id}")
             if (navController.currentDestination?.id == R.id.mainFragment) {
@@ -436,6 +419,7 @@ class MainActivity : AppCompatActivity() {
                     loadingIndicator = binding.loadingIndicator,
                     loadingMessage = binding.loadingMessage,
                     container = binding.screensaverContainer,
+                    infoContainer = binding.infoContainer,  // Add this line
                     overlayMessageContainer = binding.overlayMessageContainer,
                     overlayMessageText = binding.overlayMessageText,
                     backgroundLoadingIndicator = binding.backgroundLoadingIndicator
@@ -444,15 +428,16 @@ class MainActivity : AppCompatActivity() {
                 // Initialize PhotoDisplayManager
                 photoDisplayManager.initialize(views, lifecycleScope)
 
-                // Update settings
-                val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                val intervalInt = prefs.getInt("photo_interval", 10000)
+                setupTouchListener()
 
+                // Get saved settings
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
                 photoDisplayManager.updateSettings(
-                    showClock = prefs.getBoolean("show_clock", true),
-                    showDate = prefs.getBoolean("show_date", true),
-                    photoInterval = intervalInt.toLong(),
-                    isRandomOrder = prefs.getBoolean("random_order", false)
+                    photoInterval = prefs.getInt("photo_interval", 10000).toLong(),
+                    showClock = prefs.getBoolean("show_clock", false),
+                    showDate = prefs.getBoolean("show_date", false),
+                    isRandomOrder = prefs.getBoolean("random_order", false),
+                    widgetPosition = prefs.getString("widget_position", ClockWidgetManager.POSITION_BOTTOM_LEFT)
                 )
 
             } catch (e: Exception) {
@@ -466,30 +451,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun initializeClockAndDate() {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val isFirstLaunch = prefs.getBoolean(PREF_FIRST_LAUNCH, true)
-
-        if (isFirstLaunch) {
-            binding.clockOverlay.visibility = View.GONE
-            binding.dateOverlay.visibility = View.GONE
-            binding.infoContainer.visibility = View.GONE
-            showFirstLaunchUI()
-        } else {
-            clockWidgetManager.updateWidgetVisibility(
-                binding.infoContainer,
-                binding.clockOverlay,
-                binding.dateOverlay
-            )
-        }
-    }
-
     private fun showFirstLaunchUI() {
         binding.termsPrivacyContainer.visibility = View.VISIBLE
-        binding.termsLink.setOnClickListener {
+        binding.termsButton.setOnClickListener {
             openUrl("https://photostreamr.cybu.site/terms")
         }
-        binding.privacyLink.setOnClickListener {
+        binding.privacyButton.setOnClickListener {
             openUrl("https://photostreamr.cybu.site/privacy")
         }
         binding.acceptButton.setOnClickListener {
@@ -607,6 +574,7 @@ class MainActivity : AppCompatActivity() {
                             loadingIndicator = binding.loadingIndicator,
                             loadingMessage = binding.loadingMessage,
                             container = binding.screensaverContainer,
+                            infoContainer = binding.infoContainer,
                             overlayMessageContainer = binding.overlayMessageContainer,
                             overlayMessageText = binding.overlayMessageText,
                             backgroundLoadingIndicator = binding.backgroundLoadingIndicator
@@ -678,16 +646,10 @@ class MainActivity : AppCompatActivity() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val isFirstLaunch = prefs.getBoolean(PREF_FIRST_LAUNCH, true)
 
-        // Update visibility based on both navigation and first launch state
         binding.screensaverContainer.visibility = if (isMainScreen) View.VISIBLE else View.GONE
-
-        // Only show clock/date if not first launch
         binding.clockOverlay.visibility = if (isMainScreen && !isFirstLaunch) View.VISIBLE else View.GONE
         binding.dateOverlay.visibility = if (isMainScreen && !isFirstLaunch) View.VISIBLE else View.GONE
-
-        // Keep setup message and legal links visible only on first launch
-        binding.initialSetupMessage.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
-        binding.legalLinksContainer.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
+        binding.termsPrivacyContainer.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
     }
 
     private fun checkKioskMode(): Boolean {
@@ -859,6 +821,7 @@ class MainActivity : AppCompatActivity() {
                         loadingIndicator = binding.loadingIndicator,
                         loadingMessage = binding.loadingMessage,
                         container = binding.screensaverContainer,
+                        infoContainer = binding.infoContainer,
                         overlayMessageContainer = binding.overlayMessageContainer,
                         overlayMessageText = binding.overlayMessageText,
                         backgroundLoadingIndicator = binding.backgroundLoadingIndicator

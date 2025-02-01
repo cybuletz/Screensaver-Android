@@ -478,6 +478,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
             summary = "$currentValue seconds for transition animation"
         }
 
+        findPreference<ListPreference>("widget_position")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                photoDisplayManager.updateSettings(
+                    widgetPosition = newValue as String
+                )
+                true
+            }
+        }
+
         // Connect photo change interval settings
         findPreference<SeekBarPreference>("photo_interval")?.apply {
             setOnPreferenceChangeListener { _, newValue ->

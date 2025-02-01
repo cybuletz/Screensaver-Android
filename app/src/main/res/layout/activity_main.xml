@@ -37,6 +37,9 @@
         android:layout_height="0dp"
         android:visibility="visible"
         android:background="@android:color/black"
+        android:keepScreenOn="true"
+        android:clickable="true"
+        android:focusable="true"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -146,51 +149,53 @@
                 android:shadowDy="1"/>
         </FrameLayout>
 
-        <!-- Terms and Privacy Footer -->
+        <!-- Terms and Privacy Container -->
         <LinearLayout
-            android:id="@+id/legalLinksContainer"
+            android:id="@+id/termsPrivacyContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
+            android:layout_gravity="center"
+            android:orientation="vertical"
             android:padding="16dp"
-            android:background="@drawable/footer_background"
-            android:visibility="gone"
-            android:layout_gravity="bottom">
+            android:visibility="gone">
 
             <TextView
-                android:id="@+id/termsLink"
-                android:layout_width="wrap_content"
+                android:id="@+id/termsPrivacyTitle"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/terms_of_use"
-                android:textColor="@color/link_color"
-                android:padding="8dp"
-                android:textSize="16sp"
-                android:shadowColor="@android:color/black"
-                android:shadowRadius="2"
-                android:shadowDx="1"
-                android:shadowDy="1"/>
+                android:gravity="center"
+                android:text="@string/terms_privacy_title"
+                android:textSize="20sp"
+                android:textStyle="bold" />
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="•"
-                android:textColor="@android:color/white"
-                android:padding="8dp"/>
+                android:layout_marginTop="16dp"
+                android:text="@string/terms_privacy_message" />
 
-            <TextView
-                android:id="@+id/privacyLink"
-                android:layout_width="wrap_content"
+            <Button
+                android:id="@+id/termsButton"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/privacy_policy"
-                android:textColor="@color/link_color"
-                android:padding="8dp"
-                android:textSize="16sp"
-                android:shadowColor="@android:color/black"
-                android:shadowRadius="2"
-                android:shadowDx="1"
-                android:shadowDy="1"/>
+                android:layout_marginTop="16dp"
+                android:text="@string/terms_of_use" />
+
+            <Button
+                android:id="@+id/privacyButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/privacy_policy" />
+
+            <Button
+                android:id="@+id/acceptButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/accept_and_continue"
+                style="@style/Widget.MaterialComponents.Button" />
         </LinearLayout>
+
         <!-- Info Overlay Container -->
         <LinearLayout
             android:id="@+id/infoContainer"
@@ -203,7 +208,8 @@
             android:background="@drawable/info_background"
             android:elevation="12dp"
             android:translationZ="8dp"
-            android:stateListAnimator="@null">
+            android:stateListAnimator="@null"
+            android:visibility="gone">
 
             <TextView
                 android:id="@+id/clockOverlay"
@@ -215,7 +221,7 @@
                 android:shadowRadius="4"
                 android:shadowDx="0"
                 android:shadowDy="2"
-                android:visibility="visible"/>
+                android:visibility="gone"/>
 
             <TextView
                 android:id="@+id/dateOverlay"
@@ -227,7 +233,7 @@
                 android:shadowRadius="4"
                 android:shadowDx="0"
                 android:shadowDy="2"
-                android:visibility="visible"
+                android:visibility="gone"
                 android:layout_marginTop="4dp"/>
 
             <TextView
@@ -284,10 +290,10 @@
         layout="@layout/settings_button_layout"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        app:layout_constraintTop_toTopOf="parent"
+        android:visibility="visible"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintVertical_bias="0.4" />
+        app:layout_constraintStart_toEndOf="parent"
+        android:layout_margin="16dp"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

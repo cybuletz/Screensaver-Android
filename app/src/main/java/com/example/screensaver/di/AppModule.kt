@@ -49,6 +49,14 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideClockWidgetManager(
+        @ApplicationContext context: Context
+    ): ClockWidgetManager {
+        return ClockWidgetManager(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideAppPreferences(
         @ApplicationContext context: Context
     ): AppPreferences {
@@ -91,23 +99,17 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideClockWidgetManager(
-        @ApplicationContext context: Context
-    ): ClockWidgetManager {
-        return ClockWidgetManager(context)
-    }
-
-    @Provides
-    @Singleton
     fun providePhotoDisplayManager(
         lockScreenPhotoManager: LockScreenPhotoManager,
         photoCache: PhotoCache,
-        @ApplicationContext context: Context
+        @ApplicationContext context: Context,
+        clockWidgetManager: ClockWidgetManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = lockScreenPhotoManager,
             photoCache = photoCache,
-            context = context
+            context = context,
+            clockWidgetManager = clockWidgetManager
         )
     }
 

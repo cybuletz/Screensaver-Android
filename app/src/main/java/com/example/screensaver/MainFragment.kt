@@ -125,6 +125,7 @@ class MainFragment : Fragment() {
                 loadingIndicator = binding.loadingIndicator,
                 loadingMessage = binding.loadingMessage,
                 container = binding.screensaverContainer,
+                infoContainer = binding.infoContainer,
                 overlayMessageContainer = binding.overlayMessageContainer,
                 overlayMessageText = binding.overlayMessageText,
                 backgroundLoadingIndicator = binding.backgroundLoadingIndicator
