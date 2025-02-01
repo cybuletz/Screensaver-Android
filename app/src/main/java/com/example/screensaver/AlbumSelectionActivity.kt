@@ -1,0 +1,622 @@
+package com.example.screensaver
+
+import android.os.Bundle
+import android.util.Log
+import android.view.View
+import android.widget.Toast
+import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
+import com.example.screensaver.adapters.AlbumAdapter
+import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
+import com.example.screensaver.models.Album
+import com.example.screensaver.models.MediaItem
+import com.example.screensaver.shared.GooglePhotosManager
+import com.example.screensaver.utils.DreamServiceHelper
+import com.example.screensaver.utils.DreamServiceStatus
+import com.example.screensaver.utils.PhotoLoadingManager
+import com.example.screensaver.utils.AppPreferences
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
+import android.content.Intent
+import com.example.screensaver.lock.LockScreenPhotoManager
+import kotlinx.coroutines.*
+import com.bumptech.glide.Glide
+import com.bumptech.glide.RequestManager
+import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.request.RequestOptions
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+
+
+@AndroidEntryPoint
+class AlbumSelectionActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityAlbumSelectionBinding
+    private lateinit var albumAdapter: AlbumAdapter
+    private lateinit var dreamServiceHelper: DreamServiceHelper
+    private lateinit var glideRequestManager: RequestManager
+    private val loadingJob = SupervisorJob()
+    private val activityScope = CoroutineScope(Dispatchers.Main + loadingJob)
+
+    @Inject
+    lateinit var photoManager: GooglePhotosManager
+
+    @Inject
+    lateinit var photoLoadingManager: PhotoLoadingManager
+
+    @Inject
+    lateinit var lockScreenPhotoManager: LockScreenPhotoManager
+
+    @Inject
+    lateinit var preferences: AppPreferences
+
+    private val viewModel: AlbumSelectionViewModel by viewModels()
+    private var photoSource = SOURCE_GOOGLE_PHOTOS
+
+
+
+
+    companion object {
+        private const val TAG = "AlbumSelectionActivity"
+        private const val PRECACHE_COUNT = 5
+        const val EXTRA_PHOTO_SOURCE = "photo_source"
+        const val SOURCE_GOOGLE_PHOTOS = "google_photos"
+        const val SOURCE_LOCAL_PHOTOS = "local_photos"
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityAlbumSelectionBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Get photo source from intent
+        photoSource = intent.getStringExtra(EXTRA_PHOTO_SOURCE) ?: SOURCE_GOOGLE_PHOTOS
+
+        // Initialize Glide RequestManager with optimized settings
+        glideRequestManager = Glide.with(this)
+            .setDefaultRequestOptions(
+                RequestOptions()
+                    .diskCacheStrategy(DiskCacheStrategy.ALL) // Cache both original & resized images
+                    .skipMemoryCache(false) // Use memory cache
+                    .centerCrop() // Consistent cropping
+                    .dontAnimate() // Prevent animation issues
+                    .timeout(10000) // 10 second timeout
+                    .placeholder(R.drawable.placeholder_album)
+                    .error(R.drawable.placeholder_album_error)
+            )
+
+        dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
+
+        setupViews()
+        observeViewModel()
+
+        // Initialize based on source
+        if (photoSource == SOURCE_GOOGLE_PHOTOS) {
+            initializeGooglePhotos()
+        } else {
+            initializeLocalPhotos()
+        }
+    }
+
+    private fun setupViews() {
+        setupRecyclerView()
+        setupConfirmButton()
+        setupRetryButton()
+    }
+
+    private fun initializeLocalPhotos() {
+        activityScope.launch {
+            try {
+                viewModel.setLoading(true)
+                loadLocalAlbums()
+            } catch (e: Exception) {
+                handleError(getString(R.string.albums_load_error, e.message))
+            } finally {
+                viewModel.setLoading(false)
+            }
+        }
+    }
+
+    private suspend fun loadLocalAlbums() {
+        try {
+            viewModel.setLoading(true)
+
+            withContext(Dispatchers.IO) {
+                withTimeout(10000) {
+                    val startTime = System.currentTimeMillis()
+                    val albums = lockScreenPhotoManager.getLocalAlbums()
+                    val selectedAlbumIds = preferences.getSelectedAlbumIds()
+
+                    val albumModels = albums.map { localAlbum ->
+                        Album(
+                            id = localAlbum.id.toString(),
+                            title = localAlbum.name,
+                            coverPhotoUrl = localAlbum.coverPhotoUri.toString(),
+                            mediaItemsCount = localAlbum.photosCount,
+                            isSelected = selectedAlbumIds.contains(localAlbum.id.toString())
+                        )
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        if (albumModels.isEmpty()) {
+                            handleError(getString(R.string.no_albums_found))
+                        } else {
+                            albumAdapter.submitList(albumModels)
+                        }
+                    }
+
+                    val duration = System.currentTimeMillis() - startTime
+                    Log.d(TAG, "Total local album loading time: ${duration}ms")
+                }
+            }
+        } catch (e: TimeoutCancellationException) {
+            handleError(getString(R.string.albums_load_timeout))
+        } catch (e: Exception) {
+            handleError(getString(R.string.albums_load_error, e.message))
+        } finally {
+            viewModel.setLoading(false)
+        }
+    }
+
+    private fun setupRecyclerView() {
+        binding.albumRecyclerView.apply {
+            setItemViewCacheSize(30) // Increase cache size
+            recycledViewPool.setMaxRecycledViews(0, 30)
+
+            layoutManager = GridLayoutManager(this@AlbumSelectionActivity, 2).apply {
+                recycleChildrenOnDetach = true
+            }
+            // Remove this line as it's redundant - you already set the layoutManager above
+            // this.layoutManager = layoutManager
+
+            // Initialize the adapter
+            albumAdapter = AlbumAdapter(glideRequestManager) { album ->
+                if (!viewModel.isLoading.value) {
+                    toggleAlbumSelection(album)
+                }
+            }
+
+            adapter = albumAdapter
+
+            // Add scroll state listener for debugging
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                    super.onScrollStateChanged(recyclerView, newState)
+                    when (newState) {
+                        RecyclerView.SCROLL_STATE_IDLE -> {
+                            Log.d(TAG, "Scroll IDLE - resuming image loading")
+                            glideRequestManager.resumeRequests()
+                        }
+                        RecyclerView.SCROLL_STATE_DRAGGING -> {
+                            Log.d(TAG, "Scroll DRAGGING")
+                        }
+                        RecyclerView.SCROLL_STATE_SETTLING -> {
+                            Log.d(TAG, "Scroll SETTLING")
+                        }
+                    }
+                }
+            })
+        }
+    }
+
+
+    private fun setupConfirmButton() {
+        binding.confirmButton.apply {
+            isEnabled = false
+            extend() // Ensure it starts extended
+            setOnClickListener {
+                if (!viewModel.isLoading.value) {
+                    saveSelectedAlbums()
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        binding.confirmButton.extend()
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        binding.confirmButton.extend()
+    }
+
+    private fun setupRetryButton() {
+        binding.retryButton.setOnClickListener {
+            it.visibility = View.GONE
+            initializeGooglePhotos()
+        }
+    }
+
+    private fun observeViewModel() {
+        lifecycleScope.launch {
+            viewModel.isLoading.collectLatest { isLoading ->
+                updateLoadingState(isLoading)
+            }
+        }
+
+        // Add this block
+        lifecycleScope.launch {
+            preferences.selectedAlbumsFlow.collectLatest { selectedAlbumIds ->
+                val currentList = albumAdapter.currentList.map { album ->
+                    album.copy(isSelected = selectedAlbumIds.contains(album.id))
+                }
+                albumAdapter.submitList(currentList)
+                updateConfirmButtonState()
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d(TAG, "Activity onStop - clearing RecyclerView")
+        try {
+            // Don't clear memory cache, just pending requests
+            glideRequestManager.pauseRequests()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onStop", e)
+        }
+    }
+
+    private fun initializeGooglePhotos() {
+        // Change from coroutineScope to activityScope
+        activityScope.launch {
+            try {
+                viewModel.setLoading(true)
+                if (photoManager.initialize()) {
+                    loadAlbums()
+                    checkDreamServiceRegistration()
+                } else {
+                    handleError(getString(R.string.google_photos_init_failed))
+                }
+            } catch (e: Exception) {
+                handleError(getString(R.string.google_photos_init_error, e.message))
+            } finally {
+                viewModel.setLoading(false)
+            }
+        }
+    }
+
+    private fun handleError(message: String) {
+        showToast(message)
+        binding.retryButton.visibility = View.VISIBLE
+    }
+
+    private fun showToast(message: String) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            Toast.makeText(
+                this@AlbumSelectionActivity,
+                message,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private suspend fun loadAlbums() {
+        try {
+            viewModel.setLoading(true)
+
+            withContext(Dispatchers.IO) {
+                withTimeout(10000) {
+                    val startTime = System.currentTimeMillis()
+                    val albums = photoManager.getAlbums()
+                    val selectedAlbumIds = preferences.getSelectedAlbumIds()
+
+                    val albumModels = albums.map { googleAlbum ->
+                        Album(
+                            id = googleAlbum.id,
+                            title = googleAlbum.title,
+                            coverPhotoUrl = googleAlbum.coverPhotoUrl.orEmpty(),
+                            mediaItemsCount = googleAlbum.mediaItemsCount.toInt(),
+                            isSelected = selectedAlbumIds.contains(googleAlbum.id)
+                        ).also { album ->
+                            // Only preload if coverPhotoUrl is not empty
+                            googleAlbum.coverPhotoUrl?.takeIf { it.isNotEmpty() }?.let { url ->
+                                photoLoadingManager.preloadPhoto(
+                                    MediaItem(
+                                        id = album.id,
+                                        albumId = "album_covers",
+                                        baseUrl = url,
+                                        mimeType = "image/jpeg",
+                                        width = 512,
+                                        height = 512
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        if (albumModels.isEmpty()) {
+                            handleError(getString(R.string.no_albums_found))
+                        } else {
+                            albumAdapter.submitList(albumModels)
+                        }
+                    }
+
+                    val duration = System.currentTimeMillis() - startTime
+                    Log.d(TAG, "Total album loading time: ${duration}ms")
+                }
+            }
+        } catch (e: TimeoutCancellationException) {
+            handleError(getString(R.string.albums_load_timeout))
+        } catch (e: Exception) {
+            handleError(getString(R.string.albums_load_error, e.message))
+        } finally {
+            viewModel.setLoading(false)
+        }
+    }
+
+    private fun toggleAlbumSelection(album: Album) {
+        // First check the actual state in preferences
+        val isCurrentlySelected = preferences.getSelectedAlbumIds().contains(album.id)
+        // Toggle based on the actual state from preferences
+        val shouldBeSelected = !isCurrentlySelected
+
+        Log.d(TAG, "Toggling album ${album.title}: current state in prefs=$isCurrentlySelected, UI state=${album.isSelected}")
+
+        // Update preferences first
+        if (shouldBeSelected) {
+            preferences.addSelectedAlbumId(album.id)
+        } else {
+            // Only check if this would leave us with no albums selected
+            val currentSelected = preferences.getSelectedAlbumIds()
+            if (currentSelected.size == 1 && currentSelected.contains(album.id)) {
+                showToast(getString(R.string.keep_one_album))
+                return
+            }
+            preferences.removeSelectedAlbumId(album.id)
+        }
+
+        // Then update UI to match preferences
+        val updatedAlbum = album.copy(isSelected = shouldBeSelected)
+        val currentList = albumAdapter.currentList.toMutableList()
+        val position = currentList.indexOfFirst { it.id == album.id }
+
+        if (position != -1) {
+            currentList[position] = updatedAlbum
+            albumAdapter.submitList(currentList) {
+                // Update confirm button state after the list update is complete
+                updateConfirmButtonState()
+            }
+            showSelectionToast(updatedAlbum)
+        }
+
+        Log.d(TAG, "After toggle: album ${album.title} selected=$shouldBeSelected")
+    }
+
+    private fun showSelectionToast(album: Album) {
+        val stringResId = if (album.isSelected) R.string.album_added else R.string.album_removed
+        Toast.makeText(
+            this,
+            getString(stringResId, album.title),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun updateLoadingText(text: String) {
+        binding.loadingText.text = text
+    }
+
+    private fun updateLoadingState(isLoading: Boolean) {
+        binding.apply {
+            loadingContainer.visibility = if (isLoading) View.VISIBLE else View.GONE
+            albumRecyclerView.visibility = if (isLoading) View.GONE else View.VISIBLE
+            confirmButton.isEnabled = !isLoading && albumAdapter.currentList.any { it.isSelected }
+        }
+    }
+
+    private fun saveSelectedAlbums() {
+        lifecycleScope.launch {
+            try {
+                viewModel.setLoading(true)
+                updateLoadingText("Saving selected albums...")
+
+                // 1. First save the selections
+                val selectedAlbums = albumAdapter.currentList
+                    .filter { it.isSelected }
+                    .map { it.id }
+                    .toSet()
+
+                // 2. Save selected album IDs
+                preferences.setSelectedAlbumIds(selectedAlbums)
+
+                // 3. Load and save photos based on source
+                if (photoSource == SOURCE_LOCAL_PHOTOS) {
+                    saveLocalPhotos(selectedAlbums)
+                } else {
+                    saveGooglePhotos()
+                }
+
+                // 4. Return to MainActivity but don't start slideshow
+                val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("albums_saved", true) // Changed from "photos_ready" to "albums_saved"
+                    putExtra("photo_count", lockScreenPhotoManager.getPhotoCount())
+                    putExtra("timestamp", System.currentTimeMillis())
+                }
+                startActivity(mainIntent)
+                finish()
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during album selection save", e)
+                showToast(getString(R.string.save_error))
+            } finally {
+                viewModel.setLoading(false)
+            }
+        }
+    }
+
+    private suspend fun saveLocalPhotos(selectedAlbumIds: Set<String>) {
+        updateLoadingText("Loading photos from local albums...")
+        val photos = withContext(Dispatchers.IO) {
+            val allPhotos = mutableListOf<MediaItem>()
+            selectedAlbumIds.forEach { albumId ->
+                allPhotos.addAll(lockScreenPhotoManager.getPhotosFromAlbum(albumId))
+            }
+            allPhotos
+        }
+
+        if (photos.isEmpty()) {
+            showToast(getString(R.string.no_photos_found))
+            return
+        }
+
+        updateLoadingText("Saving photos...")
+        withContext(Dispatchers.IO) {
+            lockScreenPhotoManager.clearPhotos()
+            lockScreenPhotoManager.addPhotos(photos)
+        }
+    }
+
+    private suspend fun saveGooglePhotos() {
+        updateLoadingText("Loading photos...")
+        val photos = withContext(Dispatchers.IO) {
+            try {
+                photoManager.loadPhotos()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading photos", e)
+                null
+            }
+        }
+
+        if (photos == null || photos.isEmpty()) {
+            showToast(getString(R.string.no_photos_found))
+            return
+        }
+
+        updateLoadingText("Saving photos...")
+        withContext(Dispatchers.IO) {
+            lockScreenPhotoManager.clearPhotos()
+            lockScreenPhotoManager.addPhotos(photos.toList())
+        }
+
+        // Clean up Google Photos resources
+        withContext(Dispatchers.IO) {
+            try {
+                photoManager.cleanup()
+            } catch (e: Exception) {
+                Log.e(TAG, "Cleanup error", e)
+            }
+        }
+    }
+
+    private suspend fun precachePhotos() {
+        try {
+            val photoCount = photoManager.getPhotoCount()
+            val countToPreload = minOf(PRECACHE_COUNT, photoCount)
+            Log.d(TAG, "Starting to precache $countToPreload photos out of total $photoCount")
+
+            if (countToPreload > 0) {
+                for (index in 0 until countToPreload) {
+                    try {
+                        val url = photoManager.getPhotoUrl(index)
+                        if (url != null) {
+                            photoLoadingManager.preloadPhoto(
+                                MediaItem(
+                                    id = index.toString(),
+                                    albumId = "lock_screen",
+                                    baseUrl = url,
+                                    mimeType = "image/jpeg",
+                                    width = 1920,
+                                    height = 1080
+                                )
+                            )
+                            Log.d(TAG, "Successfully precached photo $index with URL: $url")
+                        } else {
+                            Log.e(TAG, "Failed to get URL for photo $index")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error precaching photo $index", e)
+                    }
+                }
+            } else {
+                Log.d(TAG, "No photos to precache")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during precaching", e)
+            throw e
+        }
+    }
+
+    private fun checkDreamServiceRegistration() {
+        when (dreamServiceHelper.getDreamServiceStatus()) {
+            DreamServiceStatus.API_UNAVAILABLE -> {
+                showError(getString(R.string.screensaver_not_supported))
+            }
+            DreamServiceStatus.NOT_SELECTED -> {
+                showError(getString(R.string.enable_screensaver))
+                dreamServiceHelper.openDreamSettings()
+            }
+            DreamServiceStatus.CONFIGURED,
+            DreamServiceStatus.ACTIVE -> {
+                Log.d(TAG, "Dream service is properly configured")
+            }
+            DreamServiceStatus.UNKNOWN -> {
+                Log.e(TAG, "Dream service status unknown")
+            }
+        }
+    }
+
+    private fun updateConfirmButtonState() {
+        val selectedCount = preferences.getSelectedAlbumIds().size
+        val isEnabled = !viewModel.isLoading.value && selectedCount > 0
+
+        binding.confirmButton.apply {
+            this.isEnabled = isEnabled
+            text = if (isEnabled) {
+                getString(R.string.confirm_selection)
+            } else {
+                getString(R.string.select_at_least_one)
+            }
+        }
+
+        Log.d(TAG, "Updated confirm button state: enabled=$isEnabled, selectedCount=$selectedCount")
+    }
+
+    private fun showError(message: String) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            Toast.makeText(
+                this@AlbumSelectionActivity,
+                message,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    override fun onDestroy() {
+        Log.d(TAG, "Activity onDestroy")
+        // Clear all image loads first
+        glideRequestManager.clear(binding.albumRecyclerView)
+        binding.albumRecyclerView.adapter = null
+
+        lifecycleScope.launch {
+            try {
+                withContext(NonCancellable) {
+                    photoManager.cleanup()
+                    // Only clear memory if the activity is actually being destroyed
+                    if (isFinishing) {
+                        Log.d(TAG, "Clearing Glide memory cache")
+                        Glide.get(applicationContext).clearMemory()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during cleanup", e)
+            } finally {
+                loadingJob.cancel()
+                activityScope.cancel()
+            }
+        }
+        super.onDestroy()
+    }
+
+}

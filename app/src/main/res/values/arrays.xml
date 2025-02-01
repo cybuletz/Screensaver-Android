@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Photo Sources -->
+    <string-array name="photo_source_entries">
+        <item>@string/photo_source_local</item>
+        <item>@string/photo_source_google</item>
+    </string-array>
+
+    <string-array name="photo_source_values">
+        <item>local</item>
+        <item>google_photos</item>
+    </string-array>
+
+    <string-array name="default_photo_sources">
+        <item>local</item>
+    </string-array>
+
+    <!-- Kiosk Mode -->
+    <string-array name="kiosk_actions">
+        <item>Touch to Next Photo</item>
+        <item>Show Settings</item>
+        <item>Show System UI</item>
+    </string-array>
+
+    <string-array name="kiosk_actions_values">
+        <item>next_photo</item>
+        <item>settings</item>
+        <item>system_ui</item>
+    </string-array>
+
+    <string-array name="default_kiosk_actions">
+        <item>next_photo</item>
+    </string-array>
+
+    <!-- Transition Effects -->
+    <string-array name="transition_effects">
+        <item>@string/transition_fade</item>
+        <item>@string/transition_slide</item>
+        <item>@string/transition_zoom</item>
+        <item>@string/transition_flip</item>
+        <item>@string/transition_rotate</item>
+        <item>@string/transition_depth</item>
+        <item>@string/transition_cube</item>
+    </string-array>
+
+    <string-array name="transition_effects_values">
+        <item>fade</item>
+        <item>slide</item>
+        <item>zoom</item>
+        <item>flip</item>
+        <item>rotate</item>
+        <item>depth</item>
+        <item>cube</item>
+    </string-array>
+
+    <!-- Photo Scale Options -->
+    <string-array name="photo_scale_options">
+        <item>@string/photo_scale_fit</item>
+        <item>@string/photo_scale_fill</item>
+        <item>@string/photo_scale_original</item>
+    </string-array>
+
+    <string-array name="photo_scale_values">
+        <item>fit</item>
+        <item>fill</item>
+        <item>original</item>
+    </string-array>
+
+    <!-- Days of Week -->
+    <string-array name="days_of_week">
+        <item>@string/day_monday</item>
+        <item>@string/day_tuesday</item>
+        <item>@string/day_wednesday</item>
+        <item>@string/day_thursday</item>
+        <item>@string/day_friday</item>
+        <item>@string/day_saturday</item>
+        <item>@string/day_sunday</item>
+    </string-array>
+
+    <string-array name="days_of_week_values">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+        <item>6</item>
+        <item>7</item>
+    </string-array>
+
+    <!-- Default Active Days (Monday-Friday) -->
+    <string-array name="default_active_days">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+    </string-array>
+
+    <!-- Refresh Intervals -->
+    <string-array name="refresh_intervals">
+        <item>@string/refresh_interval_1m</item>
+        <item>@string/refresh_interval_5m</item>
+        <item>@string/refresh_interval_15m</item>
+        <item>@string/refresh_interval_30m</item>
+        <item>@string/refresh_interval_1h</item>
+    </string-array>
+
+    <string-array name="refresh_interval_values">
+        <item>60</item>
+        <item>300</item>
+        <item>900</item>
+        <item>1800</item>
+        <item>3600</item>
+    </string-array>
+
+    <string-array name="orientation_options">
+        <item>@string/orientation_auto</item>
+        <item>@string/orientation_portrait</item>
+        <item>@string/orientation_landscape</item>
+    </string-array>
+
+    <string-array name="orientation_options_values">
+        <item>auto</item>
+        <item>portrait</item>
+        <item>landscape</item>
+    </string-array>
+
+    <!-- Display Mode Arrays -->
+    <string-array name="display_mode_entries">
+        <item>@string/display_mode_screensaver</item>
+        <item>@string/display_mode_lockscreen</item>
+    </string-array>
+
+    <string-array name="display_mode_values">
+        <item>dream_service</item>
+        <item>lock_screen</item>
+    </string-array>
+
+    <!-- Empty Array for Dynamic Content -->
+    <string-array name="empty_array"/>
+</resources>
