@@ -44,6 +44,10 @@ import android.content.IntentFilter
 import android.content.BroadcastReceiver
 import android.os.BatteryManager
 import android.net.Uri
+import com.example.screensaver.widgets.WidgetData
+import com.example.screensaver.widgets.WidgetManager
+import com.example.screensaver.widgets.WidgetState
+import com.example.screensaver.widgets.WidgetType
 
 
 @AndroidEntryPoint
@@ -69,6 +73,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var preferences: AppPreferences
+
+    @Inject
+    lateinit var widgetManager: WidgetManager
 
     private var isDestroyed = false
     private var lastBackPressTime: Long = 0
@@ -136,11 +143,13 @@ class MainActivity : AppCompatActivity() {
             _binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
 
+            // Initialize Widgets first
+            initializeWidgetSystem()
+
             setupFullScreen()
             setupFirstLaunchUI()
             setupNavigation()
             setupSettingsButton()
-            initializeClockAndDate()
             setupTouchListener()
             initializePhotoDisplayManager()
             startLockScreenService()
@@ -171,16 +180,58 @@ class MainActivity : AppCompatActivity() {
                         delay(500) // Give time for navigation
                         setupFullScreen() // Ensure fullscreen
                         photoDisplayManager.startPhotoDisplay()
-                    } catch (e: Exception) {
+                    }
+                    catch (e: Exception) {
                         Log.e(TAG, "Error handling charging start", e)
                     }
                 }
             }
 
+            // Observe widget states
+            observeWidgetStates()
+
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
+        }
+    }
+
+    private fun initializeWidgets() {
+        Log.d(TAG, "Initializing widgets")
+        binding.screensaverContainer?.let { container ->
+            widgetManager.setupClockWidget(container)
+        }
+    }
+
+    private fun initializeWidgetSystem() {
+        binding.screensaverContainer?.let { container ->
+            widgetManager.setupClockWidget(container)
+        }
+    }
+
+    private fun observeWidgetStates() {
+        lifecycleScope.launch {
+            widgetManager.widgetStates.collect { states ->
+                states.forEach { (type, data) ->
+                    when (type) {
+                        WidgetType.CLOCK -> handleClockWidgetState(data)
+                        WidgetType.WEATHER -> {}
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleClockWidgetState(data: WidgetData) {
+        when (data.state) {
+            is WidgetState.Error -> {
+                Log.e(TAG, "Clock widget error: ${(data.state as WidgetState.Error).message}")
+                showToast("Error with clock widget")
+            }
+            else -> {
+                // Handle other states if needed
+            }
         }
     }
 
@@ -427,8 +478,6 @@ class MainActivity : AppCompatActivity() {
                 val views = PhotoDisplayManager.Views(
                     primaryView = binding.photoPreview,
                     overlayView = binding.photoPreviewOverlay,
-                    clockView = binding.clockOverlay,
-                    dateView = binding.dateOverlay,
                     locationView = binding.locationOverlay,
                     loadingIndicator = binding.loadingIndicator,
                     loadingMessage = binding.loadingMessage,
@@ -446,8 +495,6 @@ class MainActivity : AppCompatActivity() {
                 val intervalInt = prefs.getInt("photo_interval", 10000)
 
                 photoDisplayManager.updateSettings(
-                    showClock = prefs.getBoolean("show_clock", true),
-                    showDate = prefs.getBoolean("show_date", true),
                     photoInterval = intervalInt.toLong(),
                     isRandomOrder = prefs.getBoolean("random_order", false)
                 )
@@ -461,31 +508,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    private fun initializeClockAndDate() {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val isFirstLaunch = prefs.getBoolean(PREF_FIRST_LAUNCH, true)
-
-        if (!isFirstLaunch) {
-            val showClock = prefs.getBoolean("lock_screen_clock", true)
-            val showDate = prefs.getBoolean("lock_screen_date", true)
-
-            binding.clockOverlay.visibility = if (showClock) View.VISIBLE else View.GONE
-            binding.dateOverlay.visibility = if (showDate) View.VISIBLE else View.GONE
-
-            // Update PhotoDisplayManager settings
-            photoDisplayManager.updateSettings(
-                showClock = showClock,
-                showDate = showDate
-            )
-        } else {
-            binding.clockOverlay.visibility = View.GONE
-            binding.dateOverlay.visibility = View.GONE
-            binding.infoContainer.visibility = View.GONE
-        }
-
-        Log.d(TAG, "Initialized clock and date - isFirstLaunch: $isFirstLaunch")
     }
 
     override fun onBackPressed() {
@@ -567,29 +589,12 @@ class MainActivity : AppCompatActivity() {
 
                         // Update visibility settings
                         val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                        val showClock = prefs.getBoolean("show_clock", true)
-                        val showDate = prefs.getBoolean("show_date", true)
                         val intervalInt = prefs.getInt("photo_interval", 10000)
-
-                        // Ensure proper visibility of clock and date views
-                        binding.clockOverlay.apply {
-                            visibility = if (showClock) View.VISIBLE else View.GONE
-                            alpha = 1f
-                            bringToFront()
-                        }
-
-                        binding.dateOverlay.apply {
-                            visibility = if (showDate) View.VISIBLE else View.GONE
-                            alpha = 1f
-                            bringToFront()
-                        }
 
                         // Initialize PhotoDisplayManager with views
                         val views = PhotoDisplayManager.Views(
                             primaryView = binding.photoPreview,
                             overlayView = binding.photoPreviewOverlay,
-                            clockView = binding.clockOverlay,
-                            dateView = binding.dateOverlay,
                             locationView = binding.locationOverlay,
                             loadingIndicator = binding.loadingIndicator,
                             loadingMessage = binding.loadingMessage,
@@ -604,14 +609,12 @@ class MainActivity : AppCompatActivity() {
 
                         // Update PhotoDisplayManager settings
                         photoDisplayManager.updateSettings(
-                            showClock = showClock,
-                            showDate = showDate,
                             photoInterval = intervalInt.toLong(),
                             isRandomOrder = prefs.getBoolean("random_order", false)
                         )
 
                         // Let the settings screen handle starting the slideshow
-                        Log.d(TAG, "Ready for settings configuration with clock: $showClock, date: $showDate, interval: $intervalInt")
+                        Log.d(TAG, "Ready for settings configuration with clock")
 
                     } catch (e: Exception) {
                         Log.e(TAG, "Error handling photos ready", e)
@@ -622,27 +625,6 @@ class MainActivity : AppCompatActivity() {
                 Log.w(TAG, "Received photos_ready but count is 0")
             }
         }
-    }
-
-    private fun ensureClockAndDateVisibility() {
-        binding.clockOverlay.apply {
-            visibility = View.VISIBLE
-            alpha = 1f
-            bringToFront()
-        }
-        binding.dateOverlay.apply {
-            visibility = View.VISIBLE
-            alpha = 1f
-            bringToFront()
-        }
-        binding.infoContainer.apply {
-            visibility = View.VISIBLE
-            alpha = 1f
-            bringToFront()
-            elevation = 12f
-            translationZ = 8f
-        }
-        Log.d(TAG, "Enforced clock/date visibility - clock: ${binding.clockOverlay.visibility}, date: ${binding.dateOverlay.visibility}")
     }
 
     private fun updateViewVisibility(view: View, visible: Boolean) {
@@ -667,10 +649,6 @@ class MainActivity : AppCompatActivity() {
 
         // Update visibility based on both navigation and first launch state
         binding.screensaverContainer.visibility = if (isMainScreen) View.VISIBLE else View.GONE
-
-        // Only show clock/date if not first launch
-        binding.clockOverlay.visibility = if (isMainScreen && !isFirstLaunch) View.VISIBLE else View.GONE
-        binding.dateOverlay.visibility = if (isMainScreen && !isFirstLaunch) View.VISIBLE else View.GONE
 
         // Keep setup message and legal links visible only on first launch
         binding.initialSetupMessage.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
@@ -840,8 +818,6 @@ class MainActivity : AppCompatActivity() {
                     val views = PhotoDisplayManager.Views(
                         primaryView = binding.photoPreview,
                         overlayView = binding.photoPreviewOverlay,
-                        clockView = binding.clockOverlay,
-                        dateView = binding.dateOverlay,
                         locationView = binding.locationOverlay,
                         loadingIndicator = binding.loadingIndicator,
                         loadingMessage = binding.loadingMessage,
@@ -856,8 +832,6 @@ class MainActivity : AppCompatActivity() {
                     // Update settings
                     val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
                     photoDisplayManager.updateSettings(
-                        showClock = prefs.getBoolean("show_clock", true),
-                        showDate = prefs.getBoolean("show_date", true),
                         photoInterval = prefs.getInt("photo_interval", 10000).toLong(), // Changed to getInt
                         isRandomOrder = prefs.getBoolean("random_order", false)
                     )
@@ -868,9 +842,6 @@ class MainActivity : AppCompatActivity() {
                     photoDisplayManager.clearPhotoCache()
                     delay(100) // Small delay to ensure cleanup is complete
                 }
-
-                // Ensure clock and date visibility
-                ensureClockAndDateVisibility()
 
                 // Start the photo display
                 photoDisplayManager.startPhotoDisplay()
@@ -1045,7 +1016,7 @@ class MainActivity : AppCompatActivity() {
 
             _binding = null
             _navController = null
-
+            widgetManager.cleanup()
             super.onDestroy()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onDestroy", e)

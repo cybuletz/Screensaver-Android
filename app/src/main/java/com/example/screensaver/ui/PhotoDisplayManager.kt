@@ -71,8 +71,6 @@ class PhotoDisplayManager @Inject constructor(
     data class Views(
         val primaryView: ImageView,
         val overlayView: ImageView,
-        val clockView: TextView?,
-        val dateView: TextView?,
         val locationView: TextView?,
         val loadingIndicator: View?,
         val loadingMessage: TextView?,
@@ -87,19 +85,12 @@ class PhotoDisplayManager @Inject constructor(
     private var currentPhotoIndex = 0
     private var isTransitioning = false
     private var displayJob: Job? = null
-    private var timeUpdateJob: Job? = null
 
     // Settings
     private var transitionDuration: Long = 1000
     private var photoInterval: Long = 10000
-    private var showClock: Boolean = true
-    private var showDate: Boolean = true
     private var showLocation: Boolean = false
     private var isRandomOrder: Boolean = false
-
-    // Date formatters
-    private val dateFormat = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault())
-    private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     companion object {
         private const val TAG = "PhotoDisplayManager"
@@ -191,18 +182,6 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Initializing PhotoDisplayManager")
         this.views = views
         this.lifecycleScope = scope
-
-        // Verify views are properly set
-        views.clockView?.let {
-            Log.d(TAG, "Clock view initialized with visibility: ${it.visibility}")
-        } ?: Log.e(TAG, "Clock view is null during initialization")
-
-        views.dateView?.let {
-            Log.d(TAG, "Date view initialized with visibility: ${it.visibility}")
-        } ?: Log.e(TAG, "Date view is null during initialization")
-
-        // Update visibility immediately after initialization
-        updateTimeDisplayVisibility()
     }
 
     private fun showErrorMessage(error: String) {
@@ -346,9 +325,6 @@ class PhotoDisplayManager @Inject constructor(
         // Cancel any existing display job
         displayJob?.cancel()
 
-        // Make sure to update time display visibility before starting
-        updateTimeDisplayVisibility()
-
         displayJob = currentScope.launch {
             try {
                 // Start with first photo immediately
@@ -364,11 +340,6 @@ class PhotoDisplayManager @Inject constructor(
                     Log.e(TAG, "Error in photo display loop", e)
                 }
             }
-        }
-
-        // Start time updates if needed
-        if (showClock || showDate) {
-            startTimeUpdates()
         }
     }
 
@@ -756,9 +727,6 @@ class PhotoDisplayManager @Inject constructor(
             visibility = View.INVISIBLE
         }
 
-        // Update time display visibility after transition
-        updateTimeDisplayVisibility()
-
         // Hide any remaining messages
         hideAllMessages()
 
@@ -836,17 +804,11 @@ class PhotoDisplayManager @Inject constructor(
     fun updateSettings(
         transitionDuration: Long? = null,
         photoInterval: Long? = null,
-        showClock: Boolean? = null,
-        showDate: Boolean? = null,
         showLocation: Boolean? = null,
         isRandomOrder: Boolean? = null
     ) {
-        Log.d(TAG, "Updating settings - showClock: $showClock, showDate: $showDate")
+        Log.d(TAG, "Updating settings")
         var shouldRestartDisplay = false
-
-        // Store previous values for logging
-        val previousShowClock = this.showClock
-        val previousShowDate = this.showDate
 
         transitionDuration?.let {
             this.transitionDuration = it
@@ -855,84 +817,17 @@ class PhotoDisplayManager @Inject constructor(
             this.photoInterval = it
             shouldRestartDisplay = true
         }
-        showClock?.let {
-            this.showClock = it
-            Log.d(TAG, "Clock visibility setting updated from $previousShowClock to: $it")
-        }
-        showDate?.let {
-            this.showDate = it
-            Log.d(TAG, "Date visibility setting updated from $previousShowDate to: $it")
-        }
         showLocation?.let { this.showLocation = it }
         isRandomOrder?.let { this.isRandomOrder = it }
 
-        // Update visibility immediately
-        updateTimeDisplayVisibility()
-
         // Verify the changes took effect
-        Log.d(TAG, "After settings update - showClock: ${this.showClock}, showDate: ${this.showDate}")
+        Log.d(TAG, "After settings update")
 
         // Restart photo display if interval changed
         if (shouldRestartDisplay) {
             Log.d(TAG, "Restarting photo display due to interval change")
             stopPhotoDisplay()
             startPhotoDisplay()
-        }
-    }
-
-    private fun updateTimeDisplayVisibility() {
-        Log.d(TAG, "Updating time display visibility - showClock: $showClock, showDate: $showDate")
-        if (views == null) {
-            Log.e(TAG, "Views are null when trying to update visibility")
-            return
-        }
-
-        val clockView = views?.clockView
-        if (clockView == null) {
-            Log.e(TAG, "Clock view is null when trying to update visibility")
-            return
-        }
-
-        val dateView = views?.dateView
-        if (dateView == null) {
-            Log.e(TAG, "Date view is null when trying to update visibility")
-            return
-        }
-
-        clockView.apply {
-            visibility = if (showClock) View.VISIBLE else View.GONE
-            alpha = if (showClock) 1f else 0f
-            bringToFront()  // Add this to ensure it's on top
-            Log.d(TAG, "Clock visibility updated to: ${if (showClock) "VISIBLE" else "GONE"}, actual visibility: ${visibility == View.VISIBLE}")
-        }
-
-        dateView.apply {
-            visibility = if (showDate) View.VISIBLE else View.GONE
-            alpha = if (showDate) 1f else 0f
-            bringToFront()  // Add this to ensure it's on top
-            Log.d(TAG, "Date visibility updated to: ${if (showDate) "VISIBLE" else "GONE"}, actual visibility: ${visibility == View.VISIBLE}")
-        }
-
-        // Ensure the container is visible and on top
-        views?.clockView?.parent?.let { parent ->
-            if (parent is View) {
-                parent.apply {
-                    visibility = View.VISIBLE
-                    alpha = 1f
-                    bringToFront()
-                }
-                Log.d(TAG, "Brought clock/date container to front")
-            }
-        }
-
-        // Ensure time updates are running if needed
-        if ((showClock || showDate) && timeUpdateJob?.isActive != true) {
-            Log.d(TAG, "Starting time updates")
-            startTimeUpdates()
-        } else if (!showClock && !showDate) {
-            Log.d(TAG, "Cancelling time updates")
-            timeUpdateJob?.cancel()
-            timeUpdateJob = null
         }
     }
 
@@ -994,40 +889,14 @@ class PhotoDisplayManager @Inject constructor(
                 views.backgroundLoadingIndicator?.visibility = View.GONE
                 views.overlayMessageText?.text = ""
 
-                // Ensure clock and date are visible if enabled
-                updateTimeDisplayVisibility()
-
             } catch (e: Exception) {
                 Log.e(TAG, "Error hiding messages", e)
             }
         }
     }
 
-    private fun startTimeUpdates() {
-        val currentScope = lifecycleScope ?: return
-        timeUpdateJob?.cancel()
-        timeUpdateJob = currentScope.launch {
-            while (isActive) {
-                updateTimeDisplay()
-                delay(1000)
-            }
-        }
-    }
-
     private fun trackPhotoLoadTime(isFromCache: Boolean, loadTimeMs: Long) {
         Log.d(TAG, "Photo load time (${if (isFromCache) "cached" else "fresh"}): $loadTimeMs ms")
-    }
-
-    private fun updateTimeDisplay() {
-        val now = System.currentTimeMillis()
-        views?.apply {
-            if (showClock) {
-                clockView?.text = timeFormat.format(now)
-            }
-            if (showDate) {
-                dateView?.text = dateFormat.format(now)
-            }
-        }
     }
 
     fun stopPhotoDisplay() {
@@ -1075,8 +944,6 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Cleaning up PhotoDisplayManager, clearCache: $clearCache")
         managerScope.launch {
             stopPhotoDisplay()
-            timeUpdateJob?.cancel()
-            timeUpdateJob = null
             views = null
             lifecycleScope = null
             _photoLoadingState.value = LoadingState.IDLE

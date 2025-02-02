@@ -233,6 +233,12 @@ class AppPreferences @Inject constructor(
         }
     }
 
+    fun setClockPosition(position: String) {
+        edit {
+            putString("clock_position", position)
+        }
+    }
+
     fun getTransitionDuration(): Int =
         prefs.getInt(PREF_TRANSITION_DURATION, 30)
 

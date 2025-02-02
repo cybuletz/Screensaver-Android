@@ -65,6 +65,11 @@ import androidx.preference.MultiSelectListPreference
 import com.example.screensaver.lock.LockScreenPhotoManager
 import android.os.Build
 import androidx.core.content.ContextCompat
+import com.example.screensaver.widgets.WidgetPreferenceFragment
+import com.example.screensaver.widgets.WidgetState
+import com.example.screensaver.widgets.WidgetType
+import com.example.screensaver.widgets.WidgetManager
+import com.example.screensaver.widgets.WidgetPosition
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -86,12 +91,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
     @Inject
     lateinit var photoManager: LockScreenPhotoManager
 
+    @Inject
+    lateinit var widgetManager: WidgetManager
+
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
     private var googleSignInClient: GoogleSignInClient? = null
     private val previewViewModel: PreviewViewModel by viewModels()
 
     private val collapsedCategories = mutableSetOf<String>()
+
+    private var widgetPreferenceFragment: WidgetPreferenceFragment? = null
 
     companion object {
         private const val TAG = "SettingsFragment"
@@ -386,28 +396,90 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
             // Setup UI on main thread
             withContext(Dispatchers.Main) {
-                // First restore state
-                restoreSettingsState()
+                try {
+                    // First restore state
+                    restoreSettingsState()
 
-                // Then initialize all components
-                initializeDeviceAdmin()
-                setupPhotoDisplayManager()
-                setupPhotoSourcePreferences()
-                setupGoogleSignIn()
-                setupTestScreensaver()
-                setupDisplayModeSelection()
-                setupLockScreenPreview()
-                setupLockScreenStatus()
-                setupKioskModePreference()
-                setupCacheSettings(preferenceScreen)
-                setupLocalPhotoPreferences()
-                setupChargingPreference() // Add this line
+                    // Then initialize all components
+                    initializeDeviceAdmin()
+                    setupPhotoDisplayManager()
+                    setupPhotoSourcePreferences()
+                    setupGoogleSignIn()
+                    setupTestScreensaver()
+                    setupDisplayModeSelection()
+                    setupLockScreenPreview()
+                    setupLockScreenStatus()
+                    setupKioskModePreference()
+                    setupCacheSettings(preferenceScreen)
+                    setupLocalPhotoPreferences()
+                    setupChargingPreference()
+                    setupWidgetPreferences()
 
-                // Observe state changes
-                observeAppState()
-                observeAppDataState()
+                    // Set up position preference listener
+                    findPreference<ListPreference>("clock_position")?.apply {
+                        setOnPreferenceChangeListener { preference, newValue ->
+                            handlePreferenceChange(preference, newValue)
+                        }
+                    }
+
+                    // Observe state changes
+                    observeAppState()
+                    observeAppDataState()
+                    observeWidgetState()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error setting up preferences", e)
+                }
             }
         }
+    }
+
+    private fun handlePreferenceChange(preference: Preference, newValue: Any?): Boolean {
+        return when (preference.key) {
+            "clock_position" -> {
+                val positionValue = newValue as? String ?: return false
+                try {
+                    val position = WidgetPosition.valueOf(positionValue)
+                    widgetManager.updateClockPosition(position)
+                    true
+                } catch (e: IllegalArgumentException) {
+                    Log.e(TAG, "Invalid position value: $positionValue", e)
+                    false
+                }
+            }
+            else -> true
+        }
+    }
+
+    private fun setupWidgetPreferences() {
+        findPreference<PreferenceCategory>("widget_settings")?.let { category ->
+            // Add widget preferences as a nested screen
+            findPreference<Preference>("widget_configuration")?.setOnPreferenceClickListener {
+                if (widgetPreferenceFragment == null) {
+                    widgetPreferenceFragment = WidgetPreferenceFragment()
+                }
+
+                parentFragmentManager.beginTransaction()
+                    .replace(R.id.settings_container, widgetPreferenceFragment!!)
+                    .addToBackStack("widget_settings")
+                    .commit()
+
+                true
+            }
+        }
+    }
+
+    private fun observeWidgetState() {
+        lifecycleScope.launch {
+            widgetManager.widgetStates.collect { states ->
+                states[WidgetType.CLOCK]?.let { clockState ->
+                    updateClockPreferencesVisibility(clockState.state is WidgetState.Active)
+                }
+            }
+        }
+    }
+
+    private fun updateClockPreferencesVisibility(visible: Boolean) {
+        findPreference<PreferenceCategory>("clock_settings")?.isVisible = visible
     }
 
     private fun observeAppDataState() {
@@ -510,8 +582,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
             updateSettings(
                 transitionDuration = transitionTime * 1000L,
                 photoInterval = photoInterval * 1000L,
-                showClock = prefs.getBoolean("lock_screen_clock", true),
-                showDate = prefs.getBoolean("lock_screen_date", true),
                 isRandomOrder = prefs.getBoolean("random_order", true)
             )
             startPhotoDisplay()
@@ -1359,6 +1429,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 dialog.dismiss()
             }
             .show()
+    }
+
+    override fun onDestroyView() {
+        widgetPreferenceFragment = null
+        super.onDestroyView()
     }
 
 }

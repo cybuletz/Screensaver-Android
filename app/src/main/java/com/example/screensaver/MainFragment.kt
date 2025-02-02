@@ -119,8 +119,6 @@ class MainFragment : Fragment() {
             PhotoDisplayManager.Views(
                 primaryView = binding.photoPreview,
                 overlayView = binding.photoPreviewOverlay,
-                clockView = binding.clockOverlay,
-                dateView = binding.dateOverlay,
                 locationView = binding.locationOverlay,
                 loadingIndicator = binding.loadingIndicator,
                 loadingMessage = binding.loadingMessage,
@@ -136,8 +134,6 @@ class MainFragment : Fragment() {
         photoDisplayManager.updateSettings(
             transitionDuration = prefs.getInt("transition_duration", 1000).toLong(),
             photoInterval = prefs.getInt("photo_interval", 10000).toLong(),
-            showClock = prefs.getBoolean("show_clock", false),
-            showDate = prefs.getBoolean("show_date", false),
             showLocation = prefs.getBoolean("show_location", false),
             isRandomOrder = prefs.getBoolean("random_order", false)
         )

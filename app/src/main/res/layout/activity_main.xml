@@ -206,31 +206,6 @@
             android:stateListAnimator="@null">
 
             <TextView
-                android:id="@+id/clockOverlay"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@android:color/white"
-                android:textSize="48sp"
-                android:shadowColor="#40000000"
-                android:shadowRadius="4"
-                android:shadowDx="0"
-                android:shadowDy="2"
-                android:visibility="visible"/>
-
-            <TextView
-                android:id="@+id/dateOverlay"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@android:color/white"
-                android:textSize="24sp"
-                android:shadowColor="#40000000"
-                android:shadowRadius="4"
-                android:shadowDx="0"
-                android:shadowDy="2"
-                android:visibility="visible"
-                android:layout_marginTop="4dp"/>
-
-            <TextView
                 android:id="@+id/locationOverlay"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

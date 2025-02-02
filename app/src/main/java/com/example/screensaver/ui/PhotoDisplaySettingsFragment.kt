@@ -59,24 +59,6 @@ class PhotoDisplaySettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        findPreference<SwitchPreferenceCompat>("show_clock")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                photoDisplayManager.updateSettings(
-                    showClock = newValue as Boolean
-                )
-                true
-            }
-        }
-
-        findPreference<SwitchPreferenceCompat>("show_date")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                photoDisplayManager.updateSettings(
-                    showDate = newValue as Boolean
-                )
-                true
-            }
-        }
-
         findPreference<SwitchPreferenceCompat>("show_location")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
                 photoDisplayManager.updateSettings(
@@ -103,8 +85,6 @@ class PhotoDisplaySettingsFragment : PreferenceFragmentCompat() {
         photoDisplayManager.updateSettings(
             transitionDuration = prefs.getInt("transition_duration", 1000).toLong(),
             photoInterval = prefs.getInt("photo_interval", 10000).toLong(),
-            showClock = prefs.getBoolean("show_clock", true),
-            showDate = prefs.getBoolean("show_date", true),
             showLocation = prefs.getBoolean("show_location", false),
             isRandomOrder = prefs.getBoolean("random_order", false)
         )

@@ -3,4 +3,5 @@
     <dimen name="card_elevation_normal">2dp</dimen>
     <dimen name="card_elevation_selected">8dp</dimen>
     <dimen name="fab_margin">24dp</dimen>
+    <dimen name="widget_margin">16dp</dimen>
 </resources>

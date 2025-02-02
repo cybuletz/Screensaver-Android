@@ -43,6 +43,12 @@
             android:title="Shuffle Photos"
             android:summary="Display photos in random order"
             android:defaultValue="true"/>
+
+        <Preference
+            android:key="widget_settings"
+            android:title="@string/pref_widgets_title"
+            android:summary="@string/pref_widgets_summary"
+            app:iconSpaceReserved="false"/>
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -63,6 +69,7 @@
             android:summary="Display date and album name"
             android:defaultValue="false"/>
     </PreferenceCategory>
+
 
     <PreferenceCategory
         android:title="Schedule"
