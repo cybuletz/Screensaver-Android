@@ -65,18 +65,24 @@ class WidgetManager @Inject constructor(
     }
 
     fun setupClockWidget(container: ViewGroup) {
+        Log.d(TAG, "Setting up clock widget")
         val config = loadClockConfig()
+        Log.d(TAG, "Loaded clock config: $config")
+
         val clockWidget = ClockWidget(container, config)
         registerWidget(WidgetType.CLOCK, clockWidget)
-        clockWidget.init()
+        Log.d(TAG, "Clock widget registered")
 
-        if (preferences.isShowClock()) {
+        clockWidget.init()
+        Log.d(TAG, "Clock widget initialized")
+
+        if (config.showClock) {
+            Log.d(TAG, "Showing clock widget")
             showWidget(WidgetType.CLOCK)
         } else {
+            Log.d(TAG, "Hiding clock widget")
             hideWidget(WidgetType.CLOCK)
         }
-
-        Log.d(TAG, "Clock widget setup complete")
     }
 
     private fun loadClockConfig(): WidgetConfig.ClockConfig {

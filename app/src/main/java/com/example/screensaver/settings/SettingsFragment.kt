@@ -316,10 +316,16 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun saveSettings() {
-        // Save preferences
         PreferenceManager.getDefaultSharedPreferences(requireContext())
             .edit()
             .apply()
+
+        // Force restart photo display
+        photoDisplayManager.apply {
+            stopPhotoDisplay()
+            updateSettings() // Make sure this updates all settings
+            startPhotoDisplay()
+        }
 
         Toast.makeText(context, "Settings saved", Toast.LENGTH_SHORT).show()
     }

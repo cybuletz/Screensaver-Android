@@ -34,12 +34,20 @@ class ClockWidget(
     }
 
     override fun init() {
-        Log.d(TAG, "Initializing ClockWidget")
-        binding = ClockWidgetBinding(container).apply {
-            inflate()
-            setupViews()
+        try {
+            Log.d(TAG, "Initializing ClockWidget with config: $config")
+            binding = ClockWidgetBinding(container).apply {
+                Log.d(TAG, "Creating binding")
+                inflate()
+                Log.d(TAG, "Binding inflated")
+                setupViews()
+                Log.d(TAG, "Views setup complete")
+            }
+            updateConfiguration(config)
+            Log.d(TAG, "Configuration updated")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing ClockWidget", e)
         }
-        updateConfiguration(config)
     }
 
     private fun setupViews() {
@@ -146,10 +154,47 @@ class ClockWidget(
     }
 
     override fun show() {
+        Log.d(TAG, "show() called with config: $config")
         isVisible = true
-        binding?.getRootView()?.visibility = View.VISIBLE
+        binding?.let { binding ->
+            Log.d(TAG, "Binding exists")
+            val rootView = binding.getRootView()
+
+            rootView?.apply {
+                visibility = View.VISIBLE
+                bringToFront()
+
+                // Update constraints based on position
+                val params = layoutParams as? ConstraintLayout.LayoutParams
+                params?.apply {
+                    when (config.position) {
+                        WidgetPosition.TOP_START -> {
+                            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.UNSET
+                            bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+                        }
+                        // Add other positions similarly
+                    }
+                    setMargins(16, 16, 16, 16)
+                }
+                layoutParams = params
+
+                requestLayout()
+                invalidate()
+
+                Log.d(TAG, "Root view visibility and constraints updated")
+            } ?: Log.e(TAG, "Root view is null")
+
+            binding.getClockView()?.apply {
+                visibility = if (config.showClock) View.VISIBLE else View.GONE
+            }
+
+            binding.getDateView()?.apply {
+                visibility = if (config.showDate) View.VISIBLE else View.GONE
+            }
+        } ?: Log.e(TAG, "Binding is null in show()")
         startUpdates()
-        Log.d(TAG, "Widget shown")
     }
 
     override fun hide() {

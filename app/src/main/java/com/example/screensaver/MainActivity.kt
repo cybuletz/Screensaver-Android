@@ -197,16 +197,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun initializeWidgets() {
-        Log.d(TAG, "Initializing widgets")
-        binding.screensaverContainer?.let { container ->
-            widgetManager.setupClockWidget(container)
-        }
-    }
-
     private fun initializeWidgetSystem() {
-        binding.screensaverContainer?.let { container ->
-            widgetManager.setupClockWidget(container)
+        // Remove duplicate initialization
+        binding.screensaverContainer?.post {
+            Log.d(TAG, "Initializing widget system")
+            binding.screensaverContainer?.let { container ->
+                if (container is ConstraintLayout) {
+                    Log.d(TAG, "Setting up clock widget in ConstraintLayout")
+                    widgetManager.setupClockWidget(container)
+                } else {
+                    Log.e(TAG, "Container is not a ConstraintLayout")
+                }
+            } ?: Log.e(TAG, "screensaverContainer is null")
         }
     }
 

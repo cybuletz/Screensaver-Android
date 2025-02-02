@@ -237,21 +237,32 @@
         style="@style/PreferenceCategoryStyle"
         app:iconSpaceReserved="false">
 
+        <!-- Clock Widget Enable/Disable -->
         <SwitchPreferenceCompat
-            android:key="clock_widget_enabled"
-            android:title="@string/pref_clock_widget_enabled_title"
-            android:summary="@string/pref_clock_widget_enabled_summary"
-            android:defaultValue="true" />
+            android:key="show_clock"
+            android:title="@string/pref_show_clock_title"
+            android:summary="@string/pref_show_clock_summary"
+            android:defaultValue="false" />
 
+        <!-- Clock Position -->
         <ListPreference
-            android:key="clock_widget_position"
+            android:key="clock_position"
             android:title="@string/pref_clock_widget_position_title"
             android:summary="@string/pref_clock_widget_position_summary"
             android:entries="@array/widget_position_entries"
             android:entryValues="@array/widget_position_values"
             android:defaultValue="TOP_START"
-            app:dependency="clock_widget_enabled" />
+            app:dependency="show_clock" />
 
+        <!-- Show Date Toggle -->
+        <SwitchPreferenceCompat
+            android:key="show_date"
+            android:title="@string/pref_show_date_title"
+            android:summary="@string/pref_show_date_summary"
+            android:defaultValue="false"
+            app:dependency="show_clock" />
+
+        <!-- Clock Format -->
         <ListPreference
             android:key="clock_format"
             android:title="@string/pref_clock_format_title"
@@ -259,8 +270,9 @@
             android:entries="@array/clock_format_entries"
             android:entryValues="@array/clock_format_values"
             android:defaultValue="24h"
-            app:dependency="clock_widget_enabled" />
+            app:dependency="show_clock" />
 
+        <!-- Date Format -->
         <ListPreference
             android:key="date_format"
             android:title="@string/pref_date_format_title"
@@ -268,7 +280,7 @@
             android:entries="@array/date_format_entries"
             android:entryValues="@array/date_format_values"
             android:defaultValue="full"
-            app:dependency="clock_widget_enabled" />
+            app:dependency="show_clock" />
     </PreferenceCategory>
 
     <PreferenceCategory

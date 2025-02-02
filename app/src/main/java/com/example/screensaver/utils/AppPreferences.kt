@@ -314,7 +314,7 @@ class AppPreferences @Inject constructor(
         updatePreference { putBoolean(PREF_SHOW_PHOTO_INFO, show) }
     }
 
-    fun isShowClock(): Boolean = prefs.getBoolean(PREF_SHOW_CLOCK, true)
+    fun isShowClock(): Boolean = prefs.getBoolean(PREF_SHOW_CLOCK, false)
 
     fun setShowClock(show: Boolean) {
         updatePreference { putBoolean(PREF_SHOW_CLOCK, show) }
