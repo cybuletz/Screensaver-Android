@@ -44,6 +44,7 @@ import android.content.IntentFilter
 import android.content.BroadcastReceiver
 import android.os.BatteryManager
 import android.net.Uri
+import androidx.constraintlayout.widget.ConstraintLayout
 import com.example.screensaver.widgets.WidgetData
 import com.example.screensaver.widgets.WidgetManager
 import com.example.screensaver.widgets.WidgetState
@@ -198,17 +199,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initializeWidgetSystem() {
-        // Remove duplicate initialization
+        Log.d(TAG, "Starting widget system initialization")
         binding.screensaverContainer?.post {
-            Log.d(TAG, "Initializing widget system")
-            binding.screensaverContainer?.let { container ->
-                if (container is ConstraintLayout) {
-                    Log.d(TAG, "Setting up clock widget in ConstraintLayout")
-                    widgetManager.setupClockWidget(container)
-                } else {
-                    Log.e(TAG, "Container is not a ConstraintLayout")
-                }
-            } ?: Log.e(TAG, "screensaverContainer is null")
+            try {
+                Log.d(TAG, "Container posted callback executing")
+                binding.screensaverContainer?.let { container ->
+                    if (container is ConstraintLayout) {
+                        Log.d(TAG, "Setting up clock widget in ConstraintLayout")
+                        widgetManager.setupClockWidget(container)
+                    } else {
+                        Log.e(TAG, "Container is not a ConstraintLayout, it is: ${container.javaClass.simpleName}")
+                    }
+                } ?: Log.e(TAG, "screensaverContainer is null")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in widget system initialization", e)
+            }
+        }
+    }
+
+    private fun updateWidgetsOnReturn() {
+        Log.d(TAG, "Updating widgets on return to main screen")
+        binding.screensaverContainer?.post {
+            widgetManager.reinitializeClockWidget()
         }
     }
 
@@ -747,7 +759,24 @@ class MainActivity : AppCompatActivity() {
         _navController = navHostFragment.navController
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
+            Log.d(TAG, "Navigation destination changed to: ${destination.id}")
             handleNavigationVisibility(destination.id)
+
+            // Update widgets when returning to main screen
+            if (destination.id == R.id.mainFragment) {
+                Log.d(TAG, "Returned to main fragment, updating widgets")
+                binding.screensaverContainer?.post {
+                    Log.d(TAG, "Container visibility: ${binding.screensaverContainer?.visibility}, " +
+                            "isAttached: ${binding.screensaverContainer?.isAttachedToWindow}")
+
+                    // Pass the container when reinitializing
+                    widgetManager.reinitializeClockWidget(binding.screensaverContainer)
+
+                    // Verify saved preferences
+                    Log.d(TAG, "Saved preferences - show_clock: ${preferences.isShowClock()}, " +
+                            "position: ${preferences.getString("clock_position", "unknown")}")
+                }
+            }
         }
     }
 

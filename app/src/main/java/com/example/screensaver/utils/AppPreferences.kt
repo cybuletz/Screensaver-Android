@@ -2,6 +2,7 @@ package com.example.screensaver.utils
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,6 +61,8 @@ class AppPreferences @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "AppPreferences"
+
         // Preference keys
         private const val PREF_DISPLAY_MODE = "display_mode_selection"
         private const val PREF_TRANSITION_INTERVAL = "transition_interval"
@@ -268,7 +271,7 @@ class AppPreferences @Inject constructor(
     }
 
     fun getShowDate(): Boolean =
-        prefs.getBoolean(PREF_SHOW_DATE, true)
+        prefs.getBoolean(PREF_SHOW_DATE, false)
 
     fun setShowDate(enabled: Boolean) {
         updatePreference { putBoolean(PREF_SHOW_DATE, enabled) }
@@ -373,7 +376,10 @@ class AppPreferences @Inject constructor(
     }
 
     fun getString(key: String, defaultValue: String): String {
-        return prefs.getString(key, defaultValue) ?: defaultValue
+        Log.d(TAG, "Getting string preference for key: $key, default: $defaultValue")
+        val value = prefs.getString(key, defaultValue) ?: defaultValue
+        Log.d(TAG, "Retrieved value: $value")
+        return value
     }
 
     fun cleanup() {

@@ -11,6 +11,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
 import android.view.ViewGroup
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @Singleton
 class WidgetManager @Inject constructor(
@@ -65,35 +67,87 @@ class WidgetManager @Inject constructor(
     }
 
     fun setupClockWidget(container: ViewGroup) {
-        Log.d(TAG, "Setting up clock widget")
+        Log.d(TAG, "Setting up clock widget with container type: ${container.javaClass.simpleName}")
         val config = loadClockConfig()
         Log.d(TAG, "Loaded clock config: $config")
 
-        val clockWidget = ClockWidget(container, config)
-        registerWidget(WidgetType.CLOCK, clockWidget)
-        Log.d(TAG, "Clock widget registered")
+        try {
+            val clockWidget = ClockWidget(container, config)
+            Log.d(TAG, "Created ClockWidget instance")
 
-        clockWidget.init()
-        Log.d(TAG, "Clock widget initialized")
+            registerWidget(WidgetType.CLOCK, clockWidget)
+            Log.d(TAG, "Clock widget registered")
 
-        if (config.showClock) {
-            Log.d(TAG, "Showing clock widget")
+            clockWidget.init()
+            Log.d(TAG, "Clock widget initialized")
+
+            // Always show the widget after initialization, visibility will be handled by the widget itself
             showWidget(WidgetType.CLOCK)
-        } else {
-            Log.d(TAG, "Hiding clock widget")
-            hideWidget(WidgetType.CLOCK)
+            Log.d(TAG, "Show widget called")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up clock widget", e)
         }
     }
 
     private fun loadClockConfig(): WidgetConfig.ClockConfig {
+        val showClock = preferences.isShowClock()
+        val showDate = preferences.getShowDate()
+        val position = parseWidgetPosition(preferences.getString("clock_position", "TOP_START"))
+
+        // Use safe default formats
+        val dateFormat = try {
+            preferences.getString("date_format", "MMMM d, yyyy").also { format ->
+                // Validate format
+                SimpleDateFormat(format, Locale.getDefault())
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Invalid date format, using default", e)
+            "MMMM d, yyyy"
+        }
+
+        val timeFormat = try {
+            preferences.getString("time_format", "HH:mm").also { format ->
+                // Validate format
+                SimpleDateFormat(format, Locale.getDefault())
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Invalid time format, using default", e)
+            "HH:mm"
+        }
+
+        Log.d(TAG, "Loading config - showClock: $showClock, showDate: $showDate, " +
+                "position: $position, dateFormat: $dateFormat, timeFormat: $timeFormat")
+
         return WidgetConfig.ClockConfig(
-            showClock = preferences.isShowClock(),
-            showDate = preferences.getShowDate(),
+            showClock = showClock,
+            showDate = showDate,
             use24Hour = preferences.getString("clock_format", "24h") == "24h",
-            dateFormat = preferences.getString("date_format", "MMMM d, yyyy"),
-            timeFormat = preferences.getString("time_format", "HH:mm"),
-            position = parseWidgetPosition(preferences.getString("clock_position", "TOP_START"))
+            dateFormat = dateFormat,
+            timeFormat = timeFormat,
+            position = position
         )
+    }
+
+    fun reinitializeClockWidget(container: ViewGroup? = null) {
+        Log.d(TAG, "Reinitializing clock widget")
+        val widget = widgets[WidgetType.CLOCK] as? ClockWidget
+        if (widget != null) {
+            Log.d(TAG, "Existing widget found, updating")
+            val config = loadClockConfig()
+            widget.updateConfiguration(config)
+            if (config.showClock) {
+                Log.d(TAG, "Showing widget after config update")
+                showWidget(WidgetType.CLOCK)
+            } else {
+                Log.d(TAG, "Hiding widget after config update")
+                hideWidget(WidgetType.CLOCK)
+            }
+        } else {
+            Log.e(TAG, "No clock widget found to reinitialize")
+            container?.let {
+                setupClockWidget(it)
+            } ?: Log.e(TAG, "No container provided for widget initialization")
+        }
     }
 
     private fun parseWidgetPosition(position: String): WidgetPosition {
@@ -105,9 +159,11 @@ class WidgetManager @Inject constructor(
     }
 
     fun updateClockConfig() {
+        Log.d(TAG, "Updating clock config")
         val config = loadClockConfig()
+        Log.d(TAG, "New config loaded: $config")
         updateWidgetConfig(WidgetType.CLOCK, config)
-        Log.d(TAG, "Clock config updated: $config")
+        reinitializeClockWidget() // Add this line
     }
 
     fun updateClockPosition(position: WidgetPosition) {

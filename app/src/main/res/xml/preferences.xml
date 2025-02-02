@@ -279,7 +279,8 @@
             android:summary="@string/pref_date_format_summary"
             android:entries="@array/date_format_entries"
             android:entryValues="@array/date_format_values"
-            android:defaultValue="full"
+            android:defaultValue="MMMM d, yyyy"
+            app:useSimpleSummaryProvider="true"
             app:dependency="show_clock" />
     </PreferenceCategory>
 

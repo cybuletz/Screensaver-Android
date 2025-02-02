@@ -165,15 +165,25 @@
     </string-array>
 
     <string-array name="date_format_entries">
-        <item>Full (Monday, February 2)</item>
-        <item>Short (Feb 2)</item>
-        <item>Numeric (02/02)</item>
+        <item>Full (February 2, 2024)</item>
+        <item>Short (02/02/24)</item>
+        <item>Medium (Feb 2, 2024)</item>
     </string-array>
 
     <string-array name="date_format_values">
-        <item>full</item>
-        <item>short</item>
-        <item>numeric</item>
+        <item>MMMM d, yyyy</item>
+        <item>MM/dd/yy</item>
+        <item>MMM d, yyyy</item>
+    </string-array>
+
+    <string-array name="time_format_entries">
+        <item>24 Hour (15:30)</item>
+        <item>12 Hour (3:30 PM)</item>
+    </string-array>
+
+    <string-array name="time_format_values">
+        <item>HH:mm</item>
+        <item>hh:mm a</item>
     </string-array>
 
     <!-- Empty Array for Dynamic Content -->

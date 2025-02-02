@@ -30,8 +30,8 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"/>
 
-    <!-- Screensaver Container -->
-    <FrameLayout
+    <!-- Screensaver Container - Changed from FrameLayout to ConstraintLayout -->
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/screensaverContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
@@ -46,12 +46,13 @@
             android:id="@+id/backgroundLoadingIndicator"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="top|end"
-            android:layout_margin="16dp"
             android:padding="8dp"
             android:background="@drawable/subtle_loading_background"
             android:elevation="4dp"
-            android:visibility="gone">
+            android:visibility="gone"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_margin="16dp">
 
             <ProgressBar
                 android:layout_width="16dp"
@@ -61,25 +62,33 @@
 
         <ImageView
             android:id="@+id/photoPreview"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
             android:scaleType="centerCrop"
             android:background="@android:color/black"
-            android:contentDescription="@string/photo_preview_description"/>
+            android:contentDescription="@string/photo_preview_description"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
 
         <ImageView
             android:id="@+id/photoPreviewOverlay"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
             android:scaleType="centerCrop"
             android:alpha="0"
             android:background="@android:color/black"
-            android:contentDescription="@string/photo_preview_transition_description"/>
+            android:contentDescription="@string/photo_preview_transition_description"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
 
         <!-- Initial Setup Message -->
         <TextView
             android:id="@+id/initialSetupMessage"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:text="@string/goto_settings_text"
             android:textAlignment="center"
@@ -93,48 +102,57 @@
             android:shadowDy="1"
             android:padding="32dp"
             android:background="@drawable/message_background"
-            android:layout_marginStart="32dp"
-            android:layout_marginEnd="32dp"
-            android:layout_marginTop="32dp"
-            android:layout_marginBottom="32dp"
             android:elevation="4dp"
-            android:layout_gravity="center"
-            android:visibility="gone"/>
+            android:visibility="gone"
+            android:layout_margin="32dp"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
 
         <!-- Loading Indicator -->
         <ProgressBar
             android:id="@+id/loadingIndicator"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
             android:visibility="gone"
-            android:indeterminateTint="@android:color/white"/>
+            android:indeterminateTint="@android:color/white"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
 
         <!-- Loading Message -->
         <TextView
             android:id="@+id/loadingMessage"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
             android:textColor="@android:color/white"
             android:textSize="16sp"
             android:padding="16dp"
-            android:visibility="gone"/>
+            android:visibility="gone"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
 
         <!-- Overlay Message Container -->
-        <FrameLayout
+        <androidx.constraintlayout.widget.ConstraintLayout
             android:id="@+id/overlayMessageContainer"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
             android:background="#80000000"
             android:visibility="gone"
-            android:elevation="6dp">
+            android:elevation="6dp"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
 
             <TextView
                 android:id="@+id/overlayMessageText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="center"
                 android:gravity="center"
                 android:padding="16dp"
                 android:textColor="#FFFFFF"
@@ -143,20 +161,26 @@
                 android:shadowColor="@android:color/black"
                 android:shadowRadius="2"
                 android:shadowDx="1"
-                android:shadowDy="1"/>
-        </FrameLayout>
+                android:shadowDy="1"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"/>
+        </androidx.constraintlayout.widget.ConstraintLayout>
 
         <!-- Terms and Privacy Footer -->
         <LinearLayout
             android:id="@+id/legalLinksContainer"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
             android:padding="16dp"
             android:background="@drawable/footer_background"
             android:visibility="gone"
-            android:layout_gravity="bottom">
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
 
             <TextView
                 android:id="@+id/termsLink"
@@ -191,19 +215,21 @@
                 android:shadowDx="1"
                 android:shadowDy="1"/>
         </LinearLayout>
+
         <!-- Info Overlay Container -->
         <LinearLayout
             android:id="@+id/infoContainer"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom|start"
             android:orientation="vertical"
             android:padding="16dp"
-            android:layout_margin="16dp"
             android:background="@drawable/info_background"
             android:elevation="12dp"
             android:translationZ="8dp"
-            android:stateListAnimator="@null">
+            android:stateListAnimator="@null"
+            android:layout_margin="16dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent">
 
             <TextView
                 android:id="@+id/locationOverlay"
@@ -220,7 +246,7 @@
                 android:layout_marginTop="4dp"
                 tools:text="Location"/>
         </LinearLayout>
-    </FrameLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
 
     <!-- Preview Controls -->
     <com.google.android.material.card.MaterialCardView

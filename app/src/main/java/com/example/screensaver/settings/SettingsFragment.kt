@@ -428,6 +428,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         }
                     }
 
+                    // Add preference change listener for widget-related preferences
+                    findPreference<SwitchPreferenceCompat>("show_clock")?.setOnPreferenceChangeListener { _, newValue ->
+                        Log.d(TAG, "Clock visibility changed to: $newValue")
+                        true
+                    }
+
+                    findPreference<ListPreference>("clock_position")?.setOnPreferenceChangeListener { _, newValue ->
+                        Log.d(TAG, "Clock position changing to: $newValue")
+                        true
+                    }
+
                     // Observe state changes
                     observeAppState()
                     observeAppDataState()

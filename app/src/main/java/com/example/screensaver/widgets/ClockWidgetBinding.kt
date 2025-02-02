@@ -16,29 +16,51 @@ class ClockWidgetBinding(
     private var clockView: TextClock? = null
     private var dateView: TextView? = null
 
+    companion object {
+        private const val TAG = "ClockWidgetBinding"
+    }
+
     fun inflate(): View {
-        if (rootView == null) {
-            Log.d("ClockWidgetBinding", "Inflating clock widget")
-            rootView = LayoutInflater.from(container.context)
-                .inflate(R.layout.widget_clock, container, false)
+        try {
+            Log.d(TAG, "Starting inflate() for ClockWidgetBinding")
+            if (rootView == null) {
+                rootView = LayoutInflater.from(container.context)
+                    .inflate(R.layout.widget_clock, container, false)
+                Log.d(TAG, "Layout inflated")
 
-            clockView = rootView?.findViewById(R.id.clockView)
-            dateView = rootView?.findViewById(R.id.dateView)
+                clockView = rootView?.findViewById(R.id.clockView)
+                dateView = rootView?.findViewById(R.id.dateView)
+                Log.d(TAG, "Views found - Clock: ${clockView != null}, Date: ${dateView != null}")
 
-            // Add the view with proper ConstraintLayout params
-            val params = ConstraintLayout.LayoutParams(
-                ConstraintLayout.LayoutParams.WRAP_CONTENT,
-                ConstraintLayout.LayoutParams.WRAP_CONTENT
-            )
+                // Configure TextClock
+                clockView?.apply {
+                    format12Hour = "hh:mm a"
+                    format24Hour = "HH:mm"
+                    Log.d(TAG, "Clock formats set")
+                }
 
-            rootView?.layoutParams = params
-            container.addView(rootView)
+                // Add the view to container
+                val params = ConstraintLayout.LayoutParams(
+                    ConstraintLayout.LayoutParams.WRAP_CONTENT,
+                    ConstraintLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    // Default to TOP_START
+                    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                    setMargins(32, 32, 32, 32)
+                }
 
-            Log.d("ClockWidgetBinding", "Clock widget inflated and added to container")
-            Log.d("ClockWidgetBinding", "Clock view found: ${clockView != null}")
-            Log.d("ClockWidgetBinding", "Date view found: ${dateView != null}")
+                rootView?.layoutParams = params
+                container.addView(rootView)
+                Log.d(TAG, "Root view added to container with params")
+            } else {
+                Log.d(TAG, "Root view already exists")
+            }
+            return rootView!!
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in inflate()", e)
+            throw e
         }
-        return rootView!!
     }
 
     fun getClockView(): TextClock? = clockView

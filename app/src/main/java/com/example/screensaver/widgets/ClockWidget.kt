@@ -10,6 +10,9 @@ import java.util.*
 import androidx.constraintlayout.widget.ConstraintLayout
 import com.example.screensaver.widgets.WidgetConfig
 import com.example.screensaver.R
+import android.text.format.DateFormat
+import java.util.Date
+import java.util.Locale
 
 
 class ClockWidget(
@@ -37,14 +40,24 @@ class ClockWidget(
         try {
             Log.d(TAG, "Initializing ClockWidget with config: $config")
             binding = ClockWidgetBinding(container).apply {
-                Log.d(TAG, "Creating binding")
+                Log.d(TAG, "Creating binding for container: $container")
                 inflate()
                 Log.d(TAG, "Binding inflated")
                 setupViews()
                 Log.d(TAG, "Views setup complete")
             }
             updateConfiguration(config)
-            Log.d(TAG, "Configuration updated")
+
+            // Force show if needed
+            if (config.showClock) {
+                Log.d(TAG, "Config shows clock is enabled, showing widget")
+                show()
+            } else {
+                Log.d(TAG, "Config shows clock is disabled, hiding widget")
+                hide()
+            }
+
+            Log.d(TAG, "Clock widget initialization complete")
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing ClockWidget", e)
         }
@@ -130,18 +143,44 @@ class ClockWidget(
     }
 
     override fun updateConfiguration(config: WidgetConfig) {
-        if (config !is WidgetConfig.ClockConfig) return
-        this.config = config
-
-        binding?.let { binding ->
-            binding.getClockView()?.apply {
-                format12Hour = if (config.use24Hour) null else "hh:mm a"
-                format24Hour = if (config.use24Hour) "HH:mm" else null
+        Log.d(TAG, "Updating configuration: $config")
+        try {
+            if (config !is WidgetConfig.ClockConfig) {
+                Log.e(TAG, "Invalid config type")
+                return
             }
-            binding.getDateView()?.visibility = if (config.showDate) View.VISIBLE else View.GONE
-            dateFormatter.applyPattern(config.dateFormat)
-            updatePosition(config.position)
-            updateDateTime()
+
+            this.config = config
+
+            binding?.getClockView()?.apply {
+                // Set clock format based on 12/24 hour preference
+                format24Hour = "HH:mm"
+                format12Hour = "hh:mm a"
+                // Use DateFormat to set 24-hour mode
+                setFormat12Hour(if (config.use24Hour) null else "hh:mm a")
+                setFormat24Hour(if (config.use24Hour) "HH:mm" else null)
+                Log.d(TAG, "Clock format updated - 24hour: ${config.use24Hour}")
+            }
+
+            binding?.getDateView()?.apply {
+                try {
+                    val dateFormat = SimpleDateFormat(config.dateFormat, Locale.getDefault())
+                    text = dateFormat.format(Date())
+                    Log.d(TAG, "Date format updated: ${config.dateFormat}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error setting date format", e)
+                    // Use safe default
+                    text = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date())
+                }
+            }
+
+            if (isVisible) {
+                show()
+            } else {
+                hide()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating configuration", e)
         }
     }
 
@@ -159,43 +198,83 @@ class ClockWidget(
         binding?.let { binding ->
             Log.d(TAG, "Binding exists")
             val rootView = binding.getRootView()
-
             rootView?.apply {
-                visibility = View.VISIBLE
-                bringToFront()
+                post {
+                    visibility = View.VISIBLE
+                    bringToFront()
 
-                // Update constraints based on position
-                val params = layoutParams as? ConstraintLayout.LayoutParams
-                params?.apply {
+                    val params = layoutParams as? ConstraintLayout.LayoutParams
+                    params?.apply {
+                        // Update constraints based on position
+                        clearAllConstraints()
+
+                    // Set new constraints based on position
                     when (config.position) {
                         WidgetPosition.TOP_START -> {
                             topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                             startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                            endToEnd = ConstraintLayout.LayoutParams.UNSET
-                            bottomToBottom = ConstraintLayout.LayoutParams.UNSET
                         }
-                        // Add other positions similarly
+                        WidgetPosition.TOP_CENTER -> {
+                            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        }
+                        WidgetPosition.TOP_END -> {
+                            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        }
+                        WidgetPosition.BOTTOM_START -> {
+                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        }
+                        WidgetPosition.BOTTOM_CENTER -> {
+                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        }
+                        WidgetPosition.BOTTOM_END -> {
+                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        }
                     }
-                    setMargins(16, 16, 16, 16)
+
+                    // Set margins for all positions
+                        setMargins(32, 32, 32, 32)
+                    }
+                    layoutParams = params
+
+                    requestLayout()
+                    invalidate()
+
+                    (parent as? ViewGroup)?.invalidate()
+                    Log.d(TAG, "Root view layout updated on UI thread")
                 }
-                layoutParams = params
-
-                requestLayout()
-                invalidate()
-
-                Log.d(TAG, "Root view visibility and constraints updated")
             } ?: Log.e(TAG, "Root view is null")
 
             binding.getClockView()?.apply {
                 visibility = if (config.showClock) View.VISIBLE else View.GONE
+                Log.d(TAG, "Clock visibility set to: ${if (config.showClock) "VISIBLE" else "GONE"}")
             }
 
             binding.getDateView()?.apply {
                 visibility = if (config.showDate) View.VISIBLE else View.GONE
+                Log.d(TAG, "Date visibility set to: ${if (config.showDate) "VISIBLE" else "GONE"}")
             }
         } ?: Log.e(TAG, "Binding is null in show()")
         startUpdates()
     }
+
+    private fun ConstraintLayout.LayoutParams.clearAllConstraints() {
+        topToTop = ConstraintLayout.LayoutParams.UNSET
+        topToBottom = ConstraintLayout.LayoutParams.UNSET
+        bottomToTop = ConstraintLayout.LayoutParams.UNSET
+        bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+        startToStart = ConstraintLayout.LayoutParams.UNSET
+        startToEnd = ConstraintLayout.LayoutParams.UNSET
+        endToStart = ConstraintLayout.LayoutParams.UNSET
+        endToEnd = ConstraintLayout.LayoutParams.UNSET
+    }
+
 
     override fun hide() {
         isVisible = false
