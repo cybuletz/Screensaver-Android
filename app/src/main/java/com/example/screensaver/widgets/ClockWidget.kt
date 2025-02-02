@@ -13,7 +13,7 @@ import com.example.screensaver.R
 import android.text.format.DateFormat
 import java.util.Date
 import java.util.Locale
-
+import java.util.Calendar
 
 class ClockWidget(
     private val container: ViewGroup,
@@ -23,6 +23,7 @@ class ClockWidget(
     private val handler = Handler(Looper.getMainLooper())
     private val dateFormatter = SimpleDateFormat("", Locale.getDefault())
     private var isVisible = false
+    private var dateUpdateHandler: Handler? = null
 
     companion object {
         private const val TAG = "ClockWidget"
@@ -64,7 +65,9 @@ class ClockWidget(
     }
 
     private fun setupViews() {
+        Log.d(TAG, "Setting up views")
         binding?.let { binding ->
+            // First set up the layout
             val rootView = binding.getRootView() ?: return
             val layoutParams = ConstraintLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -74,7 +77,55 @@ class ClockWidget(
             container.addView(rootView)
             updatePosition(config.position)
             rootView.visibility = if (isVisible) View.VISIBLE else View.GONE
+
+            // Then set up the clock and date views
+            binding.getClockView()?.apply {
+                format24Hour = "HH:mm"
+                format12Hour = "hh:mm a"
+                Log.d(TAG, "Clock formats initialized")
+            }
+
+            // Setup date view with auto-updating
+            binding.getDateView()?.apply {
+                text = getCurrentDate()
+                // Add a handler to update the date at midnight
+                startDateUpdates()
+                Log.d(TAG, "Date view initialized with: ${text}")
+            }
         }
+    }
+
+    private fun getCurrentDate(): String {
+        return try {
+            SimpleDateFormat(config.dateFormat, Locale.getDefault()).format(Date())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error formatting date", e)
+            SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date())
+        }
+    }
+
+    private fun startDateUpdates() {
+        dateUpdateHandler?.removeCallbacksAndMessages(null)
+        dateUpdateHandler = Handler(Looper.getMainLooper())
+
+        val updateRunnable = object : Runnable {
+            override fun run() {
+                updateDateText()
+
+                // Schedule next update for midnight
+                val calendar = Calendar.getInstance().apply {
+                    add(Calendar.DAY_OF_MONTH, 1)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                }
+
+                dateUpdateHandler?.postAtTime(this, calendar.timeInMillis)
+            }
+        }
+
+        // Start the updates
+        updateRunnable.run()
     }
 
     private fun updatePosition(position: WidgetPosition) {
@@ -153,35 +204,55 @@ class ClockWidget(
             this.config = config
 
             binding?.getClockView()?.apply {
-                // Set clock format based on 12/24 hour preference
                 format24Hour = "HH:mm"
                 format12Hour = "hh:mm a"
-                // Use DateFormat to set 24-hour mode
+                // Use TextClock's built-in 24-hour format setting
                 setFormat12Hour(if (config.use24Hour) null else "hh:mm a")
                 setFormat24Hour(if (config.use24Hour) "HH:mm" else null)
+                visibility = if (config.showClock) View.VISIBLE else View.GONE
                 Log.d(TAG, "Clock format updated - 24hour: ${config.use24Hour}")
             }
 
+            // Update date format
+            dateFormatter.applyPattern(config.dateFormat)
+
             binding?.getDateView()?.apply {
-                try {
-                    val dateFormat = SimpleDateFormat(config.dateFormat, Locale.getDefault())
-                    text = dateFormat.format(Date())
-                    Log.d(TAG, "Date format updated: ${config.dateFormat}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error setting date format", e)
-                    // Use safe default
-                    text = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date())
+                visibility = if (config.showDate) View.VISIBLE else View.GONE
+                if (config.showDate) {
+                    text = getCurrentDate()
+                    Log.d(TAG, "Date updated to: $text")
                 }
             }
 
+            // Update position if widget is visible
             if (isVisible) {
-                show()
+                updatePosition(config.position)
+            }
+
+            // Start or stop updates based on visibility
+            if (isVisible) {
+                startUpdates()
+                startDateUpdates()
             } else {
-                hide()
+                stopUpdates()
+                dateUpdateHandler?.removeCallbacksAndMessages(null)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error updating configuration", e)
         }
+    }
+
+    private fun updateDateText() {
+        binding?.getDateView()?.apply {
+            try {
+                val dateStr = SimpleDateFormat(config.dateFormat, Locale.getDefault()).format(Date())
+                text = dateStr
+                visibility = if (config.showDate) View.VISIBLE else View.GONE
+                Log.d(TAG, "Date updated to: $dateStr (TextView text is now: $text, visibility: $visibility)")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating date text", e)
+            }
+        } ?: Log.e(TAG, "Date view is null")
     }
 
     private fun updateDateTime() {
@@ -208,37 +279,37 @@ class ClockWidget(
                         // Update constraints based on position
                         clearAllConstraints()
 
-                    // Set new constraints based on position
-                    when (config.position) {
-                        WidgetPosition.TOP_START -> {
-                            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        // Set new constraints based on position
+                        when (config.position) {
+                            WidgetPosition.TOP_START -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.TOP_CENTER -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.TOP_END -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.BOTTOM_START -> {
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.BOTTOM_CENTER -> {
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.BOTTOM_END -> {
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
                         }
-                        WidgetPosition.TOP_CENTER -> {
-                            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        }
-                        WidgetPosition.TOP_END -> {
-                            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        }
-                        WidgetPosition.BOTTOM_START -> {
-                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                        }
-                        WidgetPosition.BOTTOM_CENTER -> {
-                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        }
-                        WidgetPosition.BOTTOM_END -> {
-                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        }
-                    }
 
-                    // Set margins for all positions
+                        // Set margins for all positions
                         setMargins(32, 32, 32, 32)
                     }
                     layoutParams = params
@@ -256,9 +327,11 @@ class ClockWidget(
                 Log.d(TAG, "Clock visibility set to: ${if (config.showClock) "VISIBLE" else "GONE"}")
             }
 
+            // Update date view with current date and proper visibility
             binding.getDateView()?.apply {
+                text = getCurrentDate() // Make sure the date is set before showing
                 visibility = if (config.showDate) View.VISIBLE else View.GONE
-                Log.d(TAG, "Date visibility set to: ${if (config.showDate) "VISIBLE" else "GONE"}")
+                Log.d(TAG, "Date visibility set to: ${if (config.showDate) "VISIBLE" else "GONE"}, text: $text")
             }
         } ?: Log.e(TAG, "Binding is null in show()")
         startUpdates()
@@ -293,9 +366,21 @@ class ClockWidget(
     }
 
     override fun cleanup() {
+        Log.d(TAG, "Starting cleanup")
+        // Stop all updates
         stopUpdates()
-        binding?.cleanup()
+        dateUpdateHandler?.removeCallbacksAndMessages(null)
+        dateUpdateHandler = null
+        handler.removeCallbacksAndMessages(null)
+
+        // Clean up binding
+        binding?.apply {
+            getRootView()?.visibility = View.GONE
+            cleanup()
+        }
         binding = null
+
+        isVisible = false
         Log.d(TAG, "Widget cleaned up")
     }
 }
