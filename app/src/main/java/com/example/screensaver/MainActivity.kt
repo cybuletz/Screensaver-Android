@@ -141,8 +141,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            _binding = ActivityMainBinding.inflate(layoutInflater)
-            setContentView(binding.root)
+            ensureBinding() // Use safety check method
 
             // Initialize Widgets first
             initializeWidgetSystem()
@@ -200,20 +199,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun initializeWidgetSystem() {
         Log.d(TAG, "Starting widget system initialization")
-        binding.screensaverContainer?.post {
-            try {
-                Log.d(TAG, "Container posted callback executing")
-                binding.screensaverContainer?.let { container ->
-                    if (container is ConstraintLayout) {
-                        Log.d(TAG, "Setting up clock widget in ConstraintLayout")
-                        widgetManager.setupClockWidget(container)
-                    } else {
-                        Log.e(TAG, "Container is not a ConstraintLayout, it is: ${container.javaClass.simpleName}")
-                    }
-                } ?: Log.e(TAG, "screensaverContainer is null")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in widget system initialization", e)
-            }
+        try {
+            ensureBinding() // Add safety check
+            binding.screensaverContainer?.post {
+                try {
+                    Log.d(TAG, "Container posted callback executing")
+                    binding.screensaverContainer?.let { container ->
+                        if (container is ConstraintLayout) {
+                            Log.d(TAG, "Setting up clock widget in ConstraintLayout")
+                            widgetManager.setupClockWidget(container)
+                        } else {
+                            Log.e(TAG, "Container is not a ConstraintLayout, it is: ${container.javaClass.simpleName}")
+                        }
+                    } ?: Log.e(TAG, "screensaverContainer is null")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in widget system initialization", e)
+                }
+            } ?: Log.e(TAG, "Could not post to screensaverContainer")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing widget system", e)
         }
     }
 
@@ -753,30 +757,49 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun ensureBinding() {
+        if (_binding == null) {
+            Log.d(TAG, "Binding was null, reinitializing")
+            _binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+        }
+    }
+
     private fun setupNavigation() {
-        val navHostFragment = supportFragmentManager
-            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
-        _navController = navHostFragment.navController
+        try {
+            ensureBinding()
 
-        navController.addOnDestinationChangedListener { _, destination, _ ->
-            Log.d(TAG, "Navigation destination changed to: ${destination.id}")
-            handleNavigationVisibility(destination.id)
+            val navHostFragment = supportFragmentManager
+                .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+            _navController = navHostFragment.navController
 
-            // Update widgets when returning to main screen
-            if (destination.id == R.id.mainFragment) {
-                Log.d(TAG, "Returned to main fragment, updating widgets")
-                binding.screensaverContainer?.post {
-                    Log.d(TAG, "Container visibility: ${binding.screensaverContainer?.visibility}, " +
-                            "isAttached: ${binding.screensaverContainer?.isAttachedToWindow}")
+            navController.addOnDestinationChangedListener { _, destination, _ ->
+                Log.d(TAG, "Navigation destination changed to: ${destination.id}")
+                handleNavigationVisibility(destination.id)
 
-                    // Pass the container when reinitializing
-                    widgetManager.reinitializeClockWidget(binding.screensaverContainer)
+                // Update widgets when returning to main screen
+                if (destination.id == R.id.mainFragment) {
+                    Log.d(TAG, "Returned to main fragment, updating widgets")
+                    ensureBinding() // Add safety check here
+                    binding.screensaverContainer?.post {
+                        try {
+                            Log.d(TAG, "Container visibility: ${binding.screensaverContainer?.visibility}, " +
+                                    "isAttached: ${binding.screensaverContainer?.isAttachedToWindow}")
 
-                    // Verify saved preferences
-                    Log.d(TAG, "Saved preferences - show_clock: ${preferences.isShowClock()}, " +
-                            "position: ${preferences.getString("clock_position", "unknown")}")
+                            binding.screensaverContainer?.let { container ->
+                                widgetManager.reinitializeClockWidget(container)
+                            } ?: Log.e(TAG, "screensaverContainer is null after post")
+
+                            Log.d(TAG, "Saved preferences - show_clock: ${preferences.isShowClock()}, " +
+                                    "position: ${preferences.getString("clock_position", "unknown")}")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error in navigation post callback", e)
+                        }
+                    }
                 }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in setupNavigation", e)
         }
     }
 
