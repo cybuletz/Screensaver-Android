@@ -263,6 +263,7 @@ class ClockWidget(
         }
     }
 
+
     override fun show() {
         Log.d(TAG, "show() called with config: $config")
         isVisible = true
