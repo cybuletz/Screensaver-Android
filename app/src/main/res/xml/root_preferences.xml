@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        android:title="Photo Sources"
+        android:key="photo_sources">
+
+        <SwitchPreference
+            android:key="use_google_photos"
+            android:title="Use Google Photos"
+            android:summary="Enable to use photos from your Google Photos account"
+            android:defaultValue="false" />
+
+        <Preference
+            android:key="select_albums"
+            android:title="Select Photo Albums"
+            android:summary="Choose which albums to display in the slideshow"
+            android:dependency="use_google_photos"/>
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Screensaver Settings"
+        android:key="screensaver_settings">
+
+        <EditTextPreference
+            android:key="interval"
+            android:title="Photo Change Interval"
+            android:summary="Time in seconds between photo changes"
+            android:defaultValue="30"
+            android:inputType="number" />
+
+        <ListPreference
+            android:key="transition_effect"
+            android:title="Transition Effect"
+            android:summary="Choose how photos transition"
+            android:defaultValue="fade"
+            android:entries="@array/transition_effects"
+            android:entryValues="@array/transition_effects_values"/>
+
+        <SwitchPreference
+            android:key="shuffle_photos"
+            android:title="Shuffle Photos"
+            android:summary="Display photos in random order"
+            android:defaultValue="true"/>
+
+        <Preference
+            android:key="widget_settings"
+            android:title="@string/pref_widgets_title"
+            android:summary="@string/pref_widgets_summary"
+            app:iconSpaceReserved="false"/>
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Display Settings"
+        android:key="display_settings">
+
+        <ListPreference
+            android:key="photo_scale"
+            android:title="Photo Scaling"
+            android:summary="How photos should fit the screen"
+            android:defaultValue="fit"
+            android:entries="@array/photo_scale_options"
+            android:entryValues="@array/photo_scale_values"/>
+
+        <SwitchPreference
+            android:key="show_photo_info"
+            android:title="Show Photo Information"
+            android:summary="Display date and album name"
+            android:defaultValue="false"/>
+    </PreferenceCategory>
+
+
+    <PreferenceCategory
+        android:title="Schedule"
+        android:key="schedule_settings">
+
+        <SwitchPreference
+            android:key="enable_schedule"
+            android:title="Enable Schedule"
+            android:summary="Run screensaver at specific times"
+            android:defaultValue="false"/>
+
+        <EditTextPreference
+            android:key="start_time"
+            android:title="Start Time"
+            android:summary="When screensaver should start"
+            android:dependency="enable_schedule"
+            android:defaultValue="09:00"/>
+
+        <EditTextPreference
+            android:key="end_time"
+            android:title="End Time"
+            android:summary="When screensaver should stop"
+            android:dependency="enable_schedule"
+            android:defaultValue="17:00"/>
+
+        <MultiSelectListPreference
+            android:key="active_days"
+            android:title="Active Days"
+            android:summary="Days when screensaver should run"
+            android:dependency="enable_schedule"
+            android:entries="@array/days_of_week"
+            android:entryValues="@array/days_of_week_values"
+            android:defaultValue="@array/default_active_days"/>
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Debug Options"
+        android:key="debug_settings">
+        <Preference
+            android:key="test_screensaver"
+            android:title="Test Screensaver"
+            android:summary="Start the screensaver manually"/>
+    </PreferenceCategory>
+
+</PreferenceScreen>
