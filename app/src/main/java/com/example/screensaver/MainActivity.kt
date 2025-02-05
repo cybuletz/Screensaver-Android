@@ -197,17 +197,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Update in MainActivity.kt
     private fun initializeWidgetSystem() {
         Log.d(TAG, "Starting widget system initialization")
         try {
-            ensureBinding() // Add safety check
+            ensureBinding()
             binding.screensaverContainer?.post {
                 try {
                     Log.d(TAG, "Container posted callback executing")
                     binding.screensaverContainer?.let { container ->
                         if (container is ConstraintLayout) {
-                            Log.d(TAG, "Setting up clock widget in ConstraintLayout")
+                            Log.d(TAG, "Setting up widgets in ConstraintLayout")
                             widgetManager.setupClockWidget(container)
+                            widgetManager.setupWeatherWidget(container) // Add this line
                         } else {
                             Log.e(TAG, "Container is not a ConstraintLayout, it is: ${container.javaClass.simpleName}")
                         }

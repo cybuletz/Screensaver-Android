@@ -159,6 +159,14 @@ class AppPreferences @Inject constructor(
         return prefs.getLong(PREF_LAST_SYNC, 0)
     }
 
+    fun getBoolean(key: String, defaultValue: Boolean = false): Boolean {
+        return prefs.getBoolean(key, defaultValue)
+    }
+
+    fun setString(key: String, value: String) {
+        prefs.edit().putString(key, value).apply()
+    }
+
     private fun updatePreference(operation: SharedPreferences.Editor.() -> Unit) {
         prefs.edit().apply {
             operation()

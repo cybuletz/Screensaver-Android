@@ -176,6 +176,91 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Clock position updated: $position")
     }
 
+    fun setupWeatherWidget(container: ViewGroup) {
+        Log.d(TAG, "Setting up weather widget")
+        val config = loadWeatherConfig()
+        Log.d(TAG, "Loaded weather config: $config")
+
+        try {
+            val weatherWidget = WeatherWidget(container, config)
+            Log.d(TAG, "Created WeatherWidget instance")
+
+            registerWidget(WidgetType.WEATHER, weatherWidget)
+            Log.d(TAG, "Weather widget registered")
+
+            weatherWidget.init()
+            Log.d(TAG, "Weather widget initialized")
+
+            // Show widget based on preferences
+            if (config.enabled) {
+                showWidget(WidgetType.WEATHER)
+            } else {
+                hideWidget(WidgetType.WEATHER)
+            }
+            Log.d(TAG, "Weather widget visibility set to: ${config.enabled}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up weather widget", e)
+        }
+    }
+
+    private fun loadWeatherConfig(): WidgetConfig.WeatherConfig {
+        val showWeather = preferences.getBoolean("show_weather", false)
+        val position = parseWidgetPosition(preferences.getString("weather_position", "TOP_END"))
+        val useCelsius = preferences.getBoolean("weather_use_celsius", true)
+        val updateInterval = preferences.getString("weather_update_interval", "1800")?.toLong()?.times(1000) ?: 1800000
+
+        Log.d(TAG, "Loading weather config - showWeather: $showWeather, " +
+                "position: $position, useCelsius: $useCelsius, " +
+                "updateInterval: $updateInterval")
+
+        return WidgetConfig.WeatherConfig(
+            enabled = showWeather,
+            position = position,
+            useCelsius = useCelsius,
+            updateInterval = updateInterval
+        )
+    }
+
+    fun updateWeatherConfig() {
+        Log.d(TAG, "Updating weather config")
+        val config = loadWeatherConfig()
+        Log.d(TAG, "New config loaded: $config")
+        updateWidgetConfig(WidgetType.WEATHER, config)
+        reinitializeWeatherWidget()
+    }
+
+    fun reinitializeWeatherWidget(container: ViewGroup? = null) {
+        Log.d(TAG, "Reinitializing weather widget")
+        val widget = widgets[WidgetType.WEATHER] as? WeatherWidget
+        if (widget != null) {
+            Log.d(TAG, "Existing widget found, updating")
+            val config = loadWeatherConfig()
+            widget.updateConfiguration(config)
+            if (config.enabled) {
+                Log.d(TAG, "Showing widget after config update")
+                showWidget(WidgetType.WEATHER)
+            } else {
+                Log.d(TAG, "Hiding widget after config update")
+                hideWidget(WidgetType.WEATHER)
+            }
+        } else {
+            Log.e(TAG, "No weather widget found to reinitialize")
+            container?.let {
+                setupWeatherWidget(it)
+            } ?: Log.e(TAG, "No container provided for widget initialization")
+        }
+    }
+
+    fun updateWeatherPosition(position: WidgetPosition) {
+        val currentConfig = (widgets[WidgetType.WEATHER] as? WeatherWidget)?.config
+            ?: return
+
+        val newConfig = currentConfig.copy(position = position)
+        updateWidgetConfig(WidgetType.WEATHER, newConfig)
+        preferences.setString("weather_position", position.name)
+        Log.d(TAG, "Weather position updated: $position")
+    }
+
     fun cleanup() {
         widgets.values.forEach { it.cleanup() }
         widgets.clear()
