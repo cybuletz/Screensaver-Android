@@ -14,6 +14,8 @@ import timber.log.Timber
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.withContext
+
 
 @Singleton
 class StateRecoveryManager @Inject constructor(
@@ -37,14 +39,14 @@ class StateRecoveryManager @Inject constructor(
             appDataManager.observeState()
                 .catch { e ->
                     Timber.e(e, "Error monitoring state changes")
-                    attemptRecovery()
+                    attemptRecovery(preserveAuth = true)
                 }
                 .collect { state ->
                     try {
                         validateState(state)
                     } catch (e: Exception) {
                         Timber.w(e, "State validation failed")
-                        attemptRecovery()
+                        attemptRecovery(preserveAuth = true)
                     }
                 }
         }
@@ -54,57 +56,114 @@ class StateRecoveryManager @Inject constructor(
         val validationResult = stateValidator.validate(state)
         if (!validationResult.isValid) {
             Timber.w("State validation failed: ${validationResult.errors.joinToString()}")
-            attemptRecovery()
+            attemptRecovery(preserveAuth = true)
         }
     }
 
-    private fun attemptRecovery() {
-        val recoveryHistory = appDataManager.getCurrentState().recoveryAttempts
+    private suspend fun attemptRecovery(preserveAuth: Boolean = true) {
+        val currentState = appDataManager.getCurrentState()
+        val recoveryHistory = currentState.recoveryAttempts
         val recentAttempts = recoveryHistory.filter {
             Instant.now().toEpochMilli() - it < RECOVERY_WINDOW_MS
         }
 
         if (recentAttempts.size >= MAX_RECOVERY_ATTEMPTS) {
             Timber.e("Too many recovery attempts, resetting to defaults")
-            appDataManager.resetToDefaults()
+            if (preserveAuth) {
+                performSafeReset(currentState)
+            } else {
+                appDataManager.resetToDefaults()
+            }
             return
         }
 
         try {
             val backupState = appDataManager.loadBackupState()
             if (stateValidator.validate(backupState).isValid) {
-                restoreFromBackup(backupState)
+                restoreFromBackup(backupState, preserveAuth, currentState)
             } else {
                 Timber.w("Backup state invalid, performing partial recovery")
-                performPartialRecovery()
+                performPartialRecovery(preserveAuth, currentState)
             }
         } catch (e: Exception) {
-            Timber.e(e, "Recovery failed, resetting to defaults")
-            appDataManager.resetToDefaults()
+            Timber.e(e, "Recovery failed, performing safe reset")
+            performSafeReset(currentState)
         }
     }
 
-    private fun restoreFromBackup(backupState: AppDataState) {
-        appDataManager.updateState { current ->
-            backupState.copy(
-                recoveryAttempts = current.recoveryAttempts + Instant.now().toEpochMilli(),
-                lastModified = Instant.now().epochSecond
-            )
+    private suspend fun restoreFromBackup(
+        backupState: AppDataState,
+        preserveAuth: Boolean,
+        currentState: AppDataState
+    ) {
+        withContext(Dispatchers.Default) {
+            appDataManager.updateState { _ ->
+                backupState.copy(
+                    // Preserve authentication if needed
+                    authToken = if (preserveAuth) currentState.authToken else backupState.authToken,
+                    refreshToken = if (preserveAuth) currentState.refreshToken else backupState.refreshToken,
+                    accountEmail = if (preserveAuth) currentState.accountEmail else backupState.accountEmail,
+                    // Update recovery metadata
+                    recoveryAttempts = currentState.recoveryAttempts + Instant.now().toEpochMilli(),
+                    lastModified = Instant.now().epochSecond
+                )
+            }
+            Timber.i("State restored from backup, auth preserved: $preserveAuth")
         }
-        Timber.i("State restored from backup")
     }
 
-    private fun performPartialRecovery() {
-        appDataManager.updateState { current ->
-            current.copy(
-                isInPreviewMode = false,
-                previewCount = 0,
-                lastPreviewTimestamp = 0,
-                recoveryAttempts = current.recoveryAttempts + Instant.now().toEpochMilli(),
-                lastModified = Instant.now().epochSecond
-            )
+    private suspend fun performPartialRecovery(preserveAuth: Boolean, currentState: AppDataState) {
+        withContext(Dispatchers.Default) {
+            appDataManager.updateState { _ ->
+                currentState.copy(
+                    isInPreviewMode = false,
+                    previewCount = 0,
+                    lastPreviewTimestamp = 0,
+                    // Don't clear auth tokens if preserving auth
+                    authToken = if (preserveAuth) currentState.authToken else "",
+                    refreshToken = if (preserveAuth) currentState.refreshToken else "",
+                    accountEmail = if (preserveAuth) currentState.accountEmail else "",
+                    recoveryAttempts = currentState.recoveryAttempts + Instant.now().toEpochMilli(),
+                    lastModified = Instant.now().epochSecond
+                )
+            }
+            Timber.i("Partial state recovery completed, auth preserved: $preserveAuth")
         }
-        Timber.i("Partial state recovery completed")
+    }
+
+    private suspend fun performSafeReset(currentState: AppDataState) {
+        withContext(Dispatchers.Default) {
+            try {
+                // Create a new default state while preserving authentication
+                val defaultState = AppDataState.createDefault().copy(
+                    authToken = currentState.authToken,
+                    refreshToken = currentState.refreshToken,
+                    accountEmail = currentState.accountEmail,
+                    lastModified = Instant.now().epochSecond
+                )
+
+                // Update the state while preserving critical data
+                appDataManager.updateState { _ -> defaultState }
+
+                // Clear non-essential caches
+                withContext(Dispatchers.IO) {
+                    context.cacheDir
+                        .listFiles()
+                        ?.filter { !it.name.contains("auth") && !it.name.contains("token") }
+                        ?.forEach { it.deleteRecursively() }
+
+                    context.externalCacheDir
+                        ?.listFiles()
+                        ?.filter { !it.name.contains("auth") && !it.name.contains("token") }
+                        ?.forEach { it.deleteRecursively() }
+                }
+
+                Timber.i("Safe reset completed, authentication preserved")
+            } catch (e: Exception) {
+                Timber.e(e, "Safe reset failed")
+                // If safe reset fails, don't throw - we're already in an error recovery path
+            }
+        }
     }
 }
 
