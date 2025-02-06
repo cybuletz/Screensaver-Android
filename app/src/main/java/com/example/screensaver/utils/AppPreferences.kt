@@ -150,6 +150,21 @@ class AppPreferences @Inject constructor(
         setSelectedAlbumIds(emptySet())
     }
 
+    fun clearAll() {
+        prefs.edit().clear().commit() // Use commit() for synchronous execution
+
+        // Reset all preference flows to defaults
+        _displayModeFlow.value = DisplayMode.DREAM_SERVICE
+        _transitionIntervalFlow.value = DEFAULT_TRANSITION_INTERVAL
+        _transitionAnimationFlow.value = TransitionAnimation.FADE
+        _showPhotoInfoFlow.value = true
+        _showClockFlow.value = false
+        _clockFormatFlow.value = ClockFormat.FORMAT_24H
+        _selectedAlbumsFlow.value = emptySet()
+        _kioskModeEnabledFlow.value = false
+        _previewCountFlow.value = 0
+    }
+
     // Album Sync Methods
     fun updateLastSync() {
         prefs.edit().putLong(PREF_LAST_SYNC, System.currentTimeMillis()).apply()

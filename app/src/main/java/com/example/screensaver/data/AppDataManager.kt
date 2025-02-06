@@ -13,6 +13,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.shared.GooglePhotosManager
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Manages the persistence and retrieval of application data state.
@@ -25,6 +28,7 @@ class AppDataManager @Inject constructor(
     private val appPreferences: AppPreferences,
     private val secureStorage: SecureStorage,
     private val googlePhotosManager: GooglePhotosManager,
+    private val photoCache: PhotoCache,
     private val coroutineScope: CoroutineScope
 ) {
     private val preferences: SharedPreferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -58,6 +62,70 @@ class AppDataManager @Inject constructor(
 
         // Perform initial state validation
         validateAndRepairState()
+    }
+
+    suspend fun performFullReset() {
+        try {
+            withContext(NonCancellable) {
+                // Clear Google Photos state
+                googlePhotosManager.cleanup()
+
+                // Clear secure storage
+                secureStorage.clearGoogleCredentials()
+
+                // Clear photo cache
+                photoCache.cleanup()
+
+                // Clear app preferences
+                appPreferences.clearAll()
+
+                // Clear main preferences
+                preferences.edit().clear().apply()
+
+                // Clear backup state
+                context.getSharedPreferences("${PREFERENCES_NAME}${BACKUP_SUFFIX}", Context.MODE_PRIVATE)
+                    .edit()
+                    .clear()
+                    .apply()
+
+                // Clear all SharedPreferences files
+                clearAllSharedPreferences()
+
+                // Reset to default state
+                val defaultState = AppDataState.createDefault()
+                saveState(defaultState)
+                _stateFlow.value = defaultState
+                _authState.value = AuthState.NotAuthenticated
+
+                // Clear cache directories
+                context.cacheDir.deleteRecursively()
+                context.externalCacheDir?.deleteRecursively()
+
+                Timber.d("Full data reset completed")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to perform full data reset")
+            throw e
+        }
+    }
+
+    private fun clearAllSharedPreferences() {
+        val prefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
+        if (prefsDir.exists() && prefsDir.isDirectory) {
+            prefsDir.listFiles()?.forEach { file ->
+                try {
+                    if (file.name.endsWith(".xml")) {
+                        val prefsName = file.name.replace(".xml", "")
+                        context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+                            .edit()
+                            .clear()
+                            .commit() // Use commit() to ensure synchronous execution
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error clearing preferences file: ${file.name}")
+                }
+            }
+        }
     }
 
     private fun updateAuthState(credentialState: SecureStorage.CredentialState) {
