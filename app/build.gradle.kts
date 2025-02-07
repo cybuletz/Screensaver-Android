@@ -170,6 +170,7 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics-ktx")
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
     implementation("com.google.api:gax:2.19.5")
+    implementation("com.google.android.gms:play-services-location:21.1.0")
 
     // Google Photos Library
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")

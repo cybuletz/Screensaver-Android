@@ -2,6 +2,7 @@ package com.example.screensaver.di
 
 import android.content.Context
 import com.example.screensaver.data.AppDataManager
+import com.example.screensaver.data.PhotoCache
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.utils.AppPreferences
 import com.google.gson.Gson
@@ -14,6 +15,8 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import com.example.screensaver.shared.GooglePhotosManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -39,6 +42,7 @@ object DataModule {
         appPreferences: AppPreferences,
         secureStorage: SecureStorage,
         googlePhotosManager: GooglePhotosManager,
+        photoCache: PhotoCache,
         coroutineScope: CoroutineScope
     ): AppDataManager {
         return AppDataManager(
@@ -47,6 +51,7 @@ object DataModule {
             appPreferences,
             secureStorage,
             googlePhotosManager,
+            photoCache,
             coroutineScope
         )
     }

@@ -9,6 +9,15 @@ sealed class WidgetConfig {
         val timeFormat: String = "HH:mm",
         val position: WidgetPosition = WidgetPosition.TOP_START
     ) : WidgetConfig()
+
+    data class WeatherConfig(
+        val enabled: Boolean = false,
+        val useCelsius: Boolean = true,
+        val position: WidgetPosition = WidgetPosition.TOP_END,
+        val useDeviceLocation: Boolean = true,
+        val manualLocation: String = "",
+        val updateInterval: Long = 1800000 // 30 minutes in milliseconds
+    ) : WidgetConfig()
 }
 
 enum class WidgetPosition {

@@ -16,18 +16,6 @@
             app:showSeekBarValue="true"
             app:iconSpaceReserved="false" />
 
-        <SeekBarPreference
-            android:key="photo_interval"
-            android:title="@string/pref_refresh_interval_title"
-            android:summary="@string/pref_refresh_interval_summary"
-            android:defaultValue="10000"
-            android:max="60000"
-            app:min="5000"
-            app:showSeekBarValue="true"
-            app:iconSpaceReserved="false"
-            app:seekBarIncrement="1000"
-            android:persistent="true" />
-
         <SwitchPreferenceCompat
             android:key="show_clock"
             android:title="@string/pref_lock_screen_clock_title"

@@ -186,6 +186,20 @@
         <item>hh:mm a</item>
     </string-array>
 
+    <string-array name="weather_update_interval_entries">
+        <item>15 minutes</item>
+        <item>30 minutes</item>
+        <item>1 hour</item>
+        <item>2 hours</item>
+    </string-array>
+
+    <string-array name="weather_update_interval_values">
+        <item>900</item>  <!-- 15 minutes in seconds -->
+        <item>1800</item> <!-- 30 minutes in seconds -->
+        <item>3600</item> <!-- 1 hour in seconds -->
+        <item>7200</item> <!-- 2 hours in seconds -->
+    </string-array>
+
     <!-- Empty Array for Dynamic Content -->
     <string-array name="empty_array"/>
 </resources>

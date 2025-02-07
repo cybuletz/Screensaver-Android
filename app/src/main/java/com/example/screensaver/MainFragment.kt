@@ -133,7 +133,6 @@ class MainFragment : Fragment() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         photoDisplayManager.updateSettings(
             transitionDuration = prefs.getInt("transition_duration", 1000).toLong(),
-            photoInterval = prefs.getInt("photo_interval", 10000).toLong(),
             showLocation = prefs.getBoolean("show_location", false),
             isRandomOrder = prefs.getBoolean("random_order", false)
         )

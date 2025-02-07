@@ -94,13 +94,6 @@ class PhotoSourceState @Inject constructor(
         return hasSelectedSource && hasSelectedPhotos
     }
 
-    fun canStartPreview(): Boolean {
-        checkAndResetDailyCount()
-        return isScreensaverReady() &&
-                getTimeSinceLastPreview() >= MIN_PREVIEW_INTERVAL &&
-                previewCount < MAX_DAILY_PREVIEWS
-    }
-
     fun recordPreviewStarted() {
         checkAndResetDailyCount()
         lastPreviewTimestamp = System.currentTimeMillis()
@@ -119,20 +112,6 @@ class PhotoSourceState @Inject constructor(
             Long.MAX_VALUE
         } else {
             System.currentTimeMillis() - lastPreviewTimestamp
-        }
-    }
-
-    fun getRemainingPreviewsToday(): Int {
-        checkAndResetDailyCount()
-        return MAX_DAILY_PREVIEWS - previewCount
-    }
-
-    fun getTimeUntilNextPreviewAllowed(): Long {
-        val timeSinceLastPreview = getTimeSinceLastPreview()
-        return if (timeSinceLastPreview < MIN_PREVIEW_INTERVAL) {
-            MIN_PREVIEW_INTERVAL - timeSinceLastPreview
-        } else {
-            0L
         }
     }
 

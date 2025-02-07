@@ -57,6 +57,9 @@ data class AppDataState(
     val lastPreviewTimestamp: Long = 0,
     val lastPreviewResetTime: Long = 0,
     val isInPreviewMode: Boolean = false,
+    val authToken: String = "",
+    val refreshToken: String = "",
+    val accountEmail: String = "",
 ) : Parcelable {
 
     companion object {

@@ -21,7 +21,8 @@ import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import com.example.screensaver.data.AppDataManager
-
+import androidx.preference.PreferenceManager
+import java.io.File
 
 /**
  * Custom Application class for initialization and global state management
@@ -53,6 +54,7 @@ class ScreensaverApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        checkFirstInstall()
         initializeApp()
     }
 
@@ -68,6 +70,40 @@ class ScreensaverApplication : Application() {
         // Add new initialization
         initializeAppData()
         logApplicationStart()
+    }
+
+    private fun checkFirstInstall() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val lastInstalledVersion = prefs.getInt("last_installed_version", -1)
+        val currentVersion = BuildConfig.VERSION_CODE
+
+        if (lastInstalledVersion == -1 || isAppDataCleared()) {
+            // This is a fresh install or app data was cleared
+            applicationScope.launch {
+                try {
+                    appDataManager.performFullReset()
+                    prefs.edit()
+                        .putInt("last_installed_version", currentVersion)
+                        .putLong("first_install_time", System.currentTimeMillis())
+                        .apply()
+                } catch (e: Exception) {
+                    Timber.e(e, "Error during first install cleanup")
+                }
+            }
+        }
+    }
+
+    private fun isAppDataCleared(): Boolean {
+        // Check if essential app directories are missing
+        val essential = arrayOf(
+            "shared_prefs",
+            "databases",
+            "cache"
+        )
+
+        return essential.any { dir ->
+            !File(applicationInfo.dataDir, dir).exists()
+        }
     }
 
     private fun initializeAppData() {

@@ -13,6 +13,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.shared.GooglePhotosManager
+import kotlinx.coroutines.withContext
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /**
  * Manages the persistence and retrieval of application data state.
@@ -25,11 +30,12 @@ class AppDataManager @Inject constructor(
     private val appPreferences: AppPreferences,
     private val secureStorage: SecureStorage,
     private val googlePhotosManager: GooglePhotosManager,
+    private val photoCache: PhotoCache,
     private val coroutineScope: CoroutineScope
 ) {
     private val preferences: SharedPreferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
-    private val _stateFlow = MutableStateFlow(loadState())
+    private val _stateFlow = MutableStateFlow(AppDataState.createDefault())
     val stateFlow = _stateFlow.asStateFlow()
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.NotAuthenticated)
@@ -45,7 +51,9 @@ class AppDataManager @Inject constructor(
         // Register listener for state changes
         preferences.registerOnSharedPreferenceChangeListener { _, key ->
             if (key == KEY_APP_STATE) {
-                _stateFlow.value = loadState()
+                coroutineScope.launch {
+                    _stateFlow.value = loadState()
+                }
             }
         }
 
@@ -56,8 +64,116 @@ class AppDataManager @Inject constructor(
             }
         }
 
-        // Perform initial state validation
-        validateAndRepairState()
+        // Load initial state
+        coroutineScope.launch {
+            try {
+                // First try to load and validate the state
+                val initialState = try {
+                    val state = loadState()
+                    state.validate()
+                    state
+                } catch (e: Exception) {
+                    Timber.w(e, "Initial state validation failed, attempting repair")
+                    try {
+                        val backupState = loadBackupState()
+                        backupState.validate()
+                        backupState
+                    } catch (e2: Exception) {
+                        Timber.e(e2, "Backup state invalid, using default")
+                        AppDataState.createDefault()
+                    }
+                }
+
+                // Save the validated/repaired state
+                saveState(initialState)
+
+                withContext(Dispatchers.Main) {
+                    _stateFlow.value = initialState
+                }
+
+                Timber.d("Initial state validation completed")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize state")
+                withContext(Dispatchers.Main) {
+                    _stateFlow.value = AppDataState.createDefault()
+                }
+            }
+        }
+    }
+
+    suspend fun performFullReset() {
+        try {
+            withContext(Dispatchers.IO + NonCancellable) {
+                // Clear Google Photos state
+                googlePhotosManager.cleanup()
+
+                // Clear secure storage
+                secureStorage.clearGoogleCredentials()
+
+                // Clear photo cache
+                photoCache.cleanup()
+
+                // Clear app preferences
+                appPreferences.clearAll()
+
+                // Clear main preferences
+                withContext(Dispatchers.IO) {
+                    preferences.edit().clear().commit()
+                }
+
+                // Clear backup state
+                withContext(Dispatchers.IO) {
+                    context.getSharedPreferences("${PREFERENCES_NAME}${BACKUP_SUFFIX}", Context.MODE_PRIVATE)
+                        .edit()
+                        .clear()
+                        .commit()
+                }
+
+                // Clear all SharedPreferences files
+                clearAllSharedPreferences()
+
+                // Reset to default state
+                val defaultState = AppDataState.createDefault()
+                saveState(defaultState)
+
+                withContext(Dispatchers.Main) {
+                    _stateFlow.value = defaultState
+                    _authState.value = AuthState.NotAuthenticated
+                }
+
+                // Clear cache directories
+                withContext(Dispatchers.IO) {
+                    context.cacheDir.deleteRecursively()
+                    context.externalCacheDir?.deleteRecursively()
+                }
+
+                Timber.d("Full data reset completed")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to perform full data reset")
+            throw e
+        }
+    }
+
+    private suspend fun clearAllSharedPreferences() {
+        withContext(Dispatchers.IO) {
+            val prefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
+            if (prefsDir.exists() && prefsDir.isDirectory) {
+                prefsDir.listFiles()?.forEach { file ->
+                    try {
+                        if (file.name.endsWith(".xml")) {
+                            val prefsName = file.name.replace(".xml", "")
+                            context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+                                .edit()
+                                .clear()
+                                .commit()
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error clearing preferences file: ${file.name}")
+                    }
+                }
+            }
+        }
     }
 
     private fun updateAuthState(credentialState: SecureStorage.CredentialState) {
@@ -79,12 +195,18 @@ class AppDataManager @Inject constructor(
 
         try {
             newState.validate()
-            saveState(newState)
-            _stateFlow.value = newState
+            coroutineScope.launch(Dispatchers.IO) {
+                saveState(newState)
+                withContext(Dispatchers.Main) {
+                    _stateFlow.value = newState
+                }
+            }
         } catch (e: Exception) {
             Timber.e(e, "Failed to update state")
             // Revert to last known good state
-            _stateFlow.value = loadState()
+            coroutineScope.launch {
+                _stateFlow.value = loadState()
+            }
         }
     }
 
@@ -134,41 +256,51 @@ class AppDataManager @Inject constructor(
      */
     fun resetToDefaults() {
         val defaultState = AppDataState.createDefault()
-        saveState(defaultState)
-        _stateFlow.value = defaultState
-        coroutineScope.launch {
-            signOut()
+        coroutineScope.launch(Dispatchers.IO) {
+            saveState(defaultState)
+            withContext(Dispatchers.Main) {
+                _stateFlow.value = defaultState
+                _authState.value = AuthState.NotAuthenticated
+            }
+            coroutineScope.launch {
+                signOut()
+            }
         }
     }
 
-    private fun saveState(state: AppDataState) {
-        try {
-            // First save to backup
-            preferences.edit {
-                putString("${KEY_APP_STATE}${BACKUP_SUFFIX}", gson.toJson(state))
-            }
+    private suspend fun saveState(state: AppDataState) {
+        withContext(Dispatchers.IO) {
+            try {
+                // First save to backup
+                context.getSharedPreferences("${PREFERENCES_NAME}${BACKUP_SUFFIX}", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_APP_STATE, gson.toJson(state))
+                    .commit()
 
-            // Then save to main storage
-            preferences.edit {
-                putString(KEY_APP_STATE, gson.toJson(state))
+                // Then save to main storage
+                preferences.edit()
+                    .putString(KEY_APP_STATE, gson.toJson(state))
+                    .commit()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save state")
+                throw e
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to save state")
-            throw e
         }
     }
 
-    private fun loadState(): AppDataState {
-        return try {
-            val json = preferences.getString(KEY_APP_STATE, null)
-            if (json != null) {
-                gson.fromJson(json, AppDataState::class.java)
-            } else {
-                AppDataState.createDefault()
+    private suspend fun loadState(): AppDataState {
+        return withContext(Dispatchers.IO) {
+            try {
+                val json = preferences.getString(KEY_APP_STATE, null)
+                if (json != null) {
+                    gson.fromJson(json, AppDataState::class.java)
+                } else {
+                    AppDataState.createDefault()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to load state, attempting to load backup")
+                loadBackupState()
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to load state, attempting to load backup")
-            loadBackupState()
         }
     }
 
@@ -184,21 +316,23 @@ class AppDataManager @Inject constructor(
         }
     }
 
-    internal fun loadBackupState(): AppDataState {
-        return try {
-            val backupJson = preferences.getString("${KEY_APP_STATE}${BACKUP_SUFFIX}", null)
-            if (backupJson != null) {
-                gson.fromJson(backupJson, AppDataState::class.java)
-            } else {
+    internal suspend fun loadBackupState(): AppDataState {
+        return withContext(Dispatchers.IO) {
+            try {
+                val backupJson = preferences.getString("${KEY_APP_STATE}${BACKUP_SUFFIX}", null)
+                if (backupJson != null) {
+                    gson.fromJson(backupJson, AppDataState::class.java)
+                } else {
+                    AppDataState.createDefault()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to load backup state")
                 AppDataState.createDefault()
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to load backup state")
-            AppDataState.createDefault()
         }
     }
 
-    private fun validateAndRepairState() {
+    private suspend fun validateAndRepairState() {
         try {
             val currentState = loadState()
             currentState.validate()
@@ -208,7 +342,9 @@ class AppDataManager @Inject constructor(
             try {
                 repairedState.validate()
                 saveState(repairedState)
-                _stateFlow.value = repairedState
+                withContext(Dispatchers.Main) {
+                    _stateFlow.value = repairedState
+                }
             } catch (e: Exception) {
                 Timber.e(e, "State repair failed, resetting to defaults")
                 resetToDefaults()

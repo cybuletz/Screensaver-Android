@@ -109,7 +109,6 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "MainActivity"
         private const val KIOSK_PERMISSION_REQUEST_CODE = 1001
         private const val MENU_CLEAR_CACHE = Menu.FIRST + 1
-        private const val PHOTO_TRANSITION_DELAY = 500L
     }
 
     private fun enableFullScreen() {
@@ -197,17 +196,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Update in MainActivity.kt
     private fun initializeWidgetSystem() {
         Log.d(TAG, "Starting widget system initialization")
         try {
-            ensureBinding() // Add safety check
+            ensureBinding()
             binding.screensaverContainer?.post {
                 try {
                     Log.d(TAG, "Container posted callback executing")
                     binding.screensaverContainer?.let { container ->
                         if (container is ConstraintLayout) {
-                            Log.d(TAG, "Setting up clock widget in ConstraintLayout")
+                            Log.d(TAG, "Setting up widgets in ConstraintLayout")
                             widgetManager.setupClockWidget(container)
+                            widgetManager.setupWeatherWidget(container) // Add this line
                         } else {
                             Log.e(TAG, "Container is not a ConstraintLayout, it is: ${container.javaClass.simpleName}")
                         }
@@ -218,13 +219,6 @@ class MainActivity : AppCompatActivity() {
             } ?: Log.e(TAG, "Could not post to screensaverContainer")
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing widget system", e)
-        }
-    }
-
-    private fun updateWidgetsOnReturn() {
-        Log.d(TAG, "Updating widgets on return to main screen")
-        binding.screensaverContainer?.post {
-            widgetManager.reinitializeClockWidget()
         }
     }
 
@@ -508,12 +502,9 @@ class MainActivity : AppCompatActivity() {
                 // Initialize PhotoDisplayManager
                 photoDisplayManager.initialize(views, lifecycleScope)
 
-                // Update settings
+                // Update settings - remove photoInterval parameter
                 val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                val intervalInt = prefs.getInt("photo_interval", 10000)
-
                 photoDisplayManager.updateSettings(
-                    photoInterval = intervalInt.toLong(),
                     isRandomOrder = prefs.getBoolean("random_order", false)
                 )
 
@@ -543,19 +534,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             else -> super.onBackPressed()
-        }
-    }
-
-    private fun ensurePhotoDisplay() {
-        if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
-            navController.currentDestination?.id == R.id.mainFragment) {
-            lifecycleScope.launch {
-                try {
-                    photoDisplayManager.startPhotoDisplay()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error ensuring photo display", e)
-                }
-            }
         }
     }
 
@@ -627,7 +605,6 @@ class MainActivity : AppCompatActivity() {
 
                         // Update PhotoDisplayManager settings
                         photoDisplayManager.updateSettings(
-                            photoInterval = intervalInt.toLong(),
                             isRandomOrder = prefs.getBoolean("random_order", false)
                         )
 
@@ -642,21 +619,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Log.w(TAG, "Received photos_ready but count is 0")
             }
-        }
-    }
-
-    private fun updateViewVisibility(view: View, visible: Boolean) {
-        if (view.visibility == View.VISIBLE && !visible) {
-            view.animate()
-                .alpha(0f)
-                .withEndAction { view.visibility = View.GONE }
-                .duration = 250
-        } else if (view.visibility != View.VISIBLE && visible) {
-            view.alpha = 0f
-            view.visibility = View.VISIBLE
-            view.animate()
-                .alpha(1f)
-                .duration = 250
         }
     }
 
@@ -744,16 +706,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun startLockScreenService() {
         try {
-            updateLockScreenService()
+            // Always use startForegroundService on Android O and above
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(Intent(this, PhotoLockScreenService::class.java))
+            } else {
+                startService(Intent(this, PhotoLockScreenService::class.java))
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error starting lock screen service", e)
         }
     }
 
     private fun updateLockScreenService(action: String? = null) {
-        Intent(this, PhotoLockScreenService::class.java).also { intent ->
-            action?.let { intent.action = it }
-            startService(intent)
+        try {
+            Intent(this, PhotoLockScreenService::class.java).also { intent ->
+                action?.let { intent.action = it }
+                // Always use startForegroundService on Android O and above
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating lock screen service", e)
         }
     }
 
@@ -803,43 +779,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupMenu() {
-        addMenuProvider(object : MenuProvider {
-            override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
-                menuInflater.inflate(R.menu.main_menu, menu)
-            }
-
-            override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
-                if (isDestroyed) return false
-
-                return when (menuItem.itemId) {
-                    R.id.action_settings -> {
-                        try {
-                            navController.navigate(R.id.action_mainFragment_to_settingsFragment)
-                            true
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error navigating to settings", e)
-                            false
-                        }
-                    }
-                    R.id.action_refresh -> {
-                        refreshMainFragment()
-                        true
-                    }
-                    else -> false
-                }
-            }
-        }, this, Lifecycle.State.RESUMED)
-    }
-
-    private fun refreshMainFragment() {
-        try {
-            photoDisplayManager.startPhotoDisplay()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error refreshing display", e)
-        }
-    }
-
     private fun showPermissionRationale() {
         if (isDestroyed) return
 
@@ -850,63 +789,6 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("Cancel") { _, _ -> disableKioskMode() }
             .show()
     }
-
-    private fun startPhotoDisplay() {
-        Log.d(TAG, "Starting photo display from onNewIntent")
-        if (isDestroyed || isPhotoTransitionInProgress) {
-            Log.d(TAG, "Skipping photo display start - activity destroyed or transition in progress")
-            return
-        }
-
-        lifecycleScope.launch {
-            try {
-                // Ensure we have photos before proceeding
-                val photoCount = photoManager.getPhotoCount()
-                if (photoCount <= 0) {
-                    Log.w(TAG, "No photos available to display")
-                    return@launch
-                }
-
-                // Initialize PhotoDisplayManager if needed
-                if (!photoDisplayManager.isInitialized()) {
-                    val views = PhotoDisplayManager.Views(
-                        primaryView = binding.photoPreview,
-                        overlayView = binding.photoPreviewOverlay,
-                        locationView = binding.locationOverlay,
-                        loadingIndicator = binding.loadingIndicator,
-                        loadingMessage = binding.loadingMessage,
-                        container = binding.screensaverContainer,
-                        overlayMessageContainer = binding.overlayMessageContainer,
-                        overlayMessageText = binding.overlayMessageText,
-                        backgroundLoadingIndicator = binding.backgroundLoadingIndicator
-                    )
-
-                    photoDisplayManager.initialize(views, lifecycleScope)
-
-                    // Update settings
-                    val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                    photoDisplayManager.updateSettings(
-                        photoInterval = prefs.getInt("photo_interval", 10000).toLong(), // Changed to getInt
-                        isRandomOrder = prefs.getBoolean("random_order", false)
-                    )
-                }
-
-                // Ensure cleanup before starting new display
-                withContext(Dispatchers.IO) {
-                    photoDisplayManager.clearPhotoCache()
-                    delay(100) // Small delay to ensure cleanup is complete
-                }
-
-                // Start the photo display
-                photoDisplayManager.startPhotoDisplay()
-                Log.d(TAG, "Photo display started with $photoCount photos")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error starting photo display", e)
-                showToast("Error starting photo display")
-            }
-        }
-    }
-
 
     private fun requestKioskPermissions() {
         requestPermissions(
@@ -949,32 +831,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun handlePhotosUpdate() {
-        if (isPhotoTransitionInProgress) {
-            Log.d(TAG, "Photo update already in progress, skipping")
-            return
-        }
-
-        isPhotoTransitionInProgress = true
-        lifecycleScope.launch {
-            try {
-                // Stop current display
-                photoDisplayManager.stopPhotoDisplay()
-
-                // Allow time for cleanup
-                delay(PHOTO_TRANSITION_DELAY)
-
-                // Start new display
-                startPhotoDisplay()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling photo update", e)
-                showToast("Error updating photos")
-            } finally {
-                isPhotoTransitionInProgress = false
-            }
-        }
-    }
-
     private fun showToast(message: String) {
         if (!isDestroyed) {
             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
@@ -1001,19 +857,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Case 1: When user logs out
-    private fun handleLogout() {
-        photoDisplayManager.cleanup(clearCache = true) // Clear cache on logout
-        // ... other logout logic
-    }
-
-    // Case 2: When user changes photo sources
-    private fun handlePhotoSourceChange() {
-        photoDisplayManager.clearPhotoCache() // Clear only cache
-        initializePhotos() // Reinitialize with new source
-    }
-
-    // Case 3: Add a menu option for users to manually clear cache
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
         menu.add(Menu.NONE, MENU_CLEAR_CACHE, Menu.NONE, "Clear Photo Cache")
@@ -1031,7 +874,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Case 4: Handle cache cleanup on low memory
     override fun onLowMemory() {
         super.onLowMemory()
         photoDisplayManager.handleLowMemory()
