@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
+import java.io.File
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,6 +31,9 @@ class SecureStorage @Inject constructor(
         private const val KEY_ACCOUNT_EMAIL = "account_email"
         private const val KEY_LAST_AUTH = "last_auth_time"
         private const val KEY_REFRESH_ATTEMPTS = "refresh_attempts"
+
+        private const val FALLBACK_PREFS_NAME = "secure_storage_fallback"
+        private const val EMERGENCY_PREFS_NAME = "secure_storage_emergency"
     }
 
     init {
@@ -70,34 +74,52 @@ class SecureStorage @Inject constructor(
 
     private fun handleInitializationError() {
         try {
-            // Delete the corrupted preferences file
-            context.deleteSharedPreferences(SECURE_PREFS_NAME)
+            // Delete the existing preferences file
+            val prefsFile = File(context.applicationInfo.dataDir, "shared_prefs/$SECURE_PREFS_NAME.xml")
+            if (prefsFile.exists()) {
+                prefsFile.delete()
+            }
 
-            // Delete the master key
-            val keyStore = KeyStore.getInstance("AndroidKeyStore")
-            keyStore.load(null)
-            keyStore.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+            // Try to delete the master key
+            try {
+                val keyStore = KeyStore.getInstance("AndroidKeyStore")
+                keyStore.load(null)
+                keyStore.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+            } catch (e: Exception) {
+                Timber.e(e, "Error deleting master key, continuing anyway")
+            }
 
-            // Reinitialize with new keys
+            // Create new master key
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
 
-            securePreferences = EncryptedSharedPreferences.create(
-                context,
-                SECURE_PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
+            // Try to create new encrypted preferences with a different name
+            securePreferences = try {
+                EncryptedSharedPreferences.create(
+                    context,
+                    FALLBACK_PREFS_NAME,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to create fallback encrypted preferences, falling back to regular preferences")
+                // Fall back to unencrypted preferences as last resort
+                context.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE)
+            }
 
-            // Reset state to not initialized
+            // Reset state
             _credentialsFlow.value = CredentialState.NotInitialized
-
             Timber.d("Successfully recovered from secure storage initialization error")
         } catch (e: Exception) {
             Timber.e(e, "Failed to recover from secure storage initialization error")
-            throw RuntimeException("Could not initialize secure storage", e)
+            // Create emergency fallback preferences
+            securePreferences = context.getSharedPreferences(
+                EMERGENCY_PREFS_NAME,
+                Context.MODE_PRIVATE
+            )
+            _credentialsFlow.value = CredentialState.Error(e)
         }
     }
 

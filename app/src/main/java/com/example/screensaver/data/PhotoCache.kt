@@ -105,6 +105,8 @@ class PhotoCache @Inject constructor(
     }
 
     private fun updateCacheStats() {
+        // Only update if really needed, not on every operation
+        if (_cacheStatus.value == CacheStatus.IDLE) return
         try {
             var totalSize = 0L
             var fileCount = 0
@@ -119,12 +121,6 @@ class PhotoCache @Inject constructor(
                 preloadedCount = preloadedPhotos.size,
                 preloadQueueSize = preloadQueue.size
             )
-
-            // Check for low space
-            if (totalSize > MAX_CACHE_SIZE * 0.9) { // 90% full
-                _cacheStatus.value = CacheStatus.LOW_SPACE
-                performSmartCleanup()
-            }
         } catch (e: Exception) {
             Log.e(TAG, "Error updating cache stats", e)
         }
@@ -192,21 +188,18 @@ class PhotoCache @Inject constructor(
             try {
                 while (isActive && preloadQueue.isNotEmpty()) {
                     val url = preloadQueue.poll() ?: continue
-                    try {
-                        if (!isPhotoCached(url)) {
-                            // Download and cache photo
+                    if (!isPhotoCached(url)) {
+                        try {
                             val bitmap = downloadPhoto(url)
                             cachePhotoBitmap(url, bitmap)
                             preloadedPhotos[url] = System.currentTimeMillis()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error preloading photo: $url", e)
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error preloading photo: $url", e)
                     }
                 }
-                _cacheStatus.value = CacheStatus.PRELOAD_COMPLETE
             } catch (e: Exception) {
                 Log.e(TAG, "Error in preload job", e)
-                _cacheStatus.value = CacheStatus.ERROR
             }
         })
     }
@@ -267,11 +260,9 @@ class PhotoCache @Inject constructor(
         try {
             _cacheStatus.value = CacheStatus.WRITING
             FileOutputStream(lastPhotoFile).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                out.flush()  // Ensure immediate write
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out) // Reduced quality for speed
             }
-            Log.d(TAG, "Cached photo bitmap successfully")
-            updateCacheStats()
+            cachedBitmapInMemory = bitmap // Keep in memory
             _cacheStatus.value = CacheStatus.IDLE
         } catch (e: Exception) {
             Log.e(TAG, "Error caching photo bitmap", e)
