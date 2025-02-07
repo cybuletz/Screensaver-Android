@@ -4,8 +4,7 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:gravity="center"
-    android:padding="16dp"
-    android:background="@drawable/widget_background">
+    android:padding="16dp">
 
     <ImageView
         android:id="@+id/weatherIcon"

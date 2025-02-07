@@ -62,7 +62,10 @@ class WidgetManager @Inject constructor(
     }
 
     fun hideWidget(type: WidgetType) {
-        widgets[type]?.hide()
+        widgets[type]?.apply {
+            hide()
+            cleanup() // Add cleanup to fully remove the widget
+        }
         updateWidgetState(type, WidgetState.Hidden)
     }
 
@@ -134,19 +137,21 @@ class WidgetManager @Inject constructor(
         if (widget != null) {
             Log.d(TAG, "Existing widget found, updating")
             val config = loadClockConfig()
-            widget.updateConfiguration(config)
+
+            // First hide and cleanup the old widget
+            hideWidget(WidgetType.CLOCK)
+
+            // Then create a new widget if needed
             if (config.showClock) {
-                Log.d(TAG, "Showing widget after config update")
-                showWidget(WidgetType.CLOCK)
-            } else {
-                Log.d(TAG, "Hiding widget after config update")
-                hideWidget(WidgetType.CLOCK)
+                container?.let {
+                    setupClockWidget(it)
+                }
             }
-        } else {
-            Log.e(TAG, "No clock widget found to reinitialize")
-            container?.let {
-                setupClockWidget(it)
-            } ?: Log.e(TAG, "No container provided for widget initialization")
+        } else if (container != null) {
+            val config = loadClockConfig()
+            if (config.showClock) {
+                setupClockWidget(container)
+            }
         }
     }
 
@@ -235,19 +240,21 @@ class WidgetManager @Inject constructor(
         if (widget != null) {
             Log.d(TAG, "Existing widget found, updating")
             val config = loadWeatherConfig()
-            widget.updateConfiguration(config)
+
+            // First hide and cleanup the old widget
+            hideWidget(WidgetType.WEATHER)
+
+            // Then create a new widget if needed
             if (config.enabled) {
-                Log.d(TAG, "Showing widget after config update")
-                showWidget(WidgetType.WEATHER)
-            } else {
-                Log.d(TAG, "Hiding widget after config update")
-                hideWidget(WidgetType.WEATHER)
+                container?.let {
+                    setupWeatherWidget(it)
+                }
             }
-        } else {
-            Log.e(TAG, "No weather widget found to reinitialize")
-            container?.let {
-                setupWeatherWidget(it)
-            } ?: Log.e(TAG, "No container provided for widget initialization")
+        } else if (container != null) {
+            val config = loadWeatherConfig()
+            if (config.enabled) {
+                setupWeatherWidget(container)
+            }
         }
     }
 
