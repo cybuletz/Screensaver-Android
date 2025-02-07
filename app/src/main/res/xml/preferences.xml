@@ -127,10 +127,11 @@
             android:summary="@string/pref_photo_interval_summary"
             app:min="5"
             android:max="60"
-            android:defaultValue="15"
+            android:defaultValue="5"
             app:seekBarIncrement="5"
             app:showSeekBarValue="true"
-            app:updatesContinuously="true" />
+            app:updatesContinuously="true"
+            android:persistent="true" />
 
         <Preference
             android:key="preview_lock_screen"

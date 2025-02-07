@@ -62,6 +62,8 @@ class PhotoDisplayManager @Inject constructor(
     private val _cacheStatusMessage = MutableStateFlow<String?>(null)
     val cacheStatusMessage: StateFlow<String?> = _cacheStatusMessage
 
+    private val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+
     private val preloadLimit = 3
     private var hasVerifiedPhotos = false
     private var photoCount: Int = 0
@@ -88,13 +90,14 @@ class PhotoDisplayManager @Inject constructor(
 
     // Settings
     private var transitionDuration: Long = 1000
-    private var photoInterval: Long = 10000
     private var showLocation: Boolean = false
     private var isRandomOrder: Boolean = false
 
     companion object {
         private const val TAG = "PhotoDisplayManager"
-        private const val DEFAULT_PHOTO_FADE_DURATION = 300
+        const val PREF_KEY_INTERVAL = "photo_interval"
+        const val DEFAULT_INTERVAL_SECONDS = 5
+        private const val MILLIS_PER_SECOND = 1000L
     }
 
     init {
@@ -120,16 +123,13 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
-    // Add this method to check if screensaver is running
     fun isScreensaverRunning(): Boolean {
         return displayJob?.isActive == true
     }
 
-    // Add this method to handle auto-start
-    fun handleAutoStart() {
-        if (!isScreensaverRunning()) {
-            startPhotoDisplay()
-        }
+    private fun getIntervalMillis(): Long {
+        val seconds = prefs.getInt(PREF_KEY_INTERVAL, DEFAULT_INTERVAL_SECONDS)
+        return seconds * MILLIS_PER_SECOND
     }
 
     private fun handleCacheError() {
@@ -146,25 +146,6 @@ class PhotoDisplayManager @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling cache error", e)
                 showDefaultPhoto()
-            }
-        }
-    }
-
-    fun dumpCacheStatus(): String {
-        return photoCache.getCacheDebugInfo()
-    }
-
-    fun preloadNextPhotos(urls: List<String>, limit: Int = preloadLimit) {
-        managerScope.launch {
-            try {
-                val startIndex = (currentPhotoIndex + 1).coerceAtMost(urls.size - 1)
-                val endIndex = (startIndex + limit).coerceAtMost(urls.size)
-
-                for (i in startIndex until endIndex) {
-                    photoCache.preloadPhoto(urls[i])
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to preload photos", e)
             }
         }
     }
@@ -197,24 +178,6 @@ class PhotoDisplayManager @Inject constructor(
                 views.overlayMessageText?.text = context.getString(R.string.error_message, error)
                 Log.d(TAG, "Error message displayed: $error")
             } ?: Log.e(TAG, "Message container is null")
-        }
-    }
-
-    private fun loadPhotosInBackground() {
-        lifecycleScope?.launch(Dispatchers.IO) {
-            try {
-                photoManager.loadPhotos()
-                val photoCount = photoManager.getPhotoCount()
-
-                if (photoCount > 0) {
-                    photoCache.savePhotoState(true, photoManager.getPhotoUrl(0))
-                    withContext(Dispatchers.Main) {
-                        startPhotoDisplay()
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading photos in background", e)
-            }
         }
     }
 
@@ -300,23 +263,14 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
-    private fun updateLoadingState(isLoading: Boolean, message: String? = null) {
-        views?.apply {
-            loadingIndicator?.visibility = if (isLoading) View.VISIBLE else View.GONE
-            loadingMessage?.apply {
-                text = message
-                visibility = if (message != null) View.VISIBLE else View.GONE
-            }
-        }
-    }
-
     fun isInitialized(): Boolean {
         return views != null && lifecycleScope != null
     }
 
     fun startPhotoDisplay() {
         val currentScope = lifecycleScope ?: return
-        Log.d(TAG, "Starting photo display with interval: ${photoInterval}ms")
+        val interval = getIntervalMillis()
+        Log.d(TAG, "Starting photo display with interval: ${interval}ms")
 
         // Hide any existing messages immediately
         hideLoadingOverlay()
@@ -332,7 +286,7 @@ class PhotoDisplayManager @Inject constructor(
 
                 // Then continue with regular interval
                 while (isActive) {
-                    delay(photoInterval)
+                    delay(getIntervalMillis()) // Always get fresh value
                     loadAndDisplayPhoto()
                 }
             } catch (e: Exception) {
@@ -341,16 +295,6 @@ class PhotoDisplayManager @Inject constructor(
                 }
             }
         }
-    }
-
-    private fun hideLoadingMessage() {
-        views?.overlayMessageContainer?.animate()
-            ?.alpha(0f)
-            ?.setDuration(300)
-            ?.withEndAction {
-                views?.overlayMessageContainer?.visibility = View.GONE
-            }
-            ?.start()
     }
 
     private fun loadAndDisplayPhoto(fromCache: Boolean = false) {
@@ -763,21 +707,6 @@ class PhotoDisplayManager @Inject constructor(
         currentPhotoIndex = nextIndex
     }
 
-    private fun preloadNextBatch(currentIndex: Int, totalPhotos: Int) {
-        managerScope.launch {
-            try {
-                for (i in 1..preloadLimit) {
-                    val nextIndex = (currentIndex + i) % totalPhotos
-                    photoManager.getPhotoUrl(nextIndex)?.let { url ->
-                        photoCache.preloadPhoto(url)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error preloading next batch", e)
-            }
-        }
-    }
-
     // Helper extension function to convert Drawable to Bitmap
     private fun Drawable.toBitmap(): Bitmap? {
         return try {
@@ -803,32 +732,14 @@ class PhotoDisplayManager @Inject constructor(
 
     fun updateSettings(
         transitionDuration: Long? = null,
-        photoInterval: Long? = null,
         showLocation: Boolean? = null,
         isRandomOrder: Boolean? = null
     ) {
         Log.d(TAG, "Updating settings")
-        var shouldRestartDisplay = false
 
-        transitionDuration?.let {
-            this.transitionDuration = it
-        }
-        photoInterval?.let {
-            this.photoInterval = it
-            shouldRestartDisplay = true
-        }
+        transitionDuration?.let { this.transitionDuration = it }
         showLocation?.let { this.showLocation = it }
         isRandomOrder?.let { this.isRandomOrder = it }
-
-        // Verify the changes took effect
-        Log.d(TAG, "After settings update")
-
-        // Restart photo display if interval changed
-        if (shouldRestartDisplay) {
-            Log.d(TAG, "Restarting photo display due to interval change")
-            stopPhotoDisplay()
-            startPhotoDisplay()
-        }
     }
 
     fun getTransitionDuration(): Long = transitionDuration

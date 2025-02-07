@@ -567,44 +567,38 @@ class SettingsFragment : PreferenceFragmentCompat() {
             summary = "$currentValue seconds for transition animation"
         }
 
-        // Connect photo change interval settings
+        // Connect photo change interval settings - simplified to only update UI
         findPreference<SeekBarPreference>("photo_interval")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
                 val intervalSeconds = (newValue as Int)
-                // Force restart the photo display with new interval
-                photoDisplayManager.apply {
-                    stopPhotoDisplay() // Stop current display
-                    updateSettings(photoInterval = intervalSeconds * 1000L)
-                    startPhotoDisplay() // Restart with new interval
-                }
-                Log.d(TAG, "Setting new photo interval to $intervalSeconds seconds")
+                // Only update summary - PhotoDisplayManager will read from preferences directly
                 summary = "Display each photo for $intervalSeconds seconds"
+                // Restart display to pick up new interval
+                photoDisplayManager.apply {
+                    stopPhotoDisplay()
+                    startPhotoDisplay()
+                }
                 true
             }
 
-            // Set initial summary and value
+            // Set initial summary
             val currentValue = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                .getInt("photo_interval", 15)
+                .getInt(PhotoDisplayManager.PREF_KEY_INTERVAL, PhotoDisplayManager.DEFAULT_INTERVAL_SECONDS)
             summary = "Display each photo for $currentValue seconds"
         }
 
         // Initialize PhotoDisplayManager with current settings
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         val transitionTime = prefs.getInt("transition_duration", 2)
-        val photoInterval = prefs.getInt("photo_interval", 15)
 
-        // Force stop and restart with correct settings
         photoDisplayManager.apply {
             stopPhotoDisplay()
             updateSettings(
                 transitionDuration = transitionTime * 1000L,
-                photoInterval = photoInterval * 1000L,
                 isRandomOrder = prefs.getBoolean("random_order", true)
             )
             startPhotoDisplay()
         }
-
-        Log.d(TAG, "PhotoDisplayManager initialized with interval: ${photoInterval} seconds")
     }
 
     override fun onResume() {

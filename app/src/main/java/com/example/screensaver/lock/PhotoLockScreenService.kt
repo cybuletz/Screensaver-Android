@@ -80,6 +80,11 @@ class PhotoLockScreenService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service created")
+
+        // Start foreground immediately before any other operations
+        startForegroundWithNotification()
+
+        // Then do other initializations
         createNotificationChannel()
         registerScreenReceiver()
         checkKioskMode()
