@@ -29,6 +29,7 @@ import android.view.animation.*
 import android.widget.ImageView
 import java.util.Calendar
 import android.view.animation.AnimationUtils
+import androidx.core.content.ContextCompat
 
 
 
@@ -100,15 +101,53 @@ class WeatherWidget(
 
     override fun show() {
         isVisible = true
-        binding?.getRootView()?.visibility = View.VISIBLE
-        startWeatherUpdates()
+        binding?.let { binding ->
+            binding.getRootView()?.apply {
+                // Ensure the view is added to container if it was removed
+                if (parent == null) {
+                    container.addView(this)
+                }
+
+                // Set visibility and background
+                visibility = View.VISIBLE
+                background = ContextCompat.getDrawable(context, R.drawable.widget_background)
+                alpha = 1f
+
+                // Update position and bring to front
+                updatePosition(config.position)
+                bringToFront()
+            }
+
+            // Show weather components if enabled
+            if (config.enabled) {
+                binding.getWeatherIcon()?.visibility = View.VISIBLE
+                binding.getTemperatureView()?.visibility = View.VISIBLE
+                startWeatherUpdates()
+            }
+        }
+        Log.d(TAG, "Weather widget shown")
     }
 
     override fun hide() {
         isVisible = false
-        binding?.getRootView()?.visibility = View.GONE
+        binding?.let { binding ->
+            binding.getRootView()?.apply {
+                // Remove the view from parent when hiding
+                (parent as? ViewGroup)?.removeView(this)
+                visibility = View.GONE
+                background = null // Clear the background
+                alpha = 0f
+            }
+
+            // Hide all child views
+            binding.getWeatherIcon()?.visibility = View.GONE
+            binding.getTemperatureView()?.visibility = View.GONE
+        }
+
+        // Stop weather updates
         stopWeatherUpdates()
         stopAllAnimations()
+        Log.d(TAG, "Weather widget hidden and removed from parent")
     }
 
     override fun cleanup() {

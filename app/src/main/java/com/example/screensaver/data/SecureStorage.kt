@@ -31,9 +31,6 @@ class SecureStorage @Inject constructor(
         private const val KEY_ACCOUNT_EMAIL = "account_email"
         private const val KEY_LAST_AUTH = "last_auth_time"
         private const val KEY_REFRESH_ATTEMPTS = "refresh_attempts"
-
-        private const val FALLBACK_PREFS_NAME = "secure_storage_fallback"
-        private const val EMERGENCY_PREFS_NAME = "secure_storage_emergency"
     }
 
     init {
@@ -54,72 +51,23 @@ class SecureStorage @Inject constructor(
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
 
-            verifyAndRepairPreferences()
+            // Simple verification without destructive recovery
+            verifyPreferences()
             initializeCredentialState()
         } catch (e: Exception) {
-            Timber.e(e, "Failed to initialize secure preferences, attempting recovery")
-            handleInitializationError()
+            Timber.e(e, "Failed to initialize secure preferences")
+            // Fall back to regular preferences only if encryption is completely unavailable
+            securePreferences = context.getSharedPreferences(SECURE_PREFS_NAME, Context.MODE_PRIVATE)
         }
     }
 
-    private fun verifyAndRepairPreferences() {
+    private fun verifyPreferences() {
         try {
-            // Try to read any value to verify the preferences are working
+            // Simple read test
             securePreferences.all
         } catch (e: Exception) {
-            Timber.e(e, "Error verifying secure preferences")
-            handleInitializationError()
-        }
-    }
-
-    private fun handleInitializationError() {
-        try {
-            // Delete the existing preferences file
-            val prefsFile = File(context.applicationInfo.dataDir, "shared_prefs/$SECURE_PREFS_NAME.xml")
-            if (prefsFile.exists()) {
-                prefsFile.delete()
-            }
-
-            // Try to delete the master key
-            try {
-                val keyStore = KeyStore.getInstance("AndroidKeyStore")
-                keyStore.load(null)
-                keyStore.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
-            } catch (e: Exception) {
-                Timber.e(e, "Error deleting master key, continuing anyway")
-            }
-
-            // Create new master key
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            // Try to create new encrypted preferences with a different name
-            securePreferences = try {
-                EncryptedSharedPreferences.create(
-                    context,
-                    FALLBACK_PREFS_NAME,
-                    masterKey,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-                )
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to create fallback encrypted preferences, falling back to regular preferences")
-                // Fall back to unencrypted preferences as last resort
-                context.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE)
-            }
-
-            // Reset state
-            _credentialsFlow.value = CredentialState.NotInitialized
-            Timber.d("Successfully recovered from secure storage initialization error")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to recover from secure storage initialization error")
-            // Create emergency fallback preferences
-            securePreferences = context.getSharedPreferences(
-                EMERGENCY_PREFS_NAME,
-                Context.MODE_PRIVATE
-            )
-            _credentialsFlow.value = CredentialState.Error(e)
+            Timber.e(e, "Error verifying secure preferences, but continuing")
+            // Log error but don't take destructive action
         }
     }
 
@@ -134,7 +82,6 @@ class SecureStorage @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Failed to initialize credential state")
             _credentialsFlow.value = CredentialState.Error(e)
-            handleInitializationError()
         }
     }
 
@@ -167,7 +114,6 @@ class SecureStorage @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Failed to save Google credentials")
             _credentialsFlow.value = CredentialState.Error(e)
-            handleInitializationError()
             throw SecurityException("Failed to save credentials securely", e)
         }
     }
@@ -191,7 +137,6 @@ class SecureStorage @Inject constructor(
             } else null
         } catch (e: Exception) {
             Timber.e(e, "Failed to retrieve Google credentials")
-            handleInitializationError()
             null
         }
     }
@@ -211,7 +156,6 @@ class SecureStorage @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Failed to clear Google credentials")
             _credentialsFlow.value = CredentialState.Error(e)
-            handleInitializationError()
             throw SecurityException("Failed to clear credentials", e)
         }
     }
@@ -234,7 +178,6 @@ class SecureStorage @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Failed to update access token")
             _credentialsFlow.value = CredentialState.Error(e)
-            handleInitializationError()
             throw SecurityException("Failed to update access token", e)
         }
     }
@@ -247,17 +190,6 @@ class SecureStorage @Inject constructor(
                 .apply()
         } catch (e: Exception) {
             Timber.e(e, "Failed to record refresh attempt")
-            handleInitializationError()
-        }
-    }
-
-    fun getRefreshAttempts(): Int {
-        return try {
-            securePreferences.getInt(KEY_REFRESH_ATTEMPTS, 0)
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to get refresh attempts")
-            handleInitializationError()
-            0
         }
     }
 

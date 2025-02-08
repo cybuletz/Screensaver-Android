@@ -14,6 +14,7 @@ import android.text.format.DateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.Calendar
+import androidx.core.content.ContextCompat
 
 class ClockWidget(
     private val container: ViewGroup,
@@ -271,8 +272,15 @@ class ClockWidget(
             Log.d(TAG, "Binding exists")
             val rootView = binding.getRootView()
             rootView?.apply {
+                // Ensure the view is added to container if it was removed
+                if (parent == null) {
+                    container.addView(this)
+                }
+
                 post {
                     visibility = View.VISIBLE
+                    background = ContextCompat.getDrawable(context, R.drawable.widget_background)
+                    alpha = 1f
                     bringToFront()
 
                     val params = layoutParams as? ConstraintLayout.LayoutParams
@@ -323,6 +331,7 @@ class ClockWidget(
                 }
             } ?: Log.e(TAG, "Root view is null")
 
+            // Show clock if enabled
             binding.getClockView()?.apply {
                 visibility = if (config.showClock) View.VISIBLE else View.GONE
                 Log.d(TAG, "Clock visibility set to: ${if (config.showClock) "VISIBLE" else "GONE"}")
@@ -335,6 +344,7 @@ class ClockWidget(
                 Log.d(TAG, "Date visibility set to: ${if (config.showDate) "VISIBLE" else "GONE"}, text: $text")
             }
         } ?: Log.e(TAG, "Binding is null in show()")
+
         startUpdates()
     }
 
@@ -352,10 +362,24 @@ class ClockWidget(
 
     override fun hide() {
         isVisible = false
-        binding?.getRootView()?.visibility = View.GONE
+        binding?.let { binding ->
+            binding.getRootView()?.apply {
+                // Remove the view from parent when hiding
+                (parent as? ViewGroup)?.removeView(this)
+                visibility = View.GONE
+                background = null // Clear the background
+                alpha = 0f
+            }
+
+            // Hide all child views
+            binding.getClockView()?.visibility = View.GONE
+            binding.getDateView()?.visibility = View.GONE
+        }
         stopUpdates()
-        Log.d(TAG, "Widget hidden")
+        dateUpdateHandler?.removeCallbacksAndMessages(null)
+        Log.d(TAG, "Clock widget hidden and removed from parent")
     }
+
 
     private fun startUpdates() {
         stopUpdates()
