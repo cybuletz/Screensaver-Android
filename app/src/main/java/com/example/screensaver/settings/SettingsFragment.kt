@@ -70,6 +70,10 @@ import com.example.screensaver.widgets.WidgetState
 import com.example.screensaver.widgets.WidgetType
 import com.example.screensaver.widgets.WidgetManager
 import com.example.screensaver.widgets.WidgetPosition
+import android.Manifest
+import androidx.preference.SwitchPreferenceCompat
+import androidx.preference.EditTextPreference
+import com.example.screensaver.utils.AppPreferences
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -93,6 +97,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var widgetManager: WidgetManager
+
+    @Inject
+    lateinit var appPreferences: AppPreferences
 
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
@@ -129,6 +136,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     Exception("Storage permission is required to access local photos")
                 )
             }
+        }
+    }
+
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            widgetManager.initializeWeatherWidget()
+        } else {
+            findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.isChecked = false
+            showFeedback(R.string.location_permission_denied_title)
         }
     }
 
@@ -320,10 +338,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
             .edit()
             .apply()
 
+        // Force restart widgets
+        widgetManager.reinitializeWeatherWidget()
+
         // Force restart photo display
         photoDisplayManager.apply {
             stopPhotoDisplay()
-            updateSettings() // Make sure this updates all settings
+            updateSettings()
             startPhotoDisplay()
         }
 
@@ -467,22 +488,89 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun setupWidgetPreferences() {
-        findPreference<PreferenceCategory>("widget_settings")?.let { category ->
-            // Add widget preferences as a nested screen
-            findPreference<Preference>("widget_configuration")?.setOnPreferenceClickListener {
-                if (widgetPreferenceFragment == null) {
-                    widgetPreferenceFragment = WidgetPreferenceFragment()
-                }
+    private fun showLocationPermissionRationale() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.location_permission_rationale_title)
+            .setMessage(R.string.location_permission_rationale_message)
+            .setPositiveButton(R.string.grant_permission) { _, _ ->
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.isChecked = false
+                // Use SharedPreferences.Editor directly
+                PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .edit()
+                    .putBoolean("weather_use_device_location", false)
+                    .apply()
+            }
+            .show()
+    }
 
-                parentFragmentManager.beginTransaction()
-                    .replace(R.id.settings_container, widgetPreferenceFragment!!)
-                    .addToBackStack("widget_settings")
-                    .commit()
 
-                true
+    private fun checkLocationPermissions() {
+        when {
+            ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                widgetManager.initializeWeatherWidget()
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) -> {
+                showLocationPermissionRationale()
+            }
+            else -> {
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
             }
         }
+    }
+
+    private fun setupWidgetPreferences() {
+        findPreference<PreferenceCategory>("widget_settings")?.let { category ->
+            // Weather Widget Setup
+            findPreference<SwitchPreferenceCompat>("show_weather")?.setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                widgetManager.updateWeatherVisibility(enabled)
+                // Update dependent preferences visibility
+                findPreference<ListPreference>("weather_position")?.isVisible = enabled
+                findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.isVisible = enabled
+                findPreference<EditTextPreference>("weather_manual_location")?.isVisible = enabled
+                true
+            }
+
+            // Location Settings
+            findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.apply {
+                setOnPreferenceChangeListener { _, newValue ->
+                    val useDeviceLocation = newValue as Boolean
+                    findPreference<EditTextPreference>("weather_manual_location")?.isVisible = !useDeviceLocation
+                    if (useDeviceLocation) {
+                        checkLocationPermissions()
+                    }
+                    true
+                }
+            }
+
+            // Fix for nullable Boolean issue
+            val useDeviceLocation = findPreference<SwitchPreferenceCompat>("weather_use_device_location")
+            findPreference<EditTextPreference>("weather_manual_location")?.apply {
+                isVisible = !(useDeviceLocation?.isChecked ?: true)
+                setOnPreferenceChangeListener { _, newValue ->
+                    val location = newValue as String
+                    if (location.isBlank()) {
+                        showFeedback(R.string.invalid_location)
+                        false
+                    } else {
+                        widgetManager.updateWeatherLocation(location)
+                        true
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Reinitialize widgets with current settings
+        widgetManager.reinitializeWeatherWidget()
     }
 
     private fun observeWidgetState() {
@@ -1211,13 +1299,27 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         Log.d(TAG, "Restoring settings state - Sources: ${currentState.photoSources}")
 
-        // Restore photo source selection
-        findPreference<MultiSelectListPreference>("photo_source_selection")?.values =
-            currentState.photoSources
+        // Check if we have active Google Photos setup
+        val hasGoogleCredentials = secureStorage.getGoogleCredentials() != null
+        val hasSelectedAlbums = appPreferences.getSelectedAlbumIds().isNotEmpty()
+        val hasGooglePhotosActive = hasGoogleCredentials && hasSelectedAlbums
+
+        // Create updated photo sources set
+        val updatedSources = currentState.photoSources.toMutableSet()
+        if (hasGooglePhotosActive && !updatedSources.contains("google_photos")) {
+            Log.d(TAG, "Adding Google Photos to sources due to active credentials and albums")
+            updatedSources.add("google_photos")
+        }
+
+        // Restore photo source selection with potentially updated sources
+        findPreference<MultiSelectListPreference>("photo_source_selection")?.apply {
+            values = updatedSources
+            Log.d(TAG, "Updated photo sources to: $updatedSources")
+        }
 
         // Restore Local Photos state
         findPreference<PreferenceCategory>("local_photos_settings")?.apply {
-            isVisible = currentState.photoSources.contains("local")
+            isVisible = updatedSources.contains("local")
             updateLocalPhotosUI() // Update UI to show selected photos count
         }
 
@@ -1228,23 +1330,49 @@ class SettingsFragment : PreferenceFragmentCompat() {
         ) == true
 
         // Update Google Photos UI based on current state
-        findPreference<PreferenceCategory>("google_photos_settings")?.isVisible =
-            currentState.photoSources.contains("google_photos")
+        findPreference<PreferenceCategory>("google_photos_settings")?.apply {
+            isVisible = updatedSources.contains("google_photos")
+            Log.d(TAG, "Google Photos category visibility: ${isVisible}")
+        }
 
         findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.apply {
-            isChecked = currentState.googlePhotosEnabled && hasRequiredScope
-            isVisible = currentState.photoSources.contains("google_photos")
+            isChecked = hasGooglePhotosActive && hasRequiredScope
+            isVisible = updatedSources.contains("google_photos")
+            Log.d(TAG, "Google Photos enabled state: ${isChecked}, visible: ${isVisible}")
         }
 
         findPreference<Preference>("select_albums")?.apply {
-            isEnabled = currentState.googlePhotosEnabled && hasRequiredScope
-            isVisible = currentState.photoSources.contains("google_photos")
+            isEnabled = hasGooglePhotosActive && hasRequiredScope
+            isVisible = updatedSources.contains("google_photos")
+            // Update summary to show selected album count
+            if (isVisible && hasSelectedAlbums) {
+                val albumCount = appPreferences.getSelectedAlbumIds().size
+                summary = resources.getQuantityString(
+                    R.plurals.selected_albums_count,
+                    albumCount,
+                    albumCount
+                )
+            }
         }
 
         // Restore display mode
         findPreference<ListPreference>("display_mode_selection")?.value = currentState.displayMode
 
-        Log.d(TAG, "Settings state restored - Google Photos enabled: ${currentState.googlePhotosEnabled}, Local Photos visible: ${currentState.photoSources.contains("local")}")
+        // Update app state if needed
+        if (hasGooglePhotosActive && !currentState.googlePhotosEnabled) {
+            Log.d(TAG, "Updating app state to reflect active Google Photos")
+            appDataManager.updateState { it.copy(
+                photoSources = updatedSources,
+                googlePhotosEnabled = true
+            )}
+        }
+
+        Log.d(TAG, """Settings state restored:
+        - Google Photos enabled: ${hasGooglePhotosActive}
+        - Has credentials: ${hasGoogleCredentials}
+        - Has albums: ${hasSelectedAlbums}
+        - Required scope: ${hasRequiredScope}
+        - Sources: ${updatedSources}""".trimIndent())
     }
 
     private fun observeAppState() {
