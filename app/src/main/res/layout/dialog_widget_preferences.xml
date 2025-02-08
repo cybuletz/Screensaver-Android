@@ -28,7 +28,7 @@
         android:layout_height="wrap_content"
         android:contentDescription="@string/widget_preferences_scroll_area"
         android:clipToPadding="false"
-        android:paddingBottom="64dp"
+        android:paddingBottom="70dp"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout
@@ -44,36 +44,45 @@
 
     </androidx.core.widget.NestedScrollView>
 
-    <com.google.android.material.divider.MaterialDivider
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="1dp"
+        android:layout_height="62dp"
         android:layout_gravity="bottom"
-        android:layout_marginBottom="56dp"/>
+        android:background="?android:attr/windowBackground">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="end"
-        android:padding="8dp"
-        android:background="?android:attr/windowBackground"
-        android:layout_gravity="bottom">
+        <com.google.android.material.divider.MaterialDivider
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_gravity="top"/>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/cancel_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
-            android:text="@android:string/cancel"
-            style="@style/Widget.MaterialComponents.Button.TextButton"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="4dp"
+            android:paddingHorizontal="8dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/ok_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@android:string/ok"
-            style="@style/Widget.MaterialComponents.Button.TextButton"/>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/cancel_button"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginEnd="8dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="@android:string/cancel"
+                style="@style/Widget.MaterialComponents.Button.TextButton"/>
 
-    </LinearLayout>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ok_button"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="@android:string/ok"
+                style="@style/Widget.MaterialComponents.Button.TextButton"/>
+
+        </LinearLayout>
+    </FrameLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
