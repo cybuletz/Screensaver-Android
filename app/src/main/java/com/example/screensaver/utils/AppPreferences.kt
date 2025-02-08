@@ -254,6 +254,10 @@ class AppPreferences @Inject constructor(
         else -> ClockFormat.FORMAT_24H
     }
 
+    fun setShowWeather(enabled: Boolean) {
+        updatePreference { putBoolean("show_weather", enabled) }
+    }
+
     fun isKioskModeEnabled(): Boolean =
         prefs.getBoolean(PREF_KIOSK_MODE_ENABLED, false)
 

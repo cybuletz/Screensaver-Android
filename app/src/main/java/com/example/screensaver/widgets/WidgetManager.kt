@@ -258,6 +258,47 @@ class WidgetManager @Inject constructor(
         }
     }
 
+    fun updateWeatherVisibility(visible: Boolean) {
+        val currentConfig = (widgets[WidgetType.WEATHER] as? WeatherWidget)?.config
+            ?: return
+        val newConfig = currentConfig.copy(enabled = visible)
+        updateWidgetConfig(WidgetType.WEATHER, newConfig)
+
+        // Use edit instead of updatePreference
+        preferences.edit {
+            putBoolean("show_weather", visible)
+        }
+
+        if (visible) {
+            showWidget(WidgetType.WEATHER)
+        } else {
+            hideWidget(WidgetType.WEATHER)
+        }
+        Log.d(TAG, "Weather visibility updated to: $visible")
+    }
+
+    fun updateWeatherLocation(location: String) {
+        val currentConfig = (widgets[WidgetType.WEATHER] as? WeatherWidget)?.config
+            ?: return
+        val newConfig = currentConfig.copy(
+            manualLocation = location,
+            useDeviceLocation = false
+        )
+        updateWidgetConfig(WidgetType.WEATHER, newConfig)
+        preferences.setString("weather_manual_location", location)
+        Log.d(TAG, "Weather manual location updated to: $location")
+    }
+
+    fun initializeWeatherWidget() {
+        val config = loadWeatherConfig()
+        updateWidgetConfig(WidgetType.WEATHER, config)
+        if (config.enabled) {
+            showWidget(WidgetType.WEATHER)
+        } else {
+            hideWidget(WidgetType.WEATHER)
+        }
+    }
+
     fun updateWeatherPosition(position: WidgetPosition) {
         val currentConfig = (widgets[WidgetType.WEATHER] as? WeatherWidget)?.config
             ?: return

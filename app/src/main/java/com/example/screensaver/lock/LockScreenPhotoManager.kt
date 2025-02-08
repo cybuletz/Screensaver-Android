@@ -303,7 +303,12 @@ class LockScreenPhotoManager @Inject constructor(
         return if (index in mediaItems.indices) {
             val url = mediaItems[index].baseUrl
             Log.d(TAG, "Getting photo URL for index $index: $url")
-            url
+            // Ensure the URL includes size parameters for Google Photos
+            if (url.contains("googleusercontent.com") && !url.contains("=w")) {
+                "$url=w2048-h1024"  // Add size parameters if missing
+            } else {
+                url
+            }
         } else {
             Log.e(TAG, "Invalid photo index: $index, total photos: ${mediaItems.size}")
             null

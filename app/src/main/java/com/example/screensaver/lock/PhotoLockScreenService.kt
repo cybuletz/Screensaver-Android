@@ -190,6 +190,15 @@ class PhotoLockScreenService : Service() {
                         if (photos != null) {
                             lockScreenPhotoManager.clearPhotos()
                             lockScreenPhotoManager.addPhotos(photos)
+                            // Add this line to ensure preference is set
+                            PreferenceManager.getDefaultSharedPreferences(this@PhotoLockScreenService)
+                                .edit()
+                                .putStringSet("photo_source_selection",
+                                    setOf("google_photos") + (PreferenceManager
+                                        .getDefaultSharedPreferences(this@PhotoLockScreenService)
+                                        .getStringSet("photo_source_selection", emptySet()) ?: emptySet())
+                                )
+                                .apply()
                             isInitialized = true
                             precachePhotos()
                         }

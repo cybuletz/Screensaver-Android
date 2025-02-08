@@ -166,7 +166,9 @@ class GooglePhotosManager @Inject constructor(
 
     fun hasValidTokens(): Boolean {
         val credentials = secureStorage.getGoogleCredentials()
-        return credentials != null && !credentials.needsRefresh
+        return credentials != null &&
+                credentials.accessToken.isNotEmpty() &&
+                credentials.expirationTime > System.currentTimeMillis() + TOKEN_EXPIRY_BUFFER
     }
 
     suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
