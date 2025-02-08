@@ -28,9 +28,16 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat() {
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        setPreferencesFromResource(R.xml.widget_preferences, rootKey)
-        setupPreferenceListeners()
+        val widgetType = arguments?.getString("widget_type")?.let {
+            WidgetType.valueOf(it)
+        } ?: return
+
+        when (widgetType) {
+            WidgetType.CLOCK -> setPreferencesFromResource(R.xml.widget_clock_preferences, rootKey)
+            WidgetType.WEATHER -> setPreferencesFromResource(R.xml.widget_weather_preferences, rootKey)
+        }
     }
+
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -183,15 +190,15 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun createWeatherConfig(): WidgetConfig.WeatherConfig {
+    fun createWeatherConfig(): WidgetConfig.WeatherConfig {
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         return WidgetConfig.WeatherConfig(
             enabled = prefs.getBoolean("show_weather", false),
             useCelsius = prefs.getBoolean("weather_use_celsius", true),
             position = WidgetPosition.valueOf(prefs.getString("weather_position", "TOP_END") ?: "TOP_END"),
             updateInterval = prefs.getString("weather_update_interval", "1800")?.toLong()?.times(1000) ?: 1800000,
-            useDeviceLocation = prefs.getBoolean("weather_use_device_location", true), // Add this
-            manualLocation = prefs.getString("weather_manual_location", "") ?: "" // Add this
+            useDeviceLocation = prefs.getBoolean("weather_use_device_location", true),
+            manualLocation = prefs.getString("weather_manual_location", "") ?: ""
         )
     }
 
