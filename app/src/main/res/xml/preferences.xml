@@ -314,6 +314,21 @@
             android:entryValues="@array/weather_update_interval_values"
             android:defaultValue="1800"
             app:dependency="show_weather" />
+
+        <SwitchPreferenceCompat
+            android:key="weather_use_device_location"
+            android:title="@string/weather_use_device_location_title"
+            android:summary="@string/weather_use_device_location_summary"
+            android:defaultValue="true"
+            app:dependency="show_weather" />
+
+        <EditTextPreference
+            android:key="weather_manual_location"
+            android:title="@string/weather_manual_location_title"
+            android:summary="@string/weather_manual_location_summary"
+            android:dependency="weather_use_device_location"
+            android:defaultValue=""
+            app:dependency="show_weather" />
     </PreferenceCategory>
 
 
