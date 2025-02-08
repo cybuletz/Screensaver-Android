@@ -64,6 +64,9 @@ class PhotoDisplayManager @Inject constructor(
 
     private val prefs = PreferenceManager.getDefaultSharedPreferences(context)
 
+    private var lastLoadedSource: String? = null
+    private var lastPhotoUrl: String? = null
+
     private val preloadLimit = 3
     private var hasVerifiedPhotos = false
     private var photoCount: Int = 0
@@ -123,6 +126,30 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    private fun loadPhotosInBackground() {
+        lifecycleScope?.launch(Dispatchers.IO) {
+            try {
+                photoManager.loadPhotos()
+                val photoCount = photoManager.getPhotoCount()
+
+                if (photoCount > 0) {
+                    photoCache.savePhotoState(true, photoManager.getPhotoUrl(0))
+                    withContext(Dispatchers.Main) {
+                        startPhotoDisplay()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading photos in background", e)
+            }
+        }
+    }
+
+    private fun persistPhotoState(source: String, url: String) {
+        lastLoadedSource = source
+        lastPhotoUrl = url
+        photoCache.savePhotoState(true, url)
+    }
+
     fun isScreensaverRunning(): Boolean {
         return displayJob?.isActive == true
     }
@@ -163,6 +190,25 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Initializing PhotoDisplayManager")
         this.views = views
         this.lifecycleScope = scope
+
+        // Store scope locally to avoid smart cast issue
+        val currentScope = scope
+
+        // Check for existing state
+        currentScope.launch {
+            try {
+                val currentSources = PreferenceManager.getDefaultSharedPreferences(context)
+                    .getStringSet("photo_source_selection", null)
+
+                if (currentSources?.contains("google_photos") == true) {
+                    loadPhotosInBackground()
+                } else {
+                    updatePhotoSources()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing photo state", e)
+            }
+        }
     }
 
     private fun showErrorMessage(error: String) {
@@ -196,12 +242,18 @@ class PhotoDisplayManager @Inject constructor(
 
     fun updatePhotoSources() {
         val currentSources = PreferenceManager.getDefaultSharedPreferences(context)
-            .getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
+            .getStringSet("photo_source_selection", null) // Remove default to prevent override
+            ?: return // If null, return instead of defaulting to local
 
         val photos = mutableListOf<Uri>()
 
         if (currentSources.contains("local")) {
             photos.addAll(loadLocalPhotos())
+        }
+
+        if (currentSources.contains("google_photos")) {
+            loadPhotosInBackground() // Handle Google Photos separately
+            return // Exit early as background loading will handle display
         }
 
         if (photos.isNotEmpty()) {
@@ -216,17 +268,16 @@ class PhotoDisplayManager @Inject constructor(
 
         lifecycleScope?.launch {
             try {
-                // Stop any existing display
                 stopPhotoDisplay()
-
-                // Convert URIs to strings and add as photo URLs
                 val photoUrls = photos.map { it.toString() }
-                photoManager.addPhotoUrls(photoUrls)  // Use the new method
+                photoManager.addPhotoUrls(photoUrls)
+
+                if (photoUrls.isNotEmpty()) {
+                    persistPhotoState("local", photoUrls[0])
+                }
 
                 currentPhotoIndex = 0
                 hasLoadedPhotos = true
-
-                // Start displaying photos
                 startPhotoDisplay()
 
                 Log.d(TAG, "Photo display started with ${photos.size} photos")
