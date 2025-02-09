@@ -74,6 +74,8 @@ import android.Manifest
 import androidx.preference.SwitchPreferenceCompat
 import androidx.preference.EditTextPreference
 import com.example.screensaver.utils.AppPreferences
+import androidx.fragment.app.DialogFragment
+import com.example.screensaver.widgets.WidgetPreferenceDialog
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -440,25 +442,20 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     setupCacheSettings(preferenceScreen)
                     setupLocalPhotoPreferences()
                     setupChargingPreference()
-                    setupWidgetPreferences()
 
-                    // Set up position preference listener
-                    findPreference<ListPreference>("clock_position")?.apply {
-                        setOnPreferenceChangeListener { preference, newValue ->
-                            handlePreferenceChange(preference, newValue)
-                        }
-                    }
-
-                    // Add preference change listener for widget-related preferences
-                    findPreference<SwitchPreferenceCompat>("show_clock")?.setOnPreferenceChangeListener { _, newValue ->
-                        Log.d(TAG, "Clock visibility changed to: $newValue")
+                    // Setup widget configuration buttons
+                    findPreference<Preference>("clock_widget_settings")?.setOnPreferenceClickListener {
+                        showWidgetDialog(WidgetType.CLOCK)
                         true
                     }
 
-                    findPreference<ListPreference>("clock_position")?.setOnPreferenceChangeListener { _, newValue ->
-                        Log.d(TAG, "Clock position changing to: $newValue")
+                    findPreference<Preference>("weather_widget_settings")?.setOnPreferenceClickListener {
+                        showWidgetDialog(WidgetType.WEATHER)
                         true
                     }
+
+                    // Update widget summaries based on their states
+                    updateWidgetSummaries()
 
                     // Observe state changes
                     observeAppState()
@@ -467,6 +464,33 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Error setting up preferences", e)
                 }
+            }
+        }
+    }
+
+    private fun showWidgetDialog(widgetType: WidgetType) {
+        WidgetPreferenceDialog.newInstance(widgetType)
+            .show(childFragmentManager, "widget_settings")
+    }
+
+    private fun updateWidgetSummaries() {
+        findPreference<Preference>("clock_widget_settings")?.apply {
+            val enabled = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getBoolean("show_clock", false)
+            summary = if (enabled) {
+                getString(R.string.pref_clock_widget_enabled_summary)
+            } else {
+                getString(R.string.pref_widget_settings_summary)
+            }
+        }
+
+        findPreference<Preference>("weather_widget_settings")?.apply {
+            val enabled = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                .getBoolean("show_weather", false)
+            summary = if (enabled) {
+                getString(R.string.pref_show_weather_summary)
+            } else {
+                getString(R.string.pref_widget_settings_summary)
             }
         }
     }
