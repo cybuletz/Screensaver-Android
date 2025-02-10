@@ -36,6 +36,8 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat() {
             WidgetType.CLOCK -> setPreferencesFromResource(R.xml.widget_clock_preferences, rootKey)
             WidgetType.WEATHER -> setPreferencesFromResource(R.xml.widget_weather_preferences, rootKey)
         }
+
+        setupPreferenceListeners()
     }
 
 
@@ -131,14 +133,16 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat() {
         (clockPrefs + weatherPrefs).forEach { key ->
             findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, newValue ->
                 when {
+                    key == "show_clock" -> handleClockVisibilityChange(newValue as Boolean)
+                    key == "show_weather" -> handleWeatherVisibilityChange(newValue as Boolean)
                     key.startsWith("clock_") -> handleClockPreferenceChange(key, newValue)
                     key.startsWith("weather_") -> handleWeatherPreferenceChange(key, newValue)
-                    else -> handlePreferenceChange(key, newValue)
                 }
                 true
             }
         }
 
+        // Setup location permission listener
         findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.setOnPreferenceChangeListener { _, newValue ->
             val useLocation = newValue as Boolean
             if (useLocation) {
@@ -151,43 +155,52 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun handlePreferenceChange(key: String, newValue: Any): Boolean {
-        when (key) {
-            "show_clock" -> {
-                val show = newValue as Boolean
-                if (show) {
-                    widgetManager.showWidget(WidgetType.CLOCK)
-                } else {
-                    widgetManager.hideWidget(WidgetType.CLOCK)
-                }
-            }
-            "show_weather" -> {
-                val show = newValue as Boolean
-                if (show) {
-                    widgetManager.showWidget(WidgetType.WEATHER)
-                } else {
-                    widgetManager.hideWidget(WidgetType.WEATHER)
-                }
-            }
+    private fun handleClockVisibilityChange(show: Boolean) {
+        if (show) {
+            widgetManager.showWidget(WidgetType.CLOCK)
+        } else {
+            widgetManager.hideWidget(WidgetType.CLOCK)
         }
-        return true
+    }
+
+    private fun handleWeatherVisibilityChange(show: Boolean) {
+        Log.d(TAG, "Weather visibility changed to: $show")
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
+
+        if (show) {
+            // First save the preference
+            sharedPreferences.edit().apply {
+                putBoolean("show_weather", true)
+                apply()
+            }
+            // Then create and apply the config
+            val config = createWeatherConfig()
+            widgetManager.updateWidgetConfig(WidgetType.WEATHER, config)
+            // Finally show the widget
+            widgetManager.showWidget(WidgetType.WEATHER)
+        } else {
+            sharedPreferences.edit().apply {
+                putBoolean("show_weather", false)
+                apply()
+            }
+            widgetManager.hideWidget(WidgetType.WEATHER)
+        }
     }
 
     private fun handleWeatherPreferenceChange(key: String, newValue: Any) {
         when (key) {
-            "show_weather" -> {
-                val show = newValue as Boolean
-                if (show) {
-                    widgetManager.showWidget(WidgetType.WEATHER)
-                } else {
-                    widgetManager.hideWidget(WidgetType.WEATHER)
-                }
-            }
-            else -> {
-                // For all other changes, update the config
-                widgetManager.updateWidgetConfig(WidgetType.WEATHER, createWeatherConfig())
+            "weather_position", "weather_use_celsius", "weather_update_interval",
+            "weather_use_device_location", "weather_manual_location" -> {
+                // Update the config
+                val config = createWeatherConfig()
+                widgetManager.updateWidgetConfig(WidgetType.WEATHER, config)
             }
         }
+    }
+
+    private fun handleClockPreferenceChange(key: String, newValue: Any) {
+        // For all clock changes, just update the config
+        widgetManager.updateClockConfig()
     }
 
     fun createWeatherConfig(): WidgetConfig.WeatherConfig {
@@ -200,22 +213,5 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat() {
             useDeviceLocation = prefs.getBoolean("weather_use_device_location", true),
             manualLocation = prefs.getString("weather_manual_location", "") ?: ""
         )
-    }
-
-    private fun handleClockPreferenceChange(key: String, newValue: Any) {
-        when (key) {
-            "show_clock" -> {
-                val show = newValue as Boolean
-                if (show) {
-                    widgetManager.showWidget(WidgetType.CLOCK)
-                } else {
-                    widgetManager.hideWidget(WidgetType.CLOCK)
-                }
-            }
-            else -> {
-                // For all other changes, just update the config
-                widgetManager.updateClockConfig()
-            }
-        }
     }
 }

@@ -23,29 +23,36 @@ class WeatherWidgetBinding(
     fun inflate(): View {
         try {
             Log.d(TAG, "Starting inflate() for WeatherWidgetBinding")
-            if (rootView == null) {
-                rootView = LayoutInflater.from(container.context)
-                    .inflate(R.layout.widget_weather, container, false)
-                Log.d(TAG, "Layout inflated")
 
-                weatherIcon = rootView?.findViewById(R.id.weatherIcon)
-                temperatureView = rootView?.findViewById(R.id.temperatureView)
-                Log.d(TAG, "Views found - Icon: ${weatherIcon != null}, Temperature: ${temperatureView != null}")
+            // Always clean up existing view first
+            cleanup()
 
-                // Add the view to container with default TOP_END position
-                val params = ConstraintLayout.LayoutParams(
-                    ConstraintLayout.LayoutParams.WRAP_CONTENT,
-                    ConstraintLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                    setMargins(32, 32, 32, 32)
-                }
+            rootView = LayoutInflater.from(container.context)
+                .inflate(R.layout.widget_weather, container, false)
+            Log.d(TAG, "Layout inflated")
 
-                rootView?.layoutParams = params
-                container.addView(rootView)
-                Log.d(TAG, "Root view added to container with params")
+            weatherIcon = rootView?.findViewById(R.id.weatherIcon)
+            temperatureView = rootView?.findViewById(R.id.temperatureView)
+            Log.d(TAG, "Views found - Icon: ${weatherIcon != null}, Temperature: ${temperatureView != null}")
+
+            // Set initial visibility to GONE
+            rootView?.visibility = View.GONE
+
+            // IMPORTANT: Match the Clock Widget's parameter setup
+            val params = ConstraintLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            rootView?.layoutParams = params
+
+            // Remove view from any existing parent
+            rootView?.parent?.let { parent ->
+                (parent as? ViewGroup)?.removeView(rootView)
             }
+
+            container.addView(rootView)
+            Log.d(TAG, "Root view added to container with params")
+
             return rootView!!
         } catch (e: Exception) {
             Log.e(TAG, "Error in inflate()", e)
@@ -58,6 +65,10 @@ class WeatherWidgetBinding(
     fun getRootView(): View? = rootView
 
     fun cleanup() {
+        // Remove view from parent if it exists
+        rootView?.let { view ->
+            (view.parent as? ViewGroup)?.removeView(view)
+        }
         rootView = null
         weatherIcon = null
         temperatureView = null

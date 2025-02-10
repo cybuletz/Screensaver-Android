@@ -23,6 +23,8 @@ class WidgetManager @Inject constructor(
     private val _widgetStates = MutableStateFlow<Map<WidgetType, WidgetData>>(emptyMap())
     val widgetStates: StateFlow<Map<WidgetType, WidgetData>> = _widgetStates.asStateFlow()
 
+    private var lastKnownContainer: ViewGroup? = null
+
     companion object {
         private const val TAG = "WidgetManager"
     }
@@ -182,6 +184,7 @@ class WidgetManager @Inject constructor(
     }
 
     fun setupWeatherWidget(container: ViewGroup) {
+        lastKnownContainer = container  // Store the container
         Log.d(TAG, "Setting up weather widget")
         val config = loadWeatherConfig()
         Log.d(TAG, "Loaded weather config: $config")
@@ -196,7 +199,6 @@ class WidgetManager @Inject constructor(
             weatherWidget.init()
             Log.d(TAG, "Weather widget initialized")
 
-            // Show widget based on preferences
             if (config.enabled) {
                 showWidget(WidgetType.WEATHER)
             } else {
@@ -230,51 +232,71 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Updating weather config")
         val config = loadWeatherConfig()
         Log.d(TAG, "New config loaded: $config")
-        updateWidgetConfig(WidgetType.WEATHER, config)
-        reinitializeWeatherWidget()
-    }
 
-    fun reinitializeWeatherWidget(container: ViewGroup? = null) {
-        Log.d(TAG, "Reinitializing weather widget")
-        val widget = widgets[WidgetType.WEATHER] as? WeatherWidget
-        if (widget != null) {
-            Log.d(TAG, "Existing widget found, updating")
-            val config = loadWeatherConfig()
+        // Get the current widget before updating config
+        val currentWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
 
-            // First hide and cleanup the old widget
-            hideWidget(WidgetType.WEATHER)
-
-            // Then create a new widget if needed
+        if (currentWidget != null) {
+            // If we have an existing widget, just update its config
+            updateWidgetConfig(WidgetType.WEATHER, config)
             if (config.enabled) {
-                container?.let {
-                    setupWeatherWidget(it)
-                }
+                currentWidget.show()
+            } else {
+                currentWidget.hide()
             }
-        } else if (container != null) {
-            val config = loadWeatherConfig()
-            if (config.enabled) {
+        } else {
+            // If no widget exists and we have a container, create a new one
+            lastKnownContainer?.let { container ->
                 setupWeatherWidget(container)
             }
         }
     }
 
+    fun reinitializeWeatherWidget(container: ViewGroup? = null) {
+        Log.d(TAG, "Reinitializing weather widget")
+        try {
+            // First, clean up existing widget
+            widgets[WidgetType.WEATHER]?.cleanup()
+            widgets.remove(WidgetType.WEATHER)
+
+            // Get current config
+            val config = loadWeatherConfig()
+            Log.d(TAG, "Loaded weather config: $config")
+
+            if (config.enabled && container != null) {
+                // Create and setup new widget
+                val weatherWidget = WeatherWidget(container, config)
+                registerWidget(WidgetType.WEATHER, weatherWidget)
+                weatherWidget.init()
+
+                // Explicitly show the widget
+                showWidget(WidgetType.WEATHER)
+                Log.d(TAG, "Weather widget reinitialized and shown")
+            } else {
+                Log.d(TAG, "Weather widget not enabled or container is null")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reinitializing weather widget", e)
+        }
+    }
+
     fun updateWeatherVisibility(visible: Boolean) {
-        val currentConfig = (widgets[WidgetType.WEATHER] as? WeatherWidget)?.config
-            ?: return
-        val newConfig = currentConfig.copy(enabled = visible)
-        updateWidgetConfig(WidgetType.WEATHER, newConfig)
+        Log.d(TAG, "Updating weather visibility: $visible")
+        preferences.setShowWeather(visible)
 
-        // Use edit instead of updatePreference
-        preferences.edit {
-            putBoolean("show_weather", visible)
+        val currentWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
+        if (currentWidget != null) {
+            if (visible) {
+                currentWidget.show()
+            } else {
+                currentWidget.hide()
+            }
+        } else if (visible) {
+            // If widget doesn't exist but should be visible, create it
+            lastKnownContainer?.let { container ->
+                setupWeatherWidget(container)
+            }
         }
-
-        if (visible) {
-            showWidget(WidgetType.WEATHER)
-        } else {
-            hideWidget(WidgetType.WEATHER)
-        }
-        Log.d(TAG, "Weather visibility updated to: $visible")
     }
 
     fun updateWeatherLocation(location: String) {

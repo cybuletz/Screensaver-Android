@@ -110,6 +110,7 @@ class MainActivity : AppCompatActivity() {
         private const val KIOSK_PERMISSION_REQUEST_CODE = 1001
         private const val MENU_CLEAR_CACHE = Menu.FIRST + 1
         private const val PHOTO_TRANSITION_DELAY = 500L
+        private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
     }
 
     private fun enableFullScreen() {
@@ -197,7 +198,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Update in MainActivity.kt
     private fun initializeWidgetSystem() {
         Log.d(TAG, "Starting widget system initialization")
         try {
@@ -208,8 +208,23 @@ class MainActivity : AppCompatActivity() {
                     binding.screensaverContainer?.let { container ->
                         if (container is ConstraintLayout) {
                             Log.d(TAG, "Setting up widgets in ConstraintLayout")
+
+                            // Set up both widgets
                             widgetManager.setupClockWidget(container)
-                            widgetManager.setupWeatherWidget(container) // Add this line
+                            widgetManager.setupWeatherWidget(container)
+
+                            // Immediately show widgets based on preferences
+                            val showClock = preferences.isShowClock()
+                            if (showClock) {
+                                widgetManager.showWidget(WidgetType.CLOCK)
+                            }
+
+                            val showWeather = preferences.getBoolean("show_weather", false)
+                            if (showWeather) {
+                                widgetManager.showWidget(WidgetType.WEATHER)
+                            }
+
+                            Log.d(TAG, "Widgets initialized - Clock: $showClock, Weather: $showWeather")
                         } else {
                             Log.e(TAG, "Container is not a ConstraintLayout, it is: ${container.javaClass.simpleName}")
                         }
@@ -223,15 +238,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
     private fun observeWidgetStates() {
         lifecycleScope.launch {
             widgetManager.widgetStates.collect { states ->
                 states.forEach { (type, data) ->
                     when (type) {
                         WidgetType.CLOCK -> handleClockWidgetState(data)
-                        WidgetType.WEATHER -> {}
+                        WidgetType.WEATHER -> handleWeatherWidgetState(data)
                     }
                 }
+            }
+        }
+    }
+
+    private fun handleWeatherWidgetState(data: WidgetData) {
+        when (data.state) {
+            is WidgetState.Error -> {
+                Log.e(TAG, "Weather widget error: ${(data.state as WidgetState.Error).message}")
+                showToast("Error with weather widget")
+            }
+            is WidgetState.Active -> {
+                Log.d(TAG, "Weather widget is active")
+            }
+            is WidgetState.Hidden -> {
+                Log.d(TAG, "Weather widget is hidden")
+            }
+            is WidgetState.Loading -> {
+                Log.d(TAG, "Weather widget is loading")
+            }
+            else -> {
+                Log.d(TAG, "Weather widget in unknown state: ${data.state}")
             }
         }
     }
@@ -242,8 +279,17 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "Clock widget error: ${(data.state as WidgetState.Error).message}")
                 showToast("Error with clock widget")
             }
+            is WidgetState.Active -> {
+                Log.d(TAG, "Clock widget is active")
+            }
+            is WidgetState.Hidden -> {
+                Log.d(TAG, "Clock widget is hidden")
+            }
+            is WidgetState.Loading -> {
+                Log.d(TAG, "Clock widget is loading")
+            }
             else -> {
-                // Handle other states if needed
+                Log.d(TAG, "Clock widget in unknown state: ${data.state}")
             }
         }
     }
@@ -755,6 +801,7 @@ class MainActivity : AppCompatActivity() {
                 .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
             _navController = navHostFragment.navController
 
+            // Update the navigation destination change listener in setupNavigation()
             navController.addOnDestinationChangedListener { _, destination, _ ->
                 Log.d(TAG, "Navigation destination changed to: ${destination.id}")
                 handleNavigationVisibility(destination.id)
@@ -762,18 +809,37 @@ class MainActivity : AppCompatActivity() {
                 // Update widgets when returning to main screen
                 if (destination.id == R.id.mainFragment) {
                     Log.d(TAG, "Returned to main fragment, updating widgets")
-                    ensureBinding() // Add safety check here
+                    ensureBinding()
                     binding.screensaverContainer?.post {
                         try {
                             Log.d(TAG, "Container visibility: ${binding.screensaverContainer?.visibility}, " +
                                     "isAttached: ${binding.screensaverContainer?.isAttachedToWindow}")
 
                             binding.screensaverContainer?.let { container ->
-                                widgetManager.reinitializeClockWidget(container)
+                                if (container is ConstraintLayout) {
+                                    // Reinitialize both widgets
+                                    widgetManager.reinitializeClockWidget(container)
+                                    widgetManager.reinitializeWeatherWidget(container)
+
+                                    // Force show widgets based on preferences
+                                    val showClock = preferences.isShowClock()
+                                    if (showClock) {
+                                        widgetManager.showWidget(WidgetType.CLOCK)
+                                    }
+
+                                    val showWeather = preferences.getBoolean("show_weather", false)
+                                    if (showWeather) {
+                                        widgetManager.showWidget(WidgetType.WEATHER)
+                                    }
+
+                                    Log.d(TAG, "Widgets reinitialized - Clock: $showClock, Weather: $showWeather")
+                                }
                             } ?: Log.e(TAG, "screensaverContainer is null after post")
 
                             Log.d(TAG, "Saved preferences - show_clock: ${preferences.isShowClock()}, " +
-                                    "position: ${preferences.getString("clock_position", "unknown")}")
+                                    "show_weather: ${preferences.getBoolean("show_weather", false)}, " +
+                                    "clock_position: ${preferences.getString("clock_position", "unknown")}, " +
+                                    "weather_position: ${preferences.getString("weather_position", "unknown")}")
                         } catch (e: Exception) {
                             Log.e(TAG, "Error in navigation post callback", e)
                         }
@@ -819,20 +885,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    private fun checkAndRequestLocationPermissions() {
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                arrayOf(
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                    android.Manifest.permission.ACCESS_FINE_LOCATION
+                ),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
+        }
+    }
 
-        if (requestCode == KIOSK_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                checkKioskMode()
-            } else {
-                disableKioskMode()
-                showToast("Kiosk mode requires additional permissions")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        when (requestCode) {
+            LOCATION_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // Permission granted, update weather
+                    widgetManager.updateWeatherConfig()
+                }
             }
         }
     }
