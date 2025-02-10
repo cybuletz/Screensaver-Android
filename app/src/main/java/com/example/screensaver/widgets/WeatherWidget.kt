@@ -31,6 +31,7 @@ import android.widget.ImageView
 import java.util.Calendar
 import android.view.animation.AnimationUtils
 import androidx.core.content.ContextCompat
+import androidx.preference.PreferenceManager
 
 
 
@@ -46,7 +47,14 @@ class WeatherWidget(
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var lastKnownLocation: Location? = null
 
-    private var currentWeatherCode: Int = -1
+    private var lastKnownWeatherState: WeatherState? = null
+    private var lastKnownIconCode: Int = -1
+
+    var currentWeatherState: WeatherState? = null
+        private set
+
+    var currentWeatherCode: Int = -1
+        private set
     private var animationInProgress = false
 
     private val fadeIn by lazy { AnimationUtils.loadAnimation(container.context, R.anim.fade_in) }
@@ -58,6 +66,13 @@ class WeatherWidget(
         private const val MIN_UPDATE_INTERVAL = 900000L // 15 minutes minimum
         private const val WEATHER_API_URL = "https://api.open-meteo.com/v1/forecast"
     }
+
+    data class WeatherState(
+        val temperature: String,
+        val weatherCode: Int,
+        val description: String,
+        val iconResource: Int? = null
+    )
 
     init {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(container.context)
@@ -134,11 +149,33 @@ class WeatherWidget(
                 }
             }
 
+            // Restore last known state if available
+            currentWeatherState?.let { state ->
+                binding.apply {
+                    getTemperatureView()?.text = "${state.temperature}° ${if (config.useCelsius) "C" else "F"}"
+                    if (currentWeatherCode != -1) {
+                        updateWeatherIcon(currentWeatherCode)
+                    }
+                }
+            }
+
             // Start updates if enabled
             if (config.enabled) {
                 startWeatherUpdates()
             }
         }
+    }
+
+    fun restoreState(temperature: String, weatherCode: Int) {
+        val iconResource = getWeatherIconResource(weatherCode)
+        val state = WeatherState(
+            temperature = temperature,
+            weatherCode = weatherCode,
+            description = getWeatherDescription(weatherCode),
+            iconResource = iconResource
+        )
+        updateState(state)
+        this.currentWeatherCode = weatherCode
     }
 
 
@@ -364,13 +401,62 @@ class WeatherWidget(
     }
 
     private fun updateUI(weatherData: WeatherData) {
+        val iconResource = getWeatherIconResource(weatherData.weatherCode)
+
+        val state = WeatherState(
+            temperature = weatherData.temperature.toString(),
+            weatherCode = weatherData.weatherCode,
+            description = getWeatherDescription(weatherData.weatherCode),
+            iconResource = iconResource
+        )
+
+        currentWeatherState = state
+
         binding?.apply {
             val tempText = String.format("%.1f° %s",
                 weatherData.temperature,
                 if (config.useCelsius) "C" else "F")
 
             getTemperatureView()?.text = tempText
-            updateWeatherIcon(weatherData.weatherCode)
+            getWeatherIcon()?.setImageResource(iconResource)
+        }
+    }
+
+    fun getWeatherIconResource(weatherCode: Int): Int {
+        return when (weatherCode) {
+            0 -> if (isDaytime()) R.drawable.ic_weather_clear else R.drawable.ic_weather_clear_night
+            1, 2 -> if (isDaytime()) R.drawable.ic_weather_cloudy else R.drawable.ic_weather_cloudy_night
+            3 -> R.drawable.ic_weather_overcast
+            45, 48 -> R.drawable.ic_weather_foggy
+            51, 53, 55 -> R.drawable.ic_weather_drizzle
+            61, 63, 65 -> R.drawable.ic_weather_rain
+            71, 73, 75 -> R.drawable.ic_weather_snow
+            95 -> R.drawable.ic_weather_thunderstorm
+            else -> R.drawable.ic_weather_default
+        }
+    }
+
+    private fun getWeatherDescription(code: Int): String {
+        return when (code) {
+            0 -> if (isDaytime()) "Clear sky" else "Clear night"
+            1, 2 -> if (isDaytime()) "Partly cloudy" else "Partly cloudy night"
+            3 -> "Overcast"
+            45, 48 -> "Foggy"
+            51, 53, 55 -> "Drizzle"
+            61, 63, 65 -> "Rain"
+            71, 73, 75 -> "Snow"
+            95 -> "Thunderstorm"
+            else -> "Unknown"
+        }
+    }
+
+    fun updateState(state: WeatherState) {
+        currentWeatherState = state
+        binding?.apply {
+            getTemperatureView()?.text = "${state.temperature}° ${if (config.useCelsius) "C" else "F"}"
+            state.iconResource?.let { resource ->
+                getWeatherIcon()?.setImageResource(resource)
+            } ?: updateWeatherIcon(state.weatherCode)
         }
     }
 
@@ -380,86 +466,92 @@ class WeatherWidget(
         return hour in 6..18 // Consider 6 AM to 6 PM as daytime
     }
 
-    private fun updatePosition(position: WidgetPosition) {
-        val rootView = binding?.getRootView() ?: return
+    override fun updatePosition(position: WidgetPosition) {
+        // Save current state
+        lastKnownWeatherState = currentWeatherState
+        lastKnownIconCode = currentWeatherCode
 
-        // Remove view from parent temporarily
-        (rootView.parent as? ViewGroup)?.removeView(rootView)
+        binding?.getRootView()?.let { view ->
+            val params = view.layoutParams as ConstraintLayout.LayoutParams
 
-        val params = ConstraintLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
+            // Clear existing constraints
+            params.apply {
+                topToTop = ConstraintLayout.LayoutParams.UNSET
+                bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+                startToStart = ConstraintLayout.LayoutParams.UNSET
+                endToEnd = ConstraintLayout.LayoutParams.UNSET
+            }
 
-        // Clear all constraints first
-        params.clearAllConstraints()
+            // Get standard margin
+            val margin = view.resources.getDimensionPixelSize(R.dimen.widget_margin)
 
-        // Set new constraints based on position
-        when (position) {
-            WidgetPosition.TOP_START -> {
-                params.apply {
-                    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            // Apply new constraints based on position
+            when (position) {
+                WidgetPosition.TOP_START -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, margin, 0, 0)
+                    }
+                }
+                WidgetPosition.TOP_CENTER -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, margin, margin, 0)
+                    }
+                }
+                WidgetPosition.TOP_END -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(0, margin, margin, 0)
+                    }
+                }
+                WidgetPosition.BOTTOM_START -> {
+                    params.apply {
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, 0, 0, margin)
+                    }
+                }
+                WidgetPosition.BOTTOM_CENTER -> {
+                    params.apply {
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, 0, margin, margin)
+                    }
+                }
+                WidgetPosition.BOTTOM_END -> {
+                    params.apply {
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(0, 0, margin, margin)
+                    }
                 }
             }
-            WidgetPosition.TOP_CENTER -> {
-                params.apply {
-                    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-            WidgetPosition.TOP_END -> {
-                params.apply {
-                    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-            WidgetPosition.BOTTOM_START -> {
-                params.apply {
-                    bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-            WidgetPosition.BOTTOM_CENTER -> {
-                params.apply {
-                    bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-            WidgetPosition.BOTTOM_END -> {
-                params.apply {
-                    bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+
+            // Ensure widget stays within bounds
+            params.width = ViewGroup.LayoutParams.WRAP_CONTENT
+            params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+
+            view.layoutParams = params
+            view.requestLayout()
+
+            // Restore the state after position update
+            lastKnownWeatherState?.let { state ->
+                binding?.apply {
+                    getTemperatureView()?.text = "${state.temperature}° ${if (config.useCelsius) "C" else "F"}"
+                    state.iconResource?.let { resource ->
+                        getWeatherIcon()?.setImageResource(resource)
+                    } ?: lastKnownIconCode.takeIf { it != -1 }?.let { code ->
+                        updateWeatherIcon(code)
+                    }
                 }
             }
         }
-
-        // Apply margins
-        val margin = rootView.resources.getDimensionPixelSize(R.dimen.widget_margin)
-        params.setMargins(margin, margin, margin, margin)
-
-        // Apply new params and add view back to container
-        rootView.layoutParams = params
-        container.addView(rootView)
-
-        // Force layout update
-        rootView.post {
-            rootView.requestLayout()
-            rootView.invalidate()
-        }
-    }
-
-    private fun ConstraintLayout.LayoutParams.clearAllConstraints() {
-        topToTop = ConstraintLayout.LayoutParams.UNSET
-        topToBottom = ConstraintLayout.LayoutParams.UNSET
-        bottomToTop = ConstraintLayout.LayoutParams.UNSET
-        bottomToBottom = ConstraintLayout.LayoutParams.UNSET
-        startToStart = ConstraintLayout.LayoutParams.UNSET
-        startToEnd = ConstraintLayout.LayoutParams.UNSET
-        endToStart = ConstraintLayout.LayoutParams.UNSET
-        endToEnd = ConstraintLayout.LayoutParams.UNSET
     }
 
     private fun updateWeatherIcon(weatherCode: Int) {

@@ -15,6 +15,8 @@ import android.content.pm.PackageManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
+import android.view.View
 
 
 @AndroidEntryPoint
@@ -196,16 +198,12 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
     }
 
     private fun setupPreferenceListeners() {
-        // Existing clock preferences
-        val clockPrefs = listOf(
+        // Register this fragment as the preference change listener for all preferences
+        val allPrefs = listOf(
             "show_clock",
             "show_date",
             "clock_format",
-            "clock_position"
-        )
-
-        // Add weather preferences
-        val weatherPrefs = listOf(
+            "clock_position",
             "show_weather",
             "weather_position",
             "weather_use_celsius",
@@ -214,30 +212,33 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
             "weather_manual_location"
         )
 
-        // Setup listeners for both clock and weather preferences
-        (clockPrefs + weatherPrefs).forEach { key ->
-            findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, newValue ->
-                when {
-                    key == "show_clock" -> handleClockVisibilityChange(newValue as Boolean)
-                    key == "show_weather" -> handleWeatherVisibilityChange(newValue as Boolean)
-                    key.startsWith("clock_") -> handleClockPreferenceChange(key, newValue)
-                    key.startsWith("weather_") -> handleWeatherPreferenceChange(key, newValue)
-                }
-                true
-            }
+        allPrefs.forEach { key ->
+            findPreference<Preference>(key)?.onPreferenceChangeListener = this
         }
 
-        // Setup location permission listener
-        findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.setOnPreferenceChangeListener { _, newValue ->
-            val useLocation = newValue as Boolean
-            if (useLocation) {
-                checkLocationPermission()
-            } else {
-                val config = createWeatherConfig().copy(useDeviceLocation = false)
-                widgetManager.updateWidgetConfig(WidgetType.WEATHER, config)
-            }
-            true
+        // Update initial states
+        updateInitialStates()
+    }
+
+    private fun updateInitialStates() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+
+        // Update widget visibility based on current preferences
+        if (prefs.getBoolean("show_clock", false)) {
+            widgetManager.showWidget(WidgetType.CLOCK)
+        } else {
+            widgetManager.hideWidget(WidgetType.CLOCK)
         }
+
+        if (prefs.getBoolean("show_weather", false)) {
+            widgetManager.showWidget(WidgetType.WEATHER)
+        } else {
+            widgetManager.hideWidget(WidgetType.WEATHER)
+        }
+
+        // Update configs with current settings
+        widgetManager.updateWidgetConfig(WidgetType.CLOCK, createClockConfig())
+        widgetManager.updateWidgetConfig(WidgetType.WEATHER, createWeatherConfig())
     }
 
     private fun handleClockVisibilityChange(show: Boolean) {
