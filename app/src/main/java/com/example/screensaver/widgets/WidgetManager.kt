@@ -19,6 +19,7 @@ class WidgetManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val preferences: AppPreferences
 ) {
+
     private val widgets = mutableMapOf<WidgetType, ScreenWidget>()
     private val _widgetStates = MutableStateFlow<Map<WidgetType, WidgetData>>(emptyMap())
     val widgetStates: StateFlow<Map<WidgetType, WidgetData>> = _widgetStates.asStateFlow()
@@ -41,6 +42,8 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Unregistered widget: $type")
     }
 
+    fun hasWidget(type: WidgetType): Boolean = widgets[type] != null
+
     fun updateWidgetConfig(type: WidgetType, config: WidgetConfig) {
         widgets[type]?.updateConfiguration(config)
         val currentStates = _widgetStates.value.toMutableMap()
@@ -59,8 +62,10 @@ class WidgetManager @Inject constructor(
     }
 
     fun showWidget(type: WidgetType) {
-        widgets[type]?.show()
-        updateWidgetState(type, WidgetState.Active)
+        widgets[type]?.apply {
+            show()
+            updateWidgetState(type, WidgetState.Active)
+        }
     }
 
     fun hideWidget(type: WidgetType) {
@@ -77,6 +82,11 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Loaded clock config: $config")
 
         try {
+            // Save current weather widget state
+            val weatherWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
+            val weatherState = weatherWidget?.currentWeatherState
+
+            // Create and setup the clock widget
             val clockWidget = ClockWidget(container, config)
             Log.d(TAG, "Created ClockWidget instance")
 
@@ -86,9 +96,16 @@ class WidgetManager @Inject constructor(
             clockWidget.init()
             Log.d(TAG, "Clock widget initialized")
 
-            // Always show the widget after initialization, visibility will be handled by the widget itself
-            showWidget(WidgetType.CLOCK)
-            Log.d(TAG, "Show widget called")
+            // Show the clock widget if enabled in config
+            if (config.showClock) {
+                showWidget(WidgetType.CLOCK)
+                Log.d(TAG, "Show clock widget called")
+            }
+
+            // Restore weather widget state if needed
+            weatherState?.let { state ->
+                weatherWidget?.updateState(state)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up clock widget", e)
         }
@@ -136,23 +153,39 @@ class WidgetManager @Inject constructor(
     fun reinitializeClockWidget(container: ViewGroup? = null) {
         Log.d(TAG, "Reinitializing clock widget")
         val widget = widgets[WidgetType.CLOCK] as? ClockWidget
+
+        // Save weather widget state
+        val weatherWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
+        val weatherState = weatherWidget?.currentWeatherState
+        val weatherConfig = weatherWidget?.config
+
         if (widget != null) {
             Log.d(TAG, "Existing widget found, updating")
             val config = loadClockConfig()
 
-            // First hide and cleanup the old widget
-            hideWidget(WidgetType.CLOCK)
+            // Only cleanup the clock widget
+            widget.cleanup()
+            widgets.remove(WidgetType.CLOCK)
 
-            // Then create a new widget if needed
-            if (config.showClock) {
-                container?.let {
-                    setupClockWidget(it)
-                }
+            // Then create a new clock widget if needed
+            if (config.showClock && container != null) {
+                setupClockWidget(container)
             }
         } else if (container != null) {
             val config = loadClockConfig()
             if (config.showClock) {
                 setupClockWidget(container)
+            }
+        }
+
+        // Restore weather widget if it was active
+        if (weatherState != null && weatherConfig != null && container != null) {
+            val widget = widgets[WidgetType.WEATHER] as? WeatherWidget
+            if (widget != null) {
+                widget.updateState(weatherState)
+            } else if (weatherConfig.enabled) {
+                setupWeatherWidget(container)
+                (widgets[WidgetType.WEATHER] as? WeatherWidget)?.updateState(weatherState)
             }
         }
     }
@@ -174,57 +207,54 @@ class WidgetManager @Inject constructor(
     }
 
     fun updateClockPosition(position: WidgetPosition) {
-        val currentConfig = (widgets[WidgetType.CLOCK] as? ClockWidget)?.config as? WidgetConfig.ClockConfig
-            ?: return
+        val widget = widgets[WidgetType.CLOCK] as? ClockWidget ?: return
+        val currentConfig = widget.config as? WidgetConfig.ClockConfig ?: return
 
+        // Update config with new position
         val newConfig = currentConfig.copy(position = position)
+
+        // Update widget position without reinitialization
+        widget.updatePosition(position)
+
+        // Update config and save preference
         updateWidgetConfig(WidgetType.CLOCK, newConfig)
         preferences.setClockPosition(position.name)
+
         Log.d(TAG, "Clock position updated: $position")
     }
 
     fun setupWeatherWidget(container: ViewGroup) {
-        lastKnownContainer = container  // Store the container
         Log.d(TAG, "Setting up weather widget")
         val config = loadWeatherConfig()
         Log.d(TAG, "Loaded weather config: $config")
 
-        try {
-            val weatherWidget = WeatherWidget(container, config)
-            Log.d(TAG, "Created WeatherWidget instance")
+        val weatherWidget = WeatherWidget(container, config)
+        registerWidget(WidgetType.WEATHER, weatherWidget)
+        weatherWidget.init()
 
-            registerWidget(WidgetType.WEATHER, weatherWidget)
-            Log.d(TAG, "Weather widget registered")
-
-            weatherWidget.init()
-            Log.d(TAG, "Weather widget initialized")
-
-            if (config.enabled) {
-                showWidget(WidgetType.WEATHER)
-            } else {
-                hideWidget(WidgetType.WEATHER)
-            }
-            Log.d(TAG, "Weather widget visibility set to: ${config.enabled}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting up weather widget", e)
+        // Show the widget if enabled
+        if (config.enabled) {
+            showWidget(WidgetType.WEATHER)
         }
     }
 
-    private fun loadWeatherConfig(): WidgetConfig.WeatherConfig {
+    fun loadWeatherConfig(): WidgetConfig.WeatherConfig {
         val showWeather = preferences.getBoolean("show_weather", false)
         val position = parseWidgetPosition(preferences.getString("weather_position", "TOP_END"))
         val useCelsius = preferences.getBoolean("weather_use_celsius", true)
         val updateInterval = preferences.getString("weather_update_interval", "1800")?.toLong()?.times(1000) ?: 1800000
+        val useDeviceLocation = preferences.getBoolean("weather_use_device_location", false)
 
         Log.d(TAG, "Loading weather config - showWeather: $showWeather, " +
                 "position: $position, useCelsius: $useCelsius, " +
                 "updateInterval: $updateInterval")
 
         return WidgetConfig.WeatherConfig(
-            enabled = showWeather,
+            enabled = showWeather,  // Use the actual preference value
             position = position,
             useCelsius = useCelsius,
-            updateInterval = updateInterval
+            updateInterval = updateInterval,
+            useDeviceLocation = useDeviceLocation
         )
     }
 
@@ -255,22 +285,34 @@ class WidgetManager @Inject constructor(
     fun reinitializeWeatherWidget(container: ViewGroup? = null) {
         Log.d(TAG, "Reinitializing weather widget")
         try {
-            // First, clean up existing widget
-            widgets[WidgetType.WEATHER]?.cleanup()
-            widgets.remove(WidgetType.WEATHER)
+            // Get current widget and its state before cleanup
+            val currentWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
+            val weatherState = currentWidget?.currentWeatherState
+            val weatherCode = currentWidget?.currentWeatherCode ?: -1
+            val currentConfig = loadWeatherConfig()
 
-            // Get current config
-            val config = loadWeatherConfig()
-            Log.d(TAG, "Loaded weather config: $config")
+            // Only clean up if we need to recreate
+            if (currentWidget != null && container != null) {
+                currentWidget.cleanup()
+                widgets.remove(WidgetType.WEATHER)
+            }
 
-            if (config.enabled && container != null) {
+            if (currentConfig.enabled && container != null) {
                 // Create and setup new widget
-                val weatherWidget = WeatherWidget(container, config)
-                registerWidget(WidgetType.WEATHER, weatherWidget)
-                weatherWidget.init()
+                val weatherWidget = WeatherWidget(container, currentConfig).apply {
+                    registerWidget(WidgetType.WEATHER, this)
+                    init()
 
-                // Explicitly show the widget
-                showWidget(WidgetType.WEATHER)
+                    // Restore previous state if available
+                    if (weatherState != null) {
+                        restoreState(weatherState.temperature, weatherCode)
+                    }
+
+                    // Show the widget
+                    if (currentConfig.enabled) {
+                        show()
+                    }
+                }
                 Log.d(TAG, "Weather widget reinitialized and shown")
             } else {
                 Log.d(TAG, "Weather widget not enabled or container is null")
@@ -322,19 +364,54 @@ class WidgetManager @Inject constructor(
     }
 
     fun updateWeatherPosition(position: WidgetPosition) {
-        val currentConfig = (widgets[WidgetType.WEATHER] as? WeatherWidget)?.config
-            ?: return
+        Log.d(TAG, "Updating weather widget position to: $position")
 
+        // Get current widget and config
+        val widget = widgets[WidgetType.WEATHER] as? WeatherWidget ?: return
+        val currentConfig = widget.config as? WidgetConfig.WeatherConfig ?: return
+
+        // Important: Do NOT reinitialize the widget, just update its position
         val newConfig = currentConfig.copy(position = position)
-        updateWidgetConfig(WidgetType.WEATHER, newConfig)
+        widget.updateConfiguration(newConfig)
+
+        // Update preferences
         preferences.setString("weather_position", position.name)
+
         Log.d(TAG, "Weather position updated: $position")
     }
 
+
+    private fun cleanupWidget(type: WidgetType) {
+        try {
+            Log.d(TAG, "Cleaning up widget: $type")
+            widgets[type]?.apply {
+                hide()  // First hide it
+                cleanup()  // Then clean it up
+            }
+            widgets.remove(type)  // Remove from map
+            // Update state to hidden
+            updateWidgetState(type, WidgetState.Hidden)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning up widget: $type", e)
+        }
+    }
+
     fun cleanup() {
-        widgets.values.forEach { it.cleanup() }
+        Log.d(TAG, "Starting cleanup of all widgets")
+
+        // Clean up each widget properly
+        WidgetType.values().forEach { type ->
+            cleanupWidget(type)
+        }
+
+        // Clear all collections
         widgets.clear()
         _widgetStates.value = emptyMap()
-        Log.d(TAG, "Cleaned up all widgets")
+
+        // Clear container reference
+        lastKnownContainer = null
+
+        Log.d(TAG, "Completed cleanup of all widgets")
     }
+
 }

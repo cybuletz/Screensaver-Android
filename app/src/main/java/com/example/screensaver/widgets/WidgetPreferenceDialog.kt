@@ -9,8 +9,14 @@ import androidx.preference.*
 import com.example.screensaver.R
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 class WidgetPreferenceDialog : DialogFragment() {
+
+    @Inject
+    lateinit var widgetManager: WidgetManager
+
     private lateinit var widgetType: WidgetType
     private var initialPreferences: Bundle? = null
 
@@ -86,6 +92,13 @@ class WidgetPreferenceDialog : DialogFragment() {
         view.findViewById<MaterialButton>(R.id.ok_button).setOnClickListener {
             // Current state is already saved as preferences are updated in real-time
             dismiss()
+        }
+    }
+
+    private fun handlePositionChange(position: WidgetPosition) {
+        when (widgetType) {
+            WidgetType.CLOCK -> widgetManager.updateClockPosition(position)
+            WidgetType.WEATHER -> widgetManager.updateWeatherPosition(position)
         }
     }
 

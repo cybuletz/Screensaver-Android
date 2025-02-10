@@ -38,7 +38,7 @@
         android:key="weather_use_device_location"
         android:title="@string/weather_use_device_location_title"
         android:summary="@string/weather_use_device_location_summary"
-        android:defaultValue="true"
+        android:defaultValue="false"
         app:dependency="show_weather" />
 
     <EditTextPreference

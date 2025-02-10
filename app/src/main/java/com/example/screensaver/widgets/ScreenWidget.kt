@@ -7,4 +7,5 @@ interface ScreenWidget {
     fun hide()
     fun cleanup()
     fun updateConfiguration(config: WidgetConfig)
+    fun updatePosition(position: WidgetPosition)
 }

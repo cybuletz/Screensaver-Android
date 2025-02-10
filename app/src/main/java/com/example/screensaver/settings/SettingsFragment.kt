@@ -495,23 +495,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun handlePreferenceChange(preference: Preference, newValue: Any?): Boolean {
-        return when (preference.key) {
-            "clock_position" -> {
-                val positionValue = newValue as? String ?: return false
-                try {
-                    val position = WidgetPosition.valueOf(positionValue)
-                    widgetManager.updateClockPosition(position)
-                    true
-                } catch (e: IllegalArgumentException) {
-                    Log.e(TAG, "Invalid position value: $positionValue", e)
-                    false
-                }
-            }
-            else -> true
-        }
-    }
-
     private fun showLocationPermissionRationale() {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.location_permission_rationale_title)
@@ -528,67 +511,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     .apply()
             }
             .show()
-    }
-
-
-    private fun checkLocationPermissions() {
-        when {
-            ContextCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                widgetManager.initializeWeatherWidget()
-            }
-            shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) -> {
-                showLocationPermissionRationale()
-            }
-            else -> {
-                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
-        }
-    }
-
-    private fun setupWidgetPreferences() {
-        findPreference<PreferenceCategory>("widget_settings")?.let { category ->
-            // Weather Widget Setup
-            findPreference<SwitchPreferenceCompat>("show_weather")?.setOnPreferenceChangeListener { _, newValue ->
-                val enabled = newValue as Boolean
-                widgetManager.updateWeatherVisibility(enabled)
-                // Update dependent preferences visibility
-                findPreference<ListPreference>("weather_position")?.isVisible = enabled
-                findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.isVisible = enabled
-                findPreference<EditTextPreference>("weather_manual_location")?.isVisible = enabled
-                true
-            }
-
-            // Location Settings
-            findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.apply {
-                setOnPreferenceChangeListener { _, newValue ->
-                    val useDeviceLocation = newValue as Boolean
-                    findPreference<EditTextPreference>("weather_manual_location")?.isVisible = !useDeviceLocation
-                    if (useDeviceLocation) {
-                        checkLocationPermissions()
-                    }
-                    true
-                }
-            }
-
-            // Fix for nullable Boolean issue
-            val useDeviceLocation = findPreference<SwitchPreferenceCompat>("weather_use_device_location")
-            findPreference<EditTextPreference>("weather_manual_location")?.apply {
-                isVisible = !(useDeviceLocation?.isChecked ?: true)
-                setOnPreferenceChangeListener { _, newValue ->
-                    val location = newValue as String
-                    if (location.isBlank()) {
-                        showFeedback(R.string.invalid_location)
-                        false
-                    } else {
-                        widgetManager.updateWeatherLocation(location)
-                        true
-                    }
-                }
-            }
-        }
     }
 
     override fun onStop() {

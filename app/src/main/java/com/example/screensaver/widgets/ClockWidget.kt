@@ -129,65 +129,76 @@ class ClockWidget(
         updateRunnable.run()
     }
 
-    private fun updatePosition(position: WidgetPosition) {
-        val params = binding?.getRootView()?.layoutParams as? ConstraintLayout.LayoutParams ?: return
+    override fun updatePosition(position: WidgetPosition) {
+        binding?.getRootView()?.let { view ->
+            val params = view.layoutParams as ConstraintLayout.LayoutParams
 
-        // Clear existing constraints
-        params.apply {
-            topToTop = ConstraintLayout.LayoutParams.UNSET
-            bottomToBottom = ConstraintLayout.LayoutParams.UNSET
-            startToStart = ConstraintLayout.LayoutParams.UNSET
-            endToEnd = ConstraintLayout.LayoutParams.UNSET
-            horizontalBias = 0.5f
+            // Clear existing constraints
+            params.apply {
+                topToTop = ConstraintLayout.LayoutParams.UNSET
+                bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+                startToStart = ConstraintLayout.LayoutParams.UNSET
+                endToEnd = ConstraintLayout.LayoutParams.UNSET
+            }
+
+            // Get standard margin
+            val margin = view.resources.getDimensionPixelSize(R.dimen.widget_margin)
+
+            // Apply new constraints based on position
+            when (position) {
+                WidgetPosition.TOP_START -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, margin, 0, 0)
+                    }
+                }
+                WidgetPosition.TOP_CENTER -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, margin, margin, 0)
+                    }
+                }
+                WidgetPosition.TOP_END -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(0, margin, margin, 0)
+                    }
+                }
+                WidgetPosition.BOTTOM_START -> {
+                    params.apply {
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, 0, 0, margin)
+                    }
+                }
+                WidgetPosition.BOTTOM_CENTER -> {
+                    params.apply {
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, 0, margin, margin)
+                    }
+                }
+                WidgetPosition.BOTTOM_END -> {
+                    params.apply {
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(0, 0, margin, margin)
+                    }
+                }
+            }
+
+            // Ensure widget stays within bounds
+            params.width = ViewGroup.LayoutParams.WRAP_CONTENT
+            params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+
+            view.layoutParams = params
+            view.requestLayout()
         }
-
-        // Apply new constraints based on position
-        when (position) {
-            WidgetPosition.TOP_START -> {
-                params.apply {
-                    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-            WidgetPosition.TOP_CENTER -> {
-                params.apply {
-                    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-            WidgetPosition.TOP_END -> {
-                params.apply {
-                    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-            WidgetPosition.BOTTOM_START -> {
-                params.apply {
-                    bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-            WidgetPosition.BOTTOM_CENTER -> {
-                params.apply {
-                    bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-            WidgetPosition.BOTTOM_END -> {
-                params.apply {
-                    bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-            }
-        }
-
-        // Apply margins
-        val margin = binding?.getRootView()?.resources?.getDimensionPixelSize(R.dimen.widget_margin) ?: 16
-        params.setMargins(margin, margin, margin, margin)
-
-        binding?.getRootView()?.layoutParams = params
     }
 
     override fun update() {

@@ -801,12 +801,10 @@ class MainActivity : AppCompatActivity() {
                 .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
             _navController = navHostFragment.navController
 
-            // Update the navigation destination change listener in setupNavigation()
             navController.addOnDestinationChangedListener { _, destination, _ ->
                 Log.d(TAG, "Navigation destination changed to: ${destination.id}")
                 handleNavigationVisibility(destination.id)
 
-                // Update widgets when returning to main screen
                 if (destination.id == R.id.mainFragment) {
                     Log.d(TAG, "Returned to main fragment, updating widgets")
                     ensureBinding()
@@ -817,24 +815,23 @@ class MainActivity : AppCompatActivity() {
 
                             binding.screensaverContainer?.let { container ->
                                 if (container is ConstraintLayout) {
-                                    // Reinitialize both widgets
-                                    widgetManager.reinitializeClockWidget(container)
-                                    widgetManager.reinitializeWeatherWidget(container)
-
-                                    // Force show widgets based on preferences
+                                    // First reinitialize clock widget if needed
                                     val showClock = preferences.isShowClock()
                                     if (showClock) {
+                                        widgetManager.reinitializeClockWidget(container)
                                         widgetManager.showWidget(WidgetType.CLOCK)
                                     }
 
+                                    // Then reinitialize weather widget if needed
                                     val showWeather = preferences.getBoolean("show_weather", false)
                                     if (showWeather) {
+                                        widgetManager.reinitializeWeatherWidget(container)
                                         widgetManager.showWidget(WidgetType.WEATHER)
                                     }
 
                                     Log.d(TAG, "Widgets reinitialized - Clock: $showClock, Weather: $showWeather")
                                 }
-                            } ?: Log.e(TAG, "screensaverContainer is null after post")
+                            }
 
                             Log.d(TAG, "Saved preferences - show_clock: ${preferences.isShowClock()}, " +
                                     "show_weather: ${preferences.getBoolean("show_weather", false)}, " +
