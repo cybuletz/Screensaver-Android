@@ -17,6 +17,7 @@ import java.net.URL
 import org.json.JSONObject
 import android.graphics.Color
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import android.location.Location
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
@@ -102,31 +103,42 @@ class WeatherWidget(
     override fun show() {
         isVisible = true
         binding?.let { binding ->
-            binding.getRootView()?.apply {
-                // Ensure the view is added to container if it was removed
-                if (parent == null) {
-                    container.addView(this)
+            Log.d(TAG, "Showing weather widget")
+            val rootView = binding.getRootView()
+            rootView?.apply {
+                // Remove from current parent if exists
+                (parent as? ViewGroup)?.removeView(this)
+
+                // Add to container
+                container.addView(this)
+
+                post {
+                    visibility = View.VISIBLE
+                    background = ContextCompat.getDrawable(context, R.drawable.widget_background)
+                    alpha = 1f
+                    bringToFront()
+
+                    // Update position with clean constraints
+                    updatePosition(config.position)
+
+                    // Request layout update
+                    requestLayout()
+                    invalidate()
                 }
 
-                // Set visibility and background
-                visibility = View.VISIBLE
-                background = ContextCompat.getDrawable(context, R.drawable.widget_background)
-                alpha = 1f
-
-                // Update position and bring to front
-                updatePosition(config.position)
-                bringToFront()
-            }
-
-            // Show weather components if enabled
-            if (config.enabled) {
+                // Show weather components
                 binding.getWeatherIcon()?.visibility = View.VISIBLE
                 binding.getTemperatureView()?.visibility = View.VISIBLE
-                startWeatherUpdates()
+
+                // Start updates if enabled
+                if (config.enabled) {
+                    startWeatherUpdates()
+                }
             }
-        }
-        Log.d(TAG, "Weather widget shown")
+            Log.d(TAG, "Weather widget shown and configured")
+        } ?: Log.e(TAG, "Binding is null in show()")
     }
+
 
     override fun hide() {
         isVisible = false
@@ -161,8 +173,18 @@ class WeatherWidget(
 
     override fun updateConfiguration(config: WidgetConfig) {
         if (config !is WidgetConfig.WeatherConfig) return
+
+        // Store old position to check if it changed
+        val oldPosition = this.config.position
+
+        // Update config
         this.config = config
-        updatePosition(config.position)
+
+        // Only update position if it changed
+        if (oldPosition != config.position) {
+            updatePosition(config.position)
+        }
+
         if (config.enabled) show() else hide()
     }
 
@@ -196,7 +218,18 @@ class WeatherWidget(
     private suspend fun updateLocation(): Location? = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
         try {
             if (!config.useDeviceLocation) {
-                continuation.resume(null) { /* cleanup */ }
+                continuation.resume(null)
+                return@suspendCancellableCoroutine
+            }
+
+            // Check for permissions
+            val context = container.context
+            val hasCoarseLocation = context.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val hasFineLocation = context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+            if (!hasCoarseLocation && !hasFineLocation) {
+                Log.w(TAG, "Location permissions not granted, using default location")
+                continuation.resume(null)
                 return@suspendCancellableCoroutine
             }
 
@@ -210,15 +243,21 @@ class WeatherWidget(
                 cancellationTokenSource.token
             ).addOnSuccessListener { location ->
                 lastKnownLocation = location
-                continuation.resume(location) { /* cleanup */ }
+                continuation.resume(location)
             }.addOnFailureListener { exception ->
                 Log.e(TAG, "Error getting location", exception)
-                continuation.resume(lastKnownLocation) { /* cleanup */ }
+                continuation.resume(lastKnownLocation)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in updateLocation", e)
-            continuation.resume(lastKnownLocation) { /* cleanup */ }
+            continuation.resume(lastKnownLocation)
         }
+    }
+
+    private fun hasLocationPermissions(): Boolean {
+        val context = container.context
+        return context.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     }
 
     private suspend fun fetchWeatherData(): WeatherData = kotlinx.coroutines.withContext(Dispatchers.IO) {
@@ -308,49 +347,77 @@ class WeatherWidget(
     }
 
     private fun updatePosition(position: WidgetPosition) {
-        val params = binding?.getRootView()?.layoutParams as? ConstraintLayout.LayoutParams ?: return
+        val rootView = binding?.getRootView() ?: return
 
-        params.apply {
-            // Clear all constraints first
-            clearAllAnchors()
+        // Remove view from parent temporarily
+        (rootView.parent as? ViewGroup)?.removeView(rootView)
 
-            when (position) {
-                WidgetPosition.TOP_START -> {
+        val params = ConstraintLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+
+        // Clear all constraints first
+        params.clearAllConstraints()
+
+        // Set new constraints based on position
+        when (position) {
+            WidgetPosition.TOP_START -> {
+                params.apply {
                     topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                     startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                 }
-                WidgetPosition.TOP_CENTER -> {
+            }
+            WidgetPosition.TOP_CENTER -> {
+                params.apply {
                     topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                     startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                     endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
                 }
-                WidgetPosition.TOP_END -> {
+            }
+            WidgetPosition.TOP_END -> {
+                params.apply {
                     topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                     endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
                 }
-                WidgetPosition.BOTTOM_START -> {
+            }
+            WidgetPosition.BOTTOM_START -> {
+                params.apply {
                     bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                     startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                 }
-                WidgetPosition.BOTTOM_CENTER -> {
+            }
+            WidgetPosition.BOTTOM_CENTER -> {
+                params.apply {
                     bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                     startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                     endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
                 }
-                WidgetPosition.BOTTOM_END -> {
+            }
+            WidgetPosition.BOTTOM_END -> {
+                params.apply {
                     bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                     endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
                 }
             }
-
-            // Add margins
-            setMargins(32, 32, 32, 32)
         }
 
-        binding?.getRootView()?.layoutParams = params
+        // Apply margins
+        val margin = rootView.resources.getDimensionPixelSize(R.dimen.widget_margin)
+        params.setMargins(margin, margin, margin, margin)
+
+        // Apply new params and add view back to container
+        rootView.layoutParams = params
+        container.addView(rootView)
+
+        // Force layout update
+        rootView.post {
+            rootView.requestLayout()
+            rootView.invalidate()
+        }
     }
 
-    private fun ConstraintLayout.LayoutParams.clearAllAnchors() {
+    private fun ConstraintLayout.LayoutParams.clearAllConstraints() {
         topToTop = ConstraintLayout.LayoutParams.UNSET
         topToBottom = ConstraintLayout.LayoutParams.UNSET
         bottomToTop = ConstraintLayout.LayoutParams.UNSET
