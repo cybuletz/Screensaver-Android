@@ -255,7 +255,7 @@ class AppPreferences @Inject constructor(
     }
 
     fun setShowWeather(enabled: Boolean) {
-        updatePreference { putBoolean("show_weather", enabled) }
+        updatePreference { putBoolean("show_weather", false) }
     }
 
     fun isKioskModeEnabled(): Boolean =

@@ -77,6 +77,10 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Loaded clock config: $config")
 
         try {
+            // Store current weather state before modifying anything
+            val weatherState = _widgetStates.value[WidgetType.WEATHER]
+            val isWeatherActive = weatherState?.state is WidgetState.Active
+
             val clockWidget = ClockWidget(container, config)
             Log.d(TAG, "Created ClockWidget instance")
 
@@ -86,9 +90,20 @@ class WidgetManager @Inject constructor(
             clockWidget.init()
             Log.d(TAG, "Clock widget initialized")
 
-            // Always show the widget after initialization, visibility will be handled by the widget itself
-            showWidget(WidgetType.CLOCK)
-            Log.d(TAG, "Show widget called")
+            // Show the clock widget if enabled in config
+            if (config.showClock) {
+                showWidget(WidgetType.CLOCK)
+                Log.d(TAG, "Show clock widget called")
+            }
+
+            // Restore weather widget if it was active
+            if (isWeatherActive) {
+                widgets[WidgetType.WEATHER]?.let {
+                    it.show()
+                    updateWidgetState(WidgetType.WEATHER, WidgetState.Active)
+                    Log.d(TAG, "Restored weather widget state")
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up clock widget", e)
         }
@@ -215,6 +230,7 @@ class WidgetManager @Inject constructor(
         val position = parseWidgetPosition(preferences.getString("weather_position", "TOP_END"))
         val useCelsius = preferences.getBoolean("weather_use_celsius", true)
         val updateInterval = preferences.getString("weather_update_interval", "1800")?.toLong()?.times(1000) ?: 1800000
+        val useDeviceLocation = preferences.getBoolean("weather_use_device_location", false)
 
         Log.d(TAG, "Loading weather config - showWeather: $showWeather, " +
                 "position: $position, useCelsius: $useCelsius, " +
@@ -224,7 +240,8 @@ class WidgetManager @Inject constructor(
             enabled = showWeather,
             position = position,
             useCelsius = useCelsius,
-            updateInterval = updateInterval
+            updateInterval = updateInterval,
+            useDeviceLocation = useDeviceLocation
         )
     }
 
@@ -326,8 +343,36 @@ class WidgetManager @Inject constructor(
             ?: return
 
         val newConfig = currentConfig.copy(position = position)
+
+        // First update the config
         updateWidgetConfig(WidgetType.WEATHER, newConfig)
         preferences.setString("weather_position", position.name)
+
+        // Instead of letting the widget handle everything internally,
+        // we'll manage the transition explicitly
+        val currentWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
+        if (currentWidget != null) {
+            // Store the current container
+            val container = lastKnownContainer ?: return
+
+            // Create new widget with new position but preserve state
+            val weatherWidget = WeatherWidget(container, newConfig)
+
+            // Initialize but don't show yet
+            weatherWidget.init()
+
+            // Clean up old widget
+            currentWidget.cleanup()
+
+            // Register new widget
+            registerWidget(WidgetType.WEATHER, weatherWidget)
+
+            // Show the widget if it was previously enabled
+            if (newConfig.enabled) {
+                showWidget(WidgetType.WEATHER)
+            }
+        }
+
         Log.d(TAG, "Weather position updated: $position")
     }
 
