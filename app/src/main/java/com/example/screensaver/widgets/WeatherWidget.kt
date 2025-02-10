@@ -109,10 +109,8 @@ class WeatherWidget(
                 // Remove from current parent if exists
                 (parent as? ViewGroup)?.removeView(this)
 
-                // Only add to container if not already added
-                if (parent == null) {
-                    container.addView(this)
-                }
+                // Add to container
+                container.addView(this)
 
                 post {
                     visibility = View.VISIBLE
@@ -127,13 +125,18 @@ class WeatherWidget(
                     requestLayout()
                     invalidate()
                 }
-            }
 
-            // Start updates if enabled
-            if (config.enabled) {
-                startWeatherUpdates()
+                // Show weather components
+                binding.getWeatherIcon()?.visibility = View.VISIBLE
+                binding.getTemperatureView()?.visibility = View.VISIBLE
+
+                // Start updates if enabled
+                if (config.enabled) {
+                    startWeatherUpdates()
+                }
             }
-        }
+            Log.d(TAG, "Weather widget shown and configured")
+        } ?: Log.e(TAG, "Binding is null in show()")
     }
 
 

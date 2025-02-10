@@ -377,9 +377,26 @@ class WidgetManager @Inject constructor(
     }
 
     fun cleanup() {
-        widgets.values.forEach { it.cleanup() }
+        Log.d(TAG, "Starting cleanup of all widgets")
+
+        // Clean up widgets individually
+        widgets.forEach { (type, widget) ->
+            try {
+                Log.d(TAG, "Cleaning up widget: $type")
+                widget.cleanup()
+                updateWidgetState(type, WidgetState.Hidden)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cleaning up widget: $type", e)
+            }
+        }
+
+        // Clear collections
         widgets.clear()
         _widgetStates.value = emptyMap()
-        Log.d(TAG, "Cleaned up all widgets")
+
+        // Clear container reference
+        lastKnownContainer = null
+
+        Log.d(TAG, "Completed cleanup of all widgets")
     }
 }
