@@ -84,6 +84,11 @@ class WeatherWidget(
             }
             updateConfiguration(config)
 
+            // Remove any existing instances of this view from the container
+            binding?.getRootView()?.let { view ->
+                (view.parent as? ViewGroup)?.removeView(view)
+            }
+
             // Show if enabled
             if (config.enabled) {
                 show()
@@ -109,8 +114,10 @@ class WeatherWidget(
                 // Remove from current parent if exists
                 (parent as? ViewGroup)?.removeView(this)
 
-                // Add to container
-                container.addView(this)
+                // Only add to container if not already added
+                if (parent == null) {
+                    container.addView(this)
+                }
 
                 post {
                     visibility = View.VISIBLE
@@ -125,18 +132,13 @@ class WeatherWidget(
                     requestLayout()
                     invalidate()
                 }
-
-                // Show weather components
-                binding.getWeatherIcon()?.visibility = View.VISIBLE
-                binding.getTemperatureView()?.visibility = View.VISIBLE
-
-                // Start updates if enabled
-                if (config.enabled) {
-                    startWeatherUpdates()
-                }
             }
-            Log.d(TAG, "Weather widget shown and configured")
-        } ?: Log.e(TAG, "Binding is null in show()")
+
+            // Start updates if enabled
+            if (config.enabled) {
+                startWeatherUpdates()
+            }
+        }
     }
 
 
@@ -163,12 +165,33 @@ class WeatherWidget(
     }
 
     override fun cleanup() {
-        stopWeatherUpdates()
-        stopAllAnimations()
-        weatherUpdateJob?.cancel()
-        binding?.cleanup()
-        binding = null
-        isVisible = false
+        try {
+            Log.d(TAG, "Starting weather widget cleanup")
+            // Stop all ongoing operations
+            stopWeatherUpdates()
+            stopAllAnimations()
+            weatherUpdateJob?.cancel()
+
+            // Remove view from parent if it exists
+            binding?.getRootView()?.let { view ->
+                try {
+                    (view.parent as? ViewGroup)?.removeView(view)
+                    Log.d(TAG, "Removed view from parent")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error removing view from parent", e)
+                }
+            }
+
+            // Clear binding and reset state
+            binding?.cleanup()
+            binding = null
+            isVisible = false
+            currentWeatherCode = -1
+            animationInProgress = false
+            Log.d(TAG, "Weather widget cleanup complete")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during weather widget cleanup", e)
+        }
     }
 
     override fun updateConfiguration(config: WidgetConfig) {
