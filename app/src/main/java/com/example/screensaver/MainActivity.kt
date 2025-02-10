@@ -45,6 +45,7 @@ import android.content.BroadcastReceiver
 import android.os.BatteryManager
 import android.net.Uri
 import androidx.constraintlayout.widget.ConstraintLayout
+import com.example.screensaver.utils.NotificationHelper
 import com.example.screensaver.widgets.WidgetData
 import com.example.screensaver.widgets.WidgetManager
 import com.example.screensaver.widgets.WidgetState
@@ -77,6 +78,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var widgetManager: WidgetManager
+
+    @Inject
+    lateinit var notificationHelper: NotificationHelper
 
     private var isDestroyed = false
     private var lastBackPressTime: Long = 0
@@ -132,6 +136,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableFullScreen()
 
+        // Initialize notification channels early and explicitly
+        try {
+            notificationHelper.createNotificationChannels()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create notification channels", e)
+        }
+
         try {
             // Handle start from charging receiver
             if (intent?.getBooleanExtra("start_screensaver", false) == true) {
@@ -181,8 +192,7 @@ class MainActivity : AppCompatActivity() {
                         delay(500) // Give time for navigation
                         setupFullScreen() // Ensure fullscreen
                         photoDisplayManager.startPhotoDisplay()
-                    }
-                    catch (e: Exception) {
+                    } catch (e: Exception) {
                         Log.e(TAG, "Error handling charging start", e)
                     }
                 }

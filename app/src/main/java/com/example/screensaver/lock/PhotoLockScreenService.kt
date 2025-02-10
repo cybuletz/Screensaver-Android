@@ -31,6 +31,7 @@ import com.example.screensaver.lock.LockScreenPhotoManager
 import kotlinx.coroutines.*
 import com.example.screensaver.MainActivity
 import com.example.screensaver.utils.AppPreferences
+import com.example.screensaver.utils.NotificationHelper
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -48,10 +49,13 @@ class PhotoLockScreenService : Service() {
     lateinit var photoSourceState: PhotoSourceState
 
     @Inject
-    lateinit var lockScreenPhotoManager: LockScreenPhotoManager  // Main photo manager
+    lateinit var lockScreenPhotoManager: LockScreenPhotoManager
 
     @Inject
-    lateinit var googlePhotosManager: GooglePhotosManager  // Google Photos source
+    lateinit var googlePhotosManager: GooglePhotosManager
+
+    @Inject
+    lateinit var notificationHelper: NotificationHelper
 
     private var isPreviewMode = false
 
@@ -72,8 +76,6 @@ class PhotoLockScreenService : Service() {
     companion object {
         private const val TAG = "PhotoLockScreenService"
         private const val PRECACHE_COUNT = 5
-        private const val NOTIFICATION_CHANNEL_ID = "lock_screen"
-        private const val NOTIFICATION_ID = 1
         private const val MIN_PREVIEW_INTERVAL = 5000L
     }
 
@@ -81,11 +83,27 @@ class PhotoLockScreenService : Service() {
         super.onCreate()
         Log.d(TAG, "Service created")
 
-        // Start foreground immediately before any other operations
-        startForegroundWithNotification()
+        // Create notification BEFORE starting foreground
+        val notification = notificationHelper.createServiceNotification(
+            title = when {
+                isPreviewMode -> "Preview Mode Active"
+                isKioskMode -> "Kiosk Mode Active"
+                else -> "Lock Screen Active"
+            },
+            content = when {
+                isPreviewMode -> "Tap to exit preview mode"
+                isKioskMode -> "App running in kiosk mode"
+                else -> "Tap to return to lock screen"
+            }
+        )
+
+        try {
+            startForeground(NotificationHelper.SERVICE_NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start foreground service", e)
+        }
 
         // Then do other initializations
-        createNotificationChannel()
         registerScreenReceiver()
         checkKioskMode()
         initializeService()
@@ -94,44 +112,6 @@ class PhotoLockScreenService : Service() {
     private fun checkKioskMode() {
         isKioskMode = PreferenceManager.getDefaultSharedPreferences(this)
             .getBoolean("kiosk_mode_enabled", false)
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "Lock Screen Service",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Keeps the lock screen service running"
-            }
-
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
-        }
-    }
-
-    private fun startForegroundWithNotification() {
-        val title = when {
-            isPreviewMode -> "Preview Mode Active"
-            isKioskMode -> "Kiosk Mode Active"
-            else -> "Lock Screen Active"
-        }
-
-        val text = when {
-            isPreviewMode -> "Tap to exit preview mode"
-            isKioskMode -> "App running in kiosk mode"
-            else -> "Tap to return to lock screen"
-        }
-
-        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-
-        startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun registerScreenReceiver() {
@@ -291,7 +271,7 @@ class PhotoLockScreenService : Service() {
             }
         }
 
-        startForegroundWithNotification()
+        updateNotification()
 
         if (!isInitialized) {
             Log.d(TAG, "Service not initialized, starting initialization")
@@ -338,7 +318,27 @@ class PhotoLockScreenService : Service() {
 
     private fun handlePreviewStop() {
         isPreviewMode = false
-        startForegroundWithNotification()
+        updateNotification()
+    }
+
+    private fun updateNotification() {
+        try {
+            val notification = notificationHelper.createServiceNotification(
+                title = when {
+                    isPreviewMode -> "Preview Mode Active"
+                    isKioskMode -> "Kiosk Mode Active"
+                    else -> "Lock Screen Active"
+                },
+                content = when {
+                    isPreviewMode -> "Tap to exit preview mode"
+                    isKioskMode -> "App running in kiosk mode"
+                    else -> "Tap to return to lock screen"
+                }
+            )
+            startForeground(NotificationHelper.SERVICE_NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating notification", e)
+        }
     }
 
     private fun canStartPreview(): Boolean {

@@ -17,17 +17,21 @@ class NotificationHelper @Inject constructor(
     companion object {
         const val KIOSK_CHANNEL_ID = "kiosk_channel"
         const val KIOSK_NOTIFICATION_ID = 2
+        const val SERVICE_CHANNEL_ID = "screensaver_service_channel"
+        const val SERVICE_NOTIFICATION_ID = 1
         private const val KIOSK_CHANNEL_NAME = "Kiosk Mode"
         private const val KIOSK_CHANNEL_DESCRIPTION = "Notifications for kiosk mode"
+        private const val SERVICE_CHANNEL_NAME = "Screensaver Service"
+        private const val SERVICE_CHANNEL_DESCRIPTION = "Required for screensaver functionality"
     }
 
     init {
-        createNotificationChannel()
+        createNotificationChannels()
     }
 
-    private fun createNotificationChannel() {
+    fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val kioskChannel = NotificationChannel(
                 KIOSK_CHANNEL_ID,
                 KIOSK_CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_LOW
@@ -35,12 +39,28 @@ class NotificationHelper @Inject constructor(
                 description = KIOSK_CHANNEL_DESCRIPTION
             }
 
+            val serviceChannel = NotificationChannel(
+                SERVICE_CHANNEL_ID,
+                SERVICE_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = SERVICE_CHANNEL_DESCRIPTION
+            }
+
             val notificationManager = context.getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannels(listOf(kioskChannel, serviceChannel))
         }
     }
 
     fun createKioskNotification(title: String, content: String) = NotificationCompat.Builder(context, KIOSK_CHANNEL_ID)
+        .setContentTitle(title)
+        .setContentText(content)
+        .setSmallIcon(R.drawable.ic_notification)
+        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setOngoing(true)
+        .build()
+
+    fun createServiceNotification(title: String, content: String) = NotificationCompat.Builder(context, SERVICE_CHANNEL_ID)
         .setContentTitle(title)
         .setContentText(content)
         .setSmallIcon(R.drawable.ic_notification)
