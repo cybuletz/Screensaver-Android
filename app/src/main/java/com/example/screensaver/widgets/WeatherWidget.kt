@@ -167,27 +167,38 @@ class WeatherWidget(
     override fun cleanup() {
         try {
             Log.d(TAG, "Starting weather widget cleanup")
-            // Stop all ongoing operations
+            // Stop all async operations
             stopWeatherUpdates()
             stopAllAnimations()
             weatherUpdateJob?.cancel()
 
-            // Remove view from parent if it exists
+            // Get the parent ViewGroup and remove our view
             binding?.getRootView()?.let { view ->
                 try {
-                    (view.parent as? ViewGroup)?.removeView(view)
-                    Log.d(TAG, "Removed view from parent")
+                    val parent = view.parent as? ViewGroup
+                    if (parent != null) {
+                        parent.removeView(view)
+                        Log.d(TAG, "Successfully removed view from parent")
+                    }
+                    // Clear background and reset alpha
+                    view.background = null
+                    view.alpha = 0f
                 } catch (e: Exception) {
                     Log.e(TAG, "Error removing view from parent", e)
                 }
             }
 
-            // Clear binding and reset state
-            binding?.cleanup()
+            // Clean up binding and reset all state
+            binding?.apply {
+                cleanup()
+                getWeatherIcon()?.clearAnimation()
+                getTemperatureView()?.visibility = View.GONE
+            }
             binding = null
             isVisible = false
             currentWeatherCode = -1
             animationInProgress = false
+
             Log.d(TAG, "Weather widget cleanup complete")
         } catch (e: Exception) {
             Log.e(TAG, "Error during weather widget cleanup", e)

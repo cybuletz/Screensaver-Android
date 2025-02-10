@@ -348,49 +348,50 @@ class WidgetManager @Inject constructor(
         updateWidgetConfig(WidgetType.WEATHER, newConfig)
         preferences.setString("weather_position", position.name)
 
-        // Instead of letting the widget handle everything internally,
-        // we'll manage the transition explicitly
-        val currentWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
-        if (currentWidget != null) {
-            // Store the current container
-            val container = lastKnownContainer ?: return
+        // Instead of reinitializing, just update the position
+        (widgets[WidgetType.WEATHER] as? WeatherWidget)?.let { widget ->
+            // Temporarily store if widget was visible
+            val wasVisible = _widgetStates.value[WidgetType.WEATHER]?.state is WidgetState.Active
 
-            // Create new widget with new position but preserve state
-            val weatherWidget = WeatherWidget(container, newConfig)
+            // Hide widget temporarily
+            widget.hide()
 
-            // Initialize but don't show yet
-            weatherWidget.init()
+            // Update config and position
+            widget.updateConfiguration(newConfig)
 
-            // Clean up old widget
-            currentWidget.cleanup()
-
-            // Register new widget
-            registerWidget(WidgetType.WEATHER, weatherWidget)
-
-            // Show the widget if it was previously enabled
-            if (newConfig.enabled) {
-                showWidget(WidgetType.WEATHER)
+            // Restore visibility if needed
+            if (wasVisible) {
+                widget.show()
             }
         }
 
         Log.d(TAG, "Weather position updated: $position")
     }
 
+    private fun cleanupWidget(type: WidgetType) {
+        try {
+            Log.d(TAG, "Cleaning up widget: $type")
+            widgets[type]?.apply {
+                hide()  // First hide it
+                cleanup()  // Then clean it up
+            }
+            widgets.remove(type)  // Remove from map
+            // Update state to hidden
+            updateWidgetState(type, WidgetState.Hidden)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning up widget: $type", e)
+        }
+    }
+
     fun cleanup() {
         Log.d(TAG, "Starting cleanup of all widgets")
 
-        // Clean up widgets individually
-        widgets.forEach { (type, widget) ->
-            try {
-                Log.d(TAG, "Cleaning up widget: $type")
-                widget.cleanup()
-                updateWidgetState(type, WidgetState.Hidden)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error cleaning up widget: $type", e)
-            }
+        // Clean up each widget properly
+        WidgetType.values().forEach { type ->
+            cleanupWidget(type)
         }
 
-        // Clear collections
+        // Clear all collections
         widgets.clear()
         _widgetStates.value = emptyMap()
 
@@ -399,4 +400,5 @@ class WidgetManager @Inject constructor(
 
         Log.d(TAG, "Completed cleanup of all widgets")
     }
+
 }

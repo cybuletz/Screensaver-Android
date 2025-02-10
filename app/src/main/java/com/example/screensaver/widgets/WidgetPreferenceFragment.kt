@@ -18,7 +18,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 
 @AndroidEntryPoint
-class WidgetPreferenceFragment : PreferenceFragmentCompat() {
+class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPreferenceChangeListener {
 
     @Inject
     lateinit var widgetManager: WidgetManager
@@ -38,6 +38,32 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat() {
         }
 
         setupPreferenceListeners()
+    }
+
+    private fun checkLocationPermissions() {
+        // Delegate to existing checkLocationPermission() method
+        checkLocationPermission()
+    }
+
+    private fun showError(message: String) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.error_dialog_title)
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    // Helper method to create clock config
+    private fun createClockConfig(): WidgetConfig.ClockConfig {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        return WidgetConfig.ClockConfig(
+            showClock = prefs.getBoolean("show_clock", false),
+            showDate = prefs.getBoolean("show_date", false),
+            use24Hour = prefs.getString("clock_format", "24h") == "24h",
+            dateFormat = prefs.getString("date_format", "MMMM d, yyyy") ?: "MMMM d, yyyy",
+            timeFormat = prefs.getString("time_format", "HH:mm") ?: "HH:mm",
+            position = WidgetPosition.valueOf(prefs.getString("clock_position", "TOP_START") ?: "TOP_START")
+        )
     }
 
 
@@ -108,6 +134,65 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat() {
             Manifest.permission.ACCESS_COARSE_LOCATION,
             Manifest.permission.ACCESS_FINE_LOCATION
         ))
+    }
+
+    // In WidgetPreferenceFragment.kt
+
+    override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
+        return when (preference.key) {
+            "weather_position" -> {
+                try {
+                    val position = WidgetPosition.valueOf(newValue.toString())
+                    widgetManager.updateWeatherPosition(position)
+                    true
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating weather position", e)
+                    false
+                }
+            }
+            "clock_position" -> {
+                try {
+                    val position = WidgetPosition.valueOf(newValue.toString())
+                    widgetManager.updateClockPosition(position)
+                    true
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating clock position", e)
+                    false
+                }
+            }
+            "show_weather" -> {
+                val enabled = newValue as Boolean
+                widgetManager.updateWeatherVisibility(enabled)
+                true
+            }
+            "show_clock" -> {
+                val enabled = newValue as Boolean
+                if (enabled) {
+                    widgetManager.showWidget(WidgetType.CLOCK)
+                } else {
+                    widgetManager.hideWidget(WidgetType.CLOCK)
+                }
+                true
+            }
+            "weather_use_device_location" -> {
+                val useLocation = newValue as Boolean
+                if (useLocation) {
+                    checkLocationPermissions()
+                }
+                true
+            }
+            "weather_manual_location" -> {
+                val location = newValue as String
+                if (location.isBlank()) {
+                    showError("Location cannot be empty")
+                    false
+                } else {
+                    widgetManager.updateWeatherLocation(location)
+                    true
+                }
+            }
+            else -> true
+        }
     }
 
     private fun setupPreferenceListeners() {
