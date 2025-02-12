@@ -42,7 +42,6 @@ import java.net.URL
 import java.net.URLEncoder
 import javax.inject.Inject
 import android.content.pm.PackageManager
-import com.example.screensaver.kiosk.KioskActivity
 import androidx.fragment.app.viewModels
 import com.example.screensaver.ui.PhotoDisplayManager
 import android.view.LayoutInflater
@@ -107,8 +106,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private lateinit var adminComponentName: ComponentName
     private var googleSignInClient: GoogleSignInClient? = null
     private val previewViewModel: PreviewViewModel by viewModels()
-
-    private val collapsedCategories = mutableSetOf<String>()
 
     private var widgetPreferenceFragment: WidgetPreferenceFragment? = null
 
@@ -408,7 +405,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setupDisplayModeSelection()
         setupLockScreenPreview()
         setupLockScreenStatus()
-        setupKioskModePreference()
 
         // Observe state changes
         observeAppState()
@@ -438,7 +434,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     setupDisplayModeSelection()
                     setupLockScreenPreview()
                     setupLockScreenStatus()
-                    setupKioskModePreference()
                     setupCacheSettings(preferenceScreen)
                     setupLocalPhotoPreferences()
                     setupChargingPreference()
@@ -493,24 +488,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 getString(R.string.pref_widget_settings_summary)
             }
         }
-    }
-
-    private fun showLocationPermissionRationale() {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.location_permission_rationale_title)
-            .setMessage(R.string.location_permission_rationale_message)
-            .setPositiveButton(R.string.grant_permission) { _, _ ->
-                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
-            .setNegativeButton(R.string.cancel) { _, _ ->
-                findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.isChecked = false
-                // Use SharedPreferences.Editor directly
-                PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    .edit()
-                    .putBoolean("weather_use_device_location", false)
-                    .apply()
-            }
-            .show()
     }
 
     override fun onStop() {
@@ -785,66 +762,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun setupKioskModePreference() {
-        findPreference<SwitchPreferenceCompat>("kiosk_mode_enabled")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                handleKioskModeChange(newValue as Boolean)
-                true
-            }
-        }
-
-        findPreference<SeekBarPreference>("kiosk_exit_delay")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    .edit()
-                    .putInt("kiosk_exit_delay", newValue as Int)
-                    .apply()
-                true
-            }
-        }
-    }
-
-    private fun handleKioskModeChange(enabled: Boolean) {
-        if (enabled) {
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.pref_kiosk_mode_enabled_title)
-                .setMessage(R.string.kiosk_mode_warning)
-                .setPositiveButton(android.R.string.ok) { _, _ ->
-                    enableKioskMode()
-                }
-                .setNegativeButton(android.R.string.cancel) { _, _ ->
-                    // Reset the switch
-                    findPreference<SwitchPreferenceCompat>("kiosk_mode_enabled")?.isChecked = false
-                }
-                .show()
-        } else {
-            disableKioskMode()
-        }
-    }
-
-    private fun enableKioskMode() {
-        PreferenceManager.getDefaultSharedPreferences(requireContext())
-            .edit()
-            .putBoolean("kiosk_mode_enabled", true)
-            .apply()
-
-        // Launch kiosk activity
-        KioskActivity.start(requireContext())
-
-        // Show feedback to user
-        showFeedback(R.string.kiosk_mode_enabled)
-    }
-
-    private fun disableKioskMode() {
-        PreferenceManager.getDefaultSharedPreferences(requireContext())
-            .edit()
-            .putBoolean("kiosk_mode_enabled", false)
-            .apply()
-
-        // Show feedback to user
-        showFeedback(R.string.kiosk_mode_disabled)
-    }
-
     private fun setupGoogleSignIn() {
         try {
             Log.d(TAG, "Setting up Google Sign In")
@@ -959,60 +876,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 .getBoolean("start_on_charge", false)
             Log.d(TAG, "Current charging preference state: $currentState")
         }
-    }
-
-    private fun showChargingFeatureDialog() {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.start_on_charge_dialog_title)
-            .setMessage(R.string.start_on_charge_dialog_message)
-            .setPositiveButton(R.string.enable) { _, _ ->
-                updateChargingPreference(true)
-            }
-            .setNegativeButton(R.string.cancel) { _, _ ->
-                // Reset the switch
-                findPreference<SwitchPreferenceCompat>("start_on_charge")?.isChecked = false
-            }
-            .show()
-    }
-
-    private fun updateChargingPreference(enabled: Boolean) {
-        try {
-            // Update preference
-            PreferenceManager.getDefaultSharedPreferences(requireContext())
-                .edit()
-                .putBoolean("start_on_charge", enabled)
-                .apply()
-
-            // Update switch state
-            findPreference<SwitchPreferenceCompat>("start_on_charge")?.isChecked = enabled
-
-            // Show feedback
-            val messageResId = if (enabled) {
-                R.string.start_on_charge_enabled
-            } else {
-                R.string.start_on_charge_disabled
-            }
-            showFeedback(messageResId)
-
-            Log.d(TAG, "Charging preference updated: $enabled")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating charging preference", e)
-            handleError("Failed to update charging preference", e)
-        }
-    }
-
-    private fun showKioskModeConfirmation() {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.enable_kiosk_mode)
-            .setMessage(R.string.kiosk_mode_confirmation)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                enableKioskMode()
-            }
-            .setNegativeButton(android.R.string.cancel) { _, _ ->
-                // Reset the switch
-                findPreference<SwitchPreferenceCompat>("kiosk_mode_enabled")?.isChecked = false
-            }
-            .show()
     }
 
     private fun exchangeAuthCode(authCode: String, email: String) {
@@ -1499,20 +1362,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
             .setTitle(R.string.error_dialog_title)
             .setMessage(error.stackTraceToString())
             .setPositiveButton(android.R.string.ok, null)
-            .show()
-    }
-
-    private fun showKioskModeConfirmationDialog() {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.kiosk_mode_confirmation)
-            .setMessage(getString(R.string.kiosk_mode_confirmation_message))
-            .setPositiveButton(getString(R.string.confirm)) { dialog, _ ->
-                enableKioskMode()
-                dialog.dismiss()
-            }
-            .setNegativeButton(getString(R.string.cancel)) { dialog, _ ->
-                dialog.dismiss()
-            }
             .show()
     }
 

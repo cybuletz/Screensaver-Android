@@ -23,8 +23,6 @@ import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.preference.PreferenceManager
 import com.example.screensaver.databinding.ActivityMainBinding
-import com.example.screensaver.kiosk.KioskActivity
-import com.example.screensaver.kiosk.KioskPolicyManager
 import com.example.screensaver.lock.LockScreenPhotoManager
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.ui.PhotoDisplayManager
@@ -65,9 +63,6 @@ class MainActivity : AppCompatActivity() {
     lateinit var photoManager: LockScreenPhotoManager
 
     @Inject
-    lateinit var kioskPolicyManager: KioskPolicyManager
-
-    @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
 
     @Inject
@@ -97,17 +92,6 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error getting viewLifecycleOwner", e)
             null
         }
-
-    private val deviceAdminLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            checkKioskMode()
-        } else {
-            disableKioskMode()
-            showToast("Device admin access is required for kiosk mode")
-        }
-    }
 
     companion object {
         private const val TAG = "MainActivity"
@@ -147,10 +131,6 @@ class MainActivity : AppCompatActivity() {
             // Handle start from charging receiver
             if (intent?.getBooleanExtra("start_screensaver", false) == true) {
                 Log.d(TAG, "Started from charging receiver at ${intent?.getLongExtra("timestamp", 0L)}")
-            }
-
-            if (checkKioskMode()) {
-                return
             }
 
             ensureBinding() // Use safety check method
@@ -697,75 +677,6 @@ class MainActivity : AppCompatActivity() {
         binding.legalLinksContainer.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
     }
 
-    private fun checkKioskMode(): Boolean {
-        if (isDestroyed) return false
-
-        val isKioskEnabled = PreferenceManager.getDefaultSharedPreferences(this)
-            .getBoolean("kiosk_mode_enabled", false)
-
-        if (isKioskEnabled) {
-            Log.d(TAG, "Kiosk mode is enabled, checking permissions")
-
-            if (!kioskPolicyManager.isDeviceAdmin()) {
-                requestDeviceAdmin()
-                return false
-            }
-
-            if (checkSelfPermission(android.Manifest.permission.MANAGE_DEVICE_POLICY_LOCK_TASK)
-                != PackageManager.PERMISSION_GRANTED) {
-
-                if (shouldShowRequestPermissionRationale(
-                        android.Manifest.permission.MANAGE_DEVICE_POLICY_LOCK_TASK
-                    )) {
-                    showPermissionRationale()
-                } else {
-                    requestKioskPermissions()
-                }
-                return false
-            }
-
-            if (!kioskPolicyManager.isKioskModeAllowed()) {
-                showToast("Kiosk mode is not allowed on this device")
-                disableKioskMode()
-                return false
-            }
-
-            startKioskMode()
-            return true
-        }
-        return false
-    }
-
-    private fun requestDeviceAdmin() {
-        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, kioskPolicyManager.getAdminComponent())
-            putExtra(
-                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Device admin access is required for kiosk mode."
-            )
-        }
-        deviceAdminLauncher.launch(intent)
-    }
-
-    private fun startKioskMode() {
-        lifecycleScope.launch {
-            try {
-                kioskPolicyManager.setKioskPolicies(true)
-
-                Intent(this@MainActivity, KioskActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    startActivity(this)
-                }
-
-                updateLockScreenService("CHECK_KIOSK_MODE")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error starting kiosk mode", e)
-                showToast("Error starting kiosk mode")
-                disableKioskMode()
-            }
-        }
-    }
-
     private fun startLockScreenService() {
         try {
             // Always use startForegroundService on Android O and above
@@ -1054,9 +965,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         setupFullScreen()
-        if (checkKioskMode()) {
-            return
-        }
 
         updateLockScreenService("CHECK_KIOSK_MODE")
 
@@ -1102,12 +1010,6 @@ class MainActivity : AppCompatActivity() {
                         Log.e(TAG, "Error cleaning up GooglePhotosManager", e)
                     }
                 }
-            }
-
-            // Existing cleanup code
-            if (PreferenceManager.getDefaultSharedPreferences(this)
-                    .getBoolean("kiosk_mode_enabled", false)) {
-                startKioskMode()
             }
 
             viewLifecycleOwner?.lifecycleScope?.launch(Dispatchers.Main) {

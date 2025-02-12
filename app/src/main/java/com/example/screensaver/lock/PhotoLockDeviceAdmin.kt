@@ -10,17 +10,12 @@ import android.widget.Toast
 import androidx.preference.PreferenceManager
 import com.example.screensaver.R
 import com.example.screensaver.utils.PreferenceKeys
-import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
 import com.example.screensaver.lock.PhotoLockScreenService
-import com.example.screensaver.kiosk.KioskPolicyManager
 
 /**
  * Device administrator receiver for handling lock screen permissions and management.
  */
 class PhotoLockDeviceAdmin : DeviceAdminReceiver() {
-    @Inject
-    lateinit var kioskPolicyManager: KioskPolicyManager
 
     companion object {
         private const val TAG = "PhotoLockDeviceAdmin"
@@ -35,13 +30,8 @@ class PhotoLockDeviceAdmin : DeviceAdminReceiver() {
 
     override fun onEnabled(context: Context, intent: Intent) {
         super.onEnabled(context, intent)
-
-        // If kiosk mode is enabled, set up kiosk policies
-        val isKioskEnabled = PreferenceManager.getDefaultSharedPreferences(context)
-            .getBoolean("kiosk_mode_enabled", false)
-
-        if (isKioskEnabled) {
-            KioskPolicyManager(context).setKioskPolicies(true)
+        handleAdminStateChange(context, true) {
+            "Device admin enabled successfully"
         }
     }
 
@@ -58,16 +48,6 @@ class PhotoLockDeviceAdmin : DeviceAdminReceiver() {
     override fun onPasswordChanged(context: Context, intent: Intent) {
         super.onPasswordChanged(context, intent)
         logEvent("Device password changed")
-    }
-
-    override fun onLockTaskModeEntering(context: Context, intent: Intent, pkg: String) {
-        super.onLockTaskModeEntering(context, intent, pkg)
-        logEvent("Lock task mode entering for package: $pkg")
-    }
-
-    override fun onLockTaskModeExiting(context: Context, intent: Intent) {
-        super.onLockTaskModeExiting(context, intent)
-        logEvent("Lock task mode exiting")
     }
 
     private fun handleAdminStateChange(context: Context, isEnabled: Boolean, logMessage: () -> String) {

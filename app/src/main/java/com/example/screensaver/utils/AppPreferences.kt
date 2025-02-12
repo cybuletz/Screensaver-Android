@@ -29,7 +29,6 @@ class AppPreferences @Inject constructor(
             PREF_SHOW_CLOCK -> _showClockFlow.value = isShowClock()
             PREF_CLOCK_FORMAT -> _clockFormatFlow.value = getClockFormat()
             PREF_SELECTED_ALBUMS -> _selectedAlbumsFlow.value = getSelectedAlbumIds()
-            PREF_KIOSK_MODE_ENABLED -> _kioskModeEnabledFlow.value = isKioskModeEnabled()
         }
     }
 
@@ -41,12 +40,10 @@ class AppPreferences @Inject constructor(
     private val _showClockFlow = MutableStateFlow(isShowClock())
     private val _clockFormatFlow = MutableStateFlow(getClockFormat())
     private val _selectedAlbumsFlow = MutableStateFlow(getSelectedAlbumIds())
-    private val _kioskModeEnabledFlow = MutableStateFlow(isKioskModeEnabled())
     private val _previewCountFlow = MutableStateFlow(getPreviewCount())
 
     // Public flows
     val selectedAlbumsFlow = _selectedAlbumsFlow.asStateFlow()
-    val kioskModeEnabledFlow = _kioskModeEnabledFlow.asStateFlow()
 
     @PostConstruct
     fun initialize() {
@@ -78,8 +75,6 @@ class AppPreferences @Inject constructor(
         private const val PREF_SHOW_DATE = "show_date"
         private const val PREF_ENABLE_TRANSITIONS = "enable_transitions"
         private const val PREF_DARK_MODE = "dark_mode"
-        private const val PREF_KIOSK_MODE_ENABLED = "kiosk_mode_enabled"
-        private const val PREF_KIOSK_SETTINGS_TIMEOUT = "kiosk_settings_timeout"
 
         private const val PREF_PREVIEW_COUNT = "preview_count"
     }
@@ -137,7 +132,6 @@ class AppPreferences @Inject constructor(
         _showClockFlow.value = false
         _clockFormatFlow.value = ClockFormat.FORMAT_24H
         _selectedAlbumsFlow.value = emptySet()
-        _kioskModeEnabledFlow.value = false
         _previewCountFlow.value = 0
     }
 
@@ -256,20 +250,6 @@ class AppPreferences @Inject constructor(
 
     fun setShowWeather(enabled: Boolean) {
         updatePreference { putBoolean("show_weather", false) }
-    }
-
-    fun isKioskModeEnabled(): Boolean =
-        prefs.getBoolean(PREF_KIOSK_MODE_ENABLED, false)
-
-    fun setKioskModeEnabled(enabled: Boolean) {
-        updatePreference { putBoolean(PREF_KIOSK_MODE_ENABLED, enabled) }
-    }
-
-    fun getKioskSettingsTimeout(): Int =
-        prefs.getInt(PREF_KIOSK_SETTINGS_TIMEOUT, 5)
-
-    fun setKioskSettingsTimeout(seconds: Int) {
-        updatePreference { putInt(PREF_KIOSK_SETTINGS_TIMEOUT, seconds) }
     }
 
     fun getString(key: String, defaultValue: String): String {

@@ -130,25 +130,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Kiosk Activity -->
-        <activity
-            android:name=".kiosk.KioskActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:launchMode="singleInstance"
-            android:lockTaskMode="if_whitelisted"
-            android:screenOrientation="user"
-            android:showOnLockScreen="true"
-            android:taskAffinity=""
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-            android:theme="@style/Theme.AppCompat.NoActionBar"
-            android:directBootAware="true">
-            <intent-filter>
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.HOME" />
-            </intent-filter>
-        </activity>
-
         <!-- Album Selection Activity -->
         <activity
             android:name=".AlbumSelectionActivity"
@@ -184,23 +165,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Kiosk Service -->
-        <service
-            android:name=".kiosk.KioskService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:directBootAware="true"
-            android:permission="android.permission.BIND_JOB_SERVICE">
-            <intent-filter>
-                <action android:name="android.intent.action.SCREEN_OFF" />
-                <action android:name="android.intent.action.SCREEN_ON" />
-                <action android:name="android.intent.action.USER_PRESENT" />
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-            </intent-filter>
-        </service>
-
         <!-- Dream Service -->
         <service
             android:name=".PhotoDreamService"
@@ -231,23 +195,6 @@
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </service>
-
-        <!-- Device Admin Receiver -->
-        <receiver
-            android:name=".lock.PhotoLockDeviceAdmin"
-            android:description="@string/device_admin_description"
-            android:label="@string/device_admin_label"
-            android:permission="android.permission.BIND_DEVICE_ADMIN"
-            android:exported="true">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/device_admin_policies" />
-            <intent-filter>
-                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-                <action android:name="android.app.action.DEVICE_ADMIN_DISABLE_REQUESTED" />
-                <action android:name="android.app.action.DEVICE_ADMIN_DISABLED" />
-            </intent-filter>
-        </receiver>
 
         <!-- FileProvider -->
         <provider
