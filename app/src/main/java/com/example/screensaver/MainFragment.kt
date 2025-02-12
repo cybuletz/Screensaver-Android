@@ -46,7 +46,6 @@ class MainFragment : Fragment() {
     lateinit var photoManager: LockScreenPhotoManager
 
     private var isPhotoDisplayActive = false
-    private var usePhotoDisplay: Boolean = false
 
     companion object {
         private const val TAG = "MainFragment"
@@ -196,22 +195,6 @@ class MainFragment : Fragment() {
             // Start service in preview mode
             Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
                 intent.action = "START_PREVIEW"
-                requireContext().startService(intent)
-            }
-        }
-    }
-
-    private fun stopPreviewMode() {
-        if (isPhotoDisplayActive) {
-            stopPhotoDisplay()
-            if (!photoSourceState.isScreensaverReady()) {
-                binding.webView.visibility = View.VISIBLE
-                setupWebView(null)
-            }
-
-            // Stop preview mode in service
-            Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
-                intent.action = "STOP_PREVIEW"
                 requireContext().startService(intent)
             }
         }
@@ -435,22 +418,5 @@ class MainFragment : Fragment() {
         photoDisplayManager.cleanup()
         super.onDestroyView()
         _binding = null
-    }
-
-    fun onBackPressed(): Boolean {
-        return if (isPhotoDisplayActive) {
-            stopPreviewMode()
-            true
-        } else {
-            false
-        }
-    }
-
-    fun refreshDisplay() {
-        if (photoSourceState.isScreensaverReady()) {
-            photoDisplayManager.startPhotoDisplay()
-        } else {
-            binding.webView.reload()
-        }
     }
 }

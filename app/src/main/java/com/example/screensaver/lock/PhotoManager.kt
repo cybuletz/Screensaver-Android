@@ -24,7 +24,6 @@ class PhotoManager @Inject constructor(
 ) {
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
-    val loadingState: StateFlow<LoadingState> = _loadingState
 
     private val mediaItems = mutableListOf<MediaItem>()
     private var currentIndex = -1
@@ -35,126 +34,15 @@ class PhotoManager @Inject constructor(
 
     companion object {
         private const val TAG = "LockScreenPhotoManager"
-        private const val PRELOAD_AHEAD_COUNT = 2
 
         @Volatile private var instance: PhotoManager? = null
 
-        fun getInstance(context: Context): PhotoManager {
-            return instance ?: synchronized(this) {
-                instance ?: PhotoManager(
-                    context.applicationContext,
-                    PhotoLoadingManager(context.applicationContext, CoroutineScope(SupervisorJob() + Dispatchers.Main))
-                ).also { instance = it }
-            }
-        }
-    }
-
-    suspend fun loadPhotos(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            _loadingState.value = LoadingState.LOADING
-
-            val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-            val selectedAlbums = preferences.getStringSet("selected_albums", emptySet()) ?: emptySet()
-
-            if (selectedAlbums.isEmpty()) {
-                Log.w(TAG, "No albums selected")
-                _loadingState.value = LoadingState.ERROR
-                return@withContext false
-            }
-
-            mediaItems.clear()
-            selectedAlbums.forEach { albumId ->
-                val items = loadAlbumPhotos(albumId)
-                mediaItems.addAll(items)
-            }
-
-            if (mediaItems.isEmpty()) {
-                Log.w(TAG, "No photos found in selected albums")
-                _loadingState.value = LoadingState.ERROR
-                return@withContext false
-            }
-
-            mediaItems.shuffle()
-            _loadingState.value = LoadingState.SUCCESS
-            preloadInitialPhotos()
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading photos", e)
-            _loadingState.value = LoadingState.ERROR
-            false
-        }
-    }
-
-    private suspend fun loadAlbumPhotos(albumId: String): List<MediaItem> {
-        return try {
-            photoLoadingManager.getAlbumPhotos(albumId).map { photoData ->
-                MediaItem(
-                    id = photoData.id,
-                    albumId = albumId,
-                    baseUrl = photoData.baseUrl,
-                    mimeType = photoData.mimeType,
-                    width = 1920,
-                    height = 1080,
-                    description = photoData.filename ?: ""
-                )
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading album photos: $albumId", e)
-            emptyList()
-        }
     }
 
     fun getPhotoCount(): Int {
         val count = mediaItems.size
         Log.d(TAG, "Getting photo count from lock screen PhotoManager: $count")
         return count
-    }
-
-    fun getPhotoUrl(index: Int): String? {
-        return if (index in mediaItems.indices) {
-            val url = mediaItems[index].baseUrl
-            Log.d(TAG, "Getting photo URL for index $index: $url")
-            url
-        } else {
-            Log.e(TAG, "Invalid photo index: $index, total photos: ${mediaItems.size}")
-            null
-        }
-    }
-
-    private fun preloadInitialPhotos() {
-        coroutineScope.launch {
-            for (i in 0 until minOf(PRELOAD_AHEAD_COUNT, mediaItems.size)) {
-                preloadPhoto(i)
-            }
-        }
-    }
-
-    private fun preloadNextPhotos(currentIndex: Int) {
-        coroutineScope.launch {
-            for (i in 1..PRELOAD_AHEAD_COUNT) {
-                val nextIndex = (currentIndex + i) % mediaItems.size
-                preloadPhoto(nextIndex)
-            }
-        }
-    }
-
-    suspend fun preloadNextPhoto(index: Int) {
-        preloadPhoto(index)
-    }
-
-    private suspend fun preloadPhoto(index: Int) {
-        if (index !in mediaItems.indices) return
-
-        try {
-            withContext(Dispatchers.IO) {
-                val mediaItem = mediaItems[index]
-                if (!photoLoadingManager.isPhotoCached(mediaItem)) {
-                    photoLoadingManager.preloadPhoto(mediaItem)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error preloading photo at index $index", e)
-        }
     }
 
     fun cleanup() {

@@ -248,12 +248,6 @@ class PhotoLockScreenService : Service() {
         return START_STICKY
     }
 
-    fun onAuthenticationUpdated() {
-        if (!isInitialized) {
-            initializeService()
-        }
-    }
-
     private fun handlePreviewStart() {
         if (canStartPreview()) {
             isPreviewMode = true

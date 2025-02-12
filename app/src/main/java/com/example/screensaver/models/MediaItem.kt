@@ -54,32 +54,7 @@ data class MediaItem(
         get() = getFullQualityUrl()
 
     companion object {
-        private const val DEFAULT_QUALITY = 100
         private const val PREVIEW_QUALITY = 60
-        private const val THUMBNAIL_QUALITY = 30
-
-        /**
-         * Creates an empty media item with default values
-         */
-        fun createEmpty(albumId: String): MediaItem = MediaItem(
-            albumId = albumId,
-            baseUrl = "",
-            mimeType = "image/jpeg",
-            width = 0,
-            height = 0
-        )
-
-        /**
-         * Creates a MediaItem from a local URI
-         */
-        fun fromLocalUri(uri: Uri, albumId: String): MediaItem = MediaItem(
-            albumId = albumId,
-            baseUrl = uri.toString(),
-            mimeType = "image/*",  // Default mime type for local images
-            width = 0,  // These will be updated when the image is loaded
-            height = 0,
-            createdAt = System.currentTimeMillis()
-        )
     }
 
     init {
@@ -102,15 +77,6 @@ data class MediaItem(
     val isPortrait: Boolean
         get() = height > width
 
-    /**
-     * Checks if the media item is currently loading
-     */
-    val isLoading: Boolean
-        get() = loadState == LoadState.LOADING
-
-    /**
-     * Gets the URL for the full-quality version of the media item
-     */
     fun getFullQualityUrl(): String = baseUrl
 
     /**
@@ -126,20 +92,6 @@ data class MediaItem(
         }
     }
 
-    /**
-     * Gets the URL for a thumbnail version of the media item
-     * @param size Desired size (width and height) for the thumbnail
-     */
-    fun getThumbnailUrl(size: Int): String =
-        if (baseUrl.startsWith("content://")) {
-            baseUrl // Return as-is for local content URIs
-        } else {
-            "$baseUrl=w$size-h$size-c-q$THUMBNAIL_QUALITY"
-        }
-
-    /**
-     * Calculates preview dimensions maintaining aspect ratio
-     */
     private fun calculatePreviewDimensions(maxDimension: Int): Pair<Int, Int> {
         return if (isPortrait) {
             val scaledWidth = (maxDimension * aspectRatio).toInt()
@@ -150,24 +102,10 @@ data class MediaItem(
         }
     }
 
-    /**
-     * Updates the loading state of the media item
-     */
     fun updateLoadState(newState: LoadState) {
         loadState = newState
     }
 
-    /**
-     * Validates the media item data
-     * @throws IllegalStateException if the media item data is invalid
-     */
-    fun validate() {
-        check(albumId.isNotBlank()) { "Album ID cannot be blank" }
-        check(baseUrl.isNotBlank()) { "Base URL cannot be blank" }
-        check(mimeType.isNotBlank()) { "MIME type cannot be blank" }
-        check(width >= 0) { "Invalid width: $width" }
-        check(height >= 0) { "Invalid height: $height" }
-    }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -184,21 +122,3 @@ data class MediaItem(
         append(", state=$loadState)")
     }
 }
-
-/**
- * Extension functions for MediaItem collections
- */
-fun List<MediaItem>.sortByCreationDate(): List<MediaItem> =
-    sortedByDescending { it.createdAt }
-
-fun List<MediaItem>.filterPortrait(): List<MediaItem> =
-    filter { it.isPortrait }
-
-fun List<MediaItem>.filterLandscape(): List<MediaItem> =
-    filter { !it.isPortrait }
-
-fun List<MediaItem>.byLoadState(state: MediaItem.LoadState): List<MediaItem> =
-    filter { it.loadState == state }
-
-fun List<MediaItem>.filterByAlbum(albumId: String): List<MediaItem> =
-    filter { it.albumId == albumId }

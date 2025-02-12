@@ -95,7 +95,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val KIOSK_PERMISSION_REQUEST_CODE = 1001
         private const val MENU_CLEAR_CACHE = Menu.FIRST + 1
         private const val PHOTO_TRANSITION_DELAY = 500L
         private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
@@ -119,13 +118,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableFullScreen()
-
-        // Initialize notification channels early and explicitly
-        try {
-            notificationHelper.createNotificationChannels()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create notification channels", e)
-        }
 
         try {
             // Handle start from charging receiver
@@ -769,49 +761,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPermissionRationale() {
-        if (isDestroyed) return
-
-        AlertDialog.Builder(this)
-            .setTitle("Permissions Required")
-            .setMessage("Kiosk mode requires special permissions to function properly.")
-            .setPositiveButton("OK") { _, _ -> requestKioskPermissions() }
-            .setNegativeButton("Cancel") { _, _ -> disableKioskMode() }
-            .show()
-    }
-
-    private fun requestKioskPermissions() {
-        requestPermissions(
-            arrayOf(
-                android.Manifest.permission.MANAGE_DEVICE_POLICY_LOCK_TASK
-            ),
-            KIOSK_PERMISSION_REQUEST_CODE
-        )
-    }
-
-    private fun disableKioskMode() {
-        PreferenceManager.getDefaultSharedPreferences(this)
-            .edit()
-            .putBoolean("kiosk_mode_enabled", false)
-            .apply()
-    }
-
     override fun onPause() {
         super.onPause()
         if (!isDestroyed) {
             photoDisplayManager.stopPhotoDisplay()
-        }
-    }
-
-    private fun checkAndRequestLocationPermissions() {
-        if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(
-                arrayOf(
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                    android.Manifest.permission.ACCESS_FINE_LOCATION
-                ),
-                LOCATION_PERMISSION_REQUEST_CODE
-            )
         }
     }
 
@@ -835,131 +788,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSupportNavigateUp(): Boolean {
         return navController.navigateUp() || super.onSupportNavigateUp()
-    }
-
-    private fun handleLogout() {
-        Log.d(TAG, "Handling logout")
-        lifecycleScope.launch {
-            try {
-                photoDisplayManager.cleanup(clearCache = true)
-                googlePhotosManager.cleanup() // Ensure Google Photos state is cleared
-                PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                    .edit()
-                    .remove("photo_source_selection") // Clear photo source selection
-                    .apply()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during logout", e)
-            }
-        }
-    }
-
-    private fun handlePhotoSourceChange() {
-        Log.d(TAG, "Handling photo source change")
-        lifecycleScope.launch {
-            try {
-                photoDisplayManager.stopPhotoDisplay()
-                photoDisplayManager.clearPhotoCache()
-
-                // Ensure we're on IO dispatcher for cleanup
-                withContext(Dispatchers.IO) {
-                    googlePhotosManager.cleanup()
-                }
-
-                initializePhotos()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling photo source change", e)
-                showToast("Error changing photo source")
-            }
-        }
-    }
-
-    private fun handlePhotosUpdate() {
-        if (isPhotoTransitionInProgress) {
-            Log.d(TAG, "Photo update already in progress, skipping")
-            return
-        }
-
-        isPhotoTransitionInProgress = true
-        lifecycleScope.launch {
-            try {
-                Log.d(TAG, "Starting photo update transition")
-                photoDisplayManager.stopPhotoDisplay()
-                delay(PHOTO_TRANSITION_DELAY)
-                startPhotoDisplay()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during photo update", e)
-            } finally {
-                isPhotoTransitionInProgress = false
-            }
-        }
-    }
-
-    private fun startPhotoDisplay() {
-        Log.d(TAG, "Starting photo display")
-        if (isDestroyed || isPhotoTransitionInProgress) {
-            Log.d(TAG, "Skipping photo display start - activity destroyed or transition in progress")
-            return
-        }
-
-        lifecycleScope.launch {
-            try {
-                // Ensure we have photos before proceeding
-                val photoCount = photoManager.getPhotoCount()
-                if (photoCount <= 0) {
-                    Log.w(TAG, "No photos available to display")
-                    return@launch
-                }
-
-                // Initialize PhotoDisplayManager if needed
-                if (!photoDisplayManager.isInitialized()) {
-                    val views = PhotoDisplayManager.Views(
-                        primaryView = binding.photoPreview,
-                        overlayView = binding.photoPreviewOverlay,
-                        locationView = binding.locationOverlay,
-                        loadingIndicator = binding.loadingIndicator,
-                        loadingMessage = binding.loadingMessage,
-                        container = binding.screensaverContainer,
-                        overlayMessageContainer = binding.overlayMessageContainer,
-                        overlayMessageText = binding.overlayMessageText,
-                        backgroundLoadingIndicator = binding.backgroundLoadingIndicator
-                    )
-
-                    photoDisplayManager.initialize(views, lifecycleScope)
-
-                    // Update settings
-                    val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                    photoDisplayManager.updateSettings(
-                        isRandomOrder = prefs.getBoolean("random_order", false)
-                    )
-                }
-
-                // Ensure cleanup before starting new display
-                withContext(Dispatchers.IO) {
-                    photoDisplayManager.clearPhotoCache()
-                    delay(100) // Small delay to ensure cleanup is complete
-                }
-
-                // Start the photo display
-                photoDisplayManager.startPhotoDisplay()
-                Log.d(TAG, "Photo display started with $photoCount photos")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error starting photo display", e)
-                showToast("Error starting photo display")
-            }
-        }
-    }
-
-    private fun ensurePhotoDisplay() {
-        if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
-            navController.currentDestination?.id == R.id.mainFragment) {
-            lifecycleScope.launch {
-                try {
-                    photoDisplayManager.startPhotoDisplay()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error ensuring photo display", e)
-                }
-            }
-        }
     }
 
     override fun onResume() {

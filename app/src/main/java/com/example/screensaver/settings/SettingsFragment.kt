@@ -138,17 +138,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private val locationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            widgetManager.initializeWeatherWidget()
-        } else {
-            findPreference<SwitchPreferenceCompat>("weather_use_device_location")?.isChecked = false
-            showFeedback(R.string.location_permission_denied_title)
-        }
-    }
-
     // Device Admin result launcher
     private val deviceAdminLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()

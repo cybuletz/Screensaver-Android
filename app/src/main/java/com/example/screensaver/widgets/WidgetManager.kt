@@ -36,14 +36,6 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Registered widget: $type")
     }
 
-    fun unregisterWidget(type: WidgetType) {
-        widgets.remove(type)?.cleanup()
-        updateWidgetState(type, WidgetState.Hidden)
-        Log.d(TAG, "Unregistered widget: $type")
-    }
-
-    fun hasWidget(type: WidgetType): Boolean = widgets[type] != null
-
     fun updateWidgetConfig(type: WidgetType, config: WidgetConfig) {
         widgets[type]?.updateConfiguration(config)
         val currentStates = _widgetStates.value.toMutableMap()
@@ -196,14 +188,6 @@ class WidgetManager @Inject constructor(
         } catch (e: IllegalArgumentException) {
             WidgetPosition.TOP_START
         }
-    }
-
-    fun updateClockConfig() {
-        Log.d(TAG, "Updating clock config")
-        val config = loadClockConfig()
-        Log.d(TAG, "New config loaded: $config")
-        updateWidgetConfig(WidgetType.CLOCK, config)
-        reinitializeClockWidget() // Add this line
     }
 
     fun updateClockPosition(position: WidgetPosition) {

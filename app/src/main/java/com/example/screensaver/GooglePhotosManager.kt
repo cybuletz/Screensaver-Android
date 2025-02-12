@@ -21,9 +21,7 @@ class GooglePhotosManager(private val context: Context) {
     companion object {
         private const val TAG = "GooglePhotosManager"
         private val REQUIRED_SCOPES = listOf(
-            "https://www.googleapis.com/auth/photoslibrary.readonly",
-           // "https://www.googleapis.com/auth/photoslibrary",
-           // "https://www.googleapis.com/auth/photos.readonly"
+            "https://www.googleapis.com/auth/photoslibrary.readonly"
         )
     }
 
@@ -65,50 +63,6 @@ class GooglePhotosManager(private val context: Context) {
         }
     }
 
-    suspend fun getRandomPhotos(count: Int = 1): List<String> = withContext(Dispatchers.IO) {
-        try {
-            if (!isInitialized || photosLibraryClient == null) {
-                Log.e(TAG, "PhotosLibrary client not initialized")
-                throw IllegalStateException("PhotosLibrary client not initialized")
-            }
-
-            Log.d(TAG, "Getting random photos, maxResults: $count")
-
-            val request = ListMediaItemsRequest.newBuilder()
-                .setPageSize(50)  // Fetch 50 items to get a good random sample
-                .build()
-
-            val mediaItems = mutableListOf<MediaItem>()
-
-            // Safely get media items
-            photosLibraryClient?.listMediaItems(request)?.iterateAll()?.forEach { item ->
-                mediaItems.add(item)
-                if (mediaItems.size >= 50) return@forEach  // Stop after 50 items
-            }
-
-            if (mediaItems.isEmpty()) {
-                Log.d(TAG, "No media items found in Google Photos")
-                return@withContext emptyList()
-            }
-
-            // Get random photos and build URLs
-            return@withContext mediaItems
-                .shuffled()
-                .take(count.coerceAtMost(mediaItems.size))
-                .map { mediaItem -> "${mediaItem.baseUrl}=w1920-h1080" }
-                .also { urls ->
-                    Log.d(TAG, "Retrieved ${urls.size} random photos")
-                    urls.forEach { url ->
-                        Log.d(TAG, "Photo URL: $url")
-                    }
-                }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting random photos", e)
-            throw e
-        }
-    }
-
     fun cleanup() {
         try {
             photosLibraryClient?.shutdown()
@@ -119,6 +73,4 @@ class GooglePhotosManager(private val context: Context) {
             Log.e(TAG, "Error during cleanup", e)
         }
     }
-
-    fun isClientInitialized(): Boolean = isInitialized && photosLibraryClient != null
 }

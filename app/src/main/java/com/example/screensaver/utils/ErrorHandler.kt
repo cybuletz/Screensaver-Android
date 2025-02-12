@@ -106,22 +106,6 @@ class ErrorHandler @Inject constructor(
     }
 
     /**
-     * Handles photo loading errors
-     */
-    suspend fun handlePhotoError(error: Throwable, photoUrl: String?, view: View?) {
-        analytics.trackPhotoLoadError(error, photoUrl)
-        errorChannel.send(ErrorEvent.PhotoLoadError(error, photoUrl))
-
-        val messageRes = when (error) {
-            is OutOfMemoryError -> R.string.error_memory
-            is IOException -> R.string.error_photo_load
-            else -> R.string.error_photo_general
-        }
-
-        showError(messageRes, view)
-    }
-
-    /**
      * Handles permission-related errors
      */
     suspend fun handlePermissionError(permission: String, view: View?) {
@@ -135,21 +119,6 @@ class ErrorHandler @Inject constructor(
         }
 
         showError(messageRes, view, true)
-    }
-
-    /**
-     * Handles storage-related errors
-     */
-    suspend fun handleStorageError(error: Throwable, view: View?) {
-        errorChannel.send(ErrorEvent.StorageError(error))
-
-        val messageRes = when (error) {
-            is IOException -> R.string.error_storage_access
-            is SecurityException -> R.string.error_storage_permission
-            else -> R.string.error_storage_general
-        }
-
-        showError(messageRes, view)
     }
 
     /**

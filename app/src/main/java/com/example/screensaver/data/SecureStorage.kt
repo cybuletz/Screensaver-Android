@@ -160,28 +160,6 @@ class SecureStorage @Inject constructor(
         }
     }
 
-    fun updateAccessToken(accessToken: String, expirationTime: Long) {
-        try {
-            securePreferences.edit().apply {
-                putString(KEY_GOOGLE_ACCESS_TOKEN, accessToken)
-                putLong(KEY_TOKEN_EXPIRATION, expirationTime)
-                putLong(KEY_LAST_AUTH, Instant.now().epochSecond)
-                putInt(KEY_REFRESH_ATTEMPTS, 0)
-            }.apply()
-
-            val currentCredentials = getGoogleCredentials()
-            if (currentCredentials != null) {
-                _credentialsFlow.value = CredentialState.Valid(currentCredentials)
-            }
-
-            Timber.d("Access token updated successfully")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to update access token")
-            _credentialsFlow.value = CredentialState.Error(e)
-            throw SecurityException("Failed to update access token", e)
-        }
-    }
-
     fun recordRefreshAttempt() {
         try {
             val attempts = securePreferences.getInt(KEY_REFRESH_ATTEMPTS, 0)

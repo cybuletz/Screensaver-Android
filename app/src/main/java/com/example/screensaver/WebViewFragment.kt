@@ -33,7 +33,6 @@ class WebViewFragment : Fragment() {
         }
 
         webView.webViewClient = WebViewClient()
-        webView.addJavascriptInterface(SmartTimerClient(requireContext()), "SmartTimerClient")
         webView.loadUrl("file:///android_asset/index.html")
     }
 

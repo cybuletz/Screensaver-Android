@@ -510,44 +510,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun precachePhotos() {
-        try {
-            val photoCount = photoManager.getPhotoCount()
-            val countToPreload = minOf(PRECACHE_COUNT, photoCount)
-            Log.d(TAG, "Starting to precache $countToPreload photos out of total $photoCount")
-
-            if (countToPreload > 0) {
-                for (index in 0 until countToPreload) {
-                    try {
-                        val url = photoManager.getPhotoUrl(index)
-                        if (url != null) {
-                            photoLoadingManager.preloadPhoto(
-                                MediaItem(
-                                    id = index.toString(),
-                                    albumId = "lock_screen",
-                                    baseUrl = url,
-                                    mimeType = "image/jpeg",
-                                    width = 1920,
-                                    height = 1080
-                                )
-                            )
-                            Log.d(TAG, "Successfully precached photo $index with URL: $url")
-                        } else {
-                            Log.e(TAG, "Failed to get URL for photo $index")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error precaching photo $index", e)
-                    }
-                }
-            } else {
-                Log.d(TAG, "No photos to precache")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during precaching", e)
-            throw e
-        }
-    }
-
     private fun checkDreamServiceRegistration() {
         when (dreamServiceHelper.getDreamServiceStatus()) {
             DreamServiceStatus.API_UNAVAILABLE -> {

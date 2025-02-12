@@ -49,9 +49,6 @@ class PermissionManager @Inject constructor(
                 Manifest.permission.INTERNET
             )
         }
-
-        private const val REQUEST_DEVICE_ADMIN = 1
-        private const val REQUEST_OVERLAY_PERMISSION = 2
     }
 
     data class PermissionState(
@@ -69,37 +66,6 @@ class PermissionManager @Inject constructor(
     init {
         deviceAdmin = ComponentName(context, PhotoLockDeviceAdmin::class.java)
         updatePermissionState()
-    }
-
-    val permissionState: StateFlow<PermissionState> = _permissionState.asStateFlow()
-
-    fun registerWithActivity(activity: FragmentActivity): PermissionLaunchers {
-        return PermissionLaunchers(
-            storage = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-                handlePermissionResult(isGranted)
-            },
-            notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-                    handlePermissionResult(isGranted)
-                }
-            } else null
-        )
-    }
-
-    fun areAllPermissionsGranted(): Boolean = permissionState.value.allPermissionsGranted
-
-    fun requestRequiredPermissions(activity: Activity, callback: (Boolean) -> Unit) {
-        permissionCallback = callback
-
-        val ungrantedPermissions = REQUIRED_PERMISSIONS.filter {
-            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-        }.toTypedArray()
-
-        if (ungrantedPermissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(activity, ungrantedPermissions, REQUEST_DEVICE_ADMIN)
-        } else {
-            callback(true)
-        }
     }
 
     private fun updatePermissionState() {
@@ -150,17 +116,6 @@ class PermissionManager @Inject constructor(
         return devicePolicyManager.isAdminActive(deviceAdmin)
     }
 
-    fun requestDeviceAdmin(activity: Activity) {
-        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, deviceAdmin)
-            putExtra(
-                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                context.getString(com.example.screensaver.R.string.device_admin_explanation)
-            )
-        }
-        activity.startActivityForResult(intent, REQUEST_DEVICE_ADMIN)
-    }
-
     private fun checkOverlayPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Settings.canDrawOverlays(context)
@@ -168,32 +123,4 @@ class PermissionManager @Inject constructor(
             true
         }
     }
-
-    fun requestOverlayPermission(activity: Activity) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:${context.packageName}")
-            )
-            activity.startActivityForResult(intent, REQUEST_OVERLAY_PERMISSION)
-        }
-    }
-
-    fun openPermissionSettings(activity: Activity) {
-        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = Uri.fromParts("package", context.packageName, null)
-        }
-        activity.startActivity(intent)
-    }
-
-    fun handleActivityResult(requestCode: Int, resultCode: Int) {
-        when (requestCode) {
-            REQUEST_DEVICE_ADMIN, REQUEST_OVERLAY_PERMISSION -> updatePermissionState()
-        }
-    }
-
-    data class PermissionLaunchers(
-        val storage: ActivityResultLauncher<String>,
-        val notification: ActivityResultLauncher<String>?
-    )
 }

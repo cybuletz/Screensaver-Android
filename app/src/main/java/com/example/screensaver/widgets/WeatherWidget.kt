@@ -59,7 +59,6 @@ class WeatherWidget(
 
     private val fadeIn by lazy { AnimationUtils.loadAnimation(container.context, R.anim.fade_in) }
     private val fadeOut by lazy { AnimationUtils.loadAnimation(container.context, R.anim.fade_out) }
-    private val rotate by lazy { AnimationUtils.loadAnimation(container.context, R.anim.rotate) }
 
     companion object {
         private const val TAG = "WeatherWidget"
@@ -323,12 +322,6 @@ class WeatherWidget(
             Log.e(TAG, "Error in updateLocation", e)
             continuation.resume(lastKnownLocation)
         }
-    }
-
-    private fun hasLocationPermissions(): Boolean {
-        val context = container.context
-        return context.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     }
 
     private suspend fun fetchWeatherData(): WeatherData = kotlinx.coroutines.withContext(Dispatchers.IO) {

@@ -247,7 +247,7 @@ class LockScreenPhotoManager @Inject constructor(
         }
     }
 
-    suspend fun loadPhotos(): List<MediaItem>? {
+    fun loadPhotos(): List<MediaItem>? {
         _loadingState.value = LoadingState.LOADING
         return try {
             if (mediaItems.isEmpty()) {
@@ -289,10 +289,6 @@ class LockScreenPhotoManager @Inject constructor(
         Log.d(TAG, "Added ${items.size} photo URLs as MediaItems")
     }
 
-    fun hadPhotos(): Boolean {
-        return preferences.getBoolean(KEY_HAS_PHOTOS, false)
-    }
-
     fun getPhotoCount(): Int {
         val count = mediaItems.size
         Log.d(TAG, "Getting photo count from lock screen PhotoManager: $count")
@@ -324,15 +320,9 @@ class LockScreenPhotoManager @Inject constructor(
         Log.d(TAG, "Cleared all photos")
     }
 
-    fun getAllPhotos(): List<MediaItem> = mediaItems.toList()
-
     fun cleanup() {
         clearPhotos()
         _loadingState.value = LoadingState.IDLE
         Log.d(TAG, "Manager cleaned up")
-    }
-
-    fun hasValidPhotos(): Boolean {
-        return mediaItems.isNotEmpty()
     }
 }

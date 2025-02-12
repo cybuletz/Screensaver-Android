@@ -29,10 +29,4 @@ class PhotoPagerAdapter : RecyclerView.Adapter<PhotoPagerAdapter.PhotoViewHolder
     }
 
     override fun getItemCount() = photos.size
-
-    fun addPhotos(newPhotos: List<String>) {
-        val startPos = photos.size
-        photos.addAll(newPhotos)
-        notifyItemRangeInserted(startPos, newPhotos.size)
-    }
 }

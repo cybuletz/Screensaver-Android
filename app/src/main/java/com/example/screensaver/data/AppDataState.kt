@@ -79,17 +79,6 @@ data class AppDataState(
         check(endTime.matches(Regex("^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"))) { "Invalid end time format" }
     }
 
-    /**
-     * Checks if the screensaver can be started based on current state
-     */
-    fun canStartScreensaver(): Boolean {
-        return isScreensaverReady && (photoSources.isNotEmpty() &&
-                (selectedAlbums.isNotEmpty() || selectedLocalFolders.isNotEmpty()))
-    }
-
-    /**
-     * Creates a copy with updated modification time
-     */
     fun withUpdatedTimestamp(): AppDataState = copy(
         lastModified = Instant.now().epochSecond
     )

@@ -241,54 +241,6 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
         widgetManager.updateWidgetConfig(WidgetType.WEATHER, createWeatherConfig())
     }
 
-    private fun handleClockVisibilityChange(show: Boolean) {
-        if (show) {
-            widgetManager.showWidget(WidgetType.CLOCK)
-        } else {
-            widgetManager.hideWidget(WidgetType.CLOCK)
-        }
-    }
-
-    private fun handleWeatherVisibilityChange(show: Boolean) {
-        Log.d(TAG, "Weather visibility changed to: $show")
-        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
-
-        if (show) {
-            // First save the preference
-            sharedPreferences.edit().apply {
-                putBoolean("show_weather", true)
-                apply()
-            }
-            // Then create and apply the config
-            val config = createWeatherConfig()
-            widgetManager.updateWidgetConfig(WidgetType.WEATHER, config)
-            // Finally show the widget
-            widgetManager.showWidget(WidgetType.WEATHER)
-        } else {
-            sharedPreferences.edit().apply {
-                putBoolean("show_weather", false)
-                apply()
-            }
-            widgetManager.hideWidget(WidgetType.WEATHER)
-        }
-    }
-
-    private fun handleWeatherPreferenceChange(key: String, newValue: Any) {
-        when (key) {
-            "weather_position", "weather_use_celsius", "weather_update_interval",
-            "weather_use_device_location", "weather_manual_location" -> {
-                // Update the config
-                val config = createWeatherConfig()
-                widgetManager.updateWidgetConfig(WidgetType.WEATHER, config)
-            }
-        }
-    }
-
-    private fun handleClockPreferenceChange(key: String, newValue: Any) {
-        // For all clock changes, just update the config
-        widgetManager.updateClockConfig()
-    }
-
     fun createWeatherConfig(): WidgetConfig.WeatherConfig {
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         return WidgetConfig.WeatherConfig(

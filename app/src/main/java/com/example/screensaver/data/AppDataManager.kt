@@ -220,28 +220,11 @@ class AppDataManager @Inject constructor(
      */
     fun observeState(): Flow<AppDataState> = stateFlow
 
-    /**
-     * Signs in a user with Google credentials
-     */
-    suspend fun signIn(accessToken: String, refreshToken: String, expirationTime: Long, email: String): Boolean {
-        return try {
-            secureStorage.saveGoogleCredentials(
-                accessToken = accessToken,
-                refreshToken = refreshToken,
-                expirationTime = expirationTime,
-                email = email
-            )
-            true
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to save credentials during sign in")
-            false
-        }
-    }
 
     /**
      * Signs out the current user
      */
-    suspend fun signOut() {
+    fun signOut() {
         try {
             googlePhotosManager.cleanup()
             secureStorage.clearGoogleCredentials()
@@ -304,7 +287,7 @@ class AppDataManager @Inject constructor(
         }
     }
 
-    suspend fun createBackup(state: AppDataState) {
+    fun createBackup(state: AppDataState) {
         try {
             val json = gson.toJson(state)
             preferences.edit {
@@ -328,26 +311,6 @@ class AppDataManager @Inject constructor(
             } catch (e: Exception) {
                 Timber.e(e, "Failed to load backup state")
                 AppDataState.createDefault()
-            }
-        }
-    }
-
-    private suspend fun validateAndRepairState() {
-        try {
-            val currentState = loadState()
-            currentState.validate()
-        } catch (e: Exception) {
-            Timber.w(e, "State validation failed, attempting repair")
-            val repairedState = loadBackupState()
-            try {
-                repairedState.validate()
-                saveState(repairedState)
-                withContext(Dispatchers.Main) {
-                    _stateFlow.value = repairedState
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "State repair failed, resetting to defaults")
-                resetToDefaults()
             }
         }
     }

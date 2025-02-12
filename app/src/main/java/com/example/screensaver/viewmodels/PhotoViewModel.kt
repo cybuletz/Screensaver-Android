@@ -70,7 +70,6 @@ class PhotoViewModel @Inject constructor(
     val photoQuality: LiveData<Int> = _photoQuality
 
     private val _currentDateTime = MutableLiveData<LocalDateTime>()
-    val currentDateTime: LiveData<LocalDateTime> = _currentDateTime
 
     private val _currentTime = MutableLiveData<String>()
     val currentTime: LiveData<String> = _currentTime
@@ -79,13 +78,10 @@ class PhotoViewModel @Inject constructor(
     val currentDate: LiveData<String> = _currentDate
 
     private val _transitionDuration = MutableStateFlow(preferences.getTransitionDuration())
-    val transitionDuration: StateFlow<Int> = _transitionDuration
 
     private val _enableTransitions = MutableStateFlow(preferences.getEnableTransitions())
-    val enableTransitions: StateFlow<Boolean> = _enableTransitions
 
     private val _darkMode = MutableStateFlow(preferences.getDarkMode())
-    val darkMode: StateFlow<Boolean> = _darkMode
 
     private var timeUpdateJob: Job? = null
     private var photoChangeJob: Job? = null
@@ -245,12 +241,6 @@ class PhotoViewModel @Inject constructor(
         }
     }
 
-    fun setPhotoQuality(quality: Int) {
-        if (quality in QUALITY_LOW..QUALITY_HIGH) {
-            _photoQuality.value = quality
-        }
-    }
-
     private fun startPhotoChanging() {
         if (isPreviewMode) return // Don't auto-change photos in preview mode
 
@@ -294,39 +284,12 @@ class PhotoViewModel @Inject constructor(
         }
     }
 
-    private fun retryLoadingWithBackoff() {
-        viewModelScope.launch {
-            if (retryCount < MAX_RETRY_ATTEMPTS) {
-                retryCount++
-                _isLoading.value = true
-                delay(RETRY_DELAY * retryCount)
-                showNextPhoto()
-            } else {
-                handleError("Failed to load photo after $MAX_RETRY_ATTEMPTS attempts", null)
-                retryCount = 0
-            }
-        }
-    }
-
     private fun handleError(message: String, error: Exception?) {
         _loadingState.value = LoadingState.ERROR
         _hasError.value = true
         _errorMessage.value = message
         _isLoading.value = false
         error?.printStackTrace()
-    }
-
-    fun toggleOverlay() {
-        _showOverlay.value = _showOverlay.value?.not()
-    }
-
-    fun setOverlayVisibility(show: Boolean) {
-        _showOverlay.value = show
-    }
-
-    fun exitPreviewMode() {
-        isPreviewMode = false
-        stop()
     }
 
     fun stop() {

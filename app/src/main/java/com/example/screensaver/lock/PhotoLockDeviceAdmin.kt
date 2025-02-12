@@ -19,13 +19,6 @@ class PhotoLockDeviceAdmin : DeviceAdminReceiver() {
 
     companion object {
         private const val TAG = "PhotoLockDeviceAdmin"
-
-        fun getComponentName(context: Context): ComponentName =
-            ComponentName(context.applicationContext, PhotoLockDeviceAdmin::class.java)
-
-        fun isAdminActive(context: Context): Boolean =
-            (context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager)
-                ?.isAdminActive(getComponentName(context)) == true
     }
 
     override fun onEnabled(context: Context, intent: Intent) {

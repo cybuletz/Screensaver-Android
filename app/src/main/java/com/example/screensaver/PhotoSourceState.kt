@@ -13,8 +13,6 @@ class PhotoSourceState @Inject constructor(
     private val appDataManager: AppDataManager
 ) {
     companion object {
-        private const val MAX_DAILY_PREVIEWS = 10
-        private const val MIN_PREVIEW_INTERVAL = 5000L // 5 seconds between previews
         private const val PREVIEW_COUNT_RESET_INTERVAL = 24 * 60 * 60 * 1000L // 24 hours
     }
 

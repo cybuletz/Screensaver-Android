@@ -57,19 +57,13 @@ class PhotoDisplayManager @Inject constructor(
     private val managerScope = CoroutineScope(Dispatchers.Main + managerJob)
 
     private val _photoLoadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
-    val photoLoadingState: StateFlow<LoadingState> = _photoLoadingState
 
     private val _cacheStatusMessage = MutableStateFlow<String?>(null)
-    val cacheStatusMessage: StateFlow<String?> = _cacheStatusMessage
 
     private val prefs = PreferenceManager.getDefaultSharedPreferences(context)
 
     private var lastLoadedSource: String? = null
     private var lastPhotoUrl: String? = null
-
-    private val preloadLimit = 3
-    private var hasVerifiedPhotos = false
-    private var photoCount: Int = 0
 
     private var hasLoadedPhotos = false
 
@@ -150,10 +144,6 @@ class PhotoDisplayManager @Inject constructor(
         photoCache.savePhotoState(true, url)
     }
 
-    fun isScreensaverRunning(): Boolean {
-        return displayJob?.isActive == true
-    }
-
     private fun getIntervalMillis(): Long {
         val seconds = prefs.getInt(PREF_KEY_INTERVAL, DEFAULT_INTERVAL_SECONDS)
         return seconds * MILLIS_PER_SECOND
@@ -176,11 +166,6 @@ class PhotoDisplayManager @Inject constructor(
             }
         }
     }
-
-    private data class InitialState(
-        val cachedBitmap: Bitmap?,
-        val photoCount: Int
-    )
 
     private fun isMainThread(): Boolean {
         return Looper.myLooper() == Looper.getMainLooper()
@@ -312,10 +297,6 @@ class PhotoDisplayManager @Inject constructor(
                 Log.d(TAG, "Hiding loading overlay")
             }
         }
-    }
-
-    fun isInitialized(): Boolean {
-        return views != null && lifecycleScope != null
     }
 
     fun startPhotoDisplay() {
@@ -730,35 +711,6 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Transition completed to photo $nextIndex")
     }
 
-    private fun finishTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        views.primaryView.setImageDrawable(resource)
-        views.overlayView.apply {
-            alpha = 0f
-            scaleX = 1f
-            scaleY = 1f
-            translationX = 0f
-            translationY = 0f
-            rotationX = 0f
-            rotationY = 0f
-            rotation = 0f
-            translationZ = 0f
-        }
-        views.primaryView.apply {
-            alpha = 1f
-            scaleX = 1f
-            scaleY = 1f
-            translationX = 0f
-            translationY = 0f
-            rotationX = 0f
-            rotationY = 0f
-            rotation = 0f
-            translationZ = 0f
-        }
-        isTransitioning = false
-        currentPhotoIndex = nextIndex
-    }
-
-    // Helper extension function to convert Drawable to Bitmap
     private fun Drawable.toBitmap(): Bitmap? {
         return try {
             if (this is android.graphics.drawable.BitmapDrawable) {
@@ -792,8 +744,6 @@ class PhotoDisplayManager @Inject constructor(
         showLocation?.let { this.showLocation = it }
         isRandomOrder?.let { this.isRandomOrder = it }
     }
-
-    fun getTransitionDuration(): Long = transitionDuration
 
     private fun preloadDefaultPhoto() {
         try {

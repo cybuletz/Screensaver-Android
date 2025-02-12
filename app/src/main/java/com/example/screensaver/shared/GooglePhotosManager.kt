@@ -47,17 +47,12 @@ class GooglePhotosManager @Inject constructor(
     private var photosLibraryClient: PhotosLibraryClient? = null
     private val mediaItems = mutableListOf<MediaItem>()
 
-    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val photosLoadJob = MutableStateFlow<Job?>(null)
-
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
-    val loadingState: StateFlow<LoadingState> = _loadingState
 
     private var executorService = Executors.newScheduledThreadPool(4)
     private val executorMutex = Mutex()
 
     private val _photoLoadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
-    val photoLoadingState: StateFlow<LoadingState> = _photoLoadingState
 
     enum class LoadingState {
         IDLE, LOADING, SUCCESS, ERROR
@@ -71,9 +66,7 @@ class GooglePhotosManager @Inject constructor(
         private const val TOKEN_EXPIRY_BUFFER = 60000L // 1 minute buffer
 
         private val REQUIRED_SCOPES = listOf(
-            "https://www.googleapis.com/auth/photoslibrary.readonly",
-            //"https://www.googleapis.com/auth/photoslibrary",
-            //"https://www.googleapis.com/auth/photos.readonly"
+            "https://www.googleapis.com/auth/photoslibrary.readonly"
         )
     }
 
@@ -248,16 +241,6 @@ class GooglePhotosManager @Inject constructor(
         return albumCache.isNotEmpty() && (now - lastAlbumFetch < albumCacheExpiry)
     }
 
-    fun prewarmCache() {
-        managerScope.launch {
-            try {
-                getAlbums() // Now using managerScope instead of scope
-            } catch (e: Exception) {
-                Log.e(TAG, "Error prewarming cache", e)
-            }
-        }
-    }
-
     suspend fun getAlbums(): List<GoogleAlbum> = withContext(Dispatchers.IO) {
         try {
             if (shouldUseCache()) {
@@ -406,121 +389,6 @@ class GooglePhotosManager @Inject constructor(
             Log.e(TAG, "Error fetching photos", e)
             _photoLoadingState.value = LoadingState.ERROR
             null
-        }
-    }
-
-    fun hasSavedAlbums(): Boolean {
-        return preferences.getSelectedAlbumIds().isNotEmpty()
-    }
-
-    private fun shouldRetryOnError(error: Exception): Boolean {
-        Log.d(TAG, "Checking if should retry for error: ${error.message}")
-        return error.message?.contains("UNAUTHENTICATED") == true
-    }
-
-    private suspend fun loadAlbumPhotos(albumId: String): List<MediaItem>? =
-        withContext(Dispatchers.IO) {
-            try {
-                Log.d(TAG, "Starting to load photos for album: $albumId")
-                ensureActive()
-
-                if (!initialize()) {
-                    Log.e(TAG, "Failed to initialize Google Photos client")
-                    return@withContext null
-                }
-
-                val items = mutableListOf<MediaItem>()
-                var retryCount = 0
-
-                while (retryCount < MAX_RETRIES && isActive) {
-                    try {
-                        photosLibraryClient?.let { client ->
-                            Log.d(TAG, "Attempting to fetch photos, attempt ${retryCount + 1}")
-                            fetchPhotosForAlbum(client, albumId, items)
-                        } ?: run {
-                            Log.e(TAG, "PhotosLibraryClient is null")
-                            return@withContext null
-                        }
-
-                        if (items.isNotEmpty()) {
-                            Log.d(TAG, "Successfully loaded ${items.size} photos from album $albumId")
-                            return@withContext items
-                        }
-                        Log.d(TAG, "No photos found in album $albumId")
-                        break
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                        if (e is RejectedExecutionException) {
-                            Log.w(TAG, "Executor rejected task, attempting recovery")
-                            recoverFromExecutorFailure()
-                            retryCount++
-                            continue
-                        }
-                        if (shouldRetryOnError(e) && retryCount < MAX_RETRIES - 1) {
-                            retryCount++
-                            Log.d(TAG, "Retrying photo load, attempt $retryCount")
-                            refreshTokens()
-                            delay(1000)
-                            continue
-                        }
-                        throw e
-                    }
-                }
-                null
-            } catch (e: Exception) {
-                if (e !is CancellationException) {
-                    Log.e(TAG, "Error loading photos for album $albumId", e)
-                }
-                null
-            }
-        }
-
-    private suspend fun fetchPhotosForAlbum(
-        client: PhotosLibraryClient,
-        albumId: String,
-        items: MutableList<MediaItem>
-    ) {
-        Log.d(TAG, "Fetching photos for album: $albumId")
-
-        val request = SearchMediaItemsRequest.newBuilder()
-            .setAlbumId(albumId)
-            .setPageSize(PAGE_SIZE)
-            .build()
-
-        try {
-            val mediaItems = client.searchMediaItems(request).iterateAll()
-            mediaItems.forEach { googleMediaItem ->
-                if (googleMediaItem.mediaMetadata.hasPhoto()) {
-                    googleMediaItem.baseUrl?.let { baseUrl ->
-                        items.add(MediaItem(
-                            id = googleMediaItem.id,
-                            albumId = albumId,
-                            baseUrl = "$baseUrl$PHOTO_QUALITY",
-                            mimeType = googleMediaItem.mimeType,
-                            width = googleMediaItem.mediaMetadata.width.toInt(),
-                            height = googleMediaItem.mediaMetadata.height.toInt()
-                        ))
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching photos for album $albumId", e)
-            throw e
-        }
-    }
-
-    private suspend fun recoverFromExecutorFailure() {
-        executorMutex.withLock {
-            try {
-                executorService = if (executorService.isShutdown || executorService.isTerminated) {
-                    Executors.newScheduledThreadPool(8)
-                } else {
-                    executorService
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error recovering from executor failure", e)
-                executorService = Executors.newScheduledThreadPool(8)
-            }
         }
     }
 

@@ -29,16 +29,6 @@ data class Album(
         const val DEFAULT_ALBUM_TITLE = "Untitled Album"
         const val MIN_MEDIA_ITEMS = 0
 
-        /**
-         * Creates an empty album with default values
-         */
-        fun createEmpty(): Album = Album(
-            id = "",
-            title = DEFAULT_ALBUM_TITLE,
-            coverPhotoUrl = null,
-            mediaItemsCount = 0
-        )
-
         fun createPreviewAlbum(id: String): Album = Album(
             id = id,
             title = DEFAULT_ALBUM_TITLE,
@@ -54,42 +44,7 @@ data class Album(
         require(mediaItemsCount >= MIN_MEDIA_ITEMS) { "Media items count cannot be negative" }
     }
 
-    /**
-     * Checks if the album has any media items
-     */
-    fun hasMedia(): Boolean = mediaItemsCount > 0
-
-    /**
-     * Checks if the album has a valid cover photo
-     */
     fun hasCover(): Boolean = !coverPhotoUrl.isNullOrBlank()
-
-    /**
-     * Creates a copy of the album with updated selection state
-     */
-    fun withSelection(selected: Boolean): Album = copy(isSelected = selected)
-
-    /**
-     * Creates a display name for the album, including the item count
-     */
-    fun getDisplayName(): String = buildString {
-        append(title)
-        if (mediaItemsCount > 0) {
-            append(" ($mediaItemsCount)")
-        }
-    }
-
-    /**
-     * Validates the album data
-     * @throws IllegalStateException if the album data is invalid
-     */
-    fun validate() {
-        check(title.isNotBlank()) { "Album title cannot be blank" }
-        check(mediaItemsCount >= MIN_MEDIA_ITEMS) { "Invalid media items count: $mediaItemsCount" }
-        coverPhotoUrl?.let {
-            check(it.isNotBlank()) { "Cover photo URL cannot be blank when provided" }
-        }
-    }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -99,9 +54,6 @@ data class Album(
 
     override fun hashCode(): Int = id.hashCode()
 
-    /**
-     * Creates a string representation of the album for debugging
-     */
     override fun toString(): String = buildString {
         append("Album(id='$id'")
         append(", title='$title'")
@@ -111,20 +63,4 @@ data class Album(
     }
 }
 
-/**
- * Extension functions for Album collections
- */
 fun List<Album>.selectedAlbums(): List<Album> = filter { it.isSelected }
-
-fun List<Album>.totalMediaCount(): Int = sumOf { it.mediaItemsCount }
-
-fun List<Album>.hasSelectedAlbums(): Boolean = any { it.isSelected }
-
-/**
- * Sorts albums by various criteria
- */
-fun List<Album>.sortByTitle(): List<Album> = sortedBy { it.title }
-
-fun List<Album>.sortByMediaCount(): List<Album> = sortedByDescending { it.mediaItemsCount }
-
-// Removed sortByCreationDate as createdAt property was not defined in the Album class

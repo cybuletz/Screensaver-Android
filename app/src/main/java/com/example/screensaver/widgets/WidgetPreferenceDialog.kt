@@ -95,13 +95,6 @@ class WidgetPreferenceDialog : DialogFragment() {
         }
     }
 
-    private fun handlePositionChange(position: WidgetPosition) {
-        when (widgetType) {
-            WidgetType.CLOCK -> widgetManager.updateClockPosition(position)
-            WidgetType.WEATHER -> widgetManager.updateWeatherPosition(position)
-        }
-    }
-
     private fun savePreferenceState(screen: PreferenceScreen, outState: Bundle) {
         for (i in 0 until screen.preferenceCount) {
             val preference = screen.getPreference(i)
