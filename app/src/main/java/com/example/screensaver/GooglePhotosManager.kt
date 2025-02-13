@@ -3,6 +3,7 @@ package com.example.screensaver
 import android.content.Context
 import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.common.api.Scope
 import com.google.photos.library.v1.PhotosLibraryClient
 import com.google.photos.library.v1.PhotosLibrarySettings
 import com.google.photos.library.v1.proto.ListMediaItemsRequest
@@ -21,7 +22,8 @@ class GooglePhotosManager(private val context: Context) {
     companion object {
         private const val TAG = "GooglePhotosManager"
         private val REQUIRED_SCOPES = listOf(
-            "https://www.googleapis.com/auth/photoslibrary.readonly"
+            //"https://www.googleapis.com/auth/photoslibrary.readonly"
+            "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
         )
     }
 

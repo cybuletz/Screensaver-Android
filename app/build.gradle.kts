@@ -124,6 +124,7 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    implementation("androidx.biometric:biometric:1.2.0-alpha05")
 
     // AutoValue
     kapt("com.google.auto.value:auto-value:1.9")

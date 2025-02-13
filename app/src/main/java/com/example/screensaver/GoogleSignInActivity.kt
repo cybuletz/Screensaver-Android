@@ -20,7 +20,8 @@ class GoogleSignInActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "GoogleSignInActivity"
         // Changed from PHOTOS_SCOPE to photosScope to follow Kotlin naming conventions
-        private val photosScope = Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
+    //    private val photosScope = Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
+        private val photosScope = Scope("https://www.googleapis.com/auth/photospicker.mediaitems.readonly")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

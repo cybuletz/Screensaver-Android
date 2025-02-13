@@ -43,6 +43,11 @@ import android.content.BroadcastReceiver
 import android.os.BatteryManager
 import android.net.Uri
 import androidx.constraintlayout.widget.ConstraintLayout
+import com.example.screensaver.security.AppAuthManager
+import com.example.screensaver.security.AuthState
+import com.example.screensaver.security.BiometricHelper
+import com.example.screensaver.security.PasscodeDialog
+import com.example.screensaver.security.SecurityPreferences
 import com.example.screensaver.utils.NotificationHelper
 import com.example.screensaver.widgets.WidgetData
 import com.example.screensaver.widgets.WidgetManager
@@ -77,9 +82,20 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var notificationHelper: NotificationHelper
 
+    @Inject
+    lateinit var authManager: AppAuthManager
+
+    @Inject
+    lateinit var securityPreferences: SecurityPreferences
+
+    @Inject
+    lateinit var biometricHelper: BiometricHelper
+
     private var isDestroyed = false
     private var lastBackPressTime: Long = 0
     private val doubleBackPressInterval = 2000L
+
+    private var isAuthenticating = false
 
     private val PREF_FIRST_LAUNCH = "first_launch"
 
@@ -98,6 +114,7 @@ class MainActivity : AppCompatActivity() {
         private const val MENU_CLEAR_CACHE = Menu.FIRST + 1
         private const val PHOTO_TRANSITION_DELAY = 500L
         private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
+        private const val SECURITY_CHECK_DELAY = 500L
     }
 
     private fun enableFullScreen() {
@@ -138,6 +155,7 @@ class MainActivity : AppCompatActivity() {
             initializePhotoDisplayManager()
             startLockScreenService()
             initializePhotos()
+            preventUnauthorizedClosure() // Add security closure prevention
 
             // Update photo sources and start display
             photoDisplayManager.updatePhotoSources()
@@ -385,7 +403,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
     private fun setupTouchListener() {
         Log.d(TAG, "Setting up touch listeners")
 
@@ -428,8 +445,27 @@ class MainActivity : AppCompatActivity() {
                             .putBoolean(PREF_FIRST_LAUNCH, false)
                             .apply()
 
-                        navController.navigate(R.id.action_mainFragment_to_settingsFragment)
-                        settingsButtonController.hide()
+                        // Check security before navigating
+                        if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
+                            isAuthenticating = true
+                            when {
+                                securityPreferences.allowBiometric && biometricHelper.isBiometricAvailable() -> {
+                                    showBiometricPrompt(onSuccess = {
+                                        navController.navigate(R.id.action_mainFragment_to_settingsFragment)
+                                        settingsButtonController.hide()
+                                    })
+                                }
+                                else -> {
+                                    showPasscodePrompt(onSuccess = {
+                                        navController.navigate(R.id.action_mainFragment_to_settingsFragment)
+                                        settingsButtonController.hide()
+                                    })
+                                }
+                            }
+                        } else {
+                            navController.navigate(R.id.action_mainFragment_to_settingsFragment)
+                            settingsButtonController.hide()
+                        }
                     }
                 }
             }
@@ -441,6 +477,61 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up settings button", e)
         }
+    }
+
+    private fun showBiometricPrompt(onSuccess: () -> Unit) {
+        biometricHelper.showBiometricPrompt(
+            activity = this,
+            onSuccess = {
+                isAuthenticating = false
+                authManager.setAuthenticated(true)
+                onSuccess()
+            },
+            onError = { message ->
+                if (securityPreferences.passcode != null) {
+                    showPasscodePrompt(onSuccess)
+                } else {
+                    isAuthenticating = false
+                    showToast(getString(R.string.biometric_auth_failed))
+                }
+            },
+            onFailed = {
+                if (securityPreferences.passcode != null) {
+                    showPasscodePrompt(onSuccess)
+                } else {
+                    isAuthenticating = false
+                    showToast(getString(R.string.biometric_auth_failed))
+                }
+            }
+        )
+    }
+
+    private fun showPasscodePrompt(onSuccess: () -> Unit) {
+        PasscodeDialog.newInstance(
+            mode = PasscodeDialog.Mode.VERIFY,
+            title = getString(R.string.enter_passcode),
+            message = getString(R.string.enter_passcode_to_continue)
+        ).apply {
+            isCancelable = false
+            setCallback(object : PasscodeDialog.PasscodeDialogCallback {
+                override fun onPasscodeConfirmed(passcode: String) {
+                    if (authManager.authenticateWithPasscode(passcode)) {
+                        isAuthenticating = false
+                        authManager.setAuthenticated(true)
+                        dismiss()
+                        onSuccess()
+                    }
+                }
+
+                override fun onError(message: String) {
+                    isAuthenticating = false
+                }
+
+                override fun onDismiss() {
+                    isAuthenticating = false
+                }
+            })
+        }.show(supportFragmentManager, "verify_passcode")
     }
 
     private fun setupFullScreen() {
@@ -766,6 +857,38 @@ class MainActivity : AppCompatActivity() {
         if (!isDestroyed) {
             photoDisplayManager.stopPhotoDisplay()
         }
+        if (!isAuthenticating) {
+            authManager.resetAuthenticationState()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isAuthenticating) {
+            authManager.resetAuthenticationState()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        setupFullScreen()
+
+        // Check security
+        if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
+            lifecycleScope.launch {
+                delay(SECURITY_CHECK_DELAY)
+                checkSecurity()
+            }
+        }
+
+        // Update lock screen service
+        updateLockScreenService("CHECK_KIOSK_MODE")
+
+        // Check if we should start photo display
+        if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
+            navController.currentDestination?.id == R.id.mainFragment) {
+            photoDisplayManager.startPhotoDisplay()
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
@@ -790,17 +913,116 @@ class MainActivity : AppCompatActivity() {
         return navController.navigateUp() || super.onSupportNavigateUp()
     }
 
-    override fun onResume() {
-        super.onResume()
-        setupFullScreen()
-
-        updateLockScreenService("CHECK_KIOSK_MODE")
-
-        // Check if we should start photo display
-        if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
-            navController.currentDestination?.id == R.id.mainFragment) {
-            photoDisplayManager.startPhotoDisplay()
+    private fun checkSecurity() {
+        if (!securityPreferences.isSecurityEnabled || authManager.isAuthenticated()) {
+            return
         }
+
+        isAuthenticating = true
+        when {
+            securityPreferences.allowBiometric && biometricHelper.isBiometricAvailable() -> {
+                showBiometricPrompt()
+            }
+            else -> {
+                showPasscodePrompt()
+            }
+        }
+    }
+
+    private fun showBiometricPrompt() {
+        biometricHelper.showBiometricPrompt(
+            activity = this,
+            onSuccess = {
+                isAuthenticating = false
+                authManager.setAuthenticated(true)
+            },
+            onError = { message ->
+                // Fall back to passcode if biometric fails
+                if (securityPreferences.passcode != null) {
+                    showPasscodePrompt()
+                } else {
+                    isAuthenticating = false
+                    showToast(getString(R.string.biometric_auth_failed))
+                    finish()
+                }
+            },
+            onFailed = {
+                // Fall back to passcode if biometric fails
+                if (securityPreferences.passcode != null) {
+                    showPasscodePrompt()
+                } else {
+                    isAuthenticating = false
+                    showToast(getString(R.string.biometric_auth_failed))
+                    finish()
+                }
+            }
+        )
+    }
+
+    private fun showPasscodePrompt() {
+        PasscodeDialog.newInstance(
+            mode = PasscodeDialog.Mode.VERIFY,
+            title = getString(R.string.enter_passcode),
+            message = getString(R.string.enter_passcode_to_continue)
+        ).apply {
+            isCancelable = false
+            setOnPasscodeConfirmedListener { passcode ->
+                if (authManager.authenticateWithPasscode(passcode)) {
+                    isAuthenticating = false
+                    authManager.setAuthenticated(true)
+                    dismiss()
+                }
+            }
+            setOnDismissListener {
+                if (!authManager.isAuthenticated()) {
+                    isAuthenticating = false
+                    finish() // Close app if authentication fails
+                }
+            }
+        }.show(supportFragmentManager, "verify_passcode")
+    }
+
+    private fun preventUnauthorizedClosure() {
+        onBackPressedDispatcher.addCallback(this) {
+            when {
+                navController.currentDestination?.id == R.id.settingsFragment -> {
+                    if (securityPreferences.isSecurityEnabled) {
+                        // Just navigate back, security will be checked in onResume if needed
+                        navController.navigateUp()
+                    } else {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
+                }
+                navController.currentDestination?.id == R.id.mainFragment -> {
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastBackPressTime > doubleBackPressInterval) {
+                        lastBackPressTime = currentTime
+                        showToast("Press back again to exit")
+                    } else {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
+                }
+                else -> {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        }
+    }
+
+    private fun showPasscodeDialog() {
+        PasscodeDialog.newInstance(
+            mode = PasscodeDialog.Mode.VERIFY,
+            title = getString(R.string.authentication_required),
+            message = getString(R.string.enter_passcode_to_continue)
+        ).apply {
+            setOnPasscodeConfirmedListener { _ ->
+                // Authentication successful, no action needed
+                Log.d(TAG, "Passcode authentication successful")
+            }
+        }.show(supportFragmentManager, "passcode_dialog")
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -823,6 +1045,13 @@ class MainActivity : AppCompatActivity() {
     override fun onLowMemory() {
         super.onLowMemory()
         photoDisplayManager.handleLowMemory()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (!isAuthenticating) {
+            authManager.resetAuthenticationState()
+        }
     }
 
     override fun onDestroy() {

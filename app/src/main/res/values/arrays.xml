@@ -200,6 +200,15 @@
         <item>7200</item> <!-- 2 hours in seconds -->
     </string-array>
 
+    <string-array name="auth_method_entries">
+        <item>Passcode</item>
+        <item>Biometric</item>
+    </string-array>
+    <string-array name="auth_method_values">
+        <item>passcode</item>
+        <item>biometric</item>
+    </string-array>
+
     <!-- Empty Array for Dynamic Content -->
     <string-array name="empty_array"/>
 </resources>

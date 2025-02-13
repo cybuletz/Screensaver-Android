@@ -13,6 +13,7 @@ import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.data.SecureStorage
 import com.google.photos.library.v1.proto.SearchMediaItemsRequest
 import com.example.screensaver.R
+import com.google.android.gms.common.api.Scope
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,7 +67,8 @@ class GooglePhotosManager @Inject constructor(
         private const val TOKEN_EXPIRY_BUFFER = 60000L // 1 minute buffer
 
         private val REQUIRED_SCOPES = listOf(
-            "https://www.googleapis.com/auth/photoslibrary.readonly"
+            //"https://www.googleapis.com/auth/photoslibrary.readonly"
+            "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
         )
     }
 

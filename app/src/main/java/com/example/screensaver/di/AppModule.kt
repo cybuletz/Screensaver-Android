@@ -23,6 +23,9 @@ import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.recovery.StateRecoveryManager
 import com.example.screensaver.recovery.StateRestoration
 import com.example.screensaver.data.PhotoCache
+import com.example.screensaver.security.AppAuthManager
+import com.example.screensaver.security.BiometricHelper
+import com.example.screensaver.security.SecurityPreferences
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -136,5 +139,33 @@ object AppModule {
         @ApplicationContext context: Context
     ): PhotoCache {
         return PhotoCache(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSecurityPreferences(
+        @ApplicationContext context: Context,
+        secureStorage: SecureStorage
+    ): SecurityPreferences {
+        return SecurityPreferences(context, secureStorage)
+    }
+
+    @Provides
+    @Singleton
+    fun provideBiometricHelper(
+        @ApplicationContext context: Context
+    ): BiometricHelper {
+        return BiometricHelper(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAppAuthManager(
+        @ApplicationContext context: Context,
+        securityPreferences: SecurityPreferences,
+        biometricHelper: BiometricHelper,
+        secureStorage: SecureStorage
+    ): AppAuthManager {
+        return AppAuthManager(context, securityPreferences, biometricHelper, secureStorage)
     }
 }
