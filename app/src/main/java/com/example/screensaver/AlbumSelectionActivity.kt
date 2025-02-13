@@ -35,6 +35,9 @@ import com.bumptech.glide.RequestManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.load.engine.DiskCacheStrategy
+import android.provider.MediaStore
+import androidx.preference.PreferenceManager
+import android.net.Uri
 
 
 @AndroidEntryPoint
@@ -70,6 +73,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         const val EXTRA_PHOTO_SOURCE = "photo_source"
         const val SOURCE_GOOGLE_PHOTOS = "google_photos"
         const val SOURCE_LOCAL_PHOTOS = "local_photos"
+        private const val PICK_IMAGES_REQUEST_CODE = 100
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -207,7 +211,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
-
     private fun setupConfirmButton() {
         binding.confirmButton.apply {
             isEnabled = false
@@ -267,8 +270,142 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
+    private suspend fun createMediaItemFromUri(uri: Uri): MediaItem {
+        return withContext(Dispatchers.IO) {
+            val projection = arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DISPLAY_NAME,
+                MediaStore.Images.Media.DATE_ADDED,
+                MediaStore.Images.Media.MIME_TYPE,
+                MediaStore.Images.Media.WIDTH,
+                MediaStore.Images.Media.HEIGHT
+            )
+
+            contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                cursor.moveToFirst()
+
+                val nameColumn = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
+                val dateColumn = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
+                val mimeColumn = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
+                val widthColumn = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
+                val heightColumn = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
+
+                MediaItem(
+                    id = uri.toString(),
+                    albumId = "picked_photos",
+                    baseUrl = uri.toString(),
+                    mimeType = cursor.getString(mimeColumn) ?: "image/*",
+                    width = cursor.getInt(widthColumn),
+                    height = cursor.getInt(heightColumn),
+                    description = cursor.getString(nameColumn),
+                    createdAt = cursor.getLong(dateColumn) * 1000,
+                    loadState = MediaItem.LoadState.IDLE
+                )
+            } ?: MediaItem(
+                id = uri.toString(),
+                albumId = "picked_photos",
+                baseUrl = uri.toString(),
+                mimeType = "image/*",
+                width = 0,
+                height = 0,
+                description = uri.lastPathSegment,
+                createdAt = System.currentTimeMillis(),
+                loadState = MediaItem.LoadState.IDLE
+            )
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == PICK_IMAGES_REQUEST_CODE && resultCode == RESULT_OK) {
+            lifecycleScope.launch {
+                try {
+                    viewModel.setLoading(true)
+                    updateLoadingText("Processing selected photos...")
+
+                    val selectedPhotos = mutableListOf<MediaItem>()
+
+                    // Handle multiple selection
+                    data?.clipData?.let { clipData ->
+                        for (i in 0 until clipData.itemCount) {
+                            clipData.getItemAt(i).uri?.let { uri ->
+                                contentResolver.takePersistableUriPermission(
+                                    uri,
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                )
+                                selectedPhotos.add(createMediaItemFromUri(uri))
+                            }
+                        }
+                    } ?: data?.data?.let { uri -> // Handle single selection
+                        contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                        selectedPhotos.add(createMediaItemFromUri(uri))
+                    }
+
+                    if (selectedPhotos.isNotEmpty()) {
+                        // Create a temporary album ID for these photos
+                        val pickedAlbumId = "picked_photos"
+
+                        // Save selected album ID
+                        preferences.setSelectedAlbumIds(setOf(pickedAlbumId))
+
+                        // Save photos
+                        updateLoadingText("Saving photos...")
+                        withContext(Dispatchers.IO) {
+                            lockScreenPhotoManager.clearPhotos()
+                            lockScreenPhotoManager.addPhotos(selectedPhotos)
+                        }
+
+                        // Return to MainActivity
+                        val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+                            putExtra("albums_saved", true)
+                            putExtra("photo_count", selectedPhotos.size)
+                            putExtra("timestamp", System.currentTimeMillis())
+                        }
+                        startActivity(mainIntent)
+                        finish()
+                    } else {
+                        handleError("No photos were selected")
+                    }
+                } catch (e: Exception) {
+                    handleError("Error processing photos: ${e.message ?: "Unknown error"}")
+                } finally {
+                    viewModel.setLoading(false)
+                }
+            }
+        }
+    }
+
+    private fun startPhotoPicker() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100) // Adjust max as needed
+                }
+                startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
+            } else {
+                // If device doesn't support the photo picker, fall back to Google Photos API
+                initializeGooglePhotos()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching photo picker: ${e.message}")
+            // Fall back to Google Photos API
+            initializeGooglePhotos()
+        }
+    }
+
     private fun initializeGooglePhotos() {
-        // Change from coroutineScope to activityScope
+        // First try the system photo picker on Android 13+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            startPhotoPicker()
+            return
+        }
+
+        // Otherwise use existing Google Photos implementation
         activityScope.launch {
             try {
                 viewModel.setLoading(true)
@@ -287,8 +424,10 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun handleError(message: String) {
-        showToast(message)
-        binding.retryButton.visibility = View.VISIBLE
+        lifecycleScope.launch(Dispatchers.Main) {
+            Toast.makeText(this@AlbumSelectionActivity, message, Toast.LENGTH_SHORT).show()
+            binding.retryButton.visibility = View.VISIBLE
+        }
     }
 
     private fun showToast(message: String) {

@@ -343,7 +343,17 @@ class PhotoDisplayManager @Inject constructor(
         }
 
         val nextIndex = if (isRandomOrder) {
-            Random.nextInt(photoCount)
+            if (photoCount == 2) {
+                // With only 2 photos, just alternate between them
+                (currentPhotoIndex + 1) % 2
+            } else {
+                // For 3+ photos, use random selection but avoid current photo
+                var newIndex = Random.nextInt(photoCount)
+                while (newIndex == currentPhotoIndex) {
+                    newIndex = Random.nextInt(photoCount)
+                }
+                newIndex
+            }
         } else {
             (currentPhotoIndex + 1) % photoCount
         }
