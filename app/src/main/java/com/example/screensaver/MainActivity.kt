@@ -1,22 +1,15 @@
 package com.example.screensaver
 
-import android.app.Activity
-import android.app.admin.DevicePolicyManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Build
 import android.util.Log
 import android.view.*
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.addCallback
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.MenuProvider
 import androidx.core.view.WindowCompat
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
@@ -26,7 +19,6 @@ import com.example.screensaver.databinding.ActivityMainBinding
 import com.example.screensaver.lock.LockScreenPhotoManager
 import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.ui.PhotoDisplayManager
-import com.example.screensaver.receivers.ChargingReceiver
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -34,17 +26,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.example.screensaver.ui.SettingsButtonController
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.shared.GooglePhotosManager
 import android.content.IntentFilter
-import android.content.BroadcastReceiver
 import android.os.BatteryManager
 import android.net.Uri
 import androidx.constraintlayout.widget.ConstraintLayout
 import com.example.screensaver.security.AppAuthManager
-import com.example.screensaver.security.AuthState
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.PasscodeDialog
 import com.example.screensaver.security.SecurityPreferences
@@ -53,6 +42,10 @@ import com.example.screensaver.widgets.WidgetData
 import com.example.screensaver.widgets.WidgetManager
 import com.example.screensaver.widgets.WidgetState
 import com.example.screensaver.widgets.WidgetType
+import android.content.res.Configuration
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import android.view.KeyEvent
 
 
 @AndroidEntryPoint
@@ -99,6 +92,9 @@ class MainActivity : AppCompatActivity() {
 
     private val PREF_FIRST_LAUNCH = "first_launch"
 
+    private var backPressStartTime = 0L
+    private val BACK_PRESS_DURATION = 1000L
+
     private val viewLifecycleOwner: LifecycleOwner?
         get() = try {
             val navHostFragment = supportFragmentManager
@@ -132,9 +128,38 @@ class MainActivity : AppCompatActivity() {
                 or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
     }
 
+    private fun observeSecurityState() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
+                    checkSecurityWithCallback {
+                        // Continue with normal app flow
+                        continueWithAuthenticated()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun continueWithAuthenticated() {
+        if (navController.currentDestination?.id == R.id.mainFragment) {
+            photoDisplayManager.startPhotoDisplay()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableFullScreen()
+
+        // Add these flags to prevent screenshots and recent apps preview
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+
+        if (securityPreferences.isSecurityEnabled) {
+            // Request lock task mode
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startLockTask()
+            }
+        }
 
         try {
             // Handle start from charging receiver
@@ -142,7 +167,9 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "Started from charging receiver at ${intent?.getLongExtra("timestamp", 0L)}")
             }
 
-            ensureBinding() // Use safety check method
+            ensureBinding()
+            observeSecurityState()
+            observeSecurityPreferences()
 
             // Initialize Widgets first
             initializeWidgetSystem()
@@ -237,7 +264,6 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error initializing widget system", e)
         }
     }
-
 
     private fun observeWidgetStates() {
         lifecycleScope.launch {
@@ -425,61 +451,55 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupSettingsButton() {
         try {
-            Log.d(TAG, "Setting up settings button")
             val settingsFab = binding.settingsButton.settingsFab
-
-            // Ensure proper initial state
             settingsFab.apply {
                 visibility = View.VISIBLE
                 alpha = 0f
                 elevation = 6f
                 translationZ = 6f
 
-                // Add click listener with first launch handling
                 setOnClickListener {
-                    Log.d(TAG, "Settings button clicked")
                     if (navController.currentDestination?.id == R.id.mainFragment) {
-                        // Mark first launch as completed when user goes to settings
-                        PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                            .edit()
-                            .putBoolean(PREF_FIRST_LAUNCH, false)
-                            .apply()
-
-                        // Check security before navigating
-                        if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
-                            isAuthenticating = true
-                            when {
-                                securityPreferences.allowBiometric && biometricHelper.isBiometricAvailable() -> {
-                                    showBiometricPrompt(onSuccess = {
-                                        navController.navigate(R.id.action_mainFragment_to_settingsFragment)
-                                        settingsButtonController.hide()
-                                    })
-                                }
-                                else -> {
-                                    showPasscodePrompt(onSuccess = {
-                                        navController.navigate(R.id.action_mainFragment_to_settingsFragment)
-                                        settingsButtonController.hide()
-                                    })
-                                }
+                        if (securityPreferences.isSecurityEnabled) {
+                            // Always check security when enabled
+                            checkSecurityWithCallback {
+                                navigateToSettings()
                             }
                         } else {
-                            navController.navigate(R.id.action_mainFragment_to_settingsFragment)
-                            settingsButtonController.hide()
+                            navigateToSettings()
                         }
                     }
                 }
             }
 
             settingsButtonController = SettingsButtonController(settingsFab)
-
-            // Log initial state
-            Log.d(TAG, "Settings button initial state - visibility: ${settingsFab.visibility}, alpha: ${settingsFab.alpha}")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up settings button", e)
         }
     }
 
+    private fun navigateToSettings() {
+        PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+            .edit()
+            .putBoolean(PREF_FIRST_LAUNCH, false)
+            .apply()
+
+        navController.navigate(R.id.action_mainFragment_to_settingsFragment)
+        settingsButtonController.hide()
+    }
+
     private fun showBiometricPrompt(onSuccess: () -> Unit) {
+        if (!biometricHelper.isBiometricAvailable()) {
+            // Fall back to passcode if biometric not available
+            if (securityPreferences.passcode != null) {
+                showPasscodePrompt(onSuccess)
+            } else {
+                isAuthenticating = false
+                showToast(getString(R.string.biometric_auth_failed))
+            }
+            return
+        }
+
         biometricHelper.showBiometricPrompt(
             activity = this,
             onSuccess = {
@@ -488,6 +508,7 @@ class MainActivity : AppCompatActivity() {
                 onSuccess()
             },
             onError = { message ->
+                // Fall back to passcode on error
                 if (securityPreferences.passcode != null) {
                     showPasscodePrompt(onSuccess)
                 } else {
@@ -496,6 +517,7 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             onFailed = {
+                // Fall back to passcode on failure
                 if (securityPreferences.passcode != null) {
                     showPasscodePrompt(onSuccess)
                 } else {
@@ -534,25 +556,53 @@ class MainActivity : AppCompatActivity() {
         }.show(supportFragmentManager, "verify_passcode")
     }
 
-    private fun setupFullScreen() {
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
-            window.insetsController?.let { controller ->
-                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-                controller.systemBarsBehavior =
-                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    private fun observeSecurityPreferences() {
+        lifecycleScope.launch {
+            securityPreferences.securityEnabledFlow.collect { isEnabled ->
+                if (isEnabled) {
+                    setupSecurityLock()
+                } else {
+                    // Instead of disabling security lock, we need to:
+                    // 1. Reset authentication state
+                    authManager.resetAuthenticationState()
+                    // 2. Stop lock task mode if it's running
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            stopLockTask()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error stopping lock task", e)
+                        }
+                    }
+                    // 3. Clear secure flags
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                }
             }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = (
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            or View.SYSTEM_UI_FLAG_FULLSCREEN
-                    )
+        }
+    }
+
+    private fun setupSecurityLock() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startLockTask()
+        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    private fun setupFullScreen() {
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+
+        // Prevent recent apps preview
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+
+        // Lock to current task when security is enabled
+        if (securityPreferences.isSecurityEnabled) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startLockTask()
+            }
         }
     }
 
@@ -645,21 +695,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        when (navController.currentDestination?.id) {
-            R.id.settingsFragment -> {
-                navController.navigateUp()
+        if (securityPreferences.isSecurityEnabled) {
+            if (navController.currentDestination?.id == R.id.mainFragment) {
+                checkSecurityWithCallback {
+                    // After successful authentication
+                    moveTaskToBack(true)
+                }
+                return
             }
-            R.id.mainFragment -> {
-                val currentTime = System.currentTimeMillis()
-                if (currentTime - lastBackPressTime > doubleBackPressInterval) {
-                    lastBackPressTime = currentTime
-                    Toast.makeText(this, "Press back again to exit", Toast.LENGTH_SHORT).show()
-                } else {
-                    super.onBackPressed()
+        }
+        super.onBackPressed()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (securityPreferences.isSecurityEnabled) {
+                if (navController.currentDestination?.id == R.id.mainFragment) {
+                    checkSecurityWithCallback {
+                        // After successful authentication
+                        moveTaskToBack(true)
+                    }
+                    return true
                 }
             }
-            else -> super.onBackPressed()
         }
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -747,6 +807,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            setupFullScreen()
+            if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
+                checkSecurityWithCallback {
+                    continueWithAuthenticated()
+                }
+            }
+        }
+    }
+
     private fun handleNavigationVisibility(destinationId: Int) {
         val isMainScreen = destinationId == R.id.mainFragment
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
@@ -797,6 +869,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun checkSecurityWithCallback(onSuccess: () -> Unit) {
+        if (!securityPreferences.isSecurityEnabled) {
+            onSuccess()
+            return
+        }
+
+        isAuthenticating = true
+
+        // Check biometric first if enabled
+        if (securityPreferences.allowBiometric) {
+            showBiometricPrompt(onSuccess)
+        } else {
+            // Biometric not enabled, use passcode
+            if (securityPreferences.passcode != null) {
+                showPasscodePrompt(onSuccess)
+            } else {
+                isAuthenticating = false
+                showToast(getString(R.string.no_auth_method))
+            }
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Don't reset auth state for orientation changes
+        isAuthenticating = true
+        // Reset after config change is complete
+        lifecycleScope.launch {
+            delay(500)
+            isAuthenticating = false
+        }
+    }
+
     private fun setupNavigation() {
         try {
             ensureBinding()
@@ -809,40 +914,38 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "Navigation destination changed to: ${destination.id}")
                 handleNavigationVisibility(destination.id)
 
-                if (destination.id == R.id.mainFragment) {
-                    Log.d(TAG, "Returned to main fragment, updating widgets")
-                    ensureBinding()
-                    binding.screensaverContainer?.post {
-                        try {
-                            Log.d(TAG, "Container visibility: ${binding.screensaverContainer?.visibility}, " +
-                                    "isAttached: ${binding.screensaverContainer?.isAttachedToWindow}")
-
-                            binding.screensaverContainer?.let { container ->
-                                if (container is ConstraintLayout) {
-                                    // First reinitialize clock widget if needed
-                                    val showClock = preferences.isShowClock()
-                                    if (showClock) {
-                                        widgetManager.reinitializeClockWidget(container)
-                                        widgetManager.showWidget(WidgetType.CLOCK)
-                                    }
-
-                                    // Then reinitialize weather widget if needed
-                                    val showWeather = preferences.getBoolean("show_weather", false)
-                                    if (showWeather) {
-                                        widgetManager.reinitializeWeatherWidget(container)
-                                        widgetManager.showWidget(WidgetType.WEATHER)
-                                    }
-
-                                    Log.d(TAG, "Widgets reinitialized - Clock: $showClock, Weather: $showWeather")
-                                }
+                when (destination.id) {
+                    R.id.settingsFragment -> {
+                        if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
+                            navController.navigateUp()
+                            checkSecurityWithCallback {
+                                navController.navigate(R.id.action_mainFragment_to_settingsFragment)
                             }
+                        }
+                    }
+                    R.id.mainFragment -> {
+                        Log.d(TAG, "Returned to main fragment, updating widgets")
+                        ensureBinding()
+                        binding.screensaverContainer?.post {
+                            try {
+                                binding.screensaverContainer?.let { container ->
+                                    if (container is ConstraintLayout) {
+                                        val showClock = preferences.isShowClock()
+                                        if (showClock) {
+                                            widgetManager.reinitializeClockWidget(container)
+                                            widgetManager.showWidget(WidgetType.CLOCK)
+                                        }
 
-                            Log.d(TAG, "Saved preferences - show_clock: ${preferences.isShowClock()}, " +
-                                    "show_weather: ${preferences.getBoolean("show_weather", false)}, " +
-                                    "clock_position: ${preferences.getString("clock_position", "unknown")}, " +
-                                    "weather_position: ${preferences.getString("weather_position", "unknown")}")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error in navigation post callback", e)
+                                        val showWeather = preferences.getBoolean("show_weather", false)
+                                        if (showWeather) {
+                                            widgetManager.reinitializeWeatherWidget(container)
+                                            widgetManager.showWidget(WidgetType.WEATHER)
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error in navigation post callback", e)
+                            }
                         }
                     }
                 }
@@ -857,37 +960,45 @@ class MainActivity : AppCompatActivity() {
         if (!isDestroyed) {
             photoDisplayManager.stopPhotoDisplay()
         }
-        if (!isAuthenticating) {
-            authManager.resetAuthenticationState()
+        if (!isAuthenticating && !isChangingConfigurations) {
+            moveTaskToBack(true)  // Force app to background if losing focus
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (securityPreferences.isSecurityEnabled && !isAuthenticating) {
+            moveTaskToBack(true)  // Force app to background on home button
         }
     }
 
     override fun onStop() {
         super.onStop()
-        if (!isAuthenticating) {
-            authManager.resetAuthenticationState()
-        }
+        // Always reset auth state when stopping the activity
+        authManager.resetAuthenticationState()
     }
 
     override fun onResume() {
         super.onResume()
         setupFullScreen()
 
-        // Check security
+        // Always check security on resume if enabled
         if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
-            lifecycleScope.launch {
-                delay(SECURITY_CHECK_DELAY)
-                checkSecurity()
+            checkSecurityWithCallback {
+                // Only continue after successful authentication
+                updateLockScreenService("CHECK_KIOSK_MODE")
+                if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
+                    navController.currentDestination?.id == R.id.mainFragment) {
+                    photoDisplayManager.startPhotoDisplay()
+                }
             }
-        }
-
-        // Update lock screen service
-        updateLockScreenService("CHECK_KIOSK_MODE")
-
-        // Check if we should start photo display
-        if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
-            navController.currentDestination?.id == R.id.mainFragment) {
-            photoDisplayManager.startPhotoDisplay()
+        } else {
+            // No security needed, continue normally
+            updateLockScreenService("CHECK_KIOSK_MODE")
+            if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
+                navController.currentDestination?.id == R.id.mainFragment) {
+                photoDisplayManager.startPhotoDisplay()
+            }
         }
     }
 
@@ -911,75 +1022,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSupportNavigateUp(): Boolean {
         return navController.navigateUp() || super.onSupportNavigateUp()
-    }
-
-    private fun checkSecurity() {
-        if (!securityPreferences.isSecurityEnabled || authManager.isAuthenticated()) {
-            return
-        }
-
-        isAuthenticating = true
-        when {
-            securityPreferences.allowBiometric && biometricHelper.isBiometricAvailable() -> {
-                showBiometricPrompt()
-            }
-            else -> {
-                showPasscodePrompt()
-            }
-        }
-    }
-
-    private fun showBiometricPrompt() {
-        biometricHelper.showBiometricPrompt(
-            activity = this,
-            onSuccess = {
-                isAuthenticating = false
-                authManager.setAuthenticated(true)
-            },
-            onError = { message ->
-                // Fall back to passcode if biometric fails
-                if (securityPreferences.passcode != null) {
-                    showPasscodePrompt()
-                } else {
-                    isAuthenticating = false
-                    showToast(getString(R.string.biometric_auth_failed))
-                    finish()
-                }
-            },
-            onFailed = {
-                // Fall back to passcode if biometric fails
-                if (securityPreferences.passcode != null) {
-                    showPasscodePrompt()
-                } else {
-                    isAuthenticating = false
-                    showToast(getString(R.string.biometric_auth_failed))
-                    finish()
-                }
-            }
-        )
-    }
-
-    private fun showPasscodePrompt() {
-        PasscodeDialog.newInstance(
-            mode = PasscodeDialog.Mode.VERIFY,
-            title = getString(R.string.enter_passcode),
-            message = getString(R.string.enter_passcode_to_continue)
-        ).apply {
-            isCancelable = false
-            setOnPasscodeConfirmedListener { passcode ->
-                if (authManager.authenticateWithPasscode(passcode)) {
-                    isAuthenticating = false
-                    authManager.setAuthenticated(true)
-                    dismiss()
-                }
-            }
-            setOnDismissListener {
-                if (!authManager.isAuthenticated()) {
-                    isAuthenticating = false
-                    finish() // Close app if authentication fails
-                }
-            }
-        }.show(supportFragmentManager, "verify_passcode")
     }
 
     private fun preventUnauthorizedClosure() {
@@ -1012,19 +1054,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPasscodeDialog() {
-        PasscodeDialog.newInstance(
-            mode = PasscodeDialog.Mode.VERIFY,
-            title = getString(R.string.authentication_required),
-            message = getString(R.string.enter_passcode_to_continue)
-        ).apply {
-            setOnPasscodeConfirmedListener { _ ->
-                // Authentication successful, no action needed
-                Log.d(TAG, "Passcode authentication successful")
-            }
-        }.show(supportFragmentManager, "passcode_dialog")
-    }
-
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
         menu.add(Menu.NONE, MENU_CLEAR_CACHE, Menu.NONE, "Clear Photo Cache")
@@ -1045,13 +1074,6 @@ class MainActivity : AppCompatActivity() {
     override fun onLowMemory() {
         super.onLowMemory()
         photoDisplayManager.handleLowMemory()
-    }
-
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        if (!isAuthenticating) {
-            authManager.resetAuthenticationState()
-        }
     }
 
     override fun onDestroy() {

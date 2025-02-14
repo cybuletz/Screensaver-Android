@@ -9,6 +9,10 @@ import com.example.screensaver.data.SecureStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import androidx.preference.PreferenceManager
 
 @Singleton
 class SecurityPreferences @Inject constructor(
@@ -16,6 +20,7 @@ class SecurityPreferences @Inject constructor(
     private val secureStorage: SecureStorage
 ) {
     private val TAG = "SecurityPreferences"
+    private val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
 
     companion object {
         private const val SECURITY_PREFS_FILE = "security_prefs"
@@ -48,9 +53,15 @@ class SecurityPreferences @Inject constructor(
         }
     }
 
+    private val _securityEnabledFlow = MutableStateFlow(isSecurityEnabled)
+    val securityEnabledFlow: Flow<Boolean> = _securityEnabledFlow.asStateFlow()
+
     var isSecurityEnabled: Boolean
-        get() = securityPrefs.getBoolean(KEY_SECURITY_ENABLED, false)
-        set(value) = securityPrefs.edit().putBoolean(KEY_SECURITY_ENABLED, value).apply()
+        get() = sharedPreferences.getBoolean("security_enabled", false)
+        set(value) {
+            sharedPreferences.edit().putBoolean("security_enabled", value).apply()
+            _securityEnabledFlow.value = value
+        }
 
     var authMethod: String
         get() = securityPrefs.getString(KEY_AUTH_METHOD, "passcode") ?: "passcode"
