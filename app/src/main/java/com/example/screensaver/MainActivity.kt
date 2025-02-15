@@ -463,6 +463,8 @@ class MainActivity : AppCompatActivity() {
                         if (securityPreferences.isSecurityEnabled) {
                             // Always check security when enabled
                             checkSecurityWithCallback {
+                                // After successful authentication
+                                authManager.setAuthenticated(true) // Keep authenticated state
                                 navigateToSettings()
                             }
                         } else {
@@ -694,32 +696,73 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onBackPressed() {
+    private fun handleBackPress() {
         if (securityPreferences.isSecurityEnabled) {
-            if (navController.currentDestination?.id == R.id.mainFragment) {
-                checkSecurityWithCallback {
-                    // After successful authentication
-                    moveTaskToBack(true)
+            // First stop any lock task mode
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    stopLockTask()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error stopping lock task", e)
                 }
-                return
             }
+            // Reset authentication state and move to back
+            authManager.resetAuthenticationState()
+            moveTaskToBack(true)
+        } else {
+            moveTaskToBack(true)
         }
-        super.onBackPressed()
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (securityPreferences.isSecurityEnabled) {
-                if (navController.currentDestination?.id == R.id.mainFragment) {
+    override fun onBackPressed() {
+        when (navController.currentDestination?.id) {
+            R.id.settingsFragment -> {
+                navController.navigateUp()
+            }
+            R.id.mainFragment -> {
+                if (securityPreferences.isSecurityEnabled) {
                     checkSecurityWithCallback {
-                        // After successful authentication
-                        moveTaskToBack(true)
+                        handleBackPress()
                     }
-                    return true
+                } else {
+                    handleBackPress()
+                }
+            }
+            else -> super.onBackPressed()
+        }
+    }
+
+    private fun preventUnauthorizedClosure() {
+        onBackPressedDispatcher.addCallback(this) {
+            when {
+                navController.currentDestination?.id == R.id.settingsFragment -> {
+                    navController.navigateUp()
+                }
+                navController.currentDestination?.id == R.id.mainFragment -> {
+                    if (securityPreferences.isSecurityEnabled) {
+                        checkSecurityWithCallback {
+                            handleBackPress()
+                        }
+                    } else {
+                        handleBackPress()
+                    }
+                }
+                else -> {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
                 }
             }
         }
-        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
+            checkSecurityWithCallback {
+                // Continue with normal app flow
+                continueWithAuthenticated()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -879,11 +922,19 @@ class MainActivity : AppCompatActivity() {
 
         // Check biometric first if enabled
         if (securityPreferences.allowBiometric) {
-            showBiometricPrompt(onSuccess)
+            showBiometricPrompt {
+                isAuthenticating = false
+                authManager.setAuthenticated(true)  // Keep authenticated after success
+                onSuccess()
+            }
         } else {
             // Biometric not enabled, use passcode
             if (securityPreferences.passcode != null) {
-                showPasscodePrompt(onSuccess)
+                showPasscodePrompt {
+                    isAuthenticating = false
+                    authManager.setAuthenticated(true)  // Keep authenticated after success
+                    onSuccess()
+                }
             } else {
                 isAuthenticating = false
                 showToast(getString(R.string.no_auth_method))
@@ -1022,36 +1073,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSupportNavigateUp(): Boolean {
         return navController.navigateUp() || super.onSupportNavigateUp()
-    }
-
-    private fun preventUnauthorizedClosure() {
-        onBackPressedDispatcher.addCallback(this) {
-            when {
-                navController.currentDestination?.id == R.id.settingsFragment -> {
-                    if (securityPreferences.isSecurityEnabled) {
-                        // Just navigate back, security will be checked in onResume if needed
-                        navController.navigateUp()
-                    } else {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
-                    }
-                }
-                navController.currentDestination?.id == R.id.mainFragment -> {
-                    val currentTime = System.currentTimeMillis()
-                    if (currentTime - lastBackPressTime > doubleBackPressInterval) {
-                        lastBackPressTime = currentTime
-                        showToast("Press back again to exit")
-                    } else {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
-                    }
-                }
-                else -> {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                }
-            }
-        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {

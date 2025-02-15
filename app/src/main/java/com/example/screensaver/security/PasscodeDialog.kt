@@ -9,6 +9,7 @@ import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
@@ -103,7 +104,7 @@ class PasscodeDialog : DialogFragment() {
 
         return MaterialAlertDialogBuilder(requireContext())
             .setView(view)
-            .setCancelable(false)
+            .setCancelable(true)
             .create()
     }
 
@@ -252,10 +253,15 @@ class PasscodeDialog : DialogFragment() {
                     checkLockoutStatus()
                 }
             }
-            Mode.SET_NEW, Mode.CONFIRM_NEW -> {
-                Log.d(TAG, "${mode.name} passcode entered")
+            Mode.SET_NEW -> {
+                Log.d(TAG, "SET_NEW passcode entered")
                 callback?.onPasscodeConfirmed(passcode)
-                // Don't clear or dismiss - let the callback handle the flow
+                // Let callback handle confirmation flow
+            }
+            Mode.CONFIRM_NEW -> {
+                Log.d(TAG, "Confirming passcode")
+                callback?.onPasscodeConfirmed(passcode)
+                // Let callback handle confirmation result
             }
         }
     }
@@ -288,8 +294,9 @@ class PasscodeDialog : DialogFragment() {
     override fun onStart() {
         super.onStart()
         dialog?.setOnKeyListener { _, keyCode, event ->
-            if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
                 dismiss()
+                callback?.onDismiss()
                 return@setOnKeyListener true
             }
             false
@@ -299,6 +306,7 @@ class PasscodeDialog : DialogFragment() {
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
         passcodeListener?.onDismiss()
+        callback?.onDismiss()
     }
 
     override fun onAttach(context: Context) {

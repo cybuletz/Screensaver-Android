@@ -676,21 +676,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
         ).apply {
             setCallback(object : PasscodeDialog.PasscodeDialogCallback {
                 override fun onPasscodeConfirmed(passcode: String) {
+                    Log.d(TAG, "Handling passcode entry: first=${firstPasscode == null}")
+
                     if (firstPasscode == null) {
-                        // First entry
+                        // Store first entry and show confirmation dialog
                         firstPasscode = passcode
                         updateDialog(
                             title = getString(R.string.confirm_passcode),
                             message = getString(R.string.confirm_passcode_message)
                         )
                     } else if (passcode == firstPasscode) {
-                        // Passcodes match
                         lifecycleScope.launch {
                             try {
                                 val useBiometric = biometricHelper.isBiometricAvailable()
 
-                                // First set security settings
+                                // Update security settings atomically
                                 securityPreferences.run {
+                                    // Set all settings first
                                     this.passcode = passcode
                                     this.authMethod = if (useBiometric)
                                         SecurityPreferences.AUTH_METHOD_BIOMETRIC
@@ -700,12 +702,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
                                     this.isSecurityEnabled = true
                                 }
 
-                                // Then set authenticated state
+                                // Set authenticated after security is enabled
                                 authManager.setAuthenticated(true)
 
                                 withContext(Dispatchers.Main) {
                                     updateSecurityPreferencesState(true)
                                     findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
+                                    Toast.makeText(context, getString(R.string.security_enabled_message), Toast.LENGTH_SHORT).show()
                                     dismiss()
                                 }
                             } catch (e: Exception) {
@@ -713,11 +716,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                                 withContext(Dispatchers.Main) {
                                     findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
                                     Toast.makeText(context, getString(R.string.security_setup_failed), Toast.LENGTH_SHORT).show()
-                                }
-                            } finally {
-                                withContext(Dispatchers.Main) {
-                                    setupPasscodeDialog = null
-                                    firstPasscode = null
+                                    dismiss()
                                 }
                             }
                         }
@@ -735,8 +734,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 override fun onError(message: String) {
                     Log.e(TAG, "Dialog error: $message")
                     findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
-                    setupPasscodeDialog = null
-                    firstPasscode = null
                 }
 
                 override fun onDismiss() {
