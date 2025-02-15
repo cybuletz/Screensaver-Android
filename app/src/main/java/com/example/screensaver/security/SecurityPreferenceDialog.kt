@@ -10,6 +10,9 @@ import com.example.screensaver.R
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import dagger.hilt.android.AndroidEntryPoint
+import androidx.preference.SwitchPreferenceCompat
+import com.example.screensaver.data.SecureStorage
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class SecurityPreferenceDialog : DialogFragment() {
@@ -52,7 +55,30 @@ class SecurityPreferenceDialog : DialogFragment() {
 
 @AndroidEntryPoint
 class SecurityPreferenceFragment : PreferenceFragmentCompat() {
+    @Inject
+    lateinit var secureStorage: SecureStorage
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.security_preferences, rootKey)
+
+        // Handle remove security on restart preference
+        findPreference<SwitchPreferenceCompat>("remove_security_on_restart")?.apply {
+            isChecked = secureStorage.shouldRemoveSecurityOnRestart()
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                secureStorage.setRemoveSecurityOnRestart(enabled)
+                true
+            }
+        }
+
+        // Handle remove security on minimize preference
+        findPreference<SwitchPreferenceCompat>("remove_security_on_minimize")?.apply {
+            isChecked = secureStorage.shouldRemoveSecurityOnMinimize()
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                secureStorage.setRemoveSecurityOnMinimize(enabled)
+                true
+            }
+        }
     }
 }

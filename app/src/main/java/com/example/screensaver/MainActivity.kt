@@ -45,6 +45,7 @@ import com.example.screensaver.widgets.WidgetType
 import android.content.res.Configuration
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.example.screensaver.data.SecureStorage
 
 
 @AndroidEntryPoint
@@ -81,6 +82,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var biometricHelper: BiometricHelper
+
+    @Inject
+    lateinit var secureStorage: SecureStorage
 
     private var isDestroyed = false
 
@@ -142,6 +146,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Check if security should be removed on restart - ADD THIS BLOCK
+        if (secureStorage.shouldRemoveSecurityOnRestart()) {
+            Log.d(TAG, "Removing security settings on restart")
+            securityPreferences.isSecurityEnabled = false
+            secureStorage.setRemoveSecurityOnRestart(false)
+            secureStorage.clearSecurityCredentials()
+            Log.d(TAG, "Security settings have been removed")
+        }
+
         enableFullScreen()
 
         // Add these flags to prevent screenshots and recent apps preview
@@ -155,6 +169,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         try {
+            // Rest of your existing onCreate implementation...
             // Handle start from charging receiver
             if (intent?.getBooleanExtra("start_screensaver", false) == true) {
                 Log.d(TAG, "Started from charging receiver at ${intent?.getLongExtra("timestamp", 0L)}")
@@ -1001,11 +1016,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        if (!isDestroyed) {
-            photoDisplayManager.stopPhotoDisplay()
-        }
-        if (!isAuthenticating && !isChangingConfigurations) {
-            moveTaskToBack(true)  // Force app to background if losing focus
+
+        if (secureStorage.shouldRemoveSecurityOnMinimize()) {
+            Log.d(TAG, "Removing security settings on minimize")
+            securityPreferences.isSecurityEnabled = false
+            secureStorage.clearSecurityCredentials()
+
+            // Also clear the minimize flag since we've handled it
+            secureStorage.setRemoveSecurityOnMinimize(false)
+            Log.d(TAG, "Security settings have been removed on minimize")
         }
     }
 

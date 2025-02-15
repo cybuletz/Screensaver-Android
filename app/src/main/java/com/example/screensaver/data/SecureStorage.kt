@@ -9,11 +9,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
-import java.io.File
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
-import java.security.KeyStore
+import androidx.preference.PreferenceManager
 
 @Singleton
 class SecureStorage @Inject constructor(
@@ -31,6 +30,8 @@ class SecureStorage @Inject constructor(
         private const val KEY_ACCOUNT_EMAIL = "account_email"
         private const val KEY_LAST_AUTH = "last_auth_time"
         private const val KEY_REFRESH_ATTEMPTS = "refresh_attempts"
+        private const val PREF_REMOVE_SECURITY_ON_RESTART = "remove_security_on_restart"
+        private const val PREF_REMOVE_SECURITY_ON_MINIMIZE = "remove_security_on_minimize"
     }
 
     init {
@@ -69,6 +70,40 @@ class SecureStorage @Inject constructor(
             Timber.e(e, "Error verifying secure preferences, but continuing")
             // Log error but don't take destructive action
         }
+    }
+
+    fun setRemoveSecurityOnRestart(enabled: Boolean) {
+        PreferenceManager.getDefaultSharedPreferences(context)
+            .edit()
+            .putBoolean(PREF_REMOVE_SECURITY_ON_RESTART, enabled)
+            .apply()
+    }
+
+    fun shouldRemoveSecurityOnRestart(): Boolean {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+            .getBoolean(PREF_REMOVE_SECURITY_ON_RESTART, false)
+    }
+
+    fun setRemoveSecurityOnMinimize(enabled: Boolean) {
+        PreferenceManager.getDefaultSharedPreferences(context)
+            .edit()
+            .putBoolean(PREF_REMOVE_SECURITY_ON_MINIMIZE, enabled)
+            .apply()
+    }
+
+    fun shouldRemoveSecurityOnMinimize(): Boolean {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+            .getBoolean(PREF_REMOVE_SECURITY_ON_MINIMIZE, false)
+    }
+
+    fun clearSecurityCredentials() {
+        PreferenceManager.getDefaultSharedPreferences(context)
+            .edit()
+            .remove("security_enabled")
+            .remove("auth_method")
+            .remove("passcode")
+            .remove("allow_biometric")
+            .apply()
     }
 
     private fun initializeCredentialState() {

@@ -30,4 +30,18 @@
         android:summary="@string/pref_allow_biometric_summary"
         android:defaultValue="true"
         app:dependency="security_enabled"/>
+
+    <SwitchPreferenceCompat
+        android:key="remove_security_on_restart"
+        android:title="@string/pref_remove_security_on_restart_title"
+        android:summary="@string/pref_remove_security_on_restart_summary"
+        android:defaultValue="false"
+        app:dependency="security_enabled"/>
+
+    <SwitchPreferenceCompat
+        android:key="remove_security_on_minimize"
+        android:title="@string/pref_remove_security_on_minimize_title"
+        android:summary="@string/pref_remove_security_on_minimize_summary"
+        android:defaultValue="false"
+        app:dependency="security_enabled"/>
 </PreferenceScreen>
