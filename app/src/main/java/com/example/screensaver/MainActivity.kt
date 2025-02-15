@@ -45,7 +45,6 @@ import com.example.screensaver.widgets.WidgetType
 import android.content.res.Configuration
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import android.view.KeyEvent
 
 
 @AndroidEntryPoint
@@ -55,7 +54,6 @@ class MainActivity : AppCompatActivity() {
     private var _navController: NavController? = null
     private val navController get() = _navController!!
     private lateinit var settingsButtonController: SettingsButtonController
-    private var isPhotoTransitionInProgress = false
 
     @Inject
     lateinit var photoManager: LockScreenPhotoManager
@@ -85,15 +83,10 @@ class MainActivity : AppCompatActivity() {
     lateinit var biometricHelper: BiometricHelper
 
     private var isDestroyed = false
-    private var lastBackPressTime: Long = 0
-    private val doubleBackPressInterval = 2000L
 
     private var isAuthenticating = false
 
     private val PREF_FIRST_LAUNCH = "first_launch"
-
-    private var backPressStartTime = 0L
-    private val BACK_PRESS_DURATION = 1000L
 
     private val viewLifecycleOwner: LifecycleOwner?
         get() = try {
