@@ -77,6 +77,7 @@ import androidx.fragment.app.DialogFragment
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.PasscodeDialog
+import com.example.screensaver.security.SecurityPreferenceDialog
 import com.example.screensaver.security.SecurityPreferences
 import com.example.screensaver.widgets.WidgetPreferenceDialog
 
@@ -449,6 +450,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
                     findPreference<Preference>("weather_widget_settings")?.setOnPreferenceClickListener {
                         showWidgetDialog(WidgetType.WEATHER)
+                        true
+                    }
+
+                    findPreference<Preference>("security_preferences")?.setOnPreferenceClickListener {
+                        SecurityPreferenceDialog.newInstance()
+                            .show(childFragmentManager, "security_settings")
                         true
                     }
 

@@ -102,33 +102,12 @@
         style="@style/PreferenceCategoryStyle"
         app:iconSpaceReserved="false">
 
-        <SwitchPreferenceCompat
-            android:key="security_enabled"
-            android:title="@string/pref_security_enabled_title"
-            android:summary="@string/pref_security_enabled_summary"
-            android:defaultValue="false" />
+        <Preference
+            android:key="security_preferences"
+            android:title="@string/pref_security_settings_title"
+            android:summary="@string/pref_security_settings_summary"
+            app:icon="@drawable/ic_security"/>
 
-        <ListPreference
-            android:key="auth_method"
-            android:title="@string/pref_auth_method_title"
-            android:summary="@string/pref_auth_method_summary"
-            android:entries="@array/auth_method_entries"
-            android:entryValues="@array/auth_method_values"
-            android:defaultValue="passcode"
-            android:dependency="security_enabled" />
-
-        <EditTextPreference
-            android:key="passcode"
-            android:title="@string/pref_passcode_title"
-            android:summary="@string/pref_passcode_summary"
-            android:dependency="security_enabled" />
-
-        <SwitchPreferenceCompat
-            android:key="allow_biometric"
-            android:title="@string/pref_allow_biometric_title"
-            android:summary="@string/pref_allow_biometric_summary"
-            android:defaultValue="false"
-            android:dependency="security_enabled" />
     </PreferenceCategory>
 
     <PreferenceCategory
