@@ -285,19 +285,15 @@ class PasscodeDialog : DialogFragment() {
         view?.findViewById<TextView>(R.id.messageText)?.text = message ?: arguments?.getString(ARG_MESSAGE)
     }
 
-    fun setOnPasscodeConfirmedListener(listener: (String) -> Unit) {
-        passcodeListener = object : PasscodeDialogListener {
-            override fun onPasscodeConfirmed(passcode: String) {
-                listener(passcode)
+    override fun onStart() {
+        super.onStart()
+        dialog?.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
+                dismiss()
+                return@setOnKeyListener true
             }
-            override fun onDismiss() {
-                dismissListener?.invoke()
-            }
+            false
         }
-    }
-
-    fun setOnDismissListener(listener: () -> Unit) {
-        dismissListener = listener
     }
 
     override fun onDismiss(dialog: DialogInterface) {
