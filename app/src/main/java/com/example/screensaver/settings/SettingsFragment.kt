@@ -68,15 +68,10 @@ import com.example.screensaver.widgets.WidgetPreferenceFragment
 import com.example.screensaver.widgets.WidgetState
 import com.example.screensaver.widgets.WidgetType
 import com.example.screensaver.widgets.WidgetManager
-import com.example.screensaver.widgets.WidgetPosition
-import android.Manifest
 import androidx.preference.SwitchPreferenceCompat
-import androidx.preference.EditTextPreference
 import com.example.screensaver.utils.AppPreferences
-import androidx.fragment.app.DialogFragment
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
-import com.example.screensaver.security.PasscodeDialog
 import com.example.screensaver.security.SecurityPreferenceDialog
 import com.example.screensaver.security.SecurityPreferences
 import com.example.screensaver.widgets.WidgetPreferenceDialog
@@ -440,7 +435,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     setupCacheSettings(preferenceScreen)
                     setupLocalPhotoPreferences()
                     setupChargingPreference()
-                    setupSecurityPreferences()
 
                     // Setup widget configuration buttons
                     findPreference<Preference>("clock_widget_settings")?.setOnPreferenceClickListener {
@@ -631,203 +625,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private fun initializeDeviceAdmin() {
         devicePolicyManager = requireContext().getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
         adminComponentName = ComponentName(requireContext(), PhotoLockDeviceAdmin::class.java)
-    }
-
-    private fun setupSecurityPreferences() {
-        findPreference<SwitchPreferenceCompat>("security_enabled")?.apply {
-            isChecked = securityPreferences.isSecurityEnabled
-            setOnPreferenceChangeListener { _, newValue ->
-                val enabled = newValue as Boolean
-                if (enabled) {
-                    showSetupSecurityDialog()
-                    false // Don't update switch state yet
-                } else {
-                    showAuthenticationDialog { authenticated ->
-                        if (authenticated) {
-                            lifecycleScope.launch {
-                                try {
-                                    securityPreferences.clearAll()
-                                    authManager.resetAuthenticationState()
-                                    withContext(Dispatchers.Main) {
-                                        updateSecurityPreferencesState(false)
-                                    }
-                                } catch (e: Exception) {
-                                    withContext(Dispatchers.Main) {
-                                        showError("Failed to clear security settings", e)
-                                        isChecked = true
-                                    }
-                                }
-                            }
-                        } else {
-                            isChecked = true
-                        }
-                    }
-                    false // Don't update switch state yet
-                }
-            }
-        }
-    }
-
-    private var setupPasscodeDialog: PasscodeDialog? = null
-    private var firstPasscode: String? = null
-
-    private fun showSetupSecurityDialog() {
-        // Reset state
-        firstPasscode = null
-        setupPasscodeDialog?.dismiss()
-
-        setupPasscodeDialog = PasscodeDialog.newInstance(
-            mode = PasscodeDialog.Mode.SET_NEW,
-            title = getString(R.string.set_passcode),
-            message = getString(R.string.set_passcode_message)
-        ).apply {
-            setCallback(object : PasscodeDialog.PasscodeDialogCallback {
-                override fun onPasscodeConfirmed(passcode: String) {
-                    Log.d(TAG, "Handling passcode entry: first=${firstPasscode == null}")
-
-                    if (firstPasscode == null) {
-                        // Store first entry and show confirmation dialog
-                        firstPasscode = passcode
-                        updateDialog(
-                            title = getString(R.string.confirm_passcode),
-                            message = getString(R.string.confirm_passcode_message)
-                        )
-                    } else if (passcode == firstPasscode) {
-                        lifecycleScope.launch {
-                            try {
-                                val useBiometric = biometricHelper.isBiometricAvailable()
-
-                                // Update security settings atomically
-                                securityPreferences.run {
-                                    // Set all settings first
-                                    this.passcode = passcode
-                                    this.authMethod = if (useBiometric)
-                                        SecurityPreferences.AUTH_METHOD_BIOMETRIC
-                                    else SecurityPreferences.AUTH_METHOD_PASSCODE
-                                    this.allowBiometric = useBiometric
-                                    // Enable security last
-                                    this.isSecurityEnabled = true
-                                }
-
-                                // Set authenticated after security is enabled
-                                authManager.setAuthenticated(true)
-
-                                withContext(Dispatchers.Main) {
-                                    updateSecurityPreferencesState(true)
-                                    findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
-                                    Toast.makeText(context, getString(R.string.security_enabled_message), Toast.LENGTH_SHORT).show()
-                                    dismiss()
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Failed to save security settings", e)
-                                withContext(Dispatchers.Main) {
-                                    findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
-                                    Toast.makeText(context, getString(R.string.security_setup_failed), Toast.LENGTH_SHORT).show()
-                                    dismiss()
-                                }
-                            }
-                        }
-                    } else {
-                        // Passcodes don't match
-                        firstPasscode = null
-                        Toast.makeText(context, getString(R.string.passcode_mismatch), Toast.LENGTH_SHORT).show()
-                        updateDialog(
-                            title = getString(R.string.set_passcode),
-                            message = getString(R.string.set_passcode_message)
-                        )
-                    }
-                }
-
-                override fun onError(message: String) {
-                    Log.e(TAG, "Dialog error: $message")
-                    findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
-                }
-
-                override fun onDismiss() {
-                    if (!securityPreferences.isSecurityEnabled) {
-                        findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
-                    }
-                    setupPasscodeDialog = null
-                    firstPasscode = null
-                }
-            })
-        }
-
-        setupPasscodeDialog?.show(childFragmentManager, "setup_passcode")
-    }
-
-    private fun showAuthenticationDialog(onAuthenticated: (Boolean) -> Unit) {
-        when (securityPreferences.authMethod) {
-            SecurityPreferences.AUTH_METHOD_BIOMETRIC -> {
-                if (biometricHelper.isBiometricAvailable()) {
-                    biometricHelper.showBiometricPrompt(
-                        activity = requireActivity(),
-                        onSuccess = { onAuthenticated(true) },
-                        onError = { message ->
-                            if (securityPreferences.passcode != null) {
-                                showPasscodeAuthDialog(onAuthenticated)
-                            } else {
-                                onAuthenticated(false)
-                            }
-                        },
-                        onFailed = {
-                            if (securityPreferences.passcode != null) {
-                                showPasscodeAuthDialog(onAuthenticated)
-                            } else {
-                                onAuthenticated(false)
-                            }
-                        }
-                    )
-                } else {
-                    showPasscodeAuthDialog(onAuthenticated)
-                }
-            }
-            else -> showPasscodeAuthDialog(onAuthenticated)
-        }
-    }
-
-    private fun showPasscodeAuthDialog(onAuthenticated: (Boolean) -> Unit) {
-        PasscodeDialog.newInstance(
-            mode = PasscodeDialog.Mode.VERIFY,
-            title = getString(R.string.authentication_required),
-            message = getString(R.string.enter_passcode_to_continue)
-        ).apply {
-            setCallback(object : PasscodeDialog.PasscodeDialogCallback {
-                override fun onPasscodeConfirmed(passcode: String) {
-                    onAuthenticated(true)
-                    dismiss()
-                }
-
-                override fun onError(message: String) {
-                    onAuthenticated(false)
-                }
-
-                override fun onDismiss() {
-                    onAuthenticated(false)
-                }
-            })
-        }.show(childFragmentManager, "verify_passcode")
-    }
-
-    private fun updateSecurityPreferencesState(enabled: Boolean) {
-        findPreference<PreferenceCategory>("security_settings")?.isVisible = true
-        findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = enabled
-
-        findPreference<ListPreference>("auth_method")?.apply {
-            isEnabled = enabled
-            value = securityPreferences.authMethod
-        }
-
-        findPreference<EditTextPreference>("passcode")?.apply {
-            isEnabled = enabled
-            summary = if (enabled) "Change passcode" else "Set up passcode first"
-        }
-
-        findPreference<SwitchPreferenceCompat>("allow_biometric")?.apply {
-            isEnabled = enabled && biometricHelper.isBiometricAvailable()
-            isChecked = securityPreferences.allowBiometric
-            isVisible = biometricHelper.isBiometricAvailable()
-        }
     }
 
     private fun setupDisplayModeSelection() {
