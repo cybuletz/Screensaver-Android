@@ -49,9 +49,6 @@ open class PhotoLockActivity : AppCompatActivity() {
 
     protected val backgroundImageView: ImageView get() = _backgroundImageView!!
     protected val overlayImageView: ImageView get() = _overlayImageView!!
-    protected val clockView: TextClock get() = _clockView!!
-    protected val dateView: TextView get() = _dateView!!
-    protected val unlockHint: TextView get() = _unlockHint!!
 
     protected lateinit var gestureDetector: GestureDetectorCompat
     private var previewStartTime: Long = 0

@@ -15,6 +15,7 @@ class SecurityPreferenceDialog : DialogFragment() {
     companion object {
         fun newInstance() = SecurityPreferenceDialog()
     }
+    private var securityFragment: SecurityPreferenceFragment? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,17 +33,25 @@ class SecurityPreferenceDialog : DialogFragment() {
             title = getString(R.string.security_preferences_title)
         }
 
+        securityFragment = SecurityPreferenceFragment()
         childFragmentManager
             .beginTransaction()
-            .replace(R.id.security_preferences_container, SecurityPreferenceFragment())
+            .replace(R.id.security_preferences_container, securityFragment!!)
             .commit()
 
         view.findViewById<MaterialButton>(R.id.cancel_button).setOnClickListener {
+            securityFragment?.cancelChanges()
             dismiss()
         }
 
         view.findViewById<MaterialButton>(R.id.ok_button).setOnClickListener {
+            securityFragment?.applyChanges()
             dismiss()
         }
+    }
+
+    override fun onDestroyView() {
+        securityFragment = null
+        super.onDestroyView()
     }
 }

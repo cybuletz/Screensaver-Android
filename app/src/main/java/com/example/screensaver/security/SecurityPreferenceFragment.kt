@@ -27,6 +27,9 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
     private var setupPasscodeDialog: PasscodeDialog? = null
     private var firstPasscode: String? = null
 
+    private var pendingSecurityChanges = false
+    private var pendingEnable = false
+
     companion object {
         private const val TAG = "SecurityPreferenceFragment"
     }
@@ -42,11 +45,19 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
             isChecked = securityPreferences.isSecurityEnabled
             setOnPreferenceChangeListener { _, newValue ->
                 val enabled = newValue as Boolean
+                pendingSecurityChanges = true
+                pendingEnable = enabled
                 if (enabled) {
                     showPasscodeSetupDialog()
                 } else {
-                    showAuthenticationDialog {
-                        if (it) disableSecurity() else isChecked = true
+                    showAuthenticationDialog { authenticated ->
+                        if (authenticated) {
+                            isChecked = false // Update the UI immediately
+                            // Actual disable happens when OK is pressed
+                        } else {
+                            isChecked = true
+                            pendingSecurityChanges = false
+                        }
                     }
                 }
                 false // Don't update state yet
@@ -131,6 +142,30 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
         }
     }
 
+    fun applyChanges() {
+        if (pendingSecurityChanges) {
+            if (!pendingEnable) {
+                // If we're disabling security, do it immediately
+                disableSecurity()
+            }
+            // If we're enabling security, it's already done through the passcode dialog
+            pendingSecurityChanges = false
+        }
+    }
+
+    fun cancelChanges() {
+        if (pendingSecurityChanges) {
+            // Revert any pending changes
+            if (pendingEnable) {
+                // If security was enabled but not confirmed, disable it
+                disableSecurity()
+            }
+            // Reset UI state to match current preferences
+            updatePreferencesState(securityPreferences.isSecurityEnabled)
+            pendingSecurityChanges = false
+        }
+    }
+
     private fun enableSecurity(passcode: String) {
         lifecycleScope.launch {
             try {
@@ -150,6 +185,8 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
                 withContext(Dispatchers.Main) {
                     updatePreferencesState(true)
                     findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
+                    pendingSecurityChanges = true
+                    pendingEnable = true
                     setupPasscodeDialog?.dismiss()
                 }
             } catch (e: Exception) {
@@ -170,6 +207,8 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
                 authManager.resetAuthenticationState()
                 withContext(Dispatchers.Main) {
                     updatePreferencesState(false)
+                    findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
+                    pendingSecurityChanges = false
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
