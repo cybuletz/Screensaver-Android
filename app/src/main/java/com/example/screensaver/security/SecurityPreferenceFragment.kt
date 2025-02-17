@@ -35,6 +35,8 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
     private var pendingSecurityChanges = false
     private var pendingEnable = false
     private var pendingDisableAuthentication = false
+    private var pendingPasscode: String? = null
+
 
     companion object {
         private const val TAG = "SecurityPreferenceFragment"
@@ -131,7 +133,11 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
                 message = getString(R.string.confirm_passcode_message)
             )
         } else if (passcode == firstPasscode) {
-            enableSecurity(passcode)
+            // Store passcode for later instead of enabling immediately
+            pendingPasscode = passcode
+            setupPasscodeDialog?.dismiss()
+            // Keep the switch visually on
+            findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
         } else {
             firstPasscode = null
             Toast.makeText(context, getString(R.string.passcode_mismatch), Toast.LENGTH_SHORT).show()
@@ -145,19 +151,21 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
     fun applyChanges() {
         if (pendingSecurityChanges) {
             if (!pendingEnable) {
-                // Show authentication dialog when applying changes (pressing OK)
+                // Existing disable logic remains unchanged
                 showAuthenticationDialog { authenticated ->
                     if (authenticated) {
-                        // User authenticated successfully, perform complete security cleanup
                         disableSecurity()
                     } else {
-                        // Authentication failed, revert the switch
                         findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
                         pendingSecurityChanges = false
                         pendingDisableAuthentication = false
                         pendingEnable = true
                     }
                 }
+            } else if (pendingPasscode != null) {
+                // Now actually enable security with the stored passcode
+                enableSecurity(pendingPasscode!!)
+                pendingPasscode = null
             }
         }
     }
@@ -167,17 +175,16 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
             Log.d(TAG, "Canceling pending security changes")
 
             if (pendingDisableAuthentication) {
-                // Reset the switch state
                 findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
                 pendingDisableAuthentication = false
+            } else if (pendingEnable) {
+                // Revert the switch if we were enabling security
+                findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
             }
 
-            // Keep existing cancel logic
-            securityPreferences.isSecurityEnabled = true
-            (activity as? MainActivity)?.enableSecurity()
-            updatePreferencesState(true)
-            findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
-
+            // Clear pending states
+            pendingPasscode = null
+            firstPasscode = null
             pendingSecurityChanges = false
             pendingEnable = false
         }
