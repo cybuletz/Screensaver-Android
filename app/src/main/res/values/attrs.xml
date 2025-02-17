@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="PhotoDisplayView">
+        <attr name="transitionDuration" format="integer" />
+        <attr name="autoStart" format="boolean" />
+        <attr name="photoInterval" format="integer" />
+    </declare-styleable>
+</resources>
