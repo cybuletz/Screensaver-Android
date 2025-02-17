@@ -8,6 +8,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.*
 import com.example.screensaver.MainActivity
 import com.example.screensaver.R
+import com.example.screensaver.data.SecureStorage
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,6 +25,9 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var biometricHelper: BiometricHelper
+
+    @Inject
+    lateinit var secureStorage: SecureStorage
 
     private var setupPasscodeDialog: PasscodeDialog? = null
     private var firstPasscode: String? = null
@@ -140,15 +144,14 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
 
     fun applyChanges() {
         if (pendingSecurityChanges) {
-            if (!pendingEnable && pendingDisableAuthentication) {
+            if (!pendingEnable) {
                 // Show authentication dialog when applying changes (pressing OK)
                 showAuthenticationDialog { authenticated ->
                     if (authenticated) {
-                        // User authenticated successfully, proceed with disable
+                        // User authenticated successfully, perform complete security cleanup
                         disableSecurity()
-                        pendingDisableAuthentication = false
                     } else {
-                        // Authentication failed, revert everything
+                        // Authentication failed, revert the switch
                         findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
                         pendingSecurityChanges = false
                         pendingDisableAuthentication = false
@@ -156,8 +159,6 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
                     }
                 }
             }
-            // Keep existing enable security logic
-            // pendingSecurityChanges will be handled as before for enable case
         }
     }
 
@@ -219,17 +220,49 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
     private fun disableSecurity() {
         lifecycleScope.launch {
             try {
+                // Clear all security preferences
                 securityPreferences.clearAll()
+
+                // Reset authentication state
                 authManager.resetAuthenticationState()
 
-                // Get reference to MainActivity and clear security state
+                // Clear any stored credentials in secure storage
+                secureStorage.clearSecurityCredentials()
+
+                // Reset any security flags in secure storage
+                secureStorage.setRemoveSecurityOnRestart(false)
+                secureStorage.setRemoveSecurityOnMinimize(false)
+
+                // Update the security enabled flag last
+                securityPreferences.isSecurityEnabled = false
+
+                // Get reference to MainActivity and clear all security states
                 (activity as? MainActivity)?.clearSecurityState()
 
                 withContext(Dispatchers.Main) {
+                    // Update UI state
                     updatePreferencesState(false)
                     findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
+
+                    // Reset all pending flags
                     pendingSecurityChanges = false
+                    pendingEnable = false
+                    pendingDisableAuthentication = false
+
+                    // Ensure biometric preference is reset
+                    findPreference<SwitchPreferenceCompat>("allow_biometric")?.apply {
+                        isChecked = false
+                        isEnabled = false
+                    }
+
+                    // Reset auth method
+                    findPreference<ListPreference>("auth_method")?.apply {
+                        value = SecurityPreferences.AUTH_METHOD_NONE
+                        isEnabled = false
+                    }
                 }
+
+                Log.d(TAG, "Security completely disabled and all related data cleared")
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     showError("Failed to clear security settings", e)

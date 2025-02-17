@@ -1162,29 +1162,49 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun clearSecurityState() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                stopLockTask()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error stopping lock task", e)
+        try {
+            // Stop lock task mode if active
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    stopLockTask()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error stopping lock task", e)
+                }
             }
+
+            // Clear ALL security-related window flags
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+
+            // Reset window attributes for display cutout mode
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            }
+
+            // Reset to default immersive mode without security
+            window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+
+            // Maintain basic fullscreen experience
+            enableFullScreen()
+
+            // Reset any authentication state
+            authManager.resetAuthenticationState()
+
+            // Clear any pending security operations
+            secureStorage.setRemoveSecurityOnRestart(false)
+            secureStorage.setRemoveSecurityOnMinimize(false)
+
+            Log.d(TAG, "Security state completely cleared")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing security state", e)
         }
-
-        // Clear secure flags
-        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
-        window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
-
-        // Reset to default immersive mode without security
-        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
-
-        // Maintain fullscreen experience
-        enableFullScreen()
     }
 
 }
