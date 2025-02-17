@@ -123,6 +123,19 @@ class MainActivity : AppCompatActivity() {
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+
+        // Add a listener to maintain fullscreen when system UI visibility changes
+        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+            if (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
+                // The system bars are visible. Make any desired adjustments.
+                window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        or View.SYSTEM_UI_FLAG_FULLSCREEN
+                        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+            }
+        }
     }
 
     private fun observeSecurityState() {
@@ -136,6 +149,22 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun observeSecurityPreferences() {
+        lifecycleScope.launch {
+            securityPreferences.securityEnabledFlow.collect { isEnabled ->
+                if (isEnabled) {
+                    setupSecurityLock()
+                } else {
+                    clearSecurityState()
+                }
+            }
+        }
+    }
+
+    fun enableSecurity() {
+        setupSecurityLock()
     }
 
     private fun continueWithAuthenticated() {
@@ -566,30 +595,6 @@ class MainActivity : AppCompatActivity() {
         }.show(supportFragmentManager, "verify_passcode")
     }
 
-    private fun observeSecurityPreferences() {
-        lifecycleScope.launch {
-            securityPreferences.securityEnabledFlow.collect { isEnabled ->
-                if (isEnabled) {
-                    setupSecurityLock()
-                } else {
-                    // Instead of disabling security lock, we need to:
-                    // 1. Reset authentication state
-                    authManager.resetAuthenticationState()
-                    // 2. Stop lock task mode if it's running
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        try {
-                            stopLockTask()
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error stopping lock task", e)
-                        }
-                    }
-                    // 3. Clear secure flags
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-                }
-            }
-        }
-    }
-
     private fun setupSecurityLock() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startLockTask()
@@ -723,20 +728,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        when (navController.currentDestination?.id) {
-            R.id.settingsFragment -> {
+        when {
+            navController.currentDestination?.id == R.id.settingsFragment -> {
                 navController.navigateUp()
             }
-            R.id.mainFragment -> {
-                if (securityPreferences.isSecurityEnabled) {
-                    checkSecurityWithCallback {
-                        handleBackPress()
+            securityPreferences.isSecurityEnabled -> {
+                // Only check security when enabled
+                checkSecurityWithCallback {
+                    // Only after successful authentication
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            stopLockTask()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error stopping lock task", e)
+                        }
                     }
-                } else {
-                    handleBackPress()
+                    moveTaskToBack(true)
                 }
             }
-            else -> super.onBackPressed()
+            else -> {
+                // No security, just minimize immediately
+                moveTaskToBack(true)
+            }
         }
     }
 
@@ -861,11 +874,15 @@ class MainActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
-            setupFullScreen()
-            if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
-                checkSecurityWithCallback {
-                    continueWithAuthenticated()
+            if (securityPreferences.isSecurityEnabled) {
+                setupSecurityLock()
+                if (!authManager.isAuthenticated()) {
+                    checkSecurityWithCallback {
+                        continueWithAuthenticated()
+                    }
                 }
+            } else {
+                enableFullScreen()  // Maintain fullscreen even without security
             }
         }
     }
@@ -1143,4 +1160,31 @@ class MainActivity : AppCompatActivity() {
             super.onDestroy()
         }
     }
+
+    fun clearSecurityState() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                stopLockTask()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping lock task", e)
+            }
+        }
+
+        // Clear secure flags
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+
+        // Reset to default immersive mode without security
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+
+        // Maintain fullscreen experience
+        enableFullScreen()
+    }
+
 }

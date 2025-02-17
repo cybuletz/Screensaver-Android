@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.*
+import com.example.screensaver.MainActivity
 import com.example.screensaver.R
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -155,13 +156,18 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
 
     fun cancelChanges() {
         if (pendingSecurityChanges) {
-            // Revert any pending changes
-            if (pendingEnable) {
-                // If security was enabled but not confirmed, disable it
-                disableSecurity()
-            }
+            Log.d(TAG, "Canceling pending security changes")
+
+            // Reset to previous security state
+            securityPreferences.isSecurityEnabled = true  // Since we're canceling disable
+
+            // Make sure security is re-enabled in MainActivity
+            (activity as? MainActivity)?.enableSecurity()
+
             // Reset UI state to match current preferences
-            updatePreferencesState(securityPreferences.isSecurityEnabled)
+            updatePreferencesState(true)
+            findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
+
             pendingSecurityChanges = false
         }
     }
@@ -205,6 +211,10 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
             try {
                 securityPreferences.clearAll()
                 authManager.resetAuthenticationState()
+
+                // Get reference to MainActivity and clear security state
+                (activity as? MainActivity)?.clearSecurityState()
+
                 withContext(Dispatchers.Main) {
                     updatePreferencesState(false)
                     findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
