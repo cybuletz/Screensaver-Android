@@ -138,6 +138,59 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun observeSecurityPreferences() {
+        lifecycleScope.launch {
+            securityPreferences.securityEnabledFlow.collect { isEnabled ->
+                if (isEnabled) {
+                    setupSecurityLock()
+                } else {
+                    // Disable security lock
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            stopLockTask()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error stopping lock task", e)
+                        }
+                    }
+                    // Clear secure flags
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+                    // Reset system UI visibility
+                    window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+                }
+            }
+        }
+    }
+
+    private fun setupSecurityLock() {
+        // First set secure flags
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+
+        // Enhanced immersive sticky mode with all flags
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LOW_PROFILE
+                or View.SYSTEM_UI_FLAG_IMMERSIVE
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+
+        // Block status bar access
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        // Start lock task mode last
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startLockTask()
+        }
+    }
+
     private fun continueWithAuthenticated() {
         if (navController.currentDestination?.id == R.id.mainFragment) {
             photoDisplayManager.startPhotoDisplay()
@@ -161,12 +214,6 @@ class MainActivity : AppCompatActivity() {
         // Add these flags to prevent screenshots and recent apps preview
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
-        if (securityPreferences.isSecurityEnabled) {
-            // Request lock task mode
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startLockTask()
-            }
-        }
 
         try {
             // Rest of your existing onCreate implementation...
@@ -566,37 +613,6 @@ class MainActivity : AppCompatActivity() {
         }.show(supportFragmentManager, "verify_passcode")
     }
 
-    private fun observeSecurityPreferences() {
-        lifecycleScope.launch {
-            securityPreferences.securityEnabledFlow.collect { isEnabled ->
-                if (isEnabled) {
-                    setupSecurityLock()
-                } else {
-                    // Instead of disabling security lock, we need to:
-                    // 1. Reset authentication state
-                    authManager.resetAuthenticationState()
-                    // 2. Stop lock task mode if it's running
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        try {
-                            stopLockTask()
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error stopping lock task", e)
-                        }
-                    }
-                    // 3. Clear secure flags
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-                }
-            }
-        }
-    }
-
-    private fun setupSecurityLock() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startLockTask()
-        }
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-    }
-
     private fun setupFullScreen() {
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -604,16 +620,6 @@ class MainActivity : AppCompatActivity() {
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
-
-        // Prevent recent apps preview
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-
-        // Lock to current task when security is enabled
-        if (securityPreferences.isSecurityEnabled) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startLockTask()
-            }
-        }
     }
 
     private fun checkInitialChargingState() {
@@ -704,62 +710,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleBackPress() {
-        if (securityPreferences.isSecurityEnabled) {
-            // First stop any lock task mode
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                try {
-                    stopLockTask()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error stopping lock task", e)
+    override fun onBackPressed() {
+        when {
+            securityPreferences.isSecurityEnabled -> {
+                checkSecurityWithCallback {
+                    // Only after successful authentication
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            stopLockTask()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error stopping lock task", e)
+                        }
+                    }
+                    if (navController.currentDestination?.id == R.id.settingsFragment) {
+                        navController.navigateUp()
+                    } else {
+                        moveTaskToBack(true)
+                    }
                 }
             }
-            // Reset authentication state and move to back
-            authManager.resetAuthenticationState()
-            moveTaskToBack(true)
-        } else {
-            moveTaskToBack(true)
-        }
-    }
-
-    override fun onBackPressed() {
-        when (navController.currentDestination?.id) {
-            R.id.settingsFragment -> {
+            navController.currentDestination?.id == R.id.settingsFragment -> {
                 navController.navigateUp()
             }
-            R.id.mainFragment -> {
-                if (securityPreferences.isSecurityEnabled) {
-                    checkSecurityWithCallback {
-                        handleBackPress()
-                    }
-                } else {
-                    handleBackPress()
-                }
+            else -> {
+                moveTaskToBack(true)
             }
-            else -> super.onBackPressed()
         }
     }
 
     private fun preventUnauthorizedClosure() {
         onBackPressedDispatcher.addCallback(this) {
-            when {
-                navController.currentDestination?.id == R.id.settingsFragment -> {
-                    navController.navigateUp()
-                }
-                navController.currentDestination?.id == R.id.mainFragment -> {
-                    if (securityPreferences.isSecurityEnabled) {
-                        checkSecurityWithCallback {
-                            handleBackPress()
-                        }
-                    } else {
-                        handleBackPress()
-                    }
-                }
-                else -> {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                }
-            }
+            onBackPressed()
         }
     }
 
@@ -1028,13 +1009,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        if (securityPreferences.isSecurityEnabled && !isAuthenticating) {
-            moveTaskToBack(true)  // Force app to background on home button
-        }
-    }
-
     override fun onStop() {
         super.onStop()
         // Always reset auth state when stopping the activity
@@ -1085,23 +1059,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSupportNavigateUp(): Boolean {
         return navController.navigateUp() || super.onSupportNavigateUp()
-    }
-
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.main_menu, menu)
-        menu.add(Menu.NONE, MENU_CLEAR_CACHE, Menu.NONE, "Clear Photo Cache")
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            MENU_CLEAR_CACHE -> {
-                photoDisplayManager.clearPhotoCache()
-                showToast("Photo cache cleared")
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
     }
 
     override fun onLowMemory() {

@@ -105,20 +105,7 @@ open class PhotoLockActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (isPreviewMode) {
-                    finish()
-                } else {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        onBackPressedDispatcher.onBackPressed()
-                    } else {
-                        @Suppress("DEPRECATION")
-                        super@PhotoLockActivity.onBackPressed()
-                    }
-                }
-            }
-        })
+
         setContentView(R.layout.activity_photo_lock)
         glide = Glide.with(this)
         initializeViews()
@@ -161,26 +148,8 @@ open class PhotoLockActivity : AppCompatActivity() {
     protected open fun setupWindow() {
         screenWidth = resources.displayMetrics.widthPixels
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            )
-        }
-
+        // Only keep screen on flag
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            keyguardManager.requestDismissKeyguard(this, null)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
-        }
 
         updatePowerSavingMode()
     }
@@ -232,6 +201,10 @@ open class PhotoLockActivity : AppCompatActivity() {
                 return true
             }
         })
+    }
+
+    override fun onBackPressed() {
+        finish()
     }
 
     private fun initializePhotos() {
