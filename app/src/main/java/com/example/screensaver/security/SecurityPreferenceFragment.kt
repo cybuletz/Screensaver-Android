@@ -8,6 +8,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.*
 import com.example.screensaver.MainActivity
 import com.example.screensaver.R
+import com.example.screensaver.data.SecureStorage
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -25,11 +26,17 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
     @Inject
     lateinit var biometricHelper: BiometricHelper
 
+    @Inject
+    lateinit var secureStorage: SecureStorage
+
     private var setupPasscodeDialog: PasscodeDialog? = null
     private var firstPasscode: String? = null
 
     private var pendingSecurityChanges = false
     private var pendingEnable = false
+    private var pendingDisableAuthentication = false
+    private var pendingPasscode: String? = null
+
 
     companion object {
         private const val TAG = "SecurityPreferenceFragment"
@@ -51,15 +58,9 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
                 if (enabled) {
                     showPasscodeSetupDialog()
                 } else {
-                    showAuthenticationDialog { authenticated ->
-                        if (authenticated) {
-                            isChecked = false // Update the UI immediately
-                            // Actual disable happens when OK is pressed
-                        } else {
-                            isChecked = true
-                            pendingSecurityChanges = false
-                        }
-                    }
+                    // Just store the intent to disable, don't show auth yet
+                    pendingDisableAuthentication = true
+                    isChecked = false // Update UI immediately
                 }
                 false // Don't update state yet
             }
@@ -132,7 +133,11 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
                 message = getString(R.string.confirm_passcode_message)
             )
         } else if (passcode == firstPasscode) {
-            enableSecurity(passcode)
+            // Store passcode for later instead of enabling immediately
+            pendingPasscode = passcode
+            setupPasscodeDialog?.dismiss()
+            // Keep the switch visually on
+            findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
         } else {
             firstPasscode = null
             Toast.makeText(context, getString(R.string.passcode_mismatch), Toast.LENGTH_SHORT).show()
@@ -146,11 +151,22 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
     fun applyChanges() {
         if (pendingSecurityChanges) {
             if (!pendingEnable) {
-                // If we're disabling security, do it immediately
-                disableSecurity()
+                // Existing disable logic remains unchanged
+                showAuthenticationDialog { authenticated ->
+                    if (authenticated) {
+                        disableSecurity()
+                    } else {
+                        findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
+                        pendingSecurityChanges = false
+                        pendingDisableAuthentication = false
+                        pendingEnable = true
+                    }
+                }
+            } else if (pendingPasscode != null) {
+                // Now actually enable security with the stored passcode
+                enableSecurity(pendingPasscode!!)
+                pendingPasscode = null
             }
-            // If we're enabling security, it's already done through the passcode dialog
-            pendingSecurityChanges = false
         }
     }
 
@@ -158,17 +174,19 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
         if (pendingSecurityChanges) {
             Log.d(TAG, "Canceling pending security changes")
 
-            // Reset to previous security state
-            securityPreferences.isSecurityEnabled = true  // Since we're canceling disable
+            if (pendingDisableAuthentication) {
+                findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
+                pendingDisableAuthentication = false
+            } else if (pendingEnable) {
+                // Revert the switch if we were enabling security
+                findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
+            }
 
-            // Make sure security is re-enabled in MainActivity
-            (activity as? MainActivity)?.enableSecurity()
-
-            // Reset UI state to match current preferences
-            updatePreferencesState(true)
-            findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = true
-
+            // Clear pending states
+            pendingPasscode = null
+            firstPasscode = null
             pendingSecurityChanges = false
+            pendingEnable = false
         }
     }
 
@@ -209,17 +227,49 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
     private fun disableSecurity() {
         lifecycleScope.launch {
             try {
+                // Clear all security preferences
                 securityPreferences.clearAll()
+
+                // Reset authentication state
                 authManager.resetAuthenticationState()
 
-                // Get reference to MainActivity and clear security state
+                // Clear any stored credentials in secure storage
+                secureStorage.clearSecurityCredentials()
+
+                // Reset any security flags in secure storage
+                secureStorage.setRemoveSecurityOnRestart(false)
+                secureStorage.setRemoveSecurityOnMinimize(false)
+
+                // Update the security enabled flag last
+                securityPreferences.isSecurityEnabled = false
+
+                // Get reference to MainActivity and clear all security states
                 (activity as? MainActivity)?.clearSecurityState()
 
                 withContext(Dispatchers.Main) {
+                    // Update UI state
                     updatePreferencesState(false)
                     findPreference<SwitchPreferenceCompat>("security_enabled")?.isChecked = false
+
+                    // Reset all pending flags
                     pendingSecurityChanges = false
+                    pendingEnable = false
+                    pendingDisableAuthentication = false
+
+                    // Ensure biometric preference is reset
+                    findPreference<SwitchPreferenceCompat>("allow_biometric")?.apply {
+                        isChecked = false
+                        isEnabled = false
+                    }
+
+                    // Reset auth method
+                    findPreference<ListPreference>("auth_method")?.apply {
+                        value = SecurityPreferences.AUTH_METHOD_NONE
+                        isEnabled = false
+                    }
                 }
+
+                Log.d(TAG, "Security completely disabled and all related data cleared")
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     showError("Failed to clear security settings", e)
