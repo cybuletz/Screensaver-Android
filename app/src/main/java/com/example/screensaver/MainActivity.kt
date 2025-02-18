@@ -163,10 +163,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun enableSecurity() {
-        setupSecurityLock()
-    }
-
     private fun continueWithAuthenticated() {
         if (navController.currentDestination?.id == R.id.mainFragment) {
             photoDisplayManager.startPhotoDisplay()
@@ -751,6 +747,14 @@ class MainActivity : AppCompatActivity() {
                 moveTaskToBack(true)
             }
         }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            onBackPressed()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     private fun preventUnauthorizedClosure() {
