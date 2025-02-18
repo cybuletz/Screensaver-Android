@@ -72,18 +72,6 @@ class SecureStorage @Inject constructor(
         }
     }
 
-    fun setRemoveSecurityOnRestart(enabled: Boolean) {
-        PreferenceManager.getDefaultSharedPreferences(context)
-            .edit()
-            .putBoolean(PREF_REMOVE_SECURITY_ON_RESTART, enabled)
-            .apply()
-    }
-
-    fun shouldRemoveSecurityOnRestart(): Boolean {
-        return PreferenceManager.getDefaultSharedPreferences(context)
-            .getBoolean(PREF_REMOVE_SECURITY_ON_RESTART, false)
-    }
-
     fun setRemoveSecurityOnMinimize(enabled: Boolean) {
         PreferenceManager.getDefaultSharedPreferences(context)
             .edit()

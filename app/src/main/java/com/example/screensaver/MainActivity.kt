@@ -172,11 +172,17 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Check if security should be removed on restart - ADD THIS BLOCK
-        if (secureStorage.shouldRemoveSecurityOnRestart()) {
-            Log.d(TAG, "Removing security settings on restart")
+        // Check if this is a cold start (savedInstanceState is null) and security is enabled
+        if (savedInstanceState == null && securityPreferences.isSecurityEnabled) {
+            Log.d(TAG, "Cold start detected - removing security settings")
             securityPreferences.isSecurityEnabled = false
-            secureStorage.setRemoveSecurityOnRestart(false)
+            secureStorage.clearSecurityCredentials()
+            Log.d(TAG, "Security settings have been removed")
+        }
+        // Check if security should be removed on minimize state change
+        else if (secureStorage.shouldRemoveSecurityOnMinimize()) {
+            Log.d(TAG, "Removing security settings on minimize")
+            securityPreferences.isSecurityEnabled = false
             secureStorage.clearSecurityCredentials()
             Log.d(TAG, "Security settings have been removed")
         }
@@ -194,7 +200,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         try {
-            // Rest of your existing onCreate implementation...
             // Handle start from charging receiver
             if (intent?.getBooleanExtra("start_screensaver", false) == true) {
                 Log.d(TAG, "Started from charging receiver at ${intent?.getLongExtra("timestamp", 0L)}")
@@ -1202,7 +1207,6 @@ class MainActivity : AppCompatActivity() {
             authManager.resetAuthenticationState()
 
             // Clear any pending security operations
-            secureStorage.setRemoveSecurityOnRestart(false)
             secureStorage.setRemoveSecurityOnMinimize(false)
 
             Log.d(TAG, "Security state completely cleared")
