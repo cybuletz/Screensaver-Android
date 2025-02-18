@@ -600,7 +600,13 @@ class AlbumSelectionActivity : AppCompatActivity() {
         val photos = withContext(Dispatchers.IO) {
             val allPhotos = mutableListOf<MediaItem>()
             selectedAlbumIds.forEach { albumId ->
-                allPhotos.addAll(lockScreenPhotoManager.getPhotosFromAlbum(albumId))
+                try {
+                    val albumPhotos = lockScreenPhotoManager.getPhotosFromAlbum(albumId)
+                    allPhotos.addAll(albumPhotos)
+                } catch (e: SecurityException) {
+                    // Log error but keep going with other albums
+                    Log.e(TAG, "Security permission error for album $albumId", e)
+                }
             }
             allPhotos
         }

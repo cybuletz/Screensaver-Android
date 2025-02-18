@@ -86,6 +86,7 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var secureStorage: SecureStorage
 
+
     private var isDestroyed = false
 
     private var isAuthenticating = false
@@ -188,19 +189,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         enableFullScreen()
-
-        // Add these flags to prevent screenshots and recent apps preview
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
         if (securityPreferences.isSecurityEnabled) {
-            // Request lock task mode
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startLockTask()
             }
         }
 
         try {
-            // Handle start from charging receiver
             if (intent?.getBooleanExtra("start_screensaver", false) == true) {
                 Log.d(TAG, "Started from charging receiver at ${intent?.getLongExtra("timestamp", 0L)}")
             }
@@ -208,44 +205,39 @@ class MainActivity : AppCompatActivity() {
             ensureBinding()
             observeSecurityState()
             observeSecurityPreferences()
-
-            // Initialize Widgets first
             initializeWidgetSystem()
-
             setupFullScreen()
             setupFirstLaunchUI()
             setupNavigation()
             setupSettingsButton()
             setupTouchListener()
             initializePhotoDisplayManager()
+
+            // Add validation here after photo manager is initialized
+            photoManager.validateStoredPhotos()
+
             startLockScreenService()
             initializePhotos()
-            preventUnauthorizedClosure() // Add security closure prevention
+            preventUnauthorizedClosure()
 
-            // Update photo sources and start display
             photoDisplayManager.updatePhotoSources()
-
-            // Check initial charging state
             checkInitialChargingState()
 
-            // Start photo display if on main fragment
             if (navController.currentDestination?.id == R.id.mainFragment) {
                 lifecycleScope.launch {
-                    delay(500) // Small delay to ensure everything is initialized
+                    delay(500)
                     photoDisplayManager.startPhotoDisplay()
                 }
             }
 
-            // If started from charging, ensure we're in proper state
             if (intent?.getBooleanExtra("start_screensaver", false) == true) {
                 lifecycleScope.launch {
                     try {
-                        // Ensure we're on main fragment
                         if (navController.currentDestination?.id != R.id.mainFragment) {
                             navController.navigate(R.id.mainFragment)
                         }
-                        delay(500) // Give time for navigation
-                        setupFullScreen() // Ensure fullscreen
+                        delay(500)
+                        setupFullScreen()
                         photoDisplayManager.startPhotoDisplay()
                     } catch (e: Exception) {
                         Log.e(TAG, "Error handling charging start", e)
@@ -253,7 +245,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Observe widget states
             observeWidgetStates()
 
         } catch (e: Exception) {

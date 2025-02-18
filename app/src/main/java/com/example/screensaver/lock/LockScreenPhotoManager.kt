@@ -2,6 +2,7 @@ package com.example.screensaver.lock
 
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
@@ -269,6 +270,42 @@ class LockScreenPhotoManager @Inject constructor(
         mediaItems.addAll(photos)
         saveItems()
         Log.d(TAG, "Added ${photos.size} photos, total count: ${mediaItems.size}")
+    }
+
+    fun validateStoredPhotos() {
+        try {
+            val currentPhotos = loadPhotos() ?: emptyList()
+
+            // Check each photo URI and remove invalid ones
+            val validPhotos = currentPhotos.filter { photo -> // No need to specify MediaItem type as it's inferred
+                try {
+                    val uri = Uri.parse(photo.baseUrl)
+                    if (uri.toString().startsWith("content://media/picker/")) {
+                        // For picker URIs, check if we have permission
+                        context.contentResolver.persistedUriPermissions.any {
+                            it.uri == uri && it.isReadPermission
+                        }
+                    } else {
+                        // Not a picker URI, consider valid
+                        true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error validating photo URI: ${photo.baseUrl}", e)
+                    false
+                }
+            }
+
+            // Update storage if needed
+            if (validPhotos.size < currentPhotos.size) {
+                Log.d(TAG, "Removing ${currentPhotos.size - validPhotos.size} invalid URIs")
+                clearPhotos()
+                if (validPhotos.isNotEmpty()) {
+                    addPhotos(validPhotos)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error validating photos", e)
+        }
     }
 
     fun addPhotoUrls(urls: List<String>) {
