@@ -38,6 +38,7 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
 import android.animation.Animator
 import android.animation.ObjectAnimator
+import android.graphics.drawable.BitmapDrawable
 import com.bumptech.glide.annotation.GlideModule
 import com.bumptech.glide.load.HttpException
 import com.example.screensaver.glide.GlideApp
@@ -61,6 +62,8 @@ class PhotoDisplayManager @Inject constructor(
     private val _cacheStatusMessage = MutableStateFlow<String?>(null)
 
     private val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+
+    private val random = Random.Default
 
     private var lastLoadedSource: String? = null
     private var lastPhotoUrl: String? = null
@@ -279,6 +282,70 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    private suspend fun getNextPhotoIndex(currentIndex: Int, totalPhotos: Int): Int =
+        withContext(Dispatchers.Default) {
+            when {
+                !isRandomOrder || totalPhotos <= 1 -> (currentIndex + 1) % totalPhotos
+                totalPhotos == 2 -> (currentIndex + 1) % 2
+                else -> {
+                    var nextIndex: Int
+                    do {
+                        nextIndex = Random.nextInt(totalPhotos)
+                    } while (nextIndex == currentIndex)
+                    nextIndex
+                }
+            }
+        }
+
+    private fun loadAndDisplayPhoto(fromCache: Boolean = false) {
+        if (isTransitioning) {
+            Log.d(TAG, "Skipping photo load - transition in progress")
+            return
+        }
+
+        val photoCount = photoManager.getPhotoCount()
+        if (photoCount == 0) {
+            Log.d(TAG, "No photos available, showing default photo")
+            showDefaultPhoto()
+            return
+        }
+
+        lifecycleScope?.launch {
+            try {
+                val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
+                val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: return@launch
+                Log.d(TAG, "Loading photo $nextIndex: $nextUrl")
+                val startTime = System.currentTimeMillis()
+
+                views?.let { views ->
+                    isTransitioning = true
+
+                    try {
+                        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                        val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
+
+                        resetViewProperties(views)
+
+                        withContext(Dispatchers.Main) {
+                            GlideApp.with(context)
+                                .load(nextUrl)
+                                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                                .error(R.drawable.default_photo)
+                                .listener(createGlideListener(views, nextIndex, startTime, transitionEffect))
+                                .into(views.overlayView)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in loadAndDisplayPhoto", e)
+                        isTransitioning = false
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error calculating next photo", e)
+                isTransitioning = false
+            }
+        }
+    }
+
     fun hideLoadingOverlay() {
         views?.let { views ->
             if (!isMainThread()) {
@@ -331,65 +398,6 @@ class PhotoDisplayManager @Inject constructor(
                 if (e !is CancellationException) {
                     Log.e(TAG, "Error in photo display loop", e)
                 }
-            }
-        }
-    }
-
-    private fun loadAndDisplayPhoto(fromCache: Boolean = false) {
-        if (isTransitioning) {
-            Log.d(TAG, "Skipping photo load - transition in progress")
-            return
-        }
-
-        val photoCount = photoManager.getPhotoCount()
-        if (photoCount == 0) {
-            Log.d(TAG, "No photos available, showing default photo")
-            showDefaultPhoto()
-            return
-        }
-
-        val nextIndex = if (isRandomOrder) {
-            if (photoCount == 2) {
-                // With only 2 photos, just alternate between them
-                (currentPhotoIndex + 1) % 2
-            } else {
-                // For 3+ photos, use random selection but avoid current photo
-                var newIndex = Random.nextInt(photoCount)
-                while (newIndex == currentPhotoIndex) {
-                    newIndex = Random.nextInt(photoCount)
-                }
-                newIndex
-            }
-        } else {
-            (currentPhotoIndex + 1) % photoCount
-        }
-
-        val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: return
-        Log.d(TAG, "Loading photo $nextIndex: $nextUrl")
-        val startTime = System.currentTimeMillis()
-
-        views?.let { views ->
-            isTransitioning = true
-
-            try {
-                // Get the current transition effect from preferences
-                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-                val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
-
-                // Reset view properties
-                resetViewProperties(views)
-
-                // Load the image using GlideApp
-                GlideApp.with(context)
-                    .load(nextUrl)
-                    .diskCacheStrategy(DiskCacheStrategy.ALL)
-                    .error(R.drawable.default_photo)
-                    .listener(createGlideListener(views, nextIndex, startTime, transitionEffect))
-                    .into(views.overlayView)
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in loadAndDisplayPhoto", e)
-                isTransitioning = false
             }
         }
     }
@@ -690,41 +698,50 @@ class PhotoDisplayManager @Inject constructor(
             return
         }
 
-        // Update primary view
-        views.primaryView.apply {
-            setImageDrawable(resource)
-            alpha = 1f
-            scaleX = 1f
-            scaleY = 1f
-            translationX = 0f
-            translationY = 0f
-            rotationX = 0f
-            rotationY = 0f
-            rotation = 0f
-            translationZ = 0f
-            visibility = View.VISIBLE
+        try {
+            // Clear the old drawable from the overlay view first
+            views.overlayView.setImageDrawable(null)
+
+            // Update primary view with the new drawable
+            views.primaryView.apply {
+                setImageDrawable(resource)
+                alpha = 1f
+                scaleX = 1f
+                scaleY = 1f
+                translationX = 0f
+                translationY = 0f
+                rotationX = 0f
+                rotationY = 0f
+                rotation = 0f
+                translationZ = 0f
+                visibility = View.VISIBLE
+            }
+
+            // Reset overlay view properties
+            views.overlayView.apply {
+                alpha = 0f
+                scaleX = 1f
+                scaleY = 1f
+                translationX = 0f
+                translationY = 0f
+                rotationX = 0f
+                rotationY = 0f
+                rotation = 0f
+                translationZ = 0f
+                visibility = View.INVISIBLE
+            }
+
+            // Hide any remaining messages
+            hideAllMessages()
+
+            isTransitioning = false
+            currentPhotoIndex = nextIndex
+            Log.d(TAG, "Transition completed to photo $nextIndex")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in completeTransition", e)
+            isTransitioning = false
         }
-
-        // Reset overlay view
-        views.overlayView.apply {
-            alpha = 0f
-            scaleX = 1f
-            scaleY = 1f
-            translationX = 0f
-            translationY = 0f
-            rotationX = 0f
-            rotationY = 0f
-            rotation = 0f
-            translationZ = 0f
-            visibility = View.INVISIBLE
-        }
-
-        // Hide any remaining messages
-        hideAllMessages()
-
-        isTransitioning = false
-        currentPhotoIndex = nextIndex
-        Log.d(TAG, "Transition completed to photo $nextIndex")
     }
 
     private fun Drawable.toBitmap(): Bitmap? {
@@ -747,6 +764,14 @@ class PhotoDisplayManager @Inject constructor(
             Log.e(TAG, "Error converting drawable to bitmap", e)
             null
         }
+    }
+
+    private fun isBitmapInUse(bitmap: Bitmap): Boolean {
+        return views?.let { views ->
+            val primaryBitmap = (views.primaryView.drawable as? BitmapDrawable)?.bitmap
+            val overlayBitmap = (views.overlayView.drawable as? BitmapDrawable)?.bitmap
+            bitmap === primaryBitmap || bitmap === overlayBitmap
+        } ?: false
     }
 
     fun updateSettings(

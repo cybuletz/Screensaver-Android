@@ -21,6 +21,7 @@ import com.example.screensaver.utils.PhotoLoadingManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import javax.inject.Inject
+import com.example.screensaver.lock.LockScreenPhotoManager.PhotoAddMode
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -125,33 +126,32 @@ class PhotoLockScreenService : Service() {
         initializationJob = serviceScope.launch {
             try {
                 val selectedAlbums = preferences.getSelectedAlbumIds()
+                Log.d(TAG, "Initializing service with ${selectedAlbums.size} selected albums")
+
                 if (selectedAlbums.isNotEmpty()) {
                     if (googlePhotosManager.initialize()) {
                         val photos = googlePhotosManager.loadPhotos()
                         if (photos != null) {
-                            lockScreenPhotoManager.clearPhotos()
-                            lockScreenPhotoManager.addPhotos(photos)
-                            PreferenceManager.getDefaultSharedPreferences(this@PhotoLockScreenService)
-                                .edit()
-                                .putStringSet("photo_source_selection",
-                                    setOf("google_photos") + (PreferenceManager
-                                        .getDefaultSharedPreferences(this@PhotoLockScreenService)
-                                        .getStringSet("photo_source_selection", emptySet()) ?: emptySet())
+                            withContext(Dispatchers.IO) {
+                                // Don't clear existing photos, just append new ones
+                                lockScreenPhotoManager.addPhotos(
+                                    photos = photos,
+                                    mode = PhotoAddMode.APPEND
                                 )
-                                .apply()
+                            }
+
                             isInitialized = true
                             precachePhotos()
                         }
                     }
+                } else {
+                    Log.d(TAG, "No albums selected, keeping existing photos")
+                    isInitialized = true
                 }
             } catch (e: Exception) {
                 when (e) {
-                    is CancellationException -> {
-                        Log.d(TAG, "Initialization job was cancelled")
-                    }
-                    else -> {
-                        Log.e(TAG, "Error initializing service", e)
-                    }
+                    is CancellationException -> Log.d(TAG, "Initialization job was cancelled")
+                    else -> Log.e(TAG, "Error initializing service", e)
                 }
                 isInitialized = false
             }

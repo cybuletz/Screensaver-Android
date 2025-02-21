@@ -38,6 +38,7 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 import android.provider.MediaStore
 import androidx.preference.PreferenceManager
 import android.net.Uri
+import com.example.screensaver.lock.LockScreenPhotoManager.PhotoAddMode
 
 
 @AndroidEntryPoint
@@ -324,36 +325,53 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     viewModel.setLoading(true)
                     updateLoadingText(getString(R.string.processing_photos))
 
-                    val selectedUris = mutableSetOf<Uri>()
+                    val selectedMediaItems = mutableListOf<MediaItem>()
 
                     // Handle multiple selection
                     data?.clipData?.let { clipData ->
                         for (i in 0 until clipData.itemCount) {
                             clipData.getItemAt(i).uri?.let { uri ->
-                                contentResolver.takePersistableUriPermission(
-                                    uri,
-                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                )
-                                selectedUris.add(uri)
+                                try {
+                                    contentResolver.takePersistableUriPermission(
+                                        uri,
+                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                    )
+                                    // Convert URI to MediaItem with metadata
+                                    val mediaItem = createMediaItemFromUri(uri)
+                                    selectedMediaItems.add(mediaItem)
+
+                                    // Update loading progress
+                                    updateLoadingText(getString(R.string.processing_photo_progress,
+                                        i + 1,
+                                        clipData.itemCount))
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error processing photo at index $i", e)
+                                }
                             }
                         }
                     } ?: data?.data?.let { uri -> // Handle single selection
-                        contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
-                        selectedUris.add(uri)
+                        try {
+                            contentResolver.takePersistableUriPermission(
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                            // Convert single URI to MediaItem
+                            val mediaItem = createMediaItemFromUri(uri)
+                            selectedMediaItems.add(mediaItem)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error processing single photo", e)
+                        }
                     }
 
-                    if (selectedUris.isNotEmpty()) {
-                        // Clear existing photos and preferences
+                    if (selectedMediaItems.isNotEmpty()) {
                         withContext(Dispatchers.IO) {
                             photoManager.cleanup() // Clean up old state
-                            lockScreenPhotoManager.clearPhotos()
-
-                            // Save new URIs
-                            preferences.savePickedUris(selectedUris)
-                            // Clear any existing album selections since we're using picked photos
+                            // Add the new MediaItems with their metadata
+                            lockScreenPhotoManager.addPhotos(
+                                photos = selectedMediaItems,
+                                mode = PhotoAddMode.APPEND  // Explicitly use APPEND mode
+                            )
+                            // Clear album selections since we're using picked photos
                             preferences.clearSelectedAlbums()
                         }
 
@@ -361,7 +379,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                         val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
                             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
                             putExtra("albums_saved", true)
-                            putExtra("photo_count", selectedUris.size)
+                            putExtra("photo_count", selectedMediaItems.size)
                             putExtra("timestamp", System.currentTimeMillis())
                             putExtra("force_reload", true)
                         }
@@ -553,60 +571,20 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveSelectedAlbums() {
-        lifecycleScope.launch {
-            try {
-                viewModel.setLoading(true)
-                updateLoadingText("Saving selected albums...")
-
-                // 1. First save the selections
-                val selectedAlbums = albumAdapter.currentList
-                    .filter { it.isSelected }
-                    .map { it.id }
-                    .toSet()
-
-                // 2. Save selected album IDs
-                preferences.setSelectedAlbumIds(selectedAlbums)
-
-                // 3. Load and save photos based on source
-                if (photoSource == SOURCE_LOCAL_PHOTOS) {
-                    saveLocalPhotos(selectedAlbums)
-                } else {
-                    saveGooglePhotos()
-                }
-
-                // 4. Return to MainActivity but don't start slideshow
-                val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    putExtra("albums_saved", true) // Changed from "photos_ready" to "albums_saved"
-                    putExtra("photo_count", lockScreenPhotoManager.getPhotoCount())
-                    putExtra("timestamp", System.currentTimeMillis())
-                }
-                startActivity(mainIntent)
-                finish()
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during album selection save", e)
-                showToast(getString(R.string.save_error))
-            } finally {
-                viewModel.setLoading(false)
-            }
-        }
-    }
-
     private suspend fun saveLocalPhotos(selectedAlbumIds: Set<String>) {
         updateLoadingText("Loading photos from local albums...")
         val photos = withContext(Dispatchers.IO) {
             val allPhotos = mutableListOf<MediaItem>()
             selectedAlbumIds.forEach { albumId ->
                 try {
+                    Log.d(TAG, "Loading photos from album: $albumId")
                     val albumPhotos = lockScreenPhotoManager.getPhotosFromAlbum(albumId)
                     allPhotos.addAll(albumPhotos)
                 } catch (e: SecurityException) {
-                    // Log error but keep going with other albums
                     Log.e(TAG, "Security permission error for album $albumId", e)
                 }
             }
+            Log.d(TAG, "Loaded ${allPhotos.size} photos from local albums")
             allPhotos
         }
 
@@ -617,18 +595,20 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
         updateLoadingText("Saving photos...")
         withContext(Dispatchers.IO) {
-            lockScreenPhotoManager.clearPhotos()
-            lockScreenPhotoManager.addPhotos(photos)
+            lockScreenPhotoManager.addPhotos(
+                photos = photos,
+                mode = PhotoAddMode.APPEND
+            )
         }
     }
 
     private suspend fun saveGooglePhotos() {
-        updateLoadingText("Loading photos...")
+        updateLoadingText("Loading photos from Google Photos...")
         val photos = withContext(Dispatchers.IO) {
             try {
                 photoManager.loadPhotos()
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading photos", e)
+                Log.e(TAG, "Error loading Google Photos", e)
                 null
             }
         }
@@ -640,16 +620,54 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
         updateLoadingText("Saving photos...")
         withContext(Dispatchers.IO) {
-            lockScreenPhotoManager.clearPhotos()
-            lockScreenPhotoManager.addPhotos(photos.toList())
+            lockScreenPhotoManager.addPhotos(
+                photos = photos.toList(),
+                mode = PhotoAddMode.APPEND  // Use APPEND to ensure we don't lose existing photos
+            )
         }
+    }
 
-        // Clean up Google Photos resources
-        withContext(Dispatchers.IO) {
+    private fun saveSelectedAlbums() {
+        lifecycleScope.launch {
             try {
-                photoManager.cleanup()
+                viewModel.setLoading(true)
+                updateLoadingText("Saving selected albums...")
+
+                // 1. Get currently selected albums from this view
+                val newSelectedAlbums = albumAdapter.currentList
+                    .filter { it.isSelected }
+                    .map { it.id }
+                    .toSet()
+
+                // 2. Get existing selected albums and merge with new selections
+                val existingSelectedAlbums = preferences.getSelectedAlbumIds()
+                val mergedSelections = existingSelectedAlbums + newSelectedAlbums
+
+                // 3. Save merged album IDs
+                preferences.setSelectedAlbumIds(mergedSelections)
+
+                // 4. Load and save photos based on source
+                if (photoSource == SOURCE_LOCAL_PHOTOS) {
+                    saveLocalPhotos(mergedSelections)
+                } else {
+                    saveGooglePhotos()
+                }
+
+                // 5. Return to MainActivity but don't start slideshow
+                val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("albums_saved", true)
+                    putExtra("photo_count", lockScreenPhotoManager.getPhotoCount())
+                    putExtra("timestamp", System.currentTimeMillis())
+                }
+                startActivity(mainIntent)
+                finish()
+
             } catch (e: Exception) {
-                Log.e(TAG, "Cleanup error", e)
+                Log.e(TAG, "Error during album selection save", e)
+                showToast(getString(R.string.save_error))
+            } finally {
+                viewModel.setLoading(false)
             }
         }
     }
