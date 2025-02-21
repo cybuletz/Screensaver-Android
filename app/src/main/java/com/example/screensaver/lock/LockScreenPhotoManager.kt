@@ -2,6 +2,7 @@ package com.example.screensaver.lock
 
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
@@ -41,6 +42,12 @@ class LockScreenPhotoManager @Inject constructor(
         LOADING,
         SUCCESS,
         ERROR
+    }
+
+    enum class PhotoAddMode {
+        APPEND,    // Add to existing photos
+        REPLACE,   // Clear existing and add new
+        MERGE      // Add new but prevent duplicates
     }
 
     init {
@@ -186,6 +193,98 @@ class LockScreenPhotoManager @Inject constructor(
         return photos
     }
 
+    fun loadPhotos(): List<MediaItem>? {
+        _loadingState.value = LoadingState.LOADING
+        return try {
+            if (mediaItems.isEmpty()) {
+                loadCachedItems()
+            }
+            val photos = mediaItems.toList()
+            _loadingState.value = LoadingState.SUCCESS
+            Log.d(TAG, "Loaded ${photos.size} photos")
+            photos
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading photos", e)
+            _loadingState.value = LoadingState.ERROR
+            null
+        }
+    }
+
+    fun validateStoredPhotos() {
+        try {
+            val currentPhotos = loadPhotos() ?: emptyList()
+
+            // Check each photo URI and remove invalid ones
+            val validPhotos = currentPhotos.filter { photo -> // No need to specify MediaItem type as it's inferred
+                try {
+                    val uri = Uri.parse(photo.baseUrl)
+                    if (uri.toString().startsWith("content://media/picker/")) {
+                        // For picker URIs, check if we have permission
+                        context.contentResolver.persistedUriPermissions.any {
+                            it.uri == uri && it.isReadPermission
+                        }
+                    } else {
+                        // Not a picker URI, consider valid
+                        true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error validating photo URI: ${photo.baseUrl}", e)
+                    false
+                }
+            }
+
+            // Update storage if needed
+            if (validPhotos.size < currentPhotos.size) {
+                Log.d(TAG, "Removing ${currentPhotos.size - validPhotos.size} invalid URIs")
+                clearPhotos()
+                if (validPhotos.isNotEmpty()) {
+                    addPhotos(validPhotos)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error validating photos", e)
+        }
+    }
+
+    fun addPhotoUrls(urls: List<String>) {
+        val items = urls.mapIndexed { index, url ->
+            MediaItem(
+                id = index.toString(),
+                albumId = "local",
+                baseUrl = url,
+                mimeType = "image/*",
+                width = 0,
+                height = 0,
+                description = null,
+                createdAt = System.currentTimeMillis(),
+                loadState = MediaItem.LoadState.IDLE
+            )
+        }
+        addPhotos(items)
+        Log.d(TAG, "Added ${items.size} photo URLs as MediaItems")
+    }
+
+    fun getPhotoUrl(index: Int): String? {
+        return if (index in mediaItems.indices) {
+            val url = mediaItems[index].baseUrl
+            Log.d(TAG, "Getting photo URL for index $index: $url")
+            if (url.contains("googleusercontent.com") && !url.contains("=w")) {
+                "$url=w2048-h1024"
+            } else {
+                url
+            }
+        } else {
+            Log.e(TAG, "Invalid photo index: $index, total photos: ${mediaItems.size}")
+            null
+        }
+    }
+
+    fun getPhotoCount(): Int {
+        val count = mediaItems.size
+        Log.d(TAG, "Current photo count: $count")
+        return count
+    }
+
     private fun saveItems() {
         try {
             val jsonArray = JSONArray()
@@ -208,9 +307,9 @@ class LockScreenPhotoManager @Inject constructor(
                 .putString(KEY_MEDIA_ITEMS, jsonArray.toString())
                 .putBoolean(KEY_HAS_PHOTOS, mediaItems.isNotEmpty())
                 .apply()
-            Log.d(TAG, "Saved ${mediaItems.size} items to cache")
+            Log.d(TAG, "Successfully saved ${mediaItems.size} items to cache")
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving items", e)
+            Log.e(TAG, "Error saving items to cache", e)
         }
     }
 
@@ -240,89 +339,66 @@ class LockScreenPhotoManager @Inject constructor(
 
                 mediaItems.clear()
                 mediaItems.addAll(items)
-                Log.d(TAG, "Loaded ${items.size} items from cache")
+                Log.d(TAG, "Successfully loaded ${items.size} items from cache")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading cached items", e)
         }
     }
 
-    fun loadPhotos(): List<MediaItem>? {
-        _loadingState.value = LoadingState.LOADING
-        return try {
-            if (mediaItems.isEmpty()) {
-                loadCachedItems()
-            }
-            val photos = mediaItems.toList()
-            _loadingState.value = LoadingState.SUCCESS
-            Log.d(TAG, "Loaded ${photos.size} photos")
-            photos
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading photos", e)
-            _loadingState.value = LoadingState.ERROR
-            null
-        }
+    fun cleanup() {
+        clearPhotos()
+        _loadingState.value = LoadingState.IDLE
+        Log.d(TAG, "Manager cleanup completed")
     }
 
-    fun addPhotos(photos: List<MediaItem>) {
-        mediaItems.clear()
-        mediaItems.addAll(photos)
+    fun addPhotos(photos: List<MediaItem>, mode: PhotoAddMode = PhotoAddMode.MERGE) {
+        Log.d(TAG, """Adding photos:
+            • Mode: $mode
+            • Current count: ${mediaItems.size}
+            • New photos: ${photos.size}""".trimMargin())
+
+        when (mode) {
+            PhotoAddMode.REPLACE -> {
+                val previousCount = mediaItems.size
+                mediaItems.clear()
+                mediaItems.addAll(photos)
+                Log.d(TAG, "Replaced $previousCount photos with ${photos.size} new photos")
+            }
+            PhotoAddMode.APPEND -> {
+                val previousCount = mediaItems.size
+                mediaItems.addAll(photos)
+                Log.d(TAG, "Appended ${photos.size} photos to existing $previousCount photos")
+            }
+            PhotoAddMode.MERGE -> {
+                val previousCount = mediaItems.size
+                val newPhotos = photos.filterNot { newPhoto -> isDuplicate(newPhoto) }
+                mediaItems.addAll(newPhotos)
+                Log.d(TAG, """Merged photos:
+                    • Previous count: $previousCount
+                    • New unique photos: ${newPhotos.size}
+                    • Duplicates filtered: ${photos.size - newPhotos.size}
+                    • Total now: ${mediaItems.size}""".trimMargin())
+            }
+        }
+
         saveItems()
-        Log.d(TAG, "Added ${photos.size} photos, total count: ${mediaItems.size}")
+        Log.d(TAG, "Final photo count: ${mediaItems.size}")
     }
 
-    fun addPhotoUrls(urls: List<String>) {
-        val items = urls.mapIndexed { index, url ->
-            MediaItem(
-                id = index.toString(),
-                albumId = "local",
-                baseUrl = url,
-                mimeType = "image/*",
-                width = 0,
-                height = 0,
-                description = null,
-                createdAt = System.currentTimeMillis(),
-                loadState = MediaItem.LoadState.IDLE
-            )
-        }
-        addPhotos(items)
-        Log.d(TAG, "Added ${items.size} photo URLs as MediaItems")
-    }
-
-    fun getPhotoCount(): Int {
-        val count = mediaItems.size
-        Log.d(TAG, "Getting photo count from lock screen PhotoManager: $count")
-        return count
-    }
-
-    fun getPhotoUrl(index: Int): String? {
-        return if (index in mediaItems.indices) {
-            val url = mediaItems[index].baseUrl
-            Log.d(TAG, "Getting photo URL for index $index: $url")
-            // Ensure the URL includes size parameters for Google Photos
-            if (url.contains("googleusercontent.com") && !url.contains("=w")) {
-                "$url=w2048-h1024"  // Add size parameters if missing
-            } else {
-                url
-            }
-        } else {
-            Log.e(TAG, "Invalid photo index: $index, total photos: ${mediaItems.size}")
-            null
+    private fun isDuplicate(newItem: MediaItem): Boolean {
+        return mediaItems.any { existing ->
+            existing.id == newItem.id || existing.baseUrl == newItem.baseUrl
         }
     }
 
     fun clearPhotos() {
+        val previousCount = mediaItems.size
         mediaItems.clear()
         preferences.edit()
             .remove(KEY_MEDIA_ITEMS)
             .putBoolean(KEY_HAS_PHOTOS, false)
             .apply()
-        Log.d(TAG, "Cleared all photos")
-    }
-
-    fun cleanup() {
-        clearPhotos()
-        _loadingState.value = LoadingState.IDLE
-        Log.d(TAG, "Manager cleaned up")
+        Log.d(TAG, "Explicitly cleared all photos (previous count: $previousCount)")
     }
 }

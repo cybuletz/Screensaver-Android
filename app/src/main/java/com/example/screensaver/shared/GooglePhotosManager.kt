@@ -316,15 +316,36 @@ class GooglePhotosManager @Inject constructor(
             Log.d(TAG, "Starting to load photos...")
             _photoLoadingState.value = LoadingState.LOADING
 
-            if (!initialize()) {
-                Log.e(TAG, "Failed to initialize Google Photos client")
-                _photoLoadingState.value = LoadingState.ERROR
-                return@withContext null
+            // First check if we have picked URIs
+            val pickedUris = preferences.getPickedUris()
+            if (pickedUris.isNotEmpty()) {
+                Log.d(TAG, "Using picked photos: ${pickedUris.size} URIs found")
+                val items = pickedUris.mapNotNull { uriString ->
+                    try {
+                        MediaItem(
+                            id = uriString,
+                            albumId = "picked_photos",
+                            baseUrl = uriString,
+                            mimeType = "image/jpeg",
+                            width = 0,
+                            height = 0
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error creating MediaItem from URI: $uriString", e)
+                        null
+                    }
+                }
+
+                synchronized(mediaItems) {
+                    mediaItems.clear()
+                    mediaItems.addAll(items)
+                }
+                _photoLoadingState.value = LoadingState.SUCCESS
+                return@withContext items
             }
 
-            // Use the injected preferences instead of PreferenceManager
+            // If no picked URIs, check for selected albums
             val selectedAlbumIds = preferences.getSelectedAlbumIds()
-
             Log.d(TAG, "Selected album IDs: $selectedAlbumIds")
 
             if (selectedAlbumIds.isEmpty()) {

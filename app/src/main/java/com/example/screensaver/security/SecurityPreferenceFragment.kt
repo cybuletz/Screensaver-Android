@@ -236,9 +236,9 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
                 // Clear any stored credentials in secure storage
                 secureStorage.clearSecurityCredentials()
 
-                // Reset any security flags in secure storage
-                secureStorage.setRemoveSecurityOnRestart(false)
-                secureStorage.setRemoveSecurityOnMinimize(false)
+                // Only keep the minimize flag setting
+                val wasMinimizeEnabled = secureStorage.shouldRemoveSecurityOnMinimize()
+                secureStorage.setRemoveSecurityOnMinimize(wasMinimizeEnabled)
 
                 // Update the security enabled flag last
                 securityPreferences.isSecurityEnabled = false

@@ -2,6 +2,7 @@ package com.example.screensaver.utils
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import android.util.Log
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
@@ -233,6 +234,14 @@ class AppPreferences @Inject constructor(
             "zoom" -> TransitionAnimation.ZOOM
             else -> TransitionAnimation.FADE
         }
+    }
+
+    fun savePickedUris(uris: Set<Uri>) {
+        prefs.edit().putStringSet("picked_photo_uris", uris.map { it.toString() }.toSet()).apply()
+    }
+
+    fun getPickedUris(): Set<String> {
+        return prefs.getStringSet("picked_photo_uris", emptySet()) ?: emptySet()
     }
 
     fun isShowPhotoInfo(): Boolean = prefs.getBoolean(PREF_SHOW_PHOTO_INFO, true)
