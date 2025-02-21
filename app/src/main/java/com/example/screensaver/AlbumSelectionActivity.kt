@@ -322,9 +322,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 try {
                     viewModel.setLoading(true)
-                    updateLoadingText("Processing selected photos...")
+                    updateLoadingText(getString(R.string.processing_photos))
 
-                    val selectedPhotos = mutableListOf<MediaItem>()
+                    val selectedUris = mutableSetOf<Uri>()
 
                     // Handle multiple selection
                     data?.clipData?.let { clipData ->
@@ -334,7 +334,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                                     uri,
                                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                                 )
-                                selectedPhotos.add(createMediaItemFromUri(uri))
+                                selectedUris.add(uri)
                             }
                         }
                     } ?: data?.data?.let { uri -> // Handle single selection
@@ -342,37 +342,36 @@ class AlbumSelectionActivity : AppCompatActivity() {
                             uri,
                             Intent.FLAG_GRANT_READ_URI_PERMISSION
                         )
-                        selectedPhotos.add(createMediaItemFromUri(uri))
+                        selectedUris.add(uri)
                     }
 
-                    if (selectedPhotos.isNotEmpty()) {
-                        // Create a temporary album ID for these photos
-                        val pickedAlbumId = "picked_photos"
-
-                        // Save selected album ID
-                        preferences.setSelectedAlbumIds(setOf(pickedAlbumId))
-
-                        // Save photos
-                        updateLoadingText("Saving photos...")
+                    if (selectedUris.isNotEmpty()) {
+                        // Clear existing photos and preferences
                         withContext(Dispatchers.IO) {
+                            photoManager.cleanup() // Clean up old state
                             lockScreenPhotoManager.clearPhotos()
-                            lockScreenPhotoManager.addPhotos(selectedPhotos)
+
+                            // Save new URIs
+                            preferences.savePickedUris(selectedUris)
+                            // Clear any existing album selections since we're using picked photos
+                            preferences.clearSelectedAlbums()
                         }
 
                         // Return to MainActivity
                         val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+                            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
                             putExtra("albums_saved", true)
-                            putExtra("photo_count", selectedPhotos.size)
+                            putExtra("photo_count", selectedUris.size)
                             putExtra("timestamp", System.currentTimeMillis())
+                            putExtra("force_reload", true)
                         }
                         startActivity(mainIntent)
                         finish()
                     } else {
-                        handleError("No photos were selected")
+                        handleError(getString(R.string.no_photos_selected))
                     }
                 } catch (e: Exception) {
-                    handleError("Error processing photos: ${e.message ?: "Unknown error"}")
+                    handleError(getString(R.string.photo_processing_error, e.message))
                 } finally {
                     viewModel.setLoading(false)
                 }

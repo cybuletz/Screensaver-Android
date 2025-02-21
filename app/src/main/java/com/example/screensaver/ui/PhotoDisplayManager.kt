@@ -149,6 +149,12 @@ class PhotoDisplayManager @Inject constructor(
         return seconds * MILLIS_PER_SECOND
     }
 
+    private fun loadPhotoFromUri(uri: Uri, imageView: ImageView) {
+        Glide.with(context)
+            .load(uri)
+            .into(imageView)
+    }
+
     private fun handleCacheError() {
         lifecycleScope?.launch {
             try {

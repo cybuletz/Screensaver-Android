@@ -57,13 +57,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settingsButtonController: SettingsButtonController
 
     @Inject
-    lateinit var photoManager: LockScreenPhotoManager
+    lateinit var photoManager: GooglePhotosManager
+
+    @Inject
+    lateinit var lockScreenPhotoManager: LockScreenPhotoManager
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
-
-    @Inject
-    lateinit var googlePhotosManager: GooglePhotosManager
 
     @Inject
     lateinit var preferences: AppPreferences
@@ -214,7 +214,7 @@ class MainActivity : AppCompatActivity() {
             initializePhotoDisplayManager()
 
             // Add validation here after photo manager is initialized
-            photoManager.validateStoredPhotos()
+            lockScreenPhotoManager.validateStoredPhotos()
 
             startLockScreenService()
             initializePhotos()
@@ -413,11 +413,9 @@ class MainActivity : AppCompatActivity() {
 
                     withContext(Dispatchers.IO) {
                         try {
-                            // First initialize GooglePhotosManager
-                            if (googlePhotosManager.initialize()) {
-                                // Load photos with error handling
+                            if (photoManager.initialize()) {
                                 val photos = try {
-                                    googlePhotosManager.loadPhotos()
+                                    photoManager.loadPhotos()
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Error loading photos", e)
                                     null
@@ -426,16 +424,15 @@ class MainActivity : AppCompatActivity() {
                                 if (photos != null && photos.isNotEmpty()) {
                                     withContext(Dispatchers.Main) {
                                         try {
-                                            // Clear existing photos and add new ones
-                                            photoManager.clearPhotos()
-                                            photoManager.addPhotos(photos)
+                                            // Store photos in LockScreenPhotoManager
+                                            lockScreenPhotoManager.clearPhotos()
+                                            lockScreenPhotoManager.addPhotos(photos)
 
-                                            // Start photo display if we're on the main fragment
-                                            if (!isDestroyed &&
-                                                navController.currentDestination?.id == R.id.mainFragment) {
+                                            // Start display if we're on the main fragment
+                                            if (!isDestroyed) {
                                                 photoDisplayManager.startPhotoDisplay()
                                             } else {
-                                                Log.d(TAG, "Skipping photo display - activity destroyed or not on main fragment")
+                                                Log.d(TAG, "Activity is destroyed, skipping photo display")
                                             }
                                         } catch (e: Exception) {
                                             Log.e(TAG, "Error updating UI with photos", e)
@@ -451,6 +448,8 @@ class MainActivity : AppCompatActivity() {
                             Log.e(TAG, "Error in photo initialization", e)
                         }
                     }
+                } else {
+                    Log.d(TAG, "No albums selected")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in initializePhotos", e)
@@ -793,25 +792,40 @@ class MainActivity : AppCompatActivity() {
         if (intent?.getBooleanExtra("albums_saved", false) == true) {
             val photoCount = intent.getIntExtra("photo_count", 0)
             val timestamp = intent.getLongExtra("timestamp", 0L)
+            val forceReload = intent.getBooleanExtra("force_reload", false)
+
             Log.d(TAG, "Albums saved with count: $photoCount, timestamp: $timestamp")
 
             if (photoCount > 0) {
                 lifecycleScope.launch {
                     try {
-                        // Navigate to settings instead of starting slideshow
+                        photoDisplayManager.stopPhotoDisplay()
+
+                        if (forceReload) {
+                            withContext(Dispatchers.IO) {
+                                if (photoManager.initialize()) {
+                                    val photos = photoManager.loadPhotos()
+                                    if (photos != null) {
+                                        lockScreenPhotoManager.clearPhotos()
+                                        lockScreenPhotoManager.addPhotos(photos)
+
+                                        withContext(Dispatchers.Main) {
+                                            photoDisplayManager.startPhotoDisplay()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         if (navController.currentDestination?.id != R.id.settingsFragment) {
-                            Log.d(TAG, "Navigating to settings fragment")
                             navController.navigate(R.id.action_mainFragment_to_settingsFragment)
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error navigating to settings", e)
-                        showToast("Error navigating to settings")
+                        Log.e(TAG, "Error handling new photos", e)
+                        showToast(getString(R.string.error_loading_photos))
                     }
                 }
-            } else {
-                Log.w(TAG, "Received albums_saved but count is 0")
             }
-            return
         }
 
         // Handle legacy "photos_ready" intent for backward compatibility
@@ -1130,11 +1144,11 @@ class MainActivity : AppCompatActivity() {
         try {
             isDestroyed = true
 
-            // Cancel any ongoing photo operations
             lifecycleScope.launch {
                 withContext(Dispatchers.IO) {
                     try {
-                        googlePhotosManager.cleanup()
+                        // Change googlePhotosManager to photoManager
+                        photoManager.cleanup()
                     } catch (e: Exception) {
                         Log.e(TAG, "Error cleaning up GooglePhotosManager", e)
                     }
