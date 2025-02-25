@@ -3,12 +3,14 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:contentDescription="@string/settings_screen_description">
 
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/toolbar_description">
 
         <androidx.appcompat.widget.Toolbar
             android:id="@+id/toolbar"
@@ -17,14 +19,34 @@
             android:background="?attr/colorPrimary"
             app:title="@string/settings_title"
             android:theme="@style/ThemeOverlay.MaterialComponents.Dark.ActionBar"
-            app:layout_scrollFlags="scroll|enterAlways"/>
+            app:layout_scrollFlags="scroll|enterAlways"
+            android:contentDescription="@string/settings_toolbar_description"/>
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <FrameLayout
-        android:id="@+id/settings_container"
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior"/>
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        android:contentDescription="@string/settings_content_description">
+
+        <FrameLayout
+            android:id="@+id/settings_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:animateLayoutChanges="true"
+            android:contentDescription="@string/settings_container_description"/>
+
+    </androidx.core.widget.NestedScrollView>
+
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/progressIndicator"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:visibility="gone"
+        app:layout_anchor="@id/appBarLayout"
+        app:layout_anchorGravity="bottom"
+        android:contentDescription="@string/loading_indicator_description"/>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

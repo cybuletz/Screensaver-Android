@@ -20,6 +20,18 @@
     </PreferenceCategory>
 
     <PreferenceCategory
+        android:title="@string/photo_management_category"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="@string/key_manage_photos"
+            android:title="@string/manage_photos"
+            android:summary="@string/manage_photos_summary"
+            app:iconSpaceReserved="false"/>
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:title="Screensaver Settings"
         android:key="screensaver_settings">
 

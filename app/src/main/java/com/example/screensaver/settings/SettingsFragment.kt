@@ -69,12 +69,16 @@ import com.example.screensaver.widgets.WidgetState
 import com.example.screensaver.widgets.WidgetType
 import com.example.screensaver.widgets.WidgetManager
 import androidx.preference.SwitchPreferenceCompat
+import com.example.screensaver.photomanager.PhotoCollectionManager
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.SecurityPreferenceDialog
 import com.example.screensaver.security.SecurityPreferences
 import com.example.screensaver.widgets.WidgetPreferenceDialog
+import com.example.screensaver.photomanager.PhotoManagementFragment
+import kotlinx.coroutines.flow.collectLatest
+
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -110,6 +114,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var biometricHelper: BiometricHelper
+
+    @Inject
+    lateinit var photoCollectionManager: PhotoCollectionManager
 
     private var devicePolicyManager: DevicePolicyManager? = null
     private lateinit var adminComponentName: ComponentName
@@ -453,6 +460,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         true
                     }
 
+                    // Setup photo management
+                    findPreference<Preference>(getString(R.string.key_manage_photos))?.apply {
+                        isVisible = true
+                        setOnPreferenceClickListener {
+                            parentFragmentManager.beginTransaction()
+                                .replace(R.id.settings_container, PhotoManagementFragment())
+                                .addToBackStack("photo_management")
+                                .commit()
+                            true
+                        }
+                    }
+
                     // Update widget summaries based on their states
                     updateWidgetSummaries()
 
@@ -460,9 +479,34 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     observeAppState()
                     observeAppDataState()
                     observeWidgetState()
+
+                    // Observe photo collection state
+                    observePhotoCollections()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error setting up preferences", e)
                 }
+            }
+        }
+    }
+
+    private fun observePhotoCollections() {
+        lifecycleScope.launch {
+            try {
+                // Use the injected photoCollectionManager directly
+                photoCollectionManager.collections.collectLatest { collections ->
+                    findPreference<Preference>(getString(R.string.key_manage_photos))?.summary =
+                        if (collections.isEmpty()) {
+                            getString(R.string.manage_photos_summary)
+                        } else {
+                            resources.getQuantityString(
+                                R.plurals.manage_photos_summary_with_count,
+                                collections.size,
+                                collections.size
+                            )
+                        }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error observing photo collections", e)
             }
         }
     }

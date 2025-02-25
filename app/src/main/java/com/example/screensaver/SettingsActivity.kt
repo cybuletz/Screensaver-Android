@@ -24,7 +24,6 @@ import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.appcompat.widget.Toolbar
-import com.example.screensaver.settings.SettingsFragment
 
 @AndroidEntryPoint
 class SettingsActivity : AppCompatActivity() {
@@ -35,13 +34,92 @@ class SettingsActivity : AppCompatActivity() {
         // Set up toolbar
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
+        supportActionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            setDisplayShowHomeEnabled(true)
+        }
+
+        // Set up progress indicator
+        val progressIndicator = findViewById<LinearProgressIndicator>(R.id.progressIndicator)
+
+        // Handle deep links if any
+        handleIntent(intent)
 
         if (savedInstanceState == null) {
+            // Initial fragment load
             supportFragmentManager
                 .beginTransaction()
                 .replace(R.id.settings_container, SettingsFragment())
                 .commit()
         }
+
+        // Observe fragment changes to update toolbar title
+        supportFragmentManager.addOnBackStackChangedListener {
+            val currentFragment = supportFragmentManager.findFragmentById(R.id.settings_container)
+            when (currentFragment) {
+                is PhotoManagementFragment -> {
+                    toolbar.title = getString(R.string.photo_management)
+                    progressIndicator.visibility = View.VISIBLE
+                }
+                is SettingsFragment -> {
+                    toolbar.title = getString(R.string.settings_title)
+                    progressIndicator.visibility = View.GONE
+                }
+            }
+        }
+    }
+
+    override fun onBackPressed() {
+        val currentFragment = supportFragmentManager.findFragmentById(R.id.settings_container)
+        when {
+            currentFragment is PhotoManagementFragment -> {
+                // Check if the photo management fragment has any unsaved changes
+                if (currentFragment.hasUnsavedChanges()) {
+                    showUnsavedChangesDialog {
+                        supportFragmentManager.popBackStack()
+                    }
+                } else {
+                    supportFragmentManager.popBackStack()
+                }
+            }
+            supportFragmentManager.backStackEntryCount > 0 -> {
+                supportFragmentManager.popBackStack()
+            }
+            else -> {
+                super.onBackPressed()
+            }
+        }
+    }
+
+    private fun handleIntent(intent: Intent) {
+        when (intent.action) {
+            Intent.ACTION_VIEW -> {
+                // Handle any deep links or external navigation
+                intent.data?.let { uri ->
+                    when (uri.host) {
+                        "oauth2redirect" -> {
+                            // Handle OAuth redirects if needed
+                            Log.d(TAG, "Handling OAuth redirect")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showUnsavedChangesDialog(onConfirm: () -> Unit) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.unsaved_changes_title)
+            .setMessage(R.string.unsaved_changes_message)
+            .setPositiveButton(R.string.discard) { _, _ ->
+                onConfirm()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    companion object {
+        private const val TAG = "SettingsActivity"
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
