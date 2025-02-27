@@ -6,11 +6,14 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
+import com.example.screensaver.photos.VirtualAlbum
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.annotation.PostConstruct
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Manages application preferences and settings.
@@ -42,6 +45,12 @@ class AppPreferences @Inject constructor(
     private val _clockFormatFlow = MutableStateFlow(getClockFormat())
     private val _selectedAlbumsFlow = MutableStateFlow(getSelectedAlbumIds())
     private val _previewCountFlow = MutableStateFlow(getPreviewCount())
+
+    private val virtualAlbumPrefs = context.getSharedPreferences("virtual_albums", Context.MODE_PRIVATE)
+    private val KEY_VIRTUAL_ALBUMS = "virtual_albums_data"
+    private val KEY_SELECTED_VIRTUAL_ALBUMS = "selected_virtual_albums"
+    private val _virtualAlbumsFlow = MutableStateFlow<List<VirtualAlbum>>(emptyList())
+    val virtualAlbumsFlow = _virtualAlbumsFlow.asStateFlow()
 
     // Public flows
     val selectedAlbumsFlow = _selectedAlbumsFlow.asStateFlow()
@@ -90,6 +99,18 @@ class AppPreferences @Inject constructor(
 
     enum class ClockFormat {
         FORMAT_12H, FORMAT_24H
+    }
+
+    data class VirtualAlbum(
+        val id: String,
+        val name: String,
+        val photoUris: List<String>,
+        val dateCreated: Long,
+        val sortOrder: Int = 0
+    )
+
+    init {
+        loadVirtualAlbums()
     }
 
     fun getSelectedAlbumIds(): Set<String> {
@@ -270,5 +291,91 @@ class AppPreferences @Inject constructor(
 
     fun cleanup() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefsChangeListener)
+    }
+
+    fun saveVirtualAlbum(album: VirtualAlbum) {
+        val currentAlbums = getVirtualAlbums().toMutableList()
+        val existingIndex = currentAlbums.indexOfFirst { it.id == album.id }
+
+        if (existingIndex != -1) {
+            currentAlbums[existingIndex] = album
+        } else {
+            currentAlbums.add(album)
+        }
+
+        saveVirtualAlbums(currentAlbums)
+    }
+
+    fun deleteVirtualAlbum(albumId: String) {
+        val currentAlbums = getVirtualAlbums().filterNot { it.id == albumId }
+        saveVirtualAlbums(currentAlbums)
+
+        // Remove from selected albums if present
+        val selectedAlbums = getSelectedVirtualAlbumIds().toMutableSet()
+        if (selectedAlbums.remove(albumId)) {
+            setSelectedVirtualAlbumIds(selectedAlbums)
+        }
+    }
+
+    fun saveVirtualAlbums(albums: List<VirtualAlbum>) {
+        try {
+            val json = JSONArray().apply {
+                albums.forEach { album ->
+                    put(JSONObject().apply {
+                        put("id", album.id)
+                        put("name", album.name)
+                        put("photoUris", JSONArray(album.photoUris))
+                        put("dateCreated", album.dateCreated)
+                        put("sortOrder", album.sortOrder)
+                    })
+                }
+            }
+
+            virtualAlbumPrefs.edit()
+                .putString(KEY_VIRTUAL_ALBUMS, json.toString())
+                .apply()
+
+            _virtualAlbumsFlow.value = albums
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving virtual albums", e)
+        }
+    }
+
+    fun getVirtualAlbums(): List<VirtualAlbum> {
+        return try {
+            val json = virtualAlbumPrefs.getString(KEY_VIRTUAL_ALBUMS, "[]")
+            val jsonArray = JSONArray(json)
+            List(jsonArray.length()) { i ->
+                val obj = jsonArray.getJSONObject(i)
+                val urisArray = obj.getJSONArray("photoUris")
+                val photoUris = List(urisArray.length()) { j ->
+                    urisArray.getString(j)
+                }
+                VirtualAlbum(
+                    id = obj.getString("id"),
+                    name = obj.getString("name"),
+                    photoUris = photoUris,
+                    dateCreated = obj.getLong("dateCreated"),
+                    sortOrder = obj.optInt("sortOrder", 0)
+                )
+            }.sortedBy { it.sortOrder }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading virtual albums", e)
+            emptyList()
+        }
+    }
+
+    fun getSelectedVirtualAlbumIds(): Set<String> {
+        return virtualAlbumPrefs.getStringSet(KEY_SELECTED_VIRTUAL_ALBUMS, emptySet()) ?: emptySet()
+    }
+
+    fun setSelectedVirtualAlbumIds(albumIds: Set<String>) {
+        virtualAlbumPrefs.edit()
+            .putStringSet(KEY_SELECTED_VIRTUAL_ALBUMS, albumIds)
+            .apply()
+    }
+
+    private fun loadVirtualAlbums() {
+        _virtualAlbumsFlow.value = getVirtualAlbums()
     }
 }

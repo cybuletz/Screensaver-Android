@@ -39,6 +39,7 @@ import android.provider.MediaStore
 import androidx.preference.PreferenceManager
 import android.net.Uri
 import com.example.screensaver.lock.LockScreenPhotoManager.PhotoAddMode
+import com.example.screensaver.photos.PhotoManagerViewModel
 
 
 @AndroidEntryPoint
@@ -62,9 +63,10 @@ class AlbumSelectionActivity : AppCompatActivity() {
     @Inject
     lateinit var preferences: AppPreferences
 
+
     private val viewModel: AlbumSelectionViewModel by viewModels()
     private var photoSource = SOURCE_GOOGLE_PHOTOS
-
+    private val photoManagerViewModel: PhotoManagerViewModel by viewModels()
 
 
 
@@ -173,16 +175,13 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     private fun setupRecyclerView() {
         binding.albumRecyclerView.apply {
-            setItemViewCacheSize(30) // Increase cache size
+            setItemViewCacheSize(30)
             recycledViewPool.setMaxRecycledViews(0, 30)
 
             layoutManager = GridLayoutManager(this@AlbumSelectionActivity, 2).apply {
                 recycleChildrenOnDetach = true
             }
-            // Remove this line as it's redundant - you already set the layoutManager above
-            // this.layoutManager = layoutManager
 
-            // Initialize the adapter
             albumAdapter = AlbumAdapter(glideRequestManager) { album ->
                 if (!viewModel.isLoading.value) {
                     toggleAlbumSelection(album)
@@ -191,7 +190,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
             adapter = albumAdapter
 
-            // Add scroll state listener for debugging
+            // Add scroll state listener
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                     super.onScrollStateChanged(recyclerView, newState)
@@ -209,6 +208,37 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     }
                 }
             })
+
+            // Observe virtual albums
+            lifecycleScope.launch {
+                photoManagerViewModel.virtualAlbums.collect { virtualAlbums ->
+                    val currentList = albumAdapter.currentList.toMutableList()
+                    val selectedAlbumIds = preferences.getSelectedAlbumIds()
+
+                    if (virtualAlbums.isNotEmpty()) {
+                        currentList.add(Album(
+                            id = "virtual_header",
+                            title = "Virtual Albums",
+                            coverPhotoUrl = "",
+                            mediaItemsCount = 0,
+                            isSelected = false,
+                            isHeader = true
+                        ))
+
+                        currentList.addAll(virtualAlbums.map { virtualAlbum ->
+                            Album(
+                                id = virtualAlbum.id,
+                                title = virtualAlbum.name,
+                                coverPhotoUrl = virtualAlbum.photoUris.firstOrNull() ?: "",
+                                mediaItemsCount = virtualAlbum.photoUris.size,
+                                isSelected = selectedAlbumIds.contains(virtualAlbum.id)
+                            )
+                        })
+                    }
+
+                    albumAdapter.submitList(currentList)
+                }
+            }
         }
     }
 
@@ -513,18 +543,14 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun toggleAlbumSelection(album: Album) {
-        // First check the actual state in preferences
+        if (album.isHeader) return
+
         val isCurrentlySelected = preferences.getSelectedAlbumIds().contains(album.id)
-        // Toggle based on the actual state from preferences
         val shouldBeSelected = !isCurrentlySelected
 
-        Log.d(TAG, "Toggling album ${album.title}: current state in prefs=$isCurrentlySelected, UI state=${album.isSelected}")
-
-        // Update preferences first
         if (shouldBeSelected) {
             preferences.addSelectedAlbumId(album.id)
         } else {
-            // Only check if this would leave us with no albums selected
             val currentSelected = preferences.getSelectedAlbumIds()
             if (currentSelected.size == 1 && currentSelected.contains(album.id)) {
                 showToast(getString(R.string.keep_one_album))
@@ -533,7 +559,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
             preferences.removeSelectedAlbumId(album.id)
         }
 
-        // Then update UI to match preferences
         val updatedAlbum = album.copy(isSelected = shouldBeSelected)
         val currentList = albumAdapter.currentList.toMutableList()
         val position = currentList.indexOfFirst { it.id == album.id }
@@ -541,10 +566,14 @@ class AlbumSelectionActivity : AppCompatActivity() {
         if (position != -1) {
             currentList[position] = updatedAlbum
             albumAdapter.submitList(currentList) {
-                // Update confirm button state after the list update is complete
                 updateConfirmButtonState()
             }
             showSelectionToast(updatedAlbum)
+        }
+
+        // Handle virtual album selection
+        if (album.id.startsWith("virtual_")) {
+            photoManagerViewModel.toggleVirtualAlbumSelection(album.id)
         }
 
         Log.d(TAG, "After toggle: album ${album.title} selected=$shouldBeSelected")

@@ -42,6 +42,7 @@ import android.graphics.drawable.BitmapDrawable
 import com.bumptech.glide.annotation.GlideModule
 import com.bumptech.glide.load.HttpException
 import com.example.screensaver.glide.GlideApp
+import com.example.screensaver.photos.PhotoManagerViewModel
 import okhttp3.OkHttpClient
 import okhttp3.Interceptor
 import okhttp3.Request
@@ -232,54 +233,6 @@ class PhotoDisplayManager @Inject constructor(
                     null
                 }
             } ?: emptyList()
-    }
-
-    fun updatePhotoSources() {
-        val currentSources = PreferenceManager.getDefaultSharedPreferences(context)
-            .getStringSet("photo_source_selection", null) // Remove default to prevent override
-            ?: return // If null, return instead of defaulting to local
-
-        val photos = mutableListOf<Uri>()
-
-        if (currentSources.contains("local")) {
-            photos.addAll(loadLocalPhotos())
-        }
-
-        if (currentSources.contains("google_photos")) {
-            loadPhotosInBackground() // Handle Google Photos separately
-            return // Exit early as background loading will handle display
-        }
-
-        if (photos.isNotEmpty()) {
-            displayPhotos(photos)
-        } else {
-            Log.w(TAG, "No photos available to display")
-        }
-    }
-
-    private fun displayPhotos(photos: List<Uri>) {
-        Log.d(TAG, "Displaying ${photos.size} photos")
-
-        lifecycleScope?.launch {
-            try {
-                stopPhotoDisplay()
-                val photoUrls = photos.map { it.toString() }
-                photoManager.addPhotoUrls(photoUrls)
-
-                if (photoUrls.isNotEmpty()) {
-                    persistPhotoState("local", photoUrls[0])
-                }
-
-                currentPhotoIndex = 0
-                hasLoadedPhotos = true
-                startPhotoDisplay()
-
-                Log.d(TAG, "Photo display started with ${photos.size} photos")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error starting photo display", e)
-                showDefaultPhoto()
-            }
-        }
     }
 
     private suspend fun getNextPhotoIndex(currentIndex: Int, totalPhotos: Int): Int =
@@ -858,37 +811,6 @@ class PhotoDisplayManager @Inject constructor(
         displayJob = null
     }
 
-    fun handleLowMemory() { // Change from private to public
-        Log.w(TAG, "Low memory condition detected")
-
-        lifecycleScope?.launch {
-            try {
-                // Perform smart cleanup of cache
-                photoCache.performSmartCleanup()
-
-                // Cancel any pending photo loads
-                displayJob?.cancel()
-
-                // Try to keep current photo if possible
-                val currentPhoto = views?.primaryView?.drawable
-                if (currentPhoto != null) {
-                    // Cache current photo before clearing
-                    currentPhoto.toBitmap()?.let { bitmap ->
-                        photoCache.cacheLastPhotoBitmap(bitmap)
-                    }
-                }
-
-                // Clear Glide memory cache
-                Glide.get(context).clearMemory()
-
-                // Restart photo display with minimal memory usage
-                startPhotoDisplay()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling low memory", e)
-            }
-        }
-    }
-
     fun clearPhotoCache() {
         photoCache.cleanup()
     }
@@ -908,5 +830,84 @@ class PhotoDisplayManager @Inject constructor(
             }
         }
         managerJob.cancel()
+    }
+
+    fun updatePhotoSources(virtualAlbumPhotos: List<Uri> = emptyList()) {
+        val currentScope = lifecycleScope ?: return
+
+        currentScope.launch {
+            try {
+                val photos = mutableListOf<Uri>()
+
+                // Get photos from PhotoManager
+                photoManager.loadPhotos()?.forEach { mediaItem ->
+                    try {
+                        photos.add(Uri.parse(mediaItem.baseUrl))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error parsing URI: ${mediaItem.baseUrl}", e)
+                    }
+                }
+
+                // Add the virtual album photos passed as parameter
+                photos.addAll(virtualAlbumPhotos)
+
+                if (photos.isNotEmpty()) {
+                    displayPhotos(photos)
+                } else {
+                    Log.w(TAG, "No photos available to display")
+                    showDefaultPhoto()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating photo sources", e)
+                showDefaultPhoto()
+            }
+        }
+    }
+
+    private fun displayPhotos(photos: List<Uri>) {
+        Log.d(TAG, "Displaying ${photos.size} photos")
+        lifecycleScope?.launch {
+            try {
+                stopPhotoDisplay()
+                val photoUrls = photos.map { it.toString() }
+                photoManager.addPhotoUrls(photoUrls)
+
+                if (photoUrls.isNotEmpty()) {
+                    persistPhotoState("combined", photoUrls[0])
+                }
+
+                currentPhotoIndex = 0
+                hasLoadedPhotos = true
+                startPhotoDisplay()
+
+                Log.d(TAG, "Photo display started with ${photos.size} photos")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting photo display", e)
+                showDefaultPhoto()
+            }
+        }
+    }
+
+    fun handleLowMemory() {
+        Log.w(TAG, "Low memory condition detected")
+        lifecycleScope?.launch {
+            try {
+                photoCache.performSmartCleanup()
+                displayJob?.cancel()
+
+                val currentPhoto = views?.primaryView?.drawable
+                if (currentPhoto != null) {
+                    currentPhoto.toBitmap()?.let { bitmap ->
+                        photoCache.cacheLastPhotoBitmap(bitmap)
+                    }
+                }
+
+                Glide.get(context).clearMemory()
+                startPhotoDisplay()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling low memory", e)
+                showDefaultPhoto()
+            }
+        }
     }
 }

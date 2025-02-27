@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import android.util.Log
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.models.AlbumInfo
+import com.example.screensaver.photos.VirtualAlbum
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -28,6 +29,9 @@ class LockScreenPhotoManager @Inject constructor(
     private val KEY_HAS_PHOTOS = "has_photos"
     private val KEY_MEDIA_ITEMS = "media_items"
     private val preferences = context.getSharedPreferences("photo_manager", Context.MODE_PRIVATE)
+
+    private val virtualAlbums = mutableListOf<VirtualAlbum>()
+    private val KEY_VIRTUAL_ALBUMS = "virtual_albums"
 
     suspend fun refreshTokens(): Boolean {
         return googlePhotosManager.refreshTokens()
@@ -50,8 +54,17 @@ class LockScreenPhotoManager @Inject constructor(
         MERGE      // Add new but prevent duplicates
     }
 
+    data class VirtualAlbum(
+        val id: String,
+        val name: String,
+        val photoUris: List<String>,
+        val dateCreated: Long = System.currentTimeMillis(),
+        val isSelected: Boolean = false  // Added this property
+    )
+
     init {
         loadCachedItems()
+        loadVirtualAlbums()
         val hasPhotos = preferences.getBoolean(KEY_HAS_PHOTOS, false)
         Log.d(TAG, "Initializing with previous photo state: $hasPhotos")
     }
@@ -193,16 +206,38 @@ class LockScreenPhotoManager @Inject constructor(
         return photos
     }
 
-    fun loadPhotos(): List<MediaItem>? {
+    suspend fun loadPhotos(): List<MediaItem>? {
         _loadingState.value = LoadingState.LOADING
         return try {
             if (mediaItems.isEmpty()) {
                 loadCachedItems()
+                loadVirtualAlbums()
             }
-            val photos = mediaItems.toList()
+
+            val allPhotos = mutableListOf<MediaItem>()
+
+            // Add regular photos
+            allPhotos.addAll(mediaItems)
+
+            // Add virtual album photos
+            virtualAlbums.forEach { album ->
+                album.photoUris.forEach { uri ->
+                    allPhotos.add(MediaItem(
+                        id = "${album.id}_${uri.hashCode()}",
+                        albumId = album.id,
+                        baseUrl = uri,
+                        mimeType = "image/*",
+                        width = 0,
+                        height = 0,
+                        description = "From album: ${album.name}",
+                        createdAt = album.dateCreated,
+                        loadState = MediaItem.LoadState.IDLE
+                    ))
+                }
+            }
+
             _loadingState.value = LoadingState.SUCCESS
-            Log.d(TAG, "Loaded ${photos.size} photos")
-            photos
+            allPhotos
         } catch (e: Exception) {
             Log.e(TAG, "Error loading photos", e)
             _loadingState.value = LoadingState.ERROR
@@ -210,12 +245,23 @@ class LockScreenPhotoManager @Inject constructor(
         }
     }
 
-    fun validateStoredPhotos() {
+    fun toggleVirtualAlbumSelection(albumId: String) {
+        val album = virtualAlbums.find { it.id == albumId } ?: return
+        val updatedAlbum = album.copy(isSelected = !album.isSelected)
+
+        virtualAlbums.removeIf { it.id == albumId }
+        virtualAlbums.add(updatedAlbum)
+        saveVirtualAlbums()
+
+        Log.d(TAG, "Toggled selection for album ${album.name} (${album.id})")
+    }
+
+    suspend fun validateStoredPhotos() {
         try {
             val currentPhotos = loadPhotos() ?: emptyList()
 
             // Check each photo URI and remove invalid ones
-            val validPhotos = currentPhotos.filter { photo -> // No need to specify MediaItem type as it's inferred
+            val validPhotos = currentPhotos.filter { photo ->
                 try {
                     val uri = Uri.parse(photo.baseUrl)
                     if (uri.toString().startsWith("content://media/picker/")) {
@@ -313,6 +359,27 @@ class LockScreenPhotoManager @Inject constructor(
         }
     }
 
+    private fun saveVirtualAlbums() {
+        try {
+            val jsonArray = JSONArray()
+            virtualAlbums.forEach { album ->
+                val jsonObject = JSONObject().apply {
+                    put("id", album.id)
+                    put("name", album.name)
+                    put("photoUris", JSONArray(album.photoUris))
+                    put("dateCreated", album.dateCreated)
+                }
+                jsonArray.put(jsonObject)
+            }
+            preferences.edit()
+                .putString(KEY_VIRTUAL_ALBUMS, jsonArray.toString())
+                .apply()
+            Log.d(TAG, "Successfully saved ${virtualAlbums.size} virtual albums")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving virtual albums", e)
+        }
+    }
+
     private fun loadCachedItems() {
         try {
             val json = preferences.getString(KEY_MEDIA_ITEMS, null)
@@ -346,10 +413,59 @@ class LockScreenPhotoManager @Inject constructor(
         }
     }
 
+    private fun loadVirtualAlbums() {
+        try {
+            val json = preferences.getString(KEY_VIRTUAL_ALBUMS, null)
+            if (!json.isNullOrEmpty()) {
+                val jsonArray = JSONArray(json)
+                virtualAlbums.clear()
+
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val urisArray = obj.getJSONArray("photoUris")
+                    val photoUris = mutableListOf<String>()
+                    for (j in 0 until urisArray.length()) {
+                        photoUris.add(urisArray.getString(j))
+                    }
+
+                    virtualAlbums.add(
+                        VirtualAlbum(
+                            id = obj.getString("id"),
+                            name = obj.getString("name"),
+                            photoUris = photoUris,
+                            dateCreated = obj.getLong("dateCreated")
+                        )
+                    )
+                }
+                Log.d(TAG, "Successfully loaded ${virtualAlbums.size} virtual albums")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading virtual albums", e)
+        }
+    }
+
+    fun addVirtualAlbum(album: VirtualAlbum) {
+        virtualAlbums.add(album)
+        saveVirtualAlbums()
+    }
+
+    fun removeVirtualAlbum(albumId: String) {
+        virtualAlbums.removeIf { it.id == albumId }
+        saveVirtualAlbums()
+    }
+
+    fun getVirtualAlbums(): List<VirtualAlbum> = virtualAlbums.toList()
+
     fun cleanup() {
-        clearPhotos()
-        _loadingState.value = LoadingState.IDLE
-        Log.d(TAG, "Manager cleanup completed")
+        val previousCount = mediaItems.size
+        mediaItems.clear()
+        virtualAlbums.clear()
+        preferences.edit()
+            .remove(KEY_MEDIA_ITEMS)
+            .remove(KEY_VIRTUAL_ALBUMS)
+            .putBoolean(KEY_HAS_PHOTOS, false)
+            .apply()
+        Log.d(TAG, "Explicitly cleared all photos and virtual albums (previous count: $previousCount)")
     }
 
     fun addPhotos(photos: List<MediaItem>, mode: PhotoAddMode = PhotoAddMode.MERGE) {
