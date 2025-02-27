@@ -22,7 +22,8 @@ data class Album(
     val title: String,
     val coverPhotoUrl: String?,
     val mediaItemsCount: Int,
-    var isSelected: Boolean = false
+    var isSelected: Boolean = false,
+    val isHeader: Boolean = false
 ) : Parcelable {
 
     companion object {

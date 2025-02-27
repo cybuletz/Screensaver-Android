@@ -1,6 +1,8 @@
 package com.example.screensaver.di
 
 import android.content.Context
+import com.bumptech.glide.Glide
+import com.bumptech.glide.RequestManager
 import com.example.screensaver.analytics.PhotoAnalytics
 import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.AppPreferences
@@ -23,6 +25,7 @@ import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.recovery.StateRecoveryManager
 import com.example.screensaver.recovery.StateRestoration
 import com.example.screensaver.data.PhotoCache
+import com.example.screensaver.photos.PhotoManagerViewModel
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.SecurityPreferences
@@ -47,6 +50,12 @@ object AppModule {
     @Provides
     fun providePhotoAnalytics(@ApplicationContext context: Context): PhotoAnalytics {
         return PhotoAnalytics(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGlide(@ApplicationContext context: Context): RequestManager {
+        return Glide.with(context)
     }
 
     @Provides
@@ -104,6 +113,7 @@ object AppModule {
             context = context
         )
     }
+
 
     @Provides
     @Singleton

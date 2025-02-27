@@ -43,9 +43,11 @@ import com.example.screensaver.widgets.WidgetManager
 import com.example.screensaver.widgets.WidgetState
 import com.example.screensaver.widgets.WidgetType
 import android.content.res.Configuration
+import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.screensaver.data.SecureStorage
+import com.example.screensaver.photos.PhotoManagerViewModel
 
 
 @AndroidEntryPoint
@@ -55,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private var _navController: NavController? = null
     private val navController get() = _navController!!
     private lateinit var settingsButtonController: SettingsButtonController
+    private val photoManagerViewModel: PhotoManagerViewModel by viewModels()
 
     @Inject
     lateinit var photoManager: GooglePhotosManager
@@ -214,7 +217,9 @@ class MainActivity : AppCompatActivity() {
             initializePhotoDisplayManager()
 
             // Add validation here after photo manager is initialized
-            lockScreenPhotoManager.validateStoredPhotos()
+            lifecycleScope.launch {
+                lockScreenPhotoManager.validateStoredPhotos()
+            }
 
             startLockScreenService()
             initializePhotos()
@@ -677,6 +682,25 @@ class MainActivity : AppCompatActivity() {
 
                 // Initialize PhotoDisplayManager
                 photoDisplayManager.initialize(views, lifecycleScope)
+
+                // Observe virtual albums from ViewModel
+                lifecycleScope.launch {
+                    photoManagerViewModel.virtualAlbums.collect { albums ->
+                        val virtualAlbumPhotos = albums
+                            .filter { album -> album.isSelected }
+                            .flatMap { album ->
+                                album.photoUris.mapNotNull { uriString ->
+                                    try {
+                                        Uri.parse(uriString)
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error parsing URI from virtual album: $uriString", e)
+                                        null
+                                    }
+                                }
+                            }
+                        photoDisplayManager.updatePhotoSources(virtualAlbumPhotos)
+                    }
+                }
 
                 // Update settings
                 val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
