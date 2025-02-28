@@ -64,8 +64,8 @@
         app:iconSpaceReserved="false">
 
         <Preference
-            android:key="photo_manager"
-            android:title="@string/pref_photo_manager_title"
+            android:key="manage_photos"
+            android:title="@string/manage_photos"
             android:summary="@string/pref_photo_manager_summary"
             android:icon="@drawable/ic_photo_library" />
 

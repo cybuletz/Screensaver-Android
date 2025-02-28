@@ -23,4 +23,14 @@
     <color name="photo_placeholder">#E0E0E0</color>
     <color name="error_color">#B00020</color>
     <color name="success_color">#4CAF50</color>
+    <color name="accent">#FF4081</color>          <!-- Pink A200 -->
+    <color name="background">#FFFFFF</color>       <!-- White -->
+    <color name="background_dark">#121212</color>
+
+    <!-- Optional additional colors for the PhotoManager -->
+    <color name="surface">#FFFFFF</color>
+    <color name="on_surface">#000000</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_secondary">#FFFFFF</color>
+
 </resources>

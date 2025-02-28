@@ -168,6 +168,13 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".photos.PhotoManagerActivity"
+            android:label="@string/manage_photos"
+            android:theme="@style/Theme.PhotoManager"
+            android:exported="false">
+        </activity>
+
         <!-- Dream Service -->
         <service
             android:name=".PhotoDreamService"

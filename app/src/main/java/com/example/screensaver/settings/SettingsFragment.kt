@@ -69,12 +69,15 @@ import com.example.screensaver.widgets.WidgetState
 import com.example.screensaver.widgets.WidgetType
 import com.example.screensaver.widgets.WidgetManager
 import androidx.preference.SwitchPreferenceCompat
+import com.example.screensaver.photos.PhotoManagerActivity
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.SecurityPreferenceDialog
 import com.example.screensaver.security.SecurityPreferences
 import com.example.screensaver.widgets.WidgetPreferenceDialog
+import com.example.screensaver.models.MediaItem
+import com.example.screensaver.lock.LockScreenPhotoManager.PhotoAddMode
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -273,7 +276,25 @@ class SettingsFragment : PreferenceFragmentCompat() {
                             .putStringSet("selected_local_photos", selectedPhotos.toSet())
                             .apply()
 
+                        // Update UI
                         updateLocalPhotosUI()
+
+                        // Add to PhotoManager
+                        val mediaItems = selectedPhotos.map { uri ->
+                            MediaItem(
+                                id = uri,
+                                albumId = "local_picked",
+                                baseUrl = uri,
+                                mimeType = "image/*",
+                                width = 0,
+                                height = 0,
+                                description = null,
+                                createdAt = System.currentTimeMillis(),
+                                loadState = MediaItem.LoadState.IDLE
+                            )
+                        }
+
+                        photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
 
                         // Update app state
                         appDataManager.updateState { currentState ->
@@ -309,9 +330,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     // Google Sign-in result launcher
-    private val signInLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
+    private val signInLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         Log.d(TAG, "Sign in result received: ${result.resultCode}")
         when (result.resultCode) {
             android.app.Activity.RESULT_OK -> {
@@ -348,11 +367,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         Toast.makeText(context, "Settings saved", Toast.LENGTH_SHORT).show()
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val view = super.onCreateView(inflater, container, savedInstanceState)
 
         // Create a CoordinatorLayout to wrap the preferences and FAB
@@ -450,6 +465,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     findPreference<Preference>("security_preferences")?.setOnPreferenceClickListener {
                         SecurityPreferenceDialog.newInstance()
                             .show(childFragmentManager, "security_settings")
+                        true
+                    }
+
+                    findPreference<Preference>("manage_photos")?.setOnPreferenceClickListener {
+                        startActivity(Intent(requireContext(), PhotoManagerActivity::class.java))
                         true
                     }
 
