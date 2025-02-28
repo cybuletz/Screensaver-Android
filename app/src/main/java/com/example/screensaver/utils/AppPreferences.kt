@@ -143,6 +143,12 @@ class AppPreferences @Inject constructor(
         setSelectedAlbumIds(emptySet())
     }
 
+    fun removePickedUri(uri: String) {
+        val currentUris = getPickedUris().toMutableSet()
+        currentUris.remove(uri)
+        prefs.edit().putStringSet("picked_uris", currentUris).apply()
+    }
+
     fun clearAll() {
         prefs.edit().clear().commit() // Use commit() for synchronous execution
 
@@ -377,5 +383,9 @@ class AppPreferences @Inject constructor(
 
     private fun loadVirtualAlbums() {
         _virtualAlbumsFlow.value = getVirtualAlbums()
+    }
+
+    fun getPhotoSources(): Set<String> {
+        return prefs.getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
     }
 }

@@ -69,6 +69,7 @@ import com.example.screensaver.widgets.WidgetState
 import com.example.screensaver.widgets.WidgetType
 import com.example.screensaver.widgets.WidgetManager
 import androidx.preference.SwitchPreferenceCompat
+import com.example.screensaver.photos.PhotoManagerActivity
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
@@ -450,6 +451,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     findPreference<Preference>("security_preferences")?.setOnPreferenceClickListener {
                         SecurityPreferenceDialog.newInstance()
                             .show(childFragmentManager, "security_settings")
+                        true
+                    }
+
+                    findPreference<Preference>("manage_photos")?.setOnPreferenceClickListener {
+                        startActivity(Intent(requireContext(), PhotoManagerActivity::class.java))
                         true
                     }
 

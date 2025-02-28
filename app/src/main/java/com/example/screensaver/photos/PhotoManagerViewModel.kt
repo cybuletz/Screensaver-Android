@@ -1,33 +1,40 @@
 package com.example.screensaver.photos
 
 import android.content.Context
+import android.content.ContentUris
+import android.net.Uri
+import android.provider.MediaStore
+import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.lock.LockScreenPhotoManager
+import com.example.screensaver.models.MediaItem
+import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.AppPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import javax.inject.Inject
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.util.Log
-import com.example.screensaver.models.MediaItem
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
-import androidx.lifecycle.viewModelScope
+import javax.inject.Inject
+
 
 @HiltViewModel
 class PhotoManagerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val lockScreenPhotoManager: LockScreenPhotoManager,
-    private val preferences: AppPreferences
+    private val googlePhotosManager: GooglePhotosManager,
+    private val preferences: AppPreferences,
+    private val secureStorage: SecureStorage,
+    private val lockScreenPhotoManager: LockScreenPhotoManager
 ) : ViewModel() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow<PhotoManagerState>(PhotoManagerState.Idle)
     private val _photos = MutableStateFlow<List<ManagedPhoto>>(emptyList())
     private val _virtualAlbums = MutableStateFlow<List<VirtualAlbum>>(emptyList())
@@ -38,23 +45,28 @@ class PhotoManagerViewModel @Inject constructor(
     val virtualAlbums: StateFlow<List<VirtualAlbum>> = _virtualAlbums.asStateFlow()
     val selectedCount: StateFlow<Int> = _selectedCount.asStateFlow()
 
-    companion object {
-        private const val TAG = "PhotoManagerViewModel"
-    }
-
     data class ManagedPhoto(
         val id: String,
         val uri: String,
         val sourceType: PhotoSourceType,
         val albumId: String,
-        val isSelected: Boolean = false,
-        val dateAdded: Long = System.currentTimeMillis()
+        val dateAdded: Long,
+        val isSelected: Boolean = false
     )
 
     enum class PhotoSourceType {
-        LOCAL,
+        LOCAL_PICKED,
+        LOCAL_ALBUM,
         GOOGLE_PHOTOS,
         VIRTUAL_ALBUM
+    }
+
+    sealed class PhotoManagerState {
+        object Idle : PhotoManagerState()
+        object Loading : PhotoManagerState()
+        object Empty : PhotoManagerState()
+        data class Error(val message: String) : PhotoManagerState()
+        data class Success(val message: String) : PhotoManagerState()
     }
 
     enum class SortOption {
@@ -71,52 +83,54 @@ class PhotoManagerViewModel @Inject constructor(
         val isSelected: Boolean = false
     )
 
-    sealed class PhotoManagerState {
-        object Idle : PhotoManagerState()
-        object Loading : PhotoManagerState()
-        data class Success(val message: String) : PhotoManagerState()
-        data class Error(val message: String) : PhotoManagerState()
+    companion object {
+        private const val TAG = "PhotoManagerViewModel"
     }
 
     init {
-        loadInitialState()
-    }
-
-    private fun loadInitialState() {
-        scope.launch {
+        viewModelScope.launch {
             try {
-                _state.value = PhotoManagerState.Loading
+                // Load saved albums from preferences
+                val savedAlbums = preferences.getString("virtual_albums", "[]")
+                val jsonArray = JSONArray(savedAlbums)
+                val albums = mutableListOf<VirtualAlbum>()
 
-                // Load virtual albums from preferences
-                val savedAlbums = preferences.getString("virtual_albums", "")
-                if (savedAlbums.isNotEmpty()) {
-                    // Parse saved albums JSON
+                for (i in 0 until jsonArray.length()) {
+                    val albumJson = jsonArray.getJSONObject(i)
+                    val photoUrisArray = albumJson.getJSONArray("photoUris")
+                    val photoUris = mutableListOf<String>()
+                    for (j in 0 until photoUrisArray.length()) {
+                        photoUris.add(photoUrisArray.getString(j))
+                    }
+
+                    albums.add(VirtualAlbum(
+                        id = albumJson.getString("id"),
+                        name = albumJson.getString("name"),
+                        photoUris = photoUris,
+                        dateCreated = albumJson.getLong("dateCreated"),
+                        isSelected = albumJson.optBoolean("isSelected", false)
+                    ))
                 }
 
-                // Load all photos
-                val localPhotos = lockScreenPhotoManager.loadPhotos()
-                val managedPhotos = localPhotos?.map { mediaItem ->
-                    ManagedPhoto(
-                        id = mediaItem.id,
-                        uri = mediaItem.baseUrl,
-                        sourceType = determineSourceType(mediaItem),
-                        albumId = mediaItem.albumId
-                    )
-                } ?: emptyList()
+                Log.d(TAG, "Loaded ${albums.size} albums from preferences")
+                _virtualAlbums.value = albums
 
-                _photos.value = managedPhotos
-                _state.value = PhotoManagerState.Idle
+                // Restore albums to LockScreenPhotoManager
+                albums.forEach { album ->
+                    lockScreenPhotoManager.addVirtualAlbum(LockScreenPhotoManager.VirtualAlbum(
+                        id = album.id,
+                        name = album.name,
+                        photoUris = album.photoUris,
+                        dateCreated = album.dateCreated,
+                        isSelected = album.isSelected
+                    ))
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading initial state", e)
-                _state.value = PhotoManagerState.Error("Failed to load photos")
+                Log.e(TAG, "Error loading virtual albums", e)
             }
-        }
-    }
 
-    private fun determineSourceType(mediaItem: MediaItem): PhotoSourceType {
-        return when {
-            mediaItem.baseUrl.contains("googleusercontent") -> PhotoSourceType.GOOGLE_PHOTOS
-            else -> PhotoSourceType.LOCAL
+            // Now load initial state
+            loadInitialState()
         }
     }
 
@@ -133,8 +147,225 @@ class PhotoManagerViewModel @Inject constructor(
         }
     }
 
+    private fun loadInitialState() {
+        viewModelScope.launch {
+            try {
+                _state.value = PhotoManagerState.Loading
+                Log.d(TAG, "Starting to load initial state")
+
+                val photos = mutableListOf<ManagedPhoto>()
+
+                // First try to get photos from LockScreenPhotoManager
+                val currentPhotoCount = lockScreenPhotoManager.getPhotoCount()
+                Log.d(TAG, "LockScreenPhotoManager has $currentPhotoCount photos")
+
+                // Convert existing photos from LockScreenPhotoManager
+                for (i in 0 until currentPhotoCount) {
+                    lockScreenPhotoManager.getPhotoUrl(i)?.let { url ->
+                        val sourceType = when {
+                            url.contains("com.google.android.apps.photos.cloudpicker") -> PhotoSourceType.GOOGLE_PHOTOS
+                            url.contains("content://media/picker") -> PhotoSourceType.LOCAL_PICKED
+                            url.contains("content://media/external") -> PhotoSourceType.LOCAL_ALBUM
+                            else -> PhotoSourceType.VIRTUAL_ALBUM
+                        }
+
+                        photos.add(ManagedPhoto(
+                            id = url,
+                            uri = url,
+                            sourceType = sourceType,
+                            albumId = when(sourceType) {
+                                PhotoSourceType.GOOGLE_PHOTOS -> "google_photos"
+                                PhotoSourceType.LOCAL_PICKED -> "picked_photos"
+                                PhotoSourceType.LOCAL_ALBUM -> "local_albums"
+                                PhotoSourceType.VIRTUAL_ALBUM -> "virtual_albums"
+                            },
+                            dateAdded = System.currentTimeMillis()
+                        ))
+                    }
+                }
+
+                // Add photos from picked URIs if they're not already included
+                preferences.getPickedUris().forEach { uriString ->
+                    if (!photos.any { it.uri == uriString }) {
+                        val sourceType = when {
+                            uriString.contains("com.google.android.apps.photos.cloudpicker") -> PhotoSourceType.GOOGLE_PHOTOS
+                            else -> PhotoSourceType.LOCAL_PICKED
+                        }
+                        photos.add(ManagedPhoto(
+                            id = uriString,
+                            uri = uriString,
+                            sourceType = sourceType,
+                            albumId = if (sourceType == PhotoSourceType.GOOGLE_PHOTOS) "google_picked" else "local_picked",
+                            dateAdded = System.currentTimeMillis()
+                        ))
+                    }
+                }
+
+                // Load local photos from selected albums if any
+                val selectedAlbumIds = preferences.getSelectedAlbumIds()
+                if (selectedAlbumIds.isNotEmpty()) {
+                    Log.d(TAG, "Loading photos from ${selectedAlbumIds.size} local albums")
+                    photos.addAll(loadLocalPhotos())
+                }
+
+                // Update virtual albums state
+                val virtualAlbums = preferences.getVirtualAlbums()
+                _virtualAlbums.value = virtualAlbums.map { album ->
+                    VirtualAlbum(
+                        id = album.id,
+                        name = album.name,
+                        photoUris = album.photoUris,
+                        dateCreated = album.dateCreated,
+                        isSelected = preferences.getSelectedVirtualAlbumIds().contains(album.id)
+                    )
+                }
+
+                // Log detailed photo counts by source
+                Log.d(TAG, """Photos loaded by source:
+                • Total: ${photos.size}
+                • Google Photos: ${photos.count { it.sourceType == PhotoSourceType.GOOGLE_PHOTOS }}
+                • Local Picked: ${photos.count { it.sourceType == PhotoSourceType.LOCAL_PICKED }}
+                • Local Album: ${photos.count { it.sourceType == PhotoSourceType.LOCAL_ALBUM }}
+                • Virtual Album: ${photos.count { it.sourceType == PhotoSourceType.VIRTUAL_ALBUM }}
+            """.trimIndent())
+
+                if (photos.isNotEmpty()) {
+                    _photos.value = photos.sortedByDescending { it.dateAdded }
+                    _state.value = PhotoManagerState.Idle
+                } else {
+                    _photos.value = emptyList()
+                    _state.value = PhotoManagerState.Empty
+                    Log.d(TAG, "No photos found")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading initial state", e)
+                _state.value = PhotoManagerState.Error("Failed to load photos: ${e.message}")
+                _photos.value = emptyList()
+            }
+        }
+    }
+
+    private suspend fun loadLocalPhotos(): List<ManagedPhoto> = withContext(Dispatchers.IO) {
+        val photos = mutableListOf<ManagedPhoto>()
+        val selectedAlbumIds = preferences.getSelectedAlbumIds()
+
+        try {
+            // First load picked photos
+            preferences.getPickedUris().forEach { uriString ->
+                try {
+                    Uri.parse(uriString)?.let { uri ->
+                        context.contentResolver.query(
+                            uri,
+                            arrayOf(
+                                MediaStore.Images.Media._ID,
+                                MediaStore.Images.Media.DATE_ADDED,
+                                MediaStore.Images.Media.DISPLAY_NAME
+                            ),
+                            null,
+                            null,
+                            null
+                        )?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+                                val dateAdded = cursor.getLong(dateAddedColumn) * 1000 // Convert to milliseconds
+
+                                photos.add(
+                                    ManagedPhoto(
+                                        id = uri.toString(),
+                                        uri = uri.toString(),
+                                        sourceType = PhotoSourceType.LOCAL_PICKED,
+                                        albumId = "picked_photos",
+                                        dateAdded = dateAdded
+                                    )
+                                )
+                            } else {
+                                // If cursor is empty but URI exists, add with current timestamp
+                                photos.add(
+                                    ManagedPhoto(
+                                        id = uri.toString(),
+                                        uri = uri.toString(),
+                                        sourceType = PhotoSourceType.LOCAL_PICKED,
+                                        albumId = "picked_photos",
+                                        dateAdded = System.currentTimeMillis()
+                                    )
+                                )
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading picked photo: $uriString", e)
+                }
+            }
+
+            // Then load photos from selected albums
+            selectedAlbumIds.forEach { albumId ->
+                try {
+                    val selection = "${MediaStore.Images.Media.BUCKET_ID} = ?"
+                    val selectionArgs = arrayOf(albumId)
+                    val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
+
+                    context.contentResolver.query(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        arrayOf(
+                            MediaStore.Images.Media._ID,
+                            MediaStore.Images.Media.DATE_ADDED
+                        ),
+                        selection,
+                        selectionArgs,
+                        sortOrder
+                    )?.use { cursor ->
+                        while (cursor.moveToNext()) {
+                            val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
+                            val dateAdded = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED))
+                            val contentUri = ContentUris.withAppendedId(
+                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                id
+                            )
+
+                            photos.add(
+                                ManagedPhoto(
+                                    id = id.toString(),
+                                    uri = contentUri.toString(),
+                                    sourceType = PhotoSourceType.LOCAL_ALBUM,
+                                    albumId = albumId,
+                                    dateAdded = dateAdded * 1000 // Convert to milliseconds
+                                )
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading photos from album $albumId", e)
+                }
+            }
+
+            Log.d(TAG, """Local photos loaded:
+            • Total: ${photos.size}
+            • Picked: ${photos.count { it.sourceType == PhotoSourceType.LOCAL_PICKED }}
+            • Album: ${photos.count { it.sourceType == PhotoSourceType.LOCAL_ALBUM }}
+        """.trimIndent())
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in loadLocalPhotos", e)
+        }
+
+        photos
+    }
+
+    fun selectAllPhotos() {
+        val updatedPhotos = _photos.value.map { it.copy(isSelected = true) }
+        _photos.value = updatedPhotos
+        _selectedCount.value = updatedPhotos.size
+    }
+
+    fun deselectAllPhotos() {
+        val updatedPhotos = _photos.value.map { it.copy(isSelected = false) }
+        _photos.value = updatedPhotos
+        _selectedCount.value = 0
+    }
+
     fun createVirtualAlbum(name: String) {
-        scope.launch {
+        viewModelScope.launch {
             try {
                 _state.value = PhotoManagerState.Loading
 
@@ -150,16 +381,27 @@ class PhotoManagerViewModel @Inject constructor(
                     photoUris = selectedPhotos.map { it.uri }
                 )
 
+                // Add to LockScreenPhotoManager
+                lockScreenPhotoManager.addVirtualAlbum(LockScreenPhotoManager.VirtualAlbum(
+                    id = newAlbum.id,
+                    name = newAlbum.name,
+                    photoUris = newAlbum.photoUris,
+                    dateCreated = newAlbum.dateCreated,
+                    isSelected = true
+                ))
+
+                // Update local state
                 val currentAlbums = _virtualAlbums.value.toMutableList()
                 currentAlbums.add(newAlbum)
                 _virtualAlbums.value = currentAlbums
 
-                // Save to preferences
+                // Save immediately after creation
                 saveVirtualAlbums(currentAlbums)
 
-                // Clear selection
                 clearSelection()
                 _state.value = PhotoManagerState.Success("Album created successfully")
+
+                Log.d(TAG, "Created and saved album: ${newAlbum.name} with ${newAlbum.photoUris.size} photos")
             } catch (e: Exception) {
                 Log.e(TAG, "Error creating virtual album", e)
                 _state.value = PhotoManagerState.Error("Failed to create album")
@@ -167,8 +409,40 @@ class PhotoManagerViewModel @Inject constructor(
         }
     }
 
+    fun reloadVirtualAlbums() {
+        viewModelScope.launch {
+            try {
+                val savedAlbums = preferences.getString("virtual_albums", "[]")
+                val jsonArray = JSONArray(savedAlbums)
+                val albums = mutableListOf<VirtualAlbum>()
+
+                for (i in 0 until jsonArray.length()) {
+                    val albumJson = jsonArray.getJSONObject(i)
+                    val photoUrisArray = albumJson.getJSONArray("photoUris")
+                    val photoUris = mutableListOf<String>()
+                    for (j in 0 until photoUrisArray.length()) {
+                        photoUris.add(photoUrisArray.getString(j))
+                    }
+
+                    albums.add(VirtualAlbum(
+                        id = albumJson.getString("id"),
+                        name = albumJson.getString("name"),
+                        photoUris = photoUris,
+                        dateCreated = albumJson.getLong("dateCreated"),
+                        isSelected = albumJson.optBoolean("isSelected", false)
+                    ))
+                }
+
+                Log.d(TAG, "Reloaded ${albums.size} albums from preferences")
+                _virtualAlbums.value = albums
+            } catch (e: Exception) {
+                Log.e(TAG, "Error reloading virtual albums", e)
+            }
+        }
+    }
+
     fun deleteVirtualAlbum(albumId: String) {
-        scope.launch {
+        viewModelScope.launch {
             try {
                 _state.value = PhotoManagerState.Loading
 
@@ -199,17 +473,95 @@ class PhotoManagerViewModel @Inject constructor(
         _photos.value = sorted
     }
 
+    fun groupPhotosBySource() {
+        val grouped = _photos.value.sortedBy {
+            when (it.sourceType) {
+                PhotoSourceType.GOOGLE_PHOTOS -> 0
+                PhotoSourceType.LOCAL_PICKED -> 1
+                PhotoSourceType.LOCAL_ALBUM -> 2
+                PhotoSourceType.VIRTUAL_ALBUM -> 3
+            }
+        }
+        _photos.value = grouped
+    }
+
+    fun removeSelectedPhotos() {
+        viewModelScope.launch {
+            try {
+                _state.value = PhotoManagerState.Loading
+                val selectedPhotos = _photos.value.filter { it.isSelected }
+
+                // Remove from LockScreenPhotoManager
+                selectedPhotos.forEach { photo ->
+                    lockScreenPhotoManager.removePhoto(photo.uri)
+
+                    // If it was individually picked, also remove from preferences
+                    if (photo.sourceType == PhotoSourceType.LOCAL_PICKED) {
+                        preferences.removePickedUri(photo.uri)
+                    }
+                }
+
+                // Update UI
+                val updatedPhotos = _photos.value.filterNot { it.isSelected }
+                _photos.value = updatedPhotos
+                _selectedCount.value = 0
+                _state.value = PhotoManagerState.Success("Removed ${selectedPhotos.size} photos")
+            } catch (e: Exception) {
+                _state.value = PhotoManagerState.Error("Failed to remove photos: ${e.message}")
+            }
+        }
+    }
+
     private fun clearSelection() {
         val currentPhotos = _photos.value.map { it.copy(isSelected = false) }
         _photos.value = currentPhotos
         _selectedCount.value = 0
     }
 
+    fun saveVirtualAlbums() {
+        viewModelScope.launch {
+            try {
+                val albums = _virtualAlbums.value
+                Log.d(TAG, "Saving ${albums.size} virtual albums")
+
+                // Save to preferences
+                val jsonArray = JSONArray()
+                albums.forEach { album ->
+                    val albumJson = JSONObject().apply {
+                        put("id", album.id)
+                        put("name", album.name)
+                        put("photoUris", JSONArray(album.photoUris))
+                        put("dateCreated", album.dateCreated)
+                        put("isSelected", album.isSelected)
+                    }
+                    jsonArray.put(albumJson)
+                }
+                preferences.setString("virtual_albums", jsonArray.toString())
+                Log.d(TAG, "Successfully saved ${albums.size} albums to preferences")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving virtual albums", e)
+            }
+        }
+    }
+
     private suspend fun saveVirtualAlbums(albums: List<VirtualAlbum>) {
         withContext(Dispatchers.IO) {
             try {
-                // Save albums to preferences as JSON
-                preferences.setString("virtual_albums", albums.toString())
+                Log.d(TAG, "Saving ${albums.size} virtual albums")
+
+                val jsonArray = JSONArray()
+                albums.forEach { album ->
+                    val albumJson = JSONObject().apply {
+                        put("id", album.id)
+                        put("name", album.name)
+                        put("photoUris", JSONArray(album.photoUris))
+                        put("dateCreated", album.dateCreated)
+                        put("isSelected", album.isSelected)
+                    }
+                    jsonArray.put(albumJson)
+                }
+                preferences.setString("virtual_albums", jsonArray.toString())
+                Log.d(TAG, "Successfully saved ${albums.size} albums to preferences")
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving virtual albums", e)
             }
@@ -227,9 +579,14 @@ class PhotoManagerViewModel @Inject constructor(
         }
     }
 
+    fun reloadState() {
+        loadInitialState()
+    }
+
     override fun onCleared() {
         super.onCleared()
-        scope.launch {
+        viewModelScope.launch {
+            Log.d(TAG, "ViewModel being cleared, saving ${_virtualAlbums.value.size} albums")
             saveVirtualAlbums(_virtualAlbums.value)
         }
     }

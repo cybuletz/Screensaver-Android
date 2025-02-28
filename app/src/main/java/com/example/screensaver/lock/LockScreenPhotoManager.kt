@@ -359,6 +359,32 @@ class LockScreenPhotoManager @Inject constructor(
         }
     }
 
+    fun removePhoto(uri: String) {
+        val previousCount = mediaItems.size
+        mediaItems.removeIf { it.baseUrl == uri }
+
+        // Also remove from virtual albums if present
+        virtualAlbums.forEach { album ->
+            val updatedPhotoUris = album.photoUris.filterNot { it == uri }
+            if (updatedPhotoUris.size != album.photoUris.size) {
+                val updatedAlbum = album.copy(photoUris = updatedPhotoUris)
+                virtualAlbums.removeIf { it.id == album.id }
+                if (updatedPhotoUris.isNotEmpty()) {
+                    virtualAlbums.add(updatedAlbum)
+                }
+            }
+        }
+
+        // Remove empty virtual albums
+        virtualAlbums.removeIf { it.photoUris.isEmpty() }
+
+        // Save changes
+        saveItems()
+        saveVirtualAlbums()
+
+        Log.d(TAG, "Removed photo with URI: $uri (previous count: $previousCount, new count: ${mediaItems.size})")
+    }
+
     private fun saveVirtualAlbums() {
         try {
             val jsonArray = JSONArray()

@@ -9,4 +9,9 @@
         <item quantity="one">%d photo selected</item>
         <item quantity="other">%d photos selected</item>
     </plurals>
+
+    <plurals name="confirm_delete_photos">
+        <item quantity="one">Delete %d selected photo?</item>
+        <item quantity="other">Delete %d selected photos?</item>
+    </plurals>
 </resources>
