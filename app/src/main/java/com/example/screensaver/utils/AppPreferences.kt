@@ -87,6 +87,8 @@ class AppPreferences @Inject constructor(
         private const val PREF_DARK_MODE = "dark_mode"
 
         private const val PREF_PREVIEW_COUNT = "preview_count"
+
+        private const val KEY_PICKED_URIS = "picked_photo_uris"
     }
 
     enum class DisplayMode {
@@ -264,11 +266,17 @@ class AppPreferences @Inject constructor(
     }
 
     fun savePickedUris(uris: Set<Uri>) {
-        prefs.edit().putStringSet("picked_photo_uris", uris.map { it.toString() }.toSet()).apply()
+        prefs.edit().putStringSet(KEY_PICKED_URIS, uris.map { it.toString() }.toSet()).apply()
     }
 
     fun getPickedUris(): Set<String> {
-        return prefs.getStringSet("picked_photo_uris", emptySet()) ?: emptySet()
+        return prefs.getStringSet(KEY_PICKED_URIS, emptySet()) ?: emptySet()
+    }
+
+    fun addPickedUri(uri: String) {
+        val currentUris = getPickedUris().toMutableSet()
+        currentUris.add(uri)
+        prefs.edit().putStringSet(KEY_PICKED_URIS, currentUris).apply()
     }
 
     fun isShowPhotoInfo(): Boolean = prefs.getBoolean(PREF_SHOW_PHOTO_INFO, true)

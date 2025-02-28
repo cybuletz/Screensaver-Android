@@ -181,11 +181,15 @@ class PhotoManagerViewModel @Inject constructor(
                             },
                             dateAdded = System.currentTimeMillis()
                         ))
+                        Log.d(TAG, "Added photo from LockScreenPhotoManager: $url (type: $sourceType)")
                     }
                 }
 
                 // Add photos from picked URIs if they're not already included
-                preferences.getPickedUris().forEach { uriString ->
+                val pickedUris = preferences.getPickedUris()
+                Log.d(TAG, "Found ${pickedUris.size} picked URIs in preferences")
+
+                pickedUris.forEach { uriString ->
                     if (!photos.any { it.uri == uriString }) {
                         val sourceType = when {
                             uriString.contains("com.google.android.apps.photos.cloudpicker") -> PhotoSourceType.GOOGLE_PHOTOS
@@ -198,6 +202,22 @@ class PhotoManagerViewModel @Inject constructor(
                             albumId = if (sourceType == PhotoSourceType.GOOGLE_PHOTOS) "google_picked" else "local_picked",
                             dateAdded = System.currentTimeMillis()
                         ))
+                        Log.d(TAG, "Added picked photo: $uriString")
+
+                        // Make sure it's in the LockScreenPhotoManager
+                        val mediaItem = MediaItem(
+                            id = uriString,
+                            albumId = "local_picked",
+                            baseUrl = uriString,
+                            mimeType = "image/*",
+                            width = 0,
+                            height = 0,
+                            description = null,
+                            createdAt = System.currentTimeMillis(),
+                            loadState = MediaItem.LoadState.IDLE
+                        )
+                        lockScreenPhotoManager.addPhotos(listOf(mediaItem), LockScreenPhotoManager.PhotoAddMode.MERGE)
+                        Log.d(TAG, "Added missing photo to LockScreenPhotoManager: $uriString")
                     }
                 }
 
@@ -242,6 +262,47 @@ class PhotoManagerViewModel @Inject constructor(
                 Log.e(TAG, "Error loading initial state", e)
                 _state.value = PhotoManagerState.Error("Failed to load photos: ${e.message}")
                 _photos.value = emptyList()
+            }
+        }
+    }
+
+    fun handleLocalPhotoSelection(selectedPhotos: ArrayList<String>) {
+        viewModelScope.launch {
+            try {
+                _state.value = PhotoManagerState.Loading
+                Log.d(TAG, "Processing ${selectedPhotos.size} selected local photos")
+
+                // Convert to MediaItems and add to LockScreenPhotoManager
+                val mediaItems = selectedPhotos.map { uriString ->
+                    MediaItem(
+                        id = uriString,
+                        albumId = "local_picked",
+                        baseUrl = uriString,
+                        mimeType = "image/*",
+                        width = 0,
+                        height = 0,
+                        description = null,
+                        createdAt = System.currentTimeMillis(),
+                        loadState = MediaItem.LoadState.IDLE
+                    )
+                }
+
+                // Add to LockScreenPhotoManager
+                lockScreenPhotoManager.addPhotos(mediaItems, LockScreenPhotoManager.PhotoAddMode.APPEND)
+
+                // Save URIs to preferences
+                val currentPickedUris = preferences.getPickedUris().toMutableSet()
+                currentPickedUris.addAll(selectedPhotos)
+                preferences.savePickedUris(currentPickedUris.map { Uri.parse(it) }.toSet())
+
+                // Reload the state to show new photos
+                loadInitialState()
+
+                _state.value = PhotoManagerState.Success("Added ${selectedPhotos.size} photos")
+                Log.d(TAG, "Successfully added ${selectedPhotos.size} local photos")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling local photo selection", e)
+                _state.value = PhotoManagerState.Error("Failed to add selected photos: ${e.message}")
             }
         }
     }

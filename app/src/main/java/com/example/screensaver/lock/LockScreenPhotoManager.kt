@@ -528,6 +528,30 @@ class LockScreenPhotoManager @Inject constructor(
         Log.d(TAG, "Final photo count: ${mediaItems.size}")
     }
 
+    fun hasPhoto(uri: String): Boolean {
+        return mediaItems.any { it.baseUrl == uri }
+    }
+
+    fun addPhoto(uri: String) {
+        if (!hasPhoto(uri)) {
+            val newItem = MediaItem(
+                id = uri,
+                albumId = "local_picked",
+                baseUrl = uri,
+                mimeType = "image/*",
+                width = 0,
+                height = 0,
+                description = null,
+                createdAt = System.currentTimeMillis(),
+                loadState = MediaItem.LoadState.IDLE
+            )
+            addPhotos(listOf(newItem), PhotoAddMode.MERGE)
+            Log.d(TAG, "Added new photo: $uri")
+        } else {
+            Log.d(TAG, "Photo already exists: $uri")
+        }
+    }
+
     private fun isDuplicate(newItem: MediaItem): Boolean {
         return mediaItems.any { existing ->
             existing.id == newItem.id || existing.baseUrl == newItem.baseUrl
