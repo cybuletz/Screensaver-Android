@@ -552,21 +552,39 @@ class PhotoManagerViewModel @Inject constructor(
                 _state.value = PhotoManagerState.Loading
                 val selectedPhotos = _photos.value.filter { it.isSelected }
 
-                // Remove from LockScreenPhotoManager
+                // Remove from LockScreenPhotoManager and update preferences
                 selectedPhotos.forEach { photo ->
                     lockScreenPhotoManager.removePhoto(photo.uri)
 
-                    // If it was individually picked, also remove from preferences
+                    // Remove from picked URIs if it was individually picked
                     if (photo.sourceType == PhotoSourceType.LOCAL_PICKED) {
                         preferences.removePickedUri(photo.uri)
                     }
                 }
 
-                // Update UI
+                // Update local photo selections
+                val currentLocalPhotos = preferences.getLocalSelectedPhotos()
+                val updatedLocalPhotos = currentLocalPhotos.filterNot { uri ->
+                    selectedPhotos.any { photo -> photo.uri == uri }
+                }.toSet()
+                preferences.updateLocalSelectedPhotos(updatedLocalPhotos)
+
+                // Update album selections if needed
+                val currentAlbumIds = preferences.getSelectedAlbumIds()
+                val remainingPhotos = _photos.value.filterNot { it.isSelected }
+                val albumsToKeep = remainingPhotos
+                    .filter { it.sourceType == PhotoSourceType.LOCAL_ALBUM }
+                    .mapNotNull { it.albumId }
+                    .toSet()
+
+                preferences.setSelectedAlbumIds(currentAlbumIds.intersect(albumsToKeep))
+
+                // Update UI state
                 val updatedPhotos = _photos.value.filterNot { it.isSelected }
                 _photos.value = updatedPhotos
                 _selectedCount.value = 0
                 _state.value = PhotoManagerState.Success("Removed ${selectedPhotos.size} photos")
+
             } catch (e: Exception) {
                 _state.value = PhotoManagerState.Error("Failed to remove photos: ${e.message}")
             }

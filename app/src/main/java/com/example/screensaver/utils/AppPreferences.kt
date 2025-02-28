@@ -273,10 +273,14 @@ class AppPreferences @Inject constructor(
         return prefs.getStringSet(KEY_PICKED_URIS, emptySet()) ?: emptySet()
     }
 
-    fun addPickedUri(uri: String) {
-        val currentUris = getPickedUris().toMutableSet()
-        currentUris.add(uri)
-        prefs.edit().putStringSet(KEY_PICKED_URIS, currentUris).apply()
+    fun updateLocalSelectedPhotos(selectedPhotos: Set<String>) {
+        prefs.edit()
+            .putStringSet("selected_local_photos", selectedPhotos)
+            .apply()
+    }
+
+    fun getLocalSelectedPhotos(): Set<String> {
+        return prefs.getStringSet("selected_local_photos", emptySet()) ?: emptySet()
     }
 
     fun isShowPhotoInfo(): Boolean = prefs.getBoolean(PREF_SHOW_PHOTO_INFO, true)
