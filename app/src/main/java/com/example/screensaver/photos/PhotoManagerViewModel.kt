@@ -266,47 +266,6 @@ class PhotoManagerViewModel @Inject constructor(
         }
     }
 
-    fun handleLocalPhotoSelection(selectedPhotos: ArrayList<String>) {
-        viewModelScope.launch {
-            try {
-                _state.value = PhotoManagerState.Loading
-                Log.d(TAG, "Processing ${selectedPhotos.size} selected local photos")
-
-                // Convert to MediaItems and add to LockScreenPhotoManager
-                val mediaItems = selectedPhotos.map { uriString ->
-                    MediaItem(
-                        id = uriString,
-                        albumId = "local_picked",
-                        baseUrl = uriString,
-                        mimeType = "image/*",
-                        width = 0,
-                        height = 0,
-                        description = null,
-                        createdAt = System.currentTimeMillis(),
-                        loadState = MediaItem.LoadState.IDLE
-                    )
-                }
-
-                // Add to LockScreenPhotoManager
-                lockScreenPhotoManager.addPhotos(mediaItems, LockScreenPhotoManager.PhotoAddMode.APPEND)
-
-                // Save URIs to preferences
-                val currentPickedUris = preferences.getPickedUris().toMutableSet()
-                currentPickedUris.addAll(selectedPhotos)
-                preferences.savePickedUris(currentPickedUris.map { Uri.parse(it) }.toSet())
-
-                // Reload the state to show new photos
-                loadInitialState()
-
-                _state.value = PhotoManagerState.Success("Added ${selectedPhotos.size} photos")
-                Log.d(TAG, "Successfully added ${selectedPhotos.size} local photos")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling local photo selection", e)
-                _state.value = PhotoManagerState.Error("Failed to add selected photos: ${e.message}")
-            }
-        }
-    }
-
     private suspend fun loadLocalPhotos(): List<ManagedPhoto> = withContext(Dispatchers.IO) {
         val photos = mutableListOf<ManagedPhoto>()
         val selectedAlbumIds = preferences.getSelectedAlbumIds()
@@ -648,13 +607,12 @@ class PhotoManagerViewModel @Inject constructor(
     }
 
     fun toggleVirtualAlbumSelection(albumId: String) {
-        viewModelScope.launch {
-            try {
-                lockScreenPhotoManager.toggleVirtualAlbumSelection(albumId)
-                _state.value = PhotoManagerState.Success("Album selection updated")
-            } catch (e: Exception) {
-                _state.value = PhotoManagerState.Error("Failed to update album selection")
-            }
+        val currentAlbums = _virtualAlbums.value.toMutableList()
+        val index = currentAlbums.indexOfFirst { it.id == albumId }
+        if (index != -1) {
+            currentAlbums[index] = currentAlbums[index].copy(isSelected = !currentAlbums[index].isSelected)
+            _virtualAlbums.value = currentAlbums
+            Log.d(TAG, "Album selection toggled: $albumId, new state: ${currentAlbums[index].isSelected}")
         }
     }
 

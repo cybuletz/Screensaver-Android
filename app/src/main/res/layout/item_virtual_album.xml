@@ -19,7 +19,8 @@
             android:layout_height="0dp"
             app:layout_constraintDimensionRatio="1:1"
             app:layout_constraintTop_toTopOf="parent"
-            android:scaleType="centerCrop"/>
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/album_cover_description"/>
 
         <ImageButton
             android:id="@+id/albumOptionsButton"
@@ -29,7 +30,8 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            android:padding="12dp"/>
+            android:padding="12dp"
+            android:contentDescription="@string/album_options_button_description"/>
 
         <TextView
             android:id="@+id/albumName"
@@ -56,6 +58,15 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             tools:text="42 photos"/>
+
+        <CheckBox
+            android:id="@+id/albumSelector"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="8dp"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/albumOptionsButton"
+            android:contentDescription="@string/select_album_checkbox_description"/>
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

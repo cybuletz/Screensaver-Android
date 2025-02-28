@@ -6,12 +6,14 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.RequestManager
+import com.example.screensaver.R
 import com.example.screensaver.databinding.ItemVirtualAlbumBinding
 
 class VirtualAlbumsAdapter(
     private val glide: RequestManager,
     private val onAlbumClick: (PhotoManagerViewModel.VirtualAlbum) -> Unit,
-    private val onAlbumOptionsClick: (PhotoManagerViewModel.VirtualAlbum) -> Unit
+    private val onAlbumOptionsClick: (PhotoManagerViewModel.VirtualAlbum) -> Unit,
+    private val onAlbumSelectionChanged: (PhotoManagerViewModel.VirtualAlbum, Boolean) -> Unit
 ) : ListAdapter<PhotoManagerViewModel.VirtualAlbum, VirtualAlbumsAdapter.VirtualAlbumViewHolder>(VirtualAlbumDiffCallback()) {
 
     inner class VirtualAlbumViewHolder(
@@ -19,27 +21,45 @@ class VirtualAlbumsAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(album: PhotoManagerViewModel.VirtualAlbum) {
-            binding.albumName.text = album.name
-            binding.photoCount.text = "${album.photoUris.size} photos"
+            binding.apply {
+                // Basic text setup
+                albumName.text = album.name
+                photoCount.text = "${album.photoUris.size} photos"
+                albumSelector.isChecked = album.isSelected
 
-            // Load cover photo if available
-            album.photoUris.firstOrNull()?.let { coverUri ->
-                glide.load(coverUri)
-                    .centerCrop()
-                    .into(binding.albumCover)
-            }
+                // Content descriptions with proper string formatting
+                albumOptionsButton.contentDescription = String.format(
+                    root.context.getString(R.string.album_options_button_description),
+                    album.name
+                )
+                albumCover.contentDescription = String.format(
+                    root.context.getString(R.string.album_cover_description),
+                    album.name
+                )
+                albumSelector.contentDescription = String.format(
+                    root.context.getString(R.string.select_album_checkbox_description),
+                    album.name
+                )
 
-            itemView.setOnClickListener {
-                onAlbumClick(album)
-            }
+                // Cover photo loading
+                album.photoUris.firstOrNull()?.let { coverUri ->
+                    glide.load(coverUri)
+                        .centerCrop()
+                        .into(albumCover)
+                }
 
-            itemView.setOnLongClickListener {
-                onAlbumOptionsClick(album)
-                true
-            }
+                // Click listeners
+                albumSelector.setOnCheckedChangeListener { _, isChecked ->
+                    onAlbumSelectionChanged(album, isChecked)
+                }
 
-            binding.albumOptionsButton.setOnClickListener {
-                onAlbumOptionsClick(album)
+                itemView.setOnClickListener {
+                    onAlbumClick(album)
+                }
+
+                albumOptionsButton.setOnClickListener {
+                    onAlbumOptionsClick(album)
+                }
             }
         }
     }
