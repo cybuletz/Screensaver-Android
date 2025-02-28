@@ -32,5 +32,6 @@
     <color name="on_surface">#000000</color>
     <color name="on_primary">#FFFFFF</color>
     <color name="on_secondary">#FFFFFF</color>
+    <color name="gray">#FF888888</color>
 
 </resources>
