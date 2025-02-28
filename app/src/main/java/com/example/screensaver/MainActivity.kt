@@ -667,7 +667,7 @@ class MainActivity : AppCompatActivity() {
     private fun initializePhotoDisplayManager() {
         lifecycleScope.launch {
             try {
-                Log.d(TAG, "Initializing photo display manager")
+                // Initialize views
                 val views = PhotoDisplayManager.Views(
                     primaryView = binding.photoPreview,
                     overlayView = binding.photoPreviewOverlay,
@@ -683,43 +683,24 @@ class MainActivity : AppCompatActivity() {
                 // Initialize PhotoDisplayManager
                 photoDisplayManager.initialize(views, lifecycleScope)
 
-                // Observe virtual albums from ViewModel
+                // Observe virtual albums from PhotoManagerViewModel
                 lifecycleScope.launch {
                     photoManagerViewModel.virtualAlbums.collect { albums ->
-                        val virtualAlbumPhotos = albums
-                            .filter { album -> album.isSelected }
-                            .flatMap { album ->
-                                album.photoUris.mapNotNull { uriString ->
-                                    try {
-                                        Uri.parse(uriString)
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error parsing URI from virtual album: $uriString", e)
-                                        null
-                                    }
-                                }
+                        val selectedAlbums = albums.filter { it.isSelected }
+                        val photos = if (selectedAlbums.isEmpty()) {
+                            // No virtual albums selected, use all photos from PhotoManager
+                            photoManager.loadPhotos()?.map { Uri.parse(it.baseUrl) } ?: emptyList()
+                        } else {
+                            // Use photos from selected virtual albums
+                            selectedAlbums.flatMap { album ->
+                                album.photoUris.map { Uri.parse(it) }
                             }
-                        photoDisplayManager.updatePhotoSources(virtualAlbumPhotos)
+                        }
+                        photoDisplayManager.updatePhotoSources(photos)
                     }
                 }
-
-                // Update settings
-                val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-
-                // Get the interval from PhotoDisplayManager's constant
-                val intervalInt = prefs.getInt(PhotoDisplayManager.PREF_KEY_INTERVAL,
-                    PhotoDisplayManager.DEFAULT_INTERVAL_SECONDS)
-
-                photoDisplayManager.updateSettings(
-                    isRandomOrder = prefs.getBoolean("random_order", false)
-                )
-
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing photo display manager", e)
-                binding.loadingIndicator.visibility = View.VISIBLE
-                binding.loadingMessage.apply {
-                    text = e.message
-                    visibility = View.VISIBLE
-                }
             }
         }
     }
