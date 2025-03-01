@@ -562,7 +562,7 @@ class PhotoManagerViewModel @Inject constructor(
                 val albums = _virtualAlbums.value
                 Log.d(TAG, "Saving ${albums.size} virtual albums")
 
-                // Save to preferences
+                // First, save all albums to preferences
                 val jsonArray = JSONArray()
                 albums.forEach { album ->
                     val albumJson = JSONObject().apply {
@@ -575,6 +575,18 @@ class PhotoManagerViewModel @Inject constructor(
                     jsonArray.put(albumJson)
                 }
                 preferences.setString("virtual_albums", jsonArray.toString())
+
+                // Clear existing photos in LockScreenPhotoManager
+                lockScreenPhotoManager.clearPhotos()
+
+                // Add only photos from selected albums
+                albums.filter { it.isSelected }
+                    .flatMap { it.photoUris }
+                    .distinct()
+                    .forEach { uri ->
+                        lockScreenPhotoManager.addPhoto(uri)
+                    }
+
                 Log.d(TAG, "Successfully saved ${albums.size} albums to preferences")
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving virtual albums", e)

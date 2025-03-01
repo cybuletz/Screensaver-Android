@@ -214,30 +214,37 @@ class LockScreenPhotoManager @Inject constructor(
                 loadVirtualAlbums()
             }
 
-            val allPhotos = mutableListOf<MediaItem>()
+            val allPhotos = mutableSetOf<MediaItem>()  // Changed to Set to prevent duplicates
 
-            // Add regular photos
-            allPhotos.addAll(mediaItems)
-
-            // Add virtual album photos
-            virtualAlbums.forEach { album ->
+            // Add only photos from selected virtual albums
+            virtualAlbums.filter { it.isSelected }.forEach { album ->
                 album.photoUris.forEach { uri ->
-                    allPhotos.add(MediaItem(
-                        id = "${album.id}_${uri.hashCode()}",
-                        albumId = album.id,
-                        baseUrl = uri,
-                        mimeType = "image/*",
-                        width = 0,
-                        height = 0,
-                        description = "From album: ${album.name}",
-                        createdAt = album.dateCreated,
-                        loadState = MediaItem.LoadState.IDLE
-                    ))
+                    // Skip if we already have this URI
+                    if (!allPhotos.any { it.baseUrl == uri }) {
+                        allPhotos.add(MediaItem(
+                            id = "${album.id}_${uri.hashCode()}",
+                            albumId = album.id,
+                            baseUrl = uri,
+                            mimeType = "image/*",
+                            width = 0,
+                            height = 0,
+                            description = "From album: ${album.name}",
+                            createdAt = album.dateCreated,
+                            loadState = MediaItem.LoadState.IDLE
+                        ))
+                    }
+                }
+            }
+
+            // Add any remaining photos from mediaItems that aren't in virtual albums
+            mediaItems.forEach { item ->
+                if (!allPhotos.any { it.baseUrl == item.baseUrl }) {
+                    allPhotos.add(item)
                 }
             }
 
             _loadingState.value = LoadingState.SUCCESS
-            allPhotos
+            allPhotos.toList()
         } catch (e: Exception) {
             Log.e(TAG, "Error loading photos", e)
             _loadingState.value = LoadingState.ERROR
