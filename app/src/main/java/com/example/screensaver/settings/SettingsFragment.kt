@@ -123,8 +123,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     companion object {
         private const val TAG = "SettingsFragment"
-        private const val DEFAULT_DISPLAY_MODE = "dream_service"
-        private const val LOCK_SCREEN_MODE = "lock_screen"
         private const val REQUEST_SELECT_PHOTOS = 1001
         const val EXTRA_PHOTO_SOURCE = "photo_source"
         const val SOURCE_GOOGLE_PHOTOS = "google_photos"
@@ -653,18 +651,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 val mode = newValue as String
                 appDataManager.updateState { it.copy(displayMode = mode) }
                 when (mode) {
-                    "dream_service" -> {
-                        lifecycleScope.launch {
-                            disableLockScreenMode()
-                            enableDreamService()
-                        }
-                        true
-                    }
                     "lock_screen" -> {
                         lifecycleScope.launch {
-                            if (enableLockScreenMode()) {
-                                disableDreamService()
-                            } else {
+                            if (!enableLockScreenMode()) {
                                 resetDisplayModePreference()
                             }
                         }
@@ -1109,28 +1098,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun enableDreamService() {
-        try {
-            startActivity(Intent(Settings.ACTION_DREAM_SETTINGS).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            })
-            showFeedback(R.string.dream_service_settings)
-        } catch (e: Exception) {
-            handleError("Error enabling dream service", e)
-        }
-    }
-
-    private fun disableDreamService() {
-        try {
-            startActivity(Intent(Settings.ACTION_DREAM_SETTINGS).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            })
-            showFeedback(R.string.dream_service_disable)
-        } catch (e: Exception) {
-            handleError("Error disabling dream service", e)
-        }
-    }
-
     private fun restoreSettingsState() {
         val currentState = appDataManager.getCurrentState()
 
@@ -1363,10 +1330,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     private fun isLockScreenModeSelected(): Boolean =
         PreferenceManager.getDefaultSharedPreferences(requireContext())
-            .getString("display_mode_selection", DEFAULT_DISPLAY_MODE) == LOCK_SCREEN_MODE
+            .getString("display_mode_selection", "lock_screen") == "lock_screen"
 
     private fun resetDisplayModePreference() {
-        findPreference<ListPreference>("display_mode_selection")?.value = DEFAULT_DISPLAY_MODE
+        findPreference<ListPreference>("display_mode_selection")?.value = "lock_screen"
     }
 
     private fun showFeedback(@StringRes messageResId: Int) {

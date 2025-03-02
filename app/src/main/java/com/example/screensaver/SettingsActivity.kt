@@ -62,7 +62,6 @@ class SettingsActivity : AppCompatActivity() {
 
         companion object {
             private const val TAG = "SettingsFragment"
-            private const val DEFAULT_DISPLAY_MODE = "dream_service"
             private const val LOCK_SCREEN_MODE = "lock_screen"
         }
 
@@ -100,18 +99,9 @@ class SettingsActivity : AppCompatActivity() {
 
         private fun handleDisplayModeChange(newMode: String): Boolean {
             return when (newMode) {
-                DEFAULT_DISPLAY_MODE -> {
-                    lifecycleScope.launch {
-                        disableLockScreenMode()
-                        enableDreamService()
-                    }
-                    true
-                }
                 LOCK_SCREEN_MODE -> {
                     lifecycleScope.launch {
-                        if (enableLockScreenMode()) {
-                            disableDreamService()
-                        } else {
+                        if (!enableLockScreenMode()) {
                             resetDisplayModePreference()
                         }
                     }
@@ -182,28 +172,6 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        private fun enableDreamService() {
-            try {
-                startActivity(Intent(Settings.ACTION_DREAM_SETTINGS).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                })
-                showFeedback(R.string.dream_service_settings)
-            } catch (e: Exception) {
-                handleError("Error enabling dream service", e)
-            }
-        }
-
-        private fun disableDreamService() {
-            try {
-                startActivity(Intent(Settings.ACTION_DREAM_SETTINGS).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                })
-                showFeedback(R.string.dream_service_disable)
-            } catch (e: Exception) {
-                handleError("Error disabling dream service", e)
-            }
-        }
-
         private fun launchLockScreenPreviewFromSettings() {
             try {
                 Intent(requireContext(), PhotoLockActivity::class.java).apply {
@@ -254,10 +222,10 @@ class SettingsActivity : AppCompatActivity() {
 
         private fun isLockScreenModeSelected(): Boolean =
             PreferenceManager.getDefaultSharedPreferences(requireContext())
-                .getString("display_mode_selection", DEFAULT_DISPLAY_MODE) == LOCK_SCREEN_MODE
+                .getString("display_mode_selection", LOCK_SCREEN_MODE) == LOCK_SCREEN_MODE
 
         private fun resetDisplayModePreference() {
-            findPreference<ListPreference>("display_mode_selection")?.value = DEFAULT_DISPLAY_MODE
+            findPreference<ListPreference>("display_mode_selection")?.value = LOCK_SCREEN_MODE
         }
 
         private fun showFeedback(@StringRes messageResId: Int) {

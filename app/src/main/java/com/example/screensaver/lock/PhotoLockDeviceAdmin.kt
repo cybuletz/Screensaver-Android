@@ -70,7 +70,7 @@ class PhotoLockDeviceAdmin : DeviceAdminReceiver() {
     private fun updateDisplayModePreference(context: Context) {
         PreferenceManager.getDefaultSharedPreferences(context)
             .edit()
-            .putString(PreferenceKeys.DISPLAY_MODE, PreferenceKeys.DISPLAY_MODE_DREAM)
+            .putString(PreferenceKeys.DISPLAY_MODE, PreferenceKeys.DISPLAY_MODE_LOCK)
             .apply()
     }
 
