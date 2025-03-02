@@ -74,7 +74,6 @@ class AppPreferences @Inject constructor(
         private const val PREF_LAST_SYNC = "last_sync_timestamp"
 
         // Default values
-        private const val DEFAULT_DISPLAY_MODE = "dream_service"
         private const val DEFAULT_TRANSITION_INTERVAL = 30
         private const val DEFAULT_CLOCK_FORMAT = "24h"
 
@@ -92,7 +91,7 @@ class AppPreferences @Inject constructor(
     }
 
     enum class DisplayMode {
-        DREAM_SERVICE, LOCK_SCREEN
+        LOCK_SCREEN
     }
 
     enum class TransitionAnimation {
@@ -155,7 +154,6 @@ class AppPreferences @Inject constructor(
         prefs.edit().clear().commit() // Use commit() for synchronous execution
 
         // Reset all preference flows to defaults
-        _displayModeFlow.value = DisplayMode.DREAM_SERVICE
         _transitionIntervalFlow.value = DEFAULT_TRANSITION_INTERVAL
         _transitionAnimationFlow.value = TransitionAnimation.FADE
         _showPhotoInfoFlow.value = true
@@ -193,9 +191,8 @@ class AppPreferences @Inject constructor(
 
     fun getPreviewCount(): Int = prefs.getInt(PREF_PREVIEW_COUNT, 0)
 
-    fun getDisplayMode(): DisplayMode = when(prefs.getString(PREF_DISPLAY_MODE, DEFAULT_DISPLAY_MODE)) {
-        "lock_screen" -> DisplayMode.LOCK_SCREEN
-        else -> DisplayMode.DREAM_SERVICE
+    fun getDisplayMode(): DisplayMode {
+        return DisplayMode.LOCK_SCREEN
     }
 
     fun setClockPosition(position: String) {

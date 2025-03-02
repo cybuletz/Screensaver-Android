@@ -13,8 +13,6 @@ import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
 import com.example.screensaver.models.Album
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.shared.GooglePhotosManager
-import com.example.screensaver.utils.DreamServiceHelper
-import com.example.screensaver.utils.DreamServiceStatus
 import com.example.screensaver.utils.PhotoLoadingManager
 import com.example.screensaver.utils.AppPreferences
 import dagger.hilt.android.AndroidEntryPoint
@@ -46,7 +44,6 @@ import com.example.screensaver.photos.PhotoManagerViewModel
 class AlbumSelectionActivity : AppCompatActivity() {
     private lateinit var binding: ActivityAlbumSelectionBinding
     private lateinit var albumAdapter: AlbumAdapter
-    private lateinit var dreamServiceHelper: DreamServiceHelper
     private lateinit var glideRequestManager: RequestManager
     private val loadingJob = SupervisorJob()
     private val activityScope = CoroutineScope(Dispatchers.Main + loadingJob)
@@ -99,8 +96,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     .placeholder(R.drawable.placeholder_album)
                     .error(R.drawable.placeholder_album_error)
             )
-
-        dreamServiceHelper = DreamServiceHelper.create(this, PhotoDreamService::class.java)
 
         setupViews()
         observeViewModel()
@@ -458,7 +453,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 viewModel.setLoading(true)
                 if (photoManager.initialize()) {
                     loadAlbums()
-                    checkDreamServiceRegistration()
                 } else {
                     handleError(getString(R.string.google_photos_init_failed))
                 }
@@ -697,25 +691,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 showToast(getString(R.string.save_error))
             } finally {
                 viewModel.setLoading(false)
-            }
-        }
-    }
-
-    private fun checkDreamServiceRegistration() {
-        when (dreamServiceHelper.getDreamServiceStatus()) {
-            DreamServiceStatus.API_UNAVAILABLE -> {
-                showError(getString(R.string.screensaver_not_supported))
-            }
-            DreamServiceStatus.NOT_SELECTED -> {
-                showError(getString(R.string.enable_screensaver))
-                dreamServiceHelper.openDreamSettings()
-            }
-            DreamServiceStatus.CONFIGURED,
-            DreamServiceStatus.ACTIVE -> {
-                Log.d(TAG, "Dream service is properly configured")
-            }
-            DreamServiceStatus.UNKNOWN -> {
-                Log.e(TAG, "Dream service status unknown")
             }
         }
     }

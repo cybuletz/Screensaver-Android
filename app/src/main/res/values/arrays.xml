@@ -127,12 +127,10 @@
 
     <!-- Display Mode Arrays -->
     <string-array name="display_mode_entries">
-        <item>@string/display_mode_screensaver</item>
         <item>@string/display_mode_lockscreen</item>
     </string-array>
 
     <string-array name="display_mode_values">
-        <item>dream_service</item>
         <item>lock_screen</item>
     </string-array>
 

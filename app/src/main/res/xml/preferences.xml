@@ -265,7 +265,7 @@
             android:key="display_mode_selection"
             android:title="@string/pref_display_mode_title"
             android:summary="@string/pref_display_mode_summary"
-            android:defaultValue="dream_service"
+            android:defaultValue="lock_screen"
             android:entries="@array/display_mode_entries"
             android:entryValues="@array/display_mode_values"/>
     </PreferenceCategory>
