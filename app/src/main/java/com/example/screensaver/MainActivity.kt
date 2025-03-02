@@ -221,7 +221,6 @@ class MainActivity : AppCompatActivity() {
                 lockScreenPhotoManager.validateStoredPhotos()
             }
 
-            startLockScreenService()
             initializePhotos()
             preventUnauthorizedClosure()
 
@@ -917,19 +916,6 @@ class MainActivity : AppCompatActivity() {
         // Keep setup message and legal links visible only on first launch
         binding.initialSetupMessage.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
         binding.legalLinksContainer.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
-    }
-
-    private fun startLockScreenService() {
-        try {
-            // Always use startForegroundService on Android O and above
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(Intent(this, PhotoLockScreenService::class.java))
-            } else {
-                startService(Intent(this, PhotoLockScreenService::class.java))
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting lock screen service", e)
-        }
     }
 
     private fun updateLockScreenService(action: String? = null) {

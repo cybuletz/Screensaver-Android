@@ -34,18 +34,16 @@ import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
 import kotlin.math.abs
-import android.app.KeyguardManager
+import android.app.Activity
 import android.os.Build
 import androidx.activity.OnBackPressedCallback
+
 
 @AndroidEntryPoint
 open class PhotoLockActivity : AppCompatActivity() {
     // UI Components with backing properties for safe access
     private var _backgroundImageView: ImageView? = null
     private var _overlayImageView: ImageView? = null
-    private var _clockView: TextClock? = null
-    private var _dateView: TextView? = null
-    private var _unlockHint: TextView? = null
 
     protected val backgroundImageView: ImageView get() = _backgroundImageView!!
     protected val overlayImageView: ImageView get() = _overlayImageView!!
@@ -119,10 +117,8 @@ open class PhotoLockActivity : AppCompatActivity() {
                 }
             }
         })
-        setContentView(R.layout.activity_photo_lock)
         glide = Glide.with(this)
         initializeViews()
-        setupWindow()
         setupGestureDetection()
         registerPowerSavingReceiver()
         initializePreviewMode()
@@ -158,55 +154,9 @@ open class PhotoLockActivity : AppCompatActivity() {
         }
     }
 
-    protected open fun setupWindow() {
-        screenWidth = resources.displayMetrics.widthPixels
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            )
-        }
-
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            keyguardManager.requestDismissKeyguard(this, null)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
-        }
-
-        updatePowerSavingMode()
-    }
-
     protected open fun initializeViews() {
         _backgroundImageView = findViewById(R.id.backgroundImageView)
         _overlayImageView = findViewById(R.id.overlayImageView)
-        _clockView = findViewById(R.id.lockScreenClock)
-        _dateView = findViewById(R.id.lockScreenDate)
-        _unlockHint = findViewById(R.id.unlockHint)
-
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-
-        _clockView?.visibility = if (prefs.getBoolean("lock_screen_clock", true))
-            View.VISIBLE else View.GONE
-
-        _dateView?.apply {
-            visibility = if (prefs.getBoolean("lock_screen_date", true))
-                View.VISIBLE else View.GONE
-            text = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date())
-        }
-
-        _unlockHint?.apply {
-            text = getString(R.string.swipe_up_to_unlock)
-            visibility = View.VISIBLE
-        }
     }
 
     private fun setupGestureDetection() {
@@ -226,8 +176,9 @@ open class PhotoLockActivity : AppCompatActivity() {
 
                 if (abs(diffY) > abs(diffX) &&
                     abs(diffY) > SWIPE_THRESHOLD &&
-                    abs(velocityY) > SWIPE_VELOCITY_THRESHOLD) {
-                    if (diffY < 0) handleUnlock()
+                    abs(velocityY) > SWIPE_VELOCITY_THRESHOLD
+                ) {
+                    if (diffY < 0) finishPreview()
                 }
                 return true
             }
@@ -463,11 +414,6 @@ open class PhotoLockActivity : AppCompatActivity() {
 
     private fun updateViewsForPowerMode() {
         if (isDestroyed) return
-
-        val alpha = if (isPowerSaving) 0.7f else 1.0f
-        _clockView?.alpha = alpha
-        _dateView?.alpha = alpha
-        _unlockHint?.alpha = alpha
     }
 
     private fun setupImageLoadingQuality() {
@@ -484,20 +430,6 @@ open class PhotoLockActivity : AppCompatActivity() {
                 if (!isPreviewMode) {
                     finish()
                 }
-            }
-        }
-    }
-
-    protected open fun handleUnlock() {
-        if (!isDestroyed) {
-            finish()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE,
-                    android.R.anim.fade_in,
-                    android.R.anim.fade_out)
-            } else {
-                @Suppress("DEPRECATION")
-                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
             }
         }
     }
@@ -545,9 +477,6 @@ open class PhotoLockActivity : AppCompatActivity() {
         // Clear view references
         _backgroundImageView = null
         _overlayImageView = null
-        _clockView = null
-        _dateView = null
-        _unlockHint = null
     }
 
     protected fun initializePreviewMode() {
@@ -560,7 +489,15 @@ open class PhotoLockActivity : AppCompatActivity() {
 
     private fun checkPreviewDuration() {
         if (isPreviewMode && System.currentTimeMillis() - previewStartTime > MAX_PREVIEW_DURATION) {
-            handleUnlock()
+            finishPreview()
+        }
+    }
+
+    private fun finishPreview() {
+        if (isPreviewMode) {
+            isPreviewMode = false
+            setResult(Activity.RESULT_OK)
+            finish()
         }
     }
 }

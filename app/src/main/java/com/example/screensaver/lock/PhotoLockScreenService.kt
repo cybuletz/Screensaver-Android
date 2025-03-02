@@ -22,6 +22,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import javax.inject.Inject
 import com.example.screensaver.lock.LockScreenPhotoManager.PhotoAddMode
+import com.example.screensaver.preview.PreviewActivity
 
 @AndroidEntryPoint
 class PhotoLockScreenService : Service() {
@@ -49,15 +50,6 @@ class PhotoLockScreenService : Service() {
     private var isInitialized = false
     private var initializationJob: Job? = null
 
-    private val screenStateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                Intent.ACTION_SCREEN_OFF -> handleScreenOff()
-                Intent.ACTION_USER_PRESENT -> handleUserPresent()
-            }
-        }
-    }
-
     companion object {
         private const val TAG = "PhotoLockScreenService"
         private const val PRECACHE_COUNT = 5
@@ -79,46 +71,7 @@ class PhotoLockScreenService : Service() {
             Log.e(TAG, "Failed to start foreground service", e)
         }
 
-        registerScreenReceiver()
         initializeService()
-    }
-
-    private fun registerScreenReceiver() {
-        try {
-            val filter = IntentFilter().apply {
-                addAction(Intent.ACTION_SCREEN_OFF)
-                addAction(Intent.ACTION_USER_PRESENT)
-            }
-            ContextCompat.registerReceiver(
-                this,
-                screenStateReceiver,
-                filter,
-                ContextCompat.RECEIVER_NOT_EXPORTED
-            )
-            Log.d(TAG, "Screen receiver registered")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to register screen receiver", e)
-        }
-    }
-
-    private fun handleScreenOff() {
-        Log.d(TAG, "Screen turned off")
-        if (!isPreviewMode && isInitialized) {
-            showLockScreen()
-        } else {
-            initializeService()
-        }
-    }
-
-    private fun handleUserPresent() {
-        Log.d(TAG, "User unlocked device")
-        serviceScope.launch {
-            try {
-                precachePhotos()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling user present", e)
-            }
-        }
     }
 
     private fun initializeService() {
@@ -252,7 +205,16 @@ class PhotoLockScreenService : Service() {
         if (canStartPreview()) {
             isPreviewMode = true
             photoSourceState.recordPreviewStarted()
-            showLockScreen(true)
+            startPreviewDisplay()
+        }
+    }
+
+    private fun startPreviewDisplay() {
+        Intent(this, PreviewActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("preview_mode", true)
+            startActivity(this)
         }
     }
 
@@ -286,12 +248,6 @@ class PhotoLockScreenService : Service() {
     }
 
     private fun cleanup() {
-        try {
-            unregisterReceiver(screenStateReceiver)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error unregistering receiver", e)
-        }
-
         initializationJob?.cancel()
         serviceScope.cancel()
         googlePhotosManager.cleanup()
@@ -313,26 +269,6 @@ class PhotoLockScreenService : Service() {
             Log.d(TAG, "Main activity started with photos_ready flag")
         } catch (e: Exception) {
             Log.e(TAG, "Error showing main screen", e)
-        }
-    }
-
-    private fun showLockScreen(isPreview: Boolean = false) {
-        try {
-            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            if (!keyguardManager.isKeyguardLocked || isPreview) {
-                val lockIntent = Intent(this, PhotoLockActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    putExtra("from_service", true)
-                    putExtra("preview_mode", isPreview)
-                }
-                startActivity(lockIntent)
-                Log.d(TAG, "Lock screen activity started (Preview: $isPreview)")
-            } else {
-                Log.d(TAG, "Device already locked")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error showing lock screen", e)
         }
     }
 }

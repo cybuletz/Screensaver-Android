@@ -15,7 +15,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import com.example.screensaver.lock.PhotoLockDeviceAdmin
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,8 +30,6 @@ class PermissionManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val _permissionState = MutableStateFlow(PermissionState())
-    private var permissionCallback: ((Boolean) -> Unit)? = null
-    private val deviceAdmin: ComponentName
 
     companion object {
         private val REQUIRED_PERMISSIONS = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -54,7 +51,6 @@ class PermissionManager @Inject constructor(
     data class PermissionState(
         val storagePermissionGranted: Boolean = false,
         val networkPermissionGranted: Boolean = false,
-        val deviceAdminActive: Boolean = false,
         val overlayPermissionGranted: Boolean = false,
         val notificationPermissionGranted: Boolean = false
     ) {
@@ -64,7 +60,6 @@ class PermissionManager @Inject constructor(
     }
 
     init {
-        deviceAdmin = ComponentName(context, PhotoLockDeviceAdmin::class.java)
         updatePermissionState()
     }
 
@@ -72,16 +67,9 @@ class PermissionManager @Inject constructor(
         _permissionState.value = PermissionState(
             storagePermissionGranted = checkStoragePermission(),
             networkPermissionGranted = checkNetworkPermission(),
-            deviceAdminActive = isDeviceAdminActive(),
             overlayPermissionGranted = checkOverlayPermission(),
             notificationPermissionGranted = checkNotificationPermission()
         )
-    }
-
-    private fun handlePermissionResult(isGranted: Boolean) {
-        updatePermissionState()
-        permissionCallback?.invoke(isGranted)
-        permissionCallback = null
     }
 
     private fun checkStoragePermission(): Boolean {
@@ -109,11 +97,6 @@ class PermissionManager @Inject constructor(
         } else {
             true
         }
-    }
-
-    fun isDeviceAdminActive(): Boolean {
-        val devicePolicyManager = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        return devicePolicyManager.isAdminActive(deviceAdmin)
     }
 
     private fun checkOverlayPermission(): Boolean {

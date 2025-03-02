@@ -17,20 +17,6 @@
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
-            android:key="show_clock"
-            android:title="@string/pref_lock_screen_clock_title"
-            android:summary="@string/pref_lock_screen_clock_summary"
-            android:defaultValue="true"
-            app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-            android:key="show_date"
-            android:title="@string/pref_lock_screen_date_title"
-            android:summary="@string/pref_lock_screen_date_summary"
-            android:defaultValue="true"
-            app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
             android:key="show_location"
             android:title="Location Information"
             android:summary="Show photo location when available"
