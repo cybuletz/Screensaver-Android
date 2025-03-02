@@ -11,7 +11,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.screensaver.R
 import com.example.screensaver.databinding.FragmentDreamSettingsBinding
-import com.example.screensaver.interfaces.ThemeUpdateListener
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.utils.ErrorHandler
 import com.example.screensaver.viewmodels.PhotoViewModel
@@ -193,7 +192,6 @@ class DreamSettingsFragment : Fragment() {
             }
 
             switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
-                updateTheme(isChecked)
                 updatePreview()
             }
 
@@ -258,12 +256,6 @@ class DreamSettingsFragment : Fragment() {
             enableTransitions = true,
             darkMode = false
         )
-
-        updateTheme(false)
-    }
-
-    private fun updateTheme(isDarkMode: Boolean) {
-        (activity as? ThemeUpdateListener)?.onThemeChanged(isDarkMode)
     }
 
     override fun onDestroyView() {
