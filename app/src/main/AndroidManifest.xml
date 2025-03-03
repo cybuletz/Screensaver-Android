@@ -140,22 +140,7 @@
             android:theme="@style/Theme.Screensaver.PhotoSelection"
             android:exported="false" />
 
-        <!-- Lock Screen Activity -->
-        <activity
-            android:name=".lock.PhotoLockActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:launchMode="singleInstance"
-            android:screenOrientation="user"
-            android:showOnLockScreen="true"
-            android:taskAffinity=""
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-            android:theme="@style/Theme.AppCompat.NoActionBar"
-            android:directBootAware="true">
-            <intent-filter>
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
+
 
         <activity
             android:name=".photos.PhotoManagerActivity"
