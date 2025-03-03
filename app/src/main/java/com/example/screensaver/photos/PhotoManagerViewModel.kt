@@ -8,7 +8,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.screensaver.data.SecureStorage
-import com.example.screensaver.lock.LockScreenPhotoManager
+import com.example.screensaver.PhotoRepository
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.AppPreferences
@@ -32,7 +32,7 @@ class PhotoManagerViewModel @Inject constructor(
     private val googlePhotosManager: GooglePhotosManager,
     private val preferences: AppPreferences,
     private val secureStorage: SecureStorage,
-    private val lockScreenPhotoManager: LockScreenPhotoManager
+    private val photoRepository: PhotoRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<PhotoManagerState>(PhotoManagerState.Idle)
@@ -115,9 +115,10 @@ class PhotoManagerViewModel @Inject constructor(
                 Log.d(TAG, "Loaded ${albums.size} albums from preferences")
                 _virtualAlbums.value = albums
 
-                // Restore albums to LockScreenPhotoManager
+                // Restore albums to PhotoRepository
                 albums.forEach { album ->
-                    lockScreenPhotoManager.addVirtualAlbum(LockScreenPhotoManager.VirtualAlbum(
+                    photoRepository.addVirtualAlbum(
+                        PhotoRepository.VirtualAlbum(
                         id = album.id,
                         name = album.name,
                         photoUris = album.photoUris,
@@ -155,13 +156,13 @@ class PhotoManagerViewModel @Inject constructor(
 
                 val photos = mutableListOf<ManagedPhoto>()
 
-                // First try to get photos from LockScreenPhotoManager
-                val currentPhotoCount = lockScreenPhotoManager.getPhotoCount()
-                Log.d(TAG, "LockScreenPhotoManager has $currentPhotoCount photos")
+                // First try to get photos from PhotoRepository
+                val currentPhotoCount = photoRepository.getPhotoCount()
+                Log.d(TAG, "PhotoRepository has $currentPhotoCount photos")
 
-                // Convert existing photos from LockScreenPhotoManager
+                // Convert existing photos from PhotoRepository
                 for (i in 0 until currentPhotoCount) {
-                    lockScreenPhotoManager.getPhotoUrl(i)?.let { url ->
+                    photoRepository.getPhotoUrl(i)?.let { url ->
                         val sourceType = when {
                             url.contains("com.google.android.apps.photos.cloudpicker") -> PhotoSourceType.GOOGLE_PHOTOS
                             url.contains("content://media/picker") -> PhotoSourceType.LOCAL_PICKED
@@ -181,7 +182,7 @@ class PhotoManagerViewModel @Inject constructor(
                             },
                             dateAdded = System.currentTimeMillis()
                         ))
-                        Log.d(TAG, "Added photo from LockScreenPhotoManager: $url (type: $sourceType)")
+                        Log.d(TAG, "Added photo from PhotoRepository: $url (type: $sourceType)")
                     }
                 }
 
@@ -204,7 +205,7 @@ class PhotoManagerViewModel @Inject constructor(
                         ))
                         Log.d(TAG, "Added picked photo: $uriString")
 
-                        // Make sure it's in the LockScreenPhotoManager
+                        // Make sure it's in the PhotoRepository
                         val mediaItem = MediaItem(
                             id = uriString,
                             albumId = "local_picked",
@@ -216,8 +217,8 @@ class PhotoManagerViewModel @Inject constructor(
                             createdAt = System.currentTimeMillis(),
                             loadState = MediaItem.LoadState.IDLE
                         )
-                        lockScreenPhotoManager.addPhotos(listOf(mediaItem), LockScreenPhotoManager.PhotoAddMode.MERGE)
-                        Log.d(TAG, "Added missing photo to LockScreenPhotoManager: $uriString")
+                        photoRepository.addPhotos(listOf(mediaItem), PhotoRepository.PhotoAddMode.MERGE)
+                        Log.d(TAG, "Added missing photo to PhotoRepository: $uriString")
                     }
                 }
 
@@ -401,8 +402,9 @@ class PhotoManagerViewModel @Inject constructor(
                     photoUris = selectedPhotos.map { it.uri }
                 )
 
-                // Add to LockScreenPhotoManager
-                lockScreenPhotoManager.addVirtualAlbum(LockScreenPhotoManager.VirtualAlbum(
+                // Add to PhotoRepository
+                photoRepository.addVirtualAlbum(
+                    PhotoRepository.VirtualAlbum(
                     id = newAlbum.id,
                     name = newAlbum.name,
                     photoUris = newAlbum.photoUris,
@@ -511,9 +513,9 @@ class PhotoManagerViewModel @Inject constructor(
                 _state.value = PhotoManagerState.Loading
                 val selectedPhotos = _photos.value.filter { it.isSelected }
 
-                // Remove from LockScreenPhotoManager and update preferences
+                // Remove from PhotoRepository and update preferences
                 selectedPhotos.forEach { photo ->
-                    lockScreenPhotoManager.removePhoto(photo.uri)
+                    photoRepository.removePhoto(photo.uri)
 
                     // Remove from picked URIs if it was individually picked
                     if (photo.sourceType == PhotoSourceType.LOCAL_PICKED) {
@@ -576,15 +578,15 @@ class PhotoManagerViewModel @Inject constructor(
                 }
                 preferences.setString("virtual_albums", jsonArray.toString())
 
-                // Clear existing photos in LockScreenPhotoManager
-                lockScreenPhotoManager.clearPhotos()
+                // Clear existing photos in PhotoRepository
+                photoRepository.clearPhotos()
 
                 // Add only photos from selected albums
                 albums.filter { it.isSelected }
                     .flatMap { it.photoUris }
                     .distinct()
                     .forEach { uri ->
-                        lockScreenPhotoManager.addPhoto(uri)
+                        photoRepository.addPhoto(uri)
                     }
 
                 Log.d(TAG, "Successfully saved ${albums.size} albums to preferences")

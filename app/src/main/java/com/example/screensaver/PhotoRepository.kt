@@ -1,14 +1,12 @@
-package com.example.screensaver.lock
+package com.example.screensaver
 
 import android.content.ContentUris
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.models.AlbumInfo
-import com.example.screensaver.photos.VirtualAlbum
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -16,10 +14,9 @@ import javax.inject.Singleton
 import org.json.JSONArray
 import org.json.JSONObject
 import com.example.screensaver.shared.GooglePhotosManager
-import dagger.hilt.android.qualifiers.ApplicationContext
 
 @Singleton
-class LockScreenPhotoManager @Inject constructor(
+class PhotoRepository @Inject constructor(
     private val context: Context,
     private val googlePhotosManager: GooglePhotosManager
     ) {
@@ -38,7 +35,7 @@ class LockScreenPhotoManager @Inject constructor(
     }
 
     companion object {
-        private const val TAG = "LockScreenPhotoManager"
+        private const val TAG = "PhotoRepository"
     }
 
     enum class LoadingState {
@@ -502,7 +499,8 @@ class LockScreenPhotoManager @Inject constructor(
     }
 
     fun addPhotos(photos: List<MediaItem>, mode: PhotoAddMode = PhotoAddMode.MERGE) {
-        Log.d(TAG, """Adding photos:
+        Log.d(
+            TAG, """Adding photos:
             • Mode: $mode
             • Current count: ${mediaItems.size}
             • New photos: ${photos.size}""".trimMargin())
@@ -523,7 +521,8 @@ class LockScreenPhotoManager @Inject constructor(
                 val previousCount = mediaItems.size
                 val newPhotos = photos.filterNot { newPhoto -> isDuplicate(newPhoto) }
                 mediaItems.addAll(newPhotos)
-                Log.d(TAG, """Merged photos:
+                Log.d(
+                    TAG, """Merged photos:
                     • Previous count: $previousCount
                     • New unique photos: ${newPhotos.size}
                     • Duplicates filtered: ${photos.size - newPhotos.size}

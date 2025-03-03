@@ -26,7 +26,6 @@ import javax.inject.Inject
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
 import android.content.Intent
-import com.example.screensaver.lock.LockScreenPhotoManager
 import kotlinx.coroutines.*
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestManager
@@ -34,9 +33,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import android.provider.MediaStore
-import androidx.preference.PreferenceManager
 import android.net.Uri
-import com.example.screensaver.lock.LockScreenPhotoManager.PhotoAddMode
+import com.example.screensaver.PhotoRepository.PhotoAddMode
 import com.example.screensaver.photos.PhotoManagerViewModel
 
 
@@ -55,7 +53,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
     lateinit var photoLoadingManager: PhotoLoadingManager
 
     @Inject
-    lateinit var lockScreenPhotoManager: LockScreenPhotoManager
+    lateinit var photoRepository: PhotoRepository
 
     @Inject
     lateinit var preferences: AppPreferences
@@ -134,7 +132,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
             withContext(Dispatchers.IO) {
                 withTimeout(10000) {
                     val startTime = System.currentTimeMillis()
-                    val albums = lockScreenPhotoManager.getLocalAlbums()
+                    val albums = photoRepository.getLocalAlbums()
                     val selectedAlbumIds = preferences.getSelectedAlbumIds()
 
                     val albumModels = albums.map { localAlbum ->
@@ -392,7 +390,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                         withContext(Dispatchers.IO) {
                             photoManager.cleanup() // Clean up old state
                             // Add the new MediaItems with their metadata
-                            lockScreenPhotoManager.addPhotos(
+                            photoRepository.addPhotos(
                                 photos = selectedMediaItems,
                                 mode = PhotoAddMode.APPEND  // Explicitly use APPEND mode
                             )
@@ -601,7 +599,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
             selectedAlbumIds.forEach { albumId ->
                 try {
                     Log.d(TAG, "Loading photos from album: $albumId")
-                    val albumPhotos = lockScreenPhotoManager.getPhotosFromAlbum(albumId)
+                    val albumPhotos = photoRepository.getPhotosFromAlbum(albumId)
                     allPhotos.addAll(albumPhotos)
                 } catch (e: SecurityException) {
                     Log.e(TAG, "Security permission error for album $albumId", e)
@@ -618,7 +616,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
         updateLoadingText("Saving photos...")
         withContext(Dispatchers.IO) {
-            lockScreenPhotoManager.addPhotos(
+            photoRepository.addPhotos(
                 photos = photos,
                 mode = PhotoAddMode.APPEND
             )
@@ -643,7 +641,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
         updateLoadingText("Saving photos...")
         withContext(Dispatchers.IO) {
-            lockScreenPhotoManager.addPhotos(
+            photoRepository.addPhotos(
                 photos = photos.toList(),
                 mode = PhotoAddMode.APPEND  // Use APPEND to ensure we don't lose existing photos
             )
@@ -680,7 +678,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
                     putExtra("albums_saved", true)
-                    putExtra("photo_count", lockScreenPhotoManager.getPhotoCount())
+                    putExtra("photo_count", photoRepository.getPhotoCount())
                     putExtra("timestamp", System.currentTimeMillis())
                 }
                 startActivity(mainIntent)
