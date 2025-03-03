@@ -125,15 +125,6 @@
         <item>landscape</item>
     </string-array>
 
-    <!-- Display Mode Arrays -->
-    <string-array name="display_mode_entries">
-        <item>@string/display_mode_lockscreen</item>
-    </string-array>
-
-    <string-array name="display_mode_values">
-        <item>lock_screen</item>
-    </string-array>
-
     <string-array name="clock_format_entries">
         <item>24-hour</item>
         <item>12-hour</item>

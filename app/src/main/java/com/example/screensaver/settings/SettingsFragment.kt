@@ -1,6 +1,5 @@
 package com.example.screensaver.settings
 
-import android.app.ActivityManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -17,12 +16,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.preference.*
 import com.example.screensaver.R
 import com.example.screensaver.AlbumSelectionActivity
-import com.example.screensaver.lock.PhotoLockDeviceAdmin
-import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.shared.GooglePhotosManager
-import com.example.screensaver.preview.PreviewActivity
-import com.example.screensaver.preview.PreviewViewModel
-import com.example.screensaver.preview.PreviewState
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -42,7 +36,6 @@ import java.net.URL
 import java.net.URLEncoder
 import javax.inject.Inject
 import android.content.pm.PackageManager
-import androidx.fragment.app.viewModels
 import com.example.screensaver.ui.PhotoDisplayManager
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -114,10 +107,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     @Inject
     lateinit var biometricHelper: BiometricHelper
 
-    private var devicePolicyManager: DevicePolicyManager? = null
-    private lateinit var adminComponentName: ComponentName
     private var googleSignInClient: GoogleSignInClient? = null
-    private val previewViewModel: PreviewViewModel by viewModels()
 
     private var widgetPreferenceFragment: WidgetPreferenceFragment? = null
 
@@ -125,7 +115,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         private const val TAG = "SettingsFragment"
         private const val REQUEST_SELECT_PHOTOS = 1001
         const val EXTRA_PHOTO_SOURCE = "photo_source"
-        const val SOURCE_GOOGLE_PHOTOS = "google_photos"
         const val SOURCE_LOCAL_PHOTOS = "local_photos"
     }
 
@@ -145,19 +134,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     Exception("Storage permission is required to access local photos")
                 )
             }
-        }
-    }
-
-    // Device Admin result launcher
-    private val deviceAdminLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        updateLockScreenStatus()
-        if (isDeviceAdminActive()) {
-            startLockScreenService()
-        } else {
-            showFeedback(R.string.lock_screen_admin_denied)
-            resetDisplayModePreference()
         }
     }
 
@@ -408,16 +384,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
         restoreSettingsState()
 
         // Then initialize all components
-        initializeDeviceAdmin()
         setupPhotoDisplayManager()
         setupPhotoSourcePreferences()
         setupGoogleSignIn()
-        setupTestScreensaver()
-        setupDisplayModeSelection()
-        setupLockScreenPreview()
-        setupLockScreenStatus()
-
-        // Observe state changes
         observeAppState()
     }
 
@@ -437,14 +406,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     restoreSettingsState()
 
                     // Then initialize all components
-                    initializeDeviceAdmin()
                     setupPhotoDisplayManager()
                     setupPhotoSourcePreferences()
                     setupGoogleSignIn()
-                    setupTestScreensaver()
-                    setupDisplayModeSelection()
-                    setupLockScreenPreview()
-                    setupLockScreenStatus()
                     setupCacheSettings(preferenceScreen)
                     setupLocalPhotoPreferences()
                     setupChargingPreference()
@@ -474,7 +438,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     // Update widget summaries based on their states
                     updateWidgetSummaries()
 
-                    // Observe state changes
                     observeAppState()
                     observeAppDataState()
                     observeWidgetState()
@@ -514,7 +477,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     override fun onStop() {
         super.onStop()
-        // Reinitialize widgets with current settings
         widgetManager.reinitializeWeatherWidget()
     }
 
@@ -632,49 +594,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 isRandomOrder = prefs.getBoolean("random_order", true)
             )
             startPhotoDisplay()
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        updateLockScreenStatus()
-    }
-
-    private fun initializeDeviceAdmin() {
-        devicePolicyManager = requireContext().getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-        adminComponentName = ComponentName(requireContext(), PhotoLockDeviceAdmin::class.java)
-    }
-
-    private fun setupDisplayModeSelection() {
-        findPreference<ListPreference>("display_mode_selection")?.apply {
-            setOnPreferenceChangeListener { _, newValue ->
-                val mode = newValue as String
-                appDataManager.updateState { it.copy(displayMode = mode) }
-                when (mode) {
-                    "lock_screen" -> {
-                        lifecycleScope.launch {
-                            if (!enableLockScreenMode()) {
-                                resetDisplayModePreference()
-                            }
-                        }
-                        true
-                    }
-                    else -> false
-                }
-            }
-        }
-    }
-
-    private fun setupTestScreensaver() {
-        findPreference<Preference>("test_screensaver")?.setOnPreferenceClickListener {
-            val displayMode = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                .getString("display_mode_selection", "dream_service")
-
-            when (displayMode) {
-                "dream_service" -> startScreensaver()
-                "lock_screen" -> showLockScreenPreview()
-            }
-            true
         }
     }
 
@@ -1037,67 +956,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         Log.d(TAG, "Google Photos state updated - enabled: $enabled, source available: $googlePhotosEnabled")
     }
 
-    private fun enableLockScreenMode(): Boolean {
-        return try {
-            if (!isDeviceAdminActive()) {
-                requestDeviceAdmin()
-                false
-            } else {
-                startLockScreenService()
-                true
-            }
-        } catch (e: Exception) {
-            handleError("Error enabling lock screen mode", e)
-            false
-        }
-    }
-
-    private fun requestDeviceAdmin() {
-        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
-            putExtra(
-                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                getString(R.string.device_admin_explanation)
-            )
-        }
-        deviceAdminLauncher.launch(intent)
-    }
-
-    private fun disableLockScreenMode() {
-        try {
-            if (isDeviceAdminActive()) {
-                devicePolicyManager?.removeActiveAdmin(adminComponentName)
-            }
-            stopLockScreenService()
-            showFeedback(R.string.lock_screen_disabled)
-        } catch (e: Exception) {
-            handleError("Error disabling lock screen mode", e)
-        }
-    }
-
-    private fun startLockScreenService(): Boolean {
-        return try {
-            Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
-                requireContext().startService(intent)
-                showFeedback(R.string.lock_screen_enabled)
-            }
-            true
-        } catch (e: Exception) {
-            handleError("Error starting lock screen service", e)
-            false
-        }
-    }
-
-    private fun stopLockScreenService() {
-        try {
-            Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
-                requireContext().stopService(intent)
-            }
-        } catch (e: Exception) {
-            handleError("Error stopping lock screen service", e)
-        }
-    }
-
     private fun restoreSettingsState() {
         val currentState = appDataManager.getCurrentState()
 
@@ -1188,152 +1046,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 }
             }
         }
-    }
-
-    private fun startScreensaver() {
-        try {
-            val dreamComponent = requireContext().packageManager
-                .resolveService(
-                    Intent("android.service.dreams.DreamService")
-                        .setPackage(requireContext().packageName),
-                    PackageManager.MATCH_DEFAULT_ONLY
-                )?.serviceInfo?.name
-
-            if (dreamComponent != null) {
-                val intent = Intent(Settings.ACTION_DREAM_SETTINGS)
-                startActivity(intent)
-                Toast.makeText(
-                    requireContext(),
-                    "Please select and test the screensaver from system settings",
-                    Toast.LENGTH_LONG
-                ).show()
-            } else {
-                Toast.makeText(
-                    requireContext(),
-                    "Screensaver service not found",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start screensaver: ${e.message}")
-            Toast.makeText(
-                requireContext(),
-                "Failed to start screensaver: ${e.message}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-
-    private fun setupLockScreenPreview() {
-        findPreference<Preference>("preview_lock_screen")?.apply {
-            isVisible = isLockScreenModeSelected()
-            setOnPreferenceClickListener {
-                showLockScreenPreview()
-                true
-            }
-
-            // Move the viewLifecycleOwner observation to a separate method
-            observePreviewState(this)
-        }
-    }
-
-    private fun observePreviewState(preference: Preference) {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                previewViewModel.previewState.collect { state ->
-                    when (state) {
-                        is PreviewState.Cooldown -> {
-                            preference.isEnabled = false
-                            preference.summary = getString(
-                                R.string.preview_cooldown_message,
-                                state.remainingSeconds
-                            )
-                        }
-                        is PreviewState.Error -> {
-                            preference.isEnabled = false
-                            preference.summary = state.message
-                        }
-                        is PreviewState.Initial -> {
-                            preference.isEnabled = true
-                            preference.summary = getString(
-                                R.string.preview_available_message,
-                                previewViewModel.getRemainingPreviews()
-                            )
-                        }
-                        is PreviewState.Available -> {
-                            preference.isEnabled = true
-                            preference.summary = getString(
-                                R.string.preview_available_message,
-                                state.remainingPreviews
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun showLockScreenPreview() {
-        try {
-            if (previewViewModel.getRemainingPreviews() > 0) {
-                startActivity(Intent(requireContext(), PreviewActivity::class.java))
-            } else {
-                val timeUntilNext = previewViewModel.getTimeUntilNextPreviewAllowed()
-                view?.let { v ->
-                    Snackbar.make(v,
-                        getString(R.string.preview_cooldown_message, timeUntilNext / 1000),
-                        Snackbar.LENGTH_LONG
-                    ).show()
-                }
-            }
-        } catch (e: Exception) {
-            handleError("Error showing preview", e)
-        }
-    }
-
-    private fun setupLockScreenStatus() {
-        findPreference<Preference>("lock_screen_status")?.isVisible = isLockScreenModeSelected()
-    }
-
-    private fun updateLockScreenStatus() {
-        findPreference<Preference>("lock_screen_status")?.apply {
-            val status = when {
-                !isLockScreenModeSelected() -> {
-                    isVisible = false
-                    R.string.lock_screen_not_selected
-                }
-                !isDeviceAdminActive() -> {
-                    isVisible = true
-                    R.string.lock_screen_admin_required
-                }
-                !isServiceRunning() -> {
-                    isVisible = true
-                    R.string.lock_screen_service_not_running
-                }
-                else -> {
-                    isVisible = true
-                    R.string.lock_screen_active
-                }
-            }
-            summary = getString(status)
-        }
-    }
-
-    private fun isDeviceAdminActive(): Boolean =
-        devicePolicyManager?.isAdminActive(adminComponentName) == true
-
-    private fun isServiceRunning(): Boolean {
-        val manager = requireContext().getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        return manager.getRunningServices(Integer.MAX_VALUE)
-            .any { it.service.className == PhotoLockScreenService::class.java.name }
-    }
-
-    private fun isLockScreenModeSelected(): Boolean =
-        PreferenceManager.getDefaultSharedPreferences(requireContext())
-            .getString("display_mode_selection", "lock_screen") == "lock_screen"
-
-    private fun resetDisplayModePreference() {
-        findPreference<ListPreference>("display_mode_selection")?.value = "lock_screen"
     }
 
     private fun showFeedback(@StringRes messageResId: Int) {
