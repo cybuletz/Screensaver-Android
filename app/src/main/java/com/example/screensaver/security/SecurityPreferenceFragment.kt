@@ -53,16 +53,20 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
             isChecked = securityPreferences.isSecurityEnabled
             setOnPreferenceChangeListener { _, newValue ->
                 val enabled = newValue as Boolean
-                pendingSecurityChanges = true
-                pendingEnable = enabled
-                if (enabled) {
-                    showPasscodeSetupDialog()
+                if (securityPreferences.isLockedOut()) {
+                    showLockoutError()
+                    false
                 } else {
-                    // Just store the intent to disable, don't show auth yet
-                    pendingDisableAuthentication = true
-                    isChecked = false // Update UI immediately
+                    pendingSecurityChanges = true
+                    pendingEnable = enabled
+                    if (enabled) {
+                        showPasscodeSetupDialog()
+                    } else {
+                        pendingDisableAuthentication = true
+                        isChecked = false
+                    }
+                    false
                 }
-                false // Don't update state yet
             }
         }
 
@@ -91,7 +95,21 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun showLockoutError() {
+        val remainingTime = securityPreferences.getFormattedRemainingLockoutTime()
+        Toast.makeText(
+            context,
+            getString(R.string.lockout_error_message, remainingTime),
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
     private fun showPasscodeSetupDialog() {
+        if (securityPreferences.isLockedOut()) {
+            showLockoutError()
+            return
+        }
+
         firstPasscode = null
         setupPasscodeDialog?.dismiss()
 
@@ -280,12 +298,21 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
     }
 
     private fun showAuthenticationDialog(onAuthenticated: (Boolean) -> Unit) {
+        if (securityPreferences.isLockedOut()) {
+            showLockoutError()
+            onAuthenticated(false)
+            return
+        }
+
         when (securityPreferences.authMethod) {
             SecurityPreferences.AUTH_METHOD_BIOMETRIC -> {
-                if (biometricHelper.isBiometricAvailable()) {
+                if (securityPreferences.allowBiometric && biometricHelper.isBiometricAvailable()) {
                     biometricHelper.showBiometricPrompt(
                         activity = requireActivity(),
-                        onSuccess = { onAuthenticated(true) },
+                        onSuccess = {
+                            securityPreferences.clearFailedAttempts()
+                            onAuthenticated(true)
+                        },
                         onError = { message ->
                             if (securityPreferences.passcode != null) {
                                 showPasscodeAuthDialog(onAuthenticated)
@@ -294,6 +321,7 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
                             }
                         },
                         onFailed = {
+                            securityPreferences.incrementFailedAttempts()
                             if (securityPreferences.passcode != null) {
                                 showPasscodeAuthDialog(onAuthenticated)
                             } else {
@@ -310,6 +338,12 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
     }
 
     private fun showPasscodeAuthDialog(onAuthenticated: (Boolean) -> Unit) {
+        if (securityPreferences.isLockedOut()) {
+            showLockoutError()
+            onAuthenticated(false)
+            return
+        }
+
         PasscodeDialog.newInstance(
             mode = PasscodeDialog.Mode.VERIFY,
             title = getString(R.string.authentication_required),
@@ -317,8 +351,23 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
         ).apply {
             setCallback(object : PasscodeDialog.PasscodeDialogCallback {
                 override fun onPasscodeConfirmed(passcode: String) {
-                    onAuthenticated(true)
-                    dismiss()
+                    if (securityPreferences.validatePasscode(passcode)) {
+                        onAuthenticated(true)
+                        dismiss()
+                    } else {
+                        if (securityPreferences.isLockedOut()) {
+                            showLockoutError()
+                            dismiss()
+                        } else {
+                            val remainingAttempts = SecurityPreferences.MAX_FAILED_ATTEMPTS -
+                                    securityPreferences.failedAttempts
+                            Toast.makeText(
+                                context,
+                                getString(R.string.invalid_passcode_attempts_remaining, remainingAttempts),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
                 }
 
                 override fun onError(message: String) {
@@ -334,17 +383,18 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
 
     private fun updatePreferencesState(enabled: Boolean) {
         findPreference<ListPreference>("auth_method")?.apply {
-            isEnabled = enabled
+            isEnabled = enabled && !securityPreferences.isLockedOut()
             value = securityPreferences.authMethod
         }
 
         findPreference<EditTextPreference>("passcode")?.apply {
-            isEnabled = enabled
+            isEnabled = enabled && !securityPreferences.isLockedOut()
             summary = if (enabled) "Change passcode" else "Set up passcode first"
         }
 
         findPreference<SwitchPreferenceCompat>("allow_biometric")?.apply {
-            isEnabled = enabled && biometricHelper.isBiometricAvailable()
+            isEnabled = enabled && biometricHelper.isBiometricAvailable() &&
+                    !securityPreferences.isLockedOut()
             isChecked = securityPreferences.allowBiometric
             isVisible = biometricHelper.isBiometricAvailable()
         }
@@ -354,4 +404,6 @@ class SecurityPreferenceFragment : PreferenceFragmentCompat() {
         Log.e(TAG, "$message: ${error.message}", error)
         Toast.makeText(context, "$message: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
     }
+
+
 }

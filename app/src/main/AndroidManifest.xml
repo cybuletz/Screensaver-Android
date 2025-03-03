@@ -149,21 +149,6 @@
             android:exported="false">
         </activity>
 
-        <!-- Lock Screen Service -->
-        <service
-            android:name=".lock.PhotoLockScreenService"
-            android:enabled="true"
-            android:exported="false"
-            android:directBootAware="true"
-            android:foregroundServiceType="dataSync"
-            android:permission="android.permission.BIND_JOB_SERVICE">
-            <intent-filter>
-                <action android:name="android.intent.action.SCREEN_OFF" />
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-            </intent-filter>
-        </service>
-
         <!-- FileProvider -->
         <provider
             android:name="androidx.core.content.FileProvider"

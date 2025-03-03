@@ -14,7 +14,6 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.example.screensaver.databinding.FragmentMainBinding
-import com.example.screensaver.lock.PhotoLockScreenService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -191,12 +190,6 @@ class MainFragment : Fragment() {
             }
             photoDisplayManager.startPhotoDisplay()
             photoSourceState.recordPreviewStarted()
-
-            // Start service in preview mode
-            Intent(requireContext(), PhotoLockScreenService::class.java).also { intent ->
-                intent.action = "START_PREVIEW"
-                requireContext().startService(intent)
-            }
         }
     }
 

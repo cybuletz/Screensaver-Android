@@ -93,15 +93,6 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideLockScreenPhotoManager(
-        @ApplicationContext context: Context,
-        googlePhotosManager: GooglePhotosManager
-    ): LockScreenPhotoManager {
-        return LockScreenPhotoManager(context, googlePhotosManager)
-    }
-
-    @Provides
-    @Singleton
     fun providePhotoDisplayManager(
         lockScreenPhotoManager: LockScreenPhotoManager,
         photoCache: PhotoCache,

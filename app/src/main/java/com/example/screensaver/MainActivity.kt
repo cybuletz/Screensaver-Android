@@ -17,7 +17,6 @@ import androidx.navigation.fragment.NavHostFragment
 import androidx.preference.PreferenceManager
 import com.example.screensaver.databinding.ActivityMainBinding
 import com.example.screensaver.lock.LockScreenPhotoManager
-import com.example.screensaver.lock.PhotoLockScreenService
 import com.example.screensaver.ui.PhotoDisplayManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -918,22 +917,6 @@ class MainActivity : AppCompatActivity() {
         binding.legalLinksContainer.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
     }
 
-    private fun updateLockScreenService(action: String? = null) {
-        try {
-            Intent(this, PhotoLockScreenService::class.java).also { intent ->
-                action?.let { intent.action = it }
-                // Always use startForegroundService on Android O and above
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(intent)
-                } else {
-                    startService(intent)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating lock screen service", e)
-        }
-    }
-
     private fun ensureBinding() {
         if (_binding == null) {
             Log.d(TAG, "Binding was null, reinitializing")
@@ -1071,7 +1054,6 @@ class MainActivity : AppCompatActivity() {
         if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
             checkSecurityWithCallback {
                 // Only continue after successful authentication
-                updateLockScreenService("CHECK_KIOSK_MODE")
                 if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
                     navController.currentDestination?.id == R.id.mainFragment) {
                     photoDisplayManager.startPhotoDisplay()
@@ -1079,7 +1061,6 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             // No security needed, continue normally
-            updateLockScreenService("CHECK_KIOSK_MODE")
             if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
                 navController.currentDestination?.id == R.id.mainFragment) {
                 photoDisplayManager.startPhotoDisplay()
