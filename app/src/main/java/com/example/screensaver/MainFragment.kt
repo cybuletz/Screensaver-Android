@@ -18,16 +18,13 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import android.view.animation.AnimationUtils
-import androidx.core.content.ContextCompat
 import com.google.android.material.snackbar.Snackbar
 import androidx.preference.PreferenceManager
 import com.example.screensaver.ui.PhotoDisplayManager
-import com.example.screensaver.lock.LockScreenPhotoManager
 import kotlinx.coroutines.flow.collectLatest
 import android.os.Build
 import android.webkit.WebSettings
 import android.webkit.WebView
-import androidx.annotation.RequiresApi
 
 @AndroidEntryPoint
 class MainFragment : Fragment() {
@@ -42,7 +39,7 @@ class MainFragment : Fragment() {
     lateinit var photoDisplayManager: PhotoDisplayManager
 
     @Inject
-    lateinit var photoManager: LockScreenPhotoManager
+    lateinit var photoManager: PhotoRepository
 
     private var isPhotoDisplayActive = false
 
@@ -89,20 +86,20 @@ class MainFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             photoManager.loadingState.collectLatest { state ->
                 when (state) {
-                    LockScreenPhotoManager.LoadingState.SUCCESS -> {
+                    PhotoRepository.LoadingState.SUCCESS -> {
                         binding.loadingIndicator.visibility = View.GONE
                         if (photoManager.getPhotoCount() > 0) {
                             updatePreviewButtonState()
                         }
                     }
-                    LockScreenPhotoManager.LoadingState.LOADING -> {
+                    PhotoRepository.LoadingState.LOADING -> {
                         binding.loadingIndicator.visibility = View.VISIBLE
                     }
-                    LockScreenPhotoManager.LoadingState.ERROR -> {
+                    PhotoRepository.LoadingState.ERROR -> {
                         binding.loadingIndicator.visibility = View.GONE
                         showError("Error loading photos")
                     }
-                    LockScreenPhotoManager.LoadingState.IDLE -> {
+                    PhotoRepository.LoadingState.IDLE -> {
                         binding.loadingIndicator.visibility = View.GONE
                     }
                 }

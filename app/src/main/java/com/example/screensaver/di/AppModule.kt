@@ -19,13 +19,12 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import com.example.screensaver.lock.LockScreenPhotoManager
+import com.example.screensaver.PhotoRepository
 import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.recovery.StateRecoveryManager
 import com.example.screensaver.recovery.StateRestoration
 import com.example.screensaver.data.PhotoCache
-import com.example.screensaver.photos.PhotoManagerViewModel
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.SecurityPreferences
@@ -94,12 +93,12 @@ object AppModule {
     @Provides
     @Singleton
     fun providePhotoDisplayManager(
-        lockScreenPhotoManager: LockScreenPhotoManager,
+        photoRepository: PhotoRepository,
         photoCache: PhotoCache,
         @ApplicationContext context: Context
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
-            photoManager = lockScreenPhotoManager,
+            photoManager = photoRepository,
             photoCache = photoCache,
             context = context
         )

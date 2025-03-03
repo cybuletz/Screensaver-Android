@@ -16,7 +16,6 @@ import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.preference.PreferenceManager
 import com.example.screensaver.databinding.ActivityMainBinding
-import com.example.screensaver.lock.LockScreenPhotoManager
 import com.example.screensaver.ui.PhotoDisplayManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -62,7 +61,7 @@ class MainActivity : AppCompatActivity() {
     lateinit var photoManager: GooglePhotosManager
 
     @Inject
-    lateinit var lockScreenPhotoManager: LockScreenPhotoManager
+    lateinit var photoRepository: PhotoRepository
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
@@ -217,7 +216,7 @@ class MainActivity : AppCompatActivity() {
 
             // Add validation here after photo manager is initialized
             lifecycleScope.launch {
-                lockScreenPhotoManager.validateStoredPhotos()
+                photoRepository.validateStoredPhotos()
             }
 
             initializePhotos()
@@ -427,9 +426,9 @@ class MainActivity : AppCompatActivity() {
                                 if (photos != null && photos.isNotEmpty()) {
                                     withContext(Dispatchers.Main) {
                                         try {
-                                            // Store photos in LockScreenPhotoManager
-                                            lockScreenPhotoManager.clearPhotos()
-                                            lockScreenPhotoManager.addPhotos(photos)
+                                            // Store photos in PhotoRepository
+                                            photoRepository.clearPhotos()
+                                            photoRepository.addPhotos(photos)
 
                                             // Start display if we're on the main fragment
                                             if (!isDestroyed) {
@@ -809,8 +808,8 @@ class MainActivity : AppCompatActivity() {
                                 if (photoManager.initialize()) {
                                     val photos = photoManager.loadPhotos()
                                     if (photos != null) {
-                                        lockScreenPhotoManager.clearPhotos()
-                                        lockScreenPhotoManager.addPhotos(photos)
+                                        photoRepository.clearPhotos()
+                                        photoRepository.addPhotos(photos)
 
                                         withContext(Dispatchers.Main) {
                                             photoDisplayManager.startPhotoDisplay()

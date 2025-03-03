@@ -1,11 +1,7 @@
 package com.example.screensaver.settings
 
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,7 +50,7 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceCategory
 import androidx.preference.MultiSelectListPreference
-import com.example.screensaver.lock.LockScreenPhotoManager
+import com.example.screensaver.PhotoRepository
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.example.screensaver.widgets.WidgetPreferenceFragment
@@ -70,7 +66,7 @@ import com.example.screensaver.security.SecurityPreferenceDialog
 import com.example.screensaver.security.SecurityPreferences
 import com.example.screensaver.widgets.WidgetPreferenceDialog
 import com.example.screensaver.models.MediaItem
-import com.example.screensaver.lock.LockScreenPhotoManager.PhotoAddMode
+import com.example.screensaver.PhotoRepository.PhotoAddMode
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
@@ -90,7 +86,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     lateinit var photoCache: PhotoCache
 
     @Inject
-    lateinit var photoManager: LockScreenPhotoManager
+    lateinit var photoManager: PhotoRepository
 
     @Inject
     lateinit var widgetManager: WidgetManager

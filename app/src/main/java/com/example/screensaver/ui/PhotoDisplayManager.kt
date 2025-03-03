@@ -4,18 +4,14 @@ import android.content.Context
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.core.view.isVisible
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.example.screensaver.lock.LockScreenPhotoManager
+import com.example.screensaver.PhotoRepository
 import com.example.screensaver.data.PhotoCache
 import com.example.screensaver.models.LoadingState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import java.text.SimpleDateFormat
-import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
@@ -39,19 +35,13 @@ import android.animation.AnimatorSet
 import android.animation.Animator
 import android.animation.ObjectAnimator
 import android.graphics.drawable.BitmapDrawable
-import com.bumptech.glide.annotation.GlideModule
 import com.bumptech.glide.load.HttpException
 import com.example.screensaver.glide.GlideApp
-import com.example.screensaver.photos.PhotoManagerViewModel
-import okhttp3.OkHttpClient
-import okhttp3.Interceptor
-import okhttp3.Request
-import java.util.concurrent.TimeUnit
 
 
 @Singleton
 class PhotoDisplayManager @Inject constructor(
-    private val photoManager: LockScreenPhotoManager,
+    private val photoManager: PhotoRepository,
     private val photoCache: PhotoCache,
     private val context: Context
 ) {
