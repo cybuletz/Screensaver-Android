@@ -203,22 +203,21 @@ class PhotoRepository @Inject constructor(
         return photos
     }
 
+    fun getAllPhotos(): List<MediaItem> {
+        return mediaItems.toList()
+    }
+
     fun loadPhotos(): List<MediaItem>? {
         _loadingState.value = LoadingState.LOADING
         return try {
-            if (mediaItems.isEmpty()) {
-                loadCachedItems()
-                loadVirtualAlbums()
-            }
+            val selectedAlbums = virtualAlbums.filter { it.isSelected }
+            Log.d(TAG, "Loading photos from ${selectedAlbums.size} selected virtual albums")
 
-            val allPhotos = mutableSetOf<MediaItem>()  // Changed to Set to prevent duplicates
-
-            // Add only photos from selected virtual albums
-            virtualAlbums.filter { it.isSelected }.forEach { album ->
+            val displayPhotos = mutableSetOf<MediaItem>()
+            selectedAlbums.forEach { album ->
                 album.photoUris.forEach { uri ->
-                    // Skip if we already have this URI
-                    if (!allPhotos.any { it.baseUrl == uri }) {
-                        allPhotos.add(MediaItem(
+                    if (!displayPhotos.any { it.baseUrl == uri }) {
+                        displayPhotos.add(MediaItem(
                             id = "${album.id}_${uri.hashCode()}",
                             albumId = album.id,
                             baseUrl = uri,
@@ -233,15 +232,9 @@ class PhotoRepository @Inject constructor(
                 }
             }
 
-            // Add any remaining photos from mediaItems that aren't in virtual albums
-            mediaItems.forEach { item ->
-                if (!allPhotos.any { it.baseUrl == item.baseUrl }) {
-                    allPhotos.add(item)
-                }
-            }
-
             _loadingState.value = LoadingState.SUCCESS
-            allPhotos.toList()
+            Log.d(TAG, "Total photos loaded for display: ${displayPhotos.size}")
+            displayPhotos.toList()
         } catch (e: Exception) {
             Log.e(TAG, "Error loading photos", e)
             _loadingState.value = LoadingState.ERROR
@@ -303,25 +296,23 @@ class PhotoRepository @Inject constructor(
         Log.d(TAG, "Added ${items.size} photo URLs as MediaItems")
     }
 
-    fun getPhotoUrl(index: Int): String? {
-        return if (index in mediaItems.indices) {
-            val url = mediaItems[index].baseUrl
-            Log.d(TAG, "Getting photo URL for index $index: $url")
-            if (url.contains("googleusercontent.com") && !url.contains("=w")) {
-                "$url=w2048-h1024"
-            } else {
-                url
-            }
-        } else {
-            Log.e(TAG, "Invalid photo index: $index, total photos: ${mediaItems.size}")
-            null
-        }
+    fun getPhotoCount(): Int {
+        val selectedPhotos = loadPhotos() ?: emptyList()
+        val count = selectedPhotos.size
+        Log.d(TAG, "Current display photo count: $count")
+        return count
     }
 
-    fun getPhotoCount(): Int {
-        val count = mediaItems.size
-        Log.d(TAG, "Current photo count: $count")
-        return count
+    fun getPhotoUrl(index: Int): String? {
+        val selectedPhotos = loadPhotos() ?: emptyList()
+        return if (index in selectedPhotos.indices) {
+            val url = selectedPhotos[index].baseUrl
+            Log.d(TAG, "Getting photo URL for index $index: $url")
+            url
+        } else {
+            Log.e(TAG, "Invalid photo index: $index")
+            null
+        }
     }
 
     private fun saveItems() {
@@ -354,28 +345,34 @@ class PhotoRepository @Inject constructor(
 
     fun removePhoto(uri: String) {
         val previousCount = mediaItems.size
-        mediaItems.removeIf { it.baseUrl == uri }
 
-        // Also remove from virtual albums if present
-        virtualAlbums.forEach { album ->
+        // First, update virtual albums to remove the photo
+        val updatedAlbums = virtualAlbums.mapNotNull { album ->
             val updatedPhotoUris = album.photoUris.filterNot { it == uri }
-            if (updatedPhotoUris.size != album.photoUris.size) {
-                val updatedAlbum = album.copy(photoUris = updatedPhotoUris)
-                virtualAlbums.removeIf { it.id == album.id }
-                if (updatedPhotoUris.isNotEmpty()) {
-                    virtualAlbums.add(updatedAlbum)
-                }
+            if (updatedPhotoUris.isEmpty()) {
+                // If album becomes empty, return null to remove it
+                null
+            } else {
+                album.copy(photoUris = updatedPhotoUris)
             }
         }
 
-        // Remove empty virtual albums
-        virtualAlbums.removeIf { it.photoUris.isEmpty() }
+        // Update the albums list
+        virtualAlbums.clear()
+        virtualAlbums.addAll(updatedAlbums)
 
-        // Save changes
+        // Then remove from mediaItems
+        mediaItems.removeIf { it.baseUrl == uri }
+
+        // Save both changes
         saveItems()
         saveVirtualAlbums()
 
-        Log.d(TAG, "Removed photo with URI: $uri (previous count: $previousCount, new count: ${mediaItems.size})")
+        Log.d(TAG, """Removed photo with URI: $uri 
+        • Previous count: $previousCount
+        • New count: ${mediaItems.size}
+        • Updated virtual albums: ${virtualAlbums.size}
+        • Total photos in albums: ${virtualAlbums.sumOf { it.photoUris.size }}""".trimIndent())
     }
 
     private fun saveVirtualAlbums() {
