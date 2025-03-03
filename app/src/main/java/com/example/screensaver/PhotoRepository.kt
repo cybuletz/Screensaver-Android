@@ -46,9 +46,9 @@ class PhotoRepository @Inject constructor(
     }
 
     enum class PhotoAddMode {
-        APPEND,    // Add to existing photos
-        REPLACE,   // Clear existing and add new
-        MERGE      // Add new but prevent duplicates
+        APPEND,
+        REPLACE,
+        MERGE
     }
 
     data class VirtualAlbum(
@@ -56,7 +56,7 @@ class PhotoRepository @Inject constructor(
         val name: String,
         val photoUris: List<String>,
         val dateCreated: Long = System.currentTimeMillis(),
-        val isSelected: Boolean = false  // Added this property
+        val isSelected: Boolean = false
     )
 
     init {
@@ -203,7 +203,7 @@ class PhotoRepository @Inject constructor(
         return photos
     }
 
-    suspend fun loadPhotos(): List<MediaItem>? {
+    fun loadPhotos(): List<MediaItem>? {
         _loadingState.value = LoadingState.LOADING
         return try {
             if (mediaItems.isEmpty()) {
@@ -249,18 +249,7 @@ class PhotoRepository @Inject constructor(
         }
     }
 
-    fun toggleVirtualAlbumSelection(albumId: String) {
-        val album = virtualAlbums.find { it.id == albumId } ?: return
-        val updatedAlbum = album.copy(isSelected = !album.isSelected)
-
-        virtualAlbums.removeIf { it.id == albumId }
-        virtualAlbums.add(updatedAlbum)
-        saveVirtualAlbums()
-
-        Log.d(TAG, "Toggled selection for album ${album.name} (${album.id})")
-    }
-
-    suspend fun validateStoredPhotos() {
+    fun validateStoredPhotos() {
         try {
             val currentPhotos = loadPhotos() ?: emptyList()
 
@@ -478,13 +467,6 @@ class PhotoRepository @Inject constructor(
         virtualAlbums.add(album)
         saveVirtualAlbums()
     }
-
-    fun removeVirtualAlbum(albumId: String) {
-        virtualAlbums.removeIf { it.id == albumId }
-        saveVirtualAlbums()
-    }
-
-    fun getVirtualAlbums(): List<VirtualAlbum> = virtualAlbums.toList()
 
     fun cleanup() {
         val previousCount = mediaItems.size
