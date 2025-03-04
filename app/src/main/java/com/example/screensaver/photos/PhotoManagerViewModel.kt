@@ -156,34 +156,32 @@ class PhotoManagerViewModel @Inject constructor(
 
                 val photos = mutableListOf<ManagedPhoto>()
 
-                // First try to get photos from PhotoRepository
-                val currentPhotoCount = photoRepository.getPhotoCount()
-                Log.d(TAG, "PhotoRepository has $currentPhotoCount photos")
+                // Get all available photos for management
+                val availablePhotos = photoRepository.getAllPhotos()  // Use the new method
+                Log.d(TAG, "PhotoRepository has ${availablePhotos.size} photos")
 
                 // Convert existing photos from PhotoRepository
-                for (i in 0 until currentPhotoCount) {
-                    photoRepository.getPhotoUrl(i)?.let { url ->
-                        val sourceType = when {
-                            url.contains("com.google.android.apps.photos.cloudpicker") -> PhotoSourceType.GOOGLE_PHOTOS
-                            url.contains("content://media/picker") -> PhotoSourceType.LOCAL_PICKED
-                            url.contains("content://media/external") -> PhotoSourceType.LOCAL_ALBUM
-                            else -> PhotoSourceType.VIRTUAL_ALBUM
-                        }
-
-                        photos.add(ManagedPhoto(
-                            id = url,
-                            uri = url,
-                            sourceType = sourceType,
-                            albumId = when(sourceType) {
-                                PhotoSourceType.GOOGLE_PHOTOS -> "google_photos"
-                                PhotoSourceType.LOCAL_PICKED -> "picked_photos"
-                                PhotoSourceType.LOCAL_ALBUM -> "local_albums"
-                                PhotoSourceType.VIRTUAL_ALBUM -> "virtual_albums"
-                            },
-                            dateAdded = System.currentTimeMillis()
-                        ))
-                        Log.d(TAG, "Added photo from PhotoRepository: $url (type: $sourceType)")
+                availablePhotos.forEach { item ->
+                    val sourceType = when {
+                        item.baseUrl.contains("com.google.android.apps.photos.cloudpicker") -> PhotoSourceType.GOOGLE_PHOTOS
+                        item.baseUrl.contains("content://media/picker") -> PhotoSourceType.LOCAL_PICKED
+                        item.baseUrl.contains("content://media/external") -> PhotoSourceType.LOCAL_ALBUM
+                        else -> PhotoSourceType.VIRTUAL_ALBUM
                     }
+
+                    photos.add(ManagedPhoto(
+                        id = item.baseUrl,
+                        uri = item.baseUrl,
+                        sourceType = sourceType,
+                        albumId = when(sourceType) {
+                            PhotoSourceType.GOOGLE_PHOTOS -> "google_photos"
+                            PhotoSourceType.LOCAL_PICKED -> "picked_photos"
+                            PhotoSourceType.LOCAL_ALBUM -> "local_albums"
+                            PhotoSourceType.VIRTUAL_ALBUM -> "virtual_albums"
+                        },
+                        dateAdded = item.createdAt
+                    ))
+                    Log.d(TAG, "Added photo from PhotoRepository: ${item.baseUrl} (type: $sourceType)")
                 }
 
                 // Add photos from picked URIs if they're not already included
@@ -513,7 +511,7 @@ class PhotoManagerViewModel @Inject constructor(
                 _state.value = PhotoManagerState.Loading
                 val selectedPhotos = _photos.value.filter { it.isSelected }
 
-                // Remove from PhotoRepository and update preferences
+                // Remove from PhotoRepository
                 selectedPhotos.forEach { photo ->
                     photoRepository.removePhoto(photo.uri)
 
@@ -522,6 +520,19 @@ class PhotoManagerViewModel @Inject constructor(
                         preferences.removePickedUri(photo.uri)
                     }
                 }
+
+                // Remove from virtual albums
+                val currentAlbums = _virtualAlbums.value.toMutableList()
+                val updatedAlbums = currentAlbums.map { album ->
+                    album.copy(
+                        photoUris = album.photoUris.filterNot { uri ->
+                            selectedPhotos.any { photo -> photo.uri == uri }
+                        }
+                    )
+                }.filter { it.photoUris.isNotEmpty() } // Remove empty albums
+
+                _virtualAlbums.value = updatedAlbums
+                saveVirtualAlbums() // Save the updated albums
 
                 // Update local photo selections
                 val currentLocalPhotos = preferences.getLocalSelectedPhotos()
@@ -564,7 +575,7 @@ class PhotoManagerViewModel @Inject constructor(
                 val albums = _virtualAlbums.value
                 Log.d(TAG, "Saving ${albums.size} virtual albums")
 
-                // First, save all albums to preferences
+                // Save albums to preferences
                 val jsonArray = JSONArray()
                 albums.forEach { album ->
                     val albumJson = JSONObject().apply {
@@ -577,18 +588,6 @@ class PhotoManagerViewModel @Inject constructor(
                     jsonArray.put(albumJson)
                 }
                 preferences.setString("virtual_albums", jsonArray.toString())
-
-                // Clear existing photos in PhotoRepository
-                photoRepository.clearPhotos()
-
-                // Add only photos from selected albums
-                albums.filter { it.isSelected }
-                    .flatMap { it.photoUris }
-                    .distinct()
-                    .forEach { uri ->
-                        photoRepository.addPhoto(uri)
-                    }
-
                 Log.d(TAG, "Successfully saved ${albums.size} albums to preferences")
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving virtual albums", e)
