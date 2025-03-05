@@ -7,6 +7,9 @@ import android.provider.MediaStore
 import android.util.Log
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.models.AlbumInfo
+import com.example.screensaver.photos.PhotoManagerViewModel
+import com.example.screensaver.photos.PhotoManagerViewModel.Companion
+import com.example.screensaver.photos.PhotoManagerViewModel.VirtualAlbum
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -586,5 +589,12 @@ class PhotoRepository @Inject constructor(
 
     fun getAllAlbums(): List<VirtualAlbum> {
         return virtualAlbums.toList()
+    }
+
+    fun syncVirtualAlbums(albums: List<VirtualAlbum>) {
+        virtualAlbums.clear()
+        virtualAlbums.addAll(albums)
+        saveVirtualAlbums()
+        Log.d(TAG, "Synced ${albums.size} albums to repository")
     }
 }
