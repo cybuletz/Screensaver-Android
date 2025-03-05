@@ -327,6 +327,14 @@ class PhotoDisplayManager @Inject constructor(
         // Cancel any existing display job
         displayJob?.cancel()
 
+        // First check if there are any photos available
+        val photoCount = photoManager.getPhotoCount()
+        if (photoCount == 0) {
+            Log.d(TAG, "No photos available (no albums selected), showing default photo")
+            showDefaultPhoto()
+            return
+        }
+
         displayJob = currentScope.launch {
             try {
                 // Start with first photo immediately
@@ -717,11 +725,7 @@ class PhotoDisplayManager @Inject constructor(
         } ?: false
     }
 
-    fun updateSettings(
-        transitionDuration: Long? = null,
-        showLocation: Boolean? = null,
-        isRandomOrder: Boolean? = null
-    ) {
+    fun updateSettings(transitionDuration: Long? = null, showLocation: Boolean? = null, isRandomOrder: Boolean? = null) {
         Log.d(TAG, "Updating settings")
 
         transitionDuration?.let { this.transitionDuration = it }
@@ -829,7 +833,7 @@ class PhotoDisplayManager @Inject constructor(
             try {
                 val photos = mutableListOf<Uri>()
 
-                // Get photos from PhotoManager
+                // Get photos from PhotoManager, but only from selected virtual albums
                 photoManager.loadPhotos()?.forEach { mediaItem ->
                     try {
                         photos.add(Uri.parse(mediaItem.baseUrl))
@@ -838,13 +842,14 @@ class PhotoDisplayManager @Inject constructor(
                     }
                 }
 
-                // Add the virtual album photos passed as parameter
-                photos.addAll(virtualAlbumPhotos)
+                Log.d(TAG, """Updating photo sources:
+                • Photos from manager: ${photos.size}
+                • Virtual album photos: ${virtualAlbumPhotos.size}""".trimIndent())
 
                 if (photos.isNotEmpty()) {
                     displayPhotos(photos)
                 } else {
-                    Log.w(TAG, "No photos available to display")
+                    Log.d(TAG, "No photos available to display")
                     showDefaultPhoto()
                 }
             } catch (e: Exception) {
