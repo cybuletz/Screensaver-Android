@@ -95,37 +95,58 @@ class PhotoManagerViewModel @Inject constructor(
                 val jsonArray = JSONArray(savedAlbums)
                 val albums = mutableListOf<VirtualAlbum>()
 
+                // First, get all albums from PhotoRepository
+                val repoAlbums = photoRepository.getAllAlbums().map { repoAlbum ->
+                    VirtualAlbum(
+                        id = repoAlbum.id,
+                        name = repoAlbum.name,
+                        photoUris = repoAlbum.photoUris,
+                        dateCreated = repoAlbum.dateCreated,
+                        isSelected = repoAlbum.isSelected
+                    )
+                }
+                albums.addAll(repoAlbums)
+
+                // Then add any additional albums from preferences
                 for (i in 0 until jsonArray.length()) {
                     val albumJson = jsonArray.getJSONObject(i)
-                    val photoUrisArray = albumJson.getJSONArray("photoUris")
-                    val photoUris = mutableListOf<String>()
-                    for (j in 0 until photoUrisArray.length()) {
-                        photoUris.add(photoUrisArray.getString(j))
-                    }
+                    val albumId = albumJson.getString("id")
+                    // Only add if not already present
+                    if (!albums.any { it.id == albumId }) {
+                        val photoUrisArray = albumJson.getJSONArray("photoUris")
+                        val photoUris = mutableListOf<String>()
+                        for (j in 0 until photoUrisArray.length()) {
+                            photoUris.add(photoUrisArray.getString(j))
+                        }
 
-                    albums.add(VirtualAlbum(
-                        id = albumJson.getString("id"),
-                        name = albumJson.getString("name"),
-                        photoUris = photoUris,
-                        dateCreated = albumJson.getLong("dateCreated"),
-                        isSelected = albumJson.optBoolean("isSelected", false)
-                    ))
+                        albums.add(VirtualAlbum(
+                            id = albumId,
+                            name = albumJson.getString("name"),
+                            photoUris = photoUris,
+                            dateCreated = albumJson.getLong("dateCreated"),
+                            isSelected = albumJson.optBoolean("isSelected", false)
+                        ))
+                    }
                 }
 
-                Log.d(TAG, "Loaded ${albums.size} albums from preferences")
+                Log.d(TAG, """Loading virtual albums:
+                • From repository: ${repoAlbums.size}
+                • From preferences: ${jsonArray.length()}
+                • Total unique: ${albums.size}""".trimIndent())
+
                 _virtualAlbums.value = albums
 
-                // Restore albums to PhotoRepository
-                albums.forEach { album ->
-                    photoRepository.addVirtualAlbum(
-                        PhotoRepository.VirtualAlbum(
+                // Sync back to repository
+                photoRepository.syncVirtualAlbums(albums.map { album ->
+                    PhotoRepository.VirtualAlbum(
                         id = album.id,
                         name = album.name,
                         photoUris = album.photoUris,
                         dateCreated = album.dateCreated,
                         isSelected = album.isSelected
-                    ))
-                }
+                    )
+                })
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading virtual albums", e)
             }
@@ -154,10 +175,36 @@ class PhotoManagerViewModel @Inject constructor(
                 _state.value = PhotoManagerState.Loading
                 Log.d(TAG, "Starting to load initial state")
 
+                // First get all albums from repository and preferences
+                val repoAlbums = photoRepository.getAllAlbums().map { repoAlbum ->
+                    VirtualAlbum(
+                        id = repoAlbum.id,
+                        name = repoAlbum.name,
+                        photoUris = repoAlbum.photoUris,
+                        dateCreated = repoAlbum.dateCreated,
+                        isSelected = repoAlbum.isSelected
+                    )
+                }
+
+                Log.d(TAG, """Repository albums:
+                • Total albums: ${repoAlbums.size}
+                • Selected albums: ${repoAlbums.count { it.isSelected }}""".trimIndent())
+
+                repoAlbums.forEach { album ->
+                    Log.d(TAG, """Album details:
+                    • ID: ${album.id}
+                    • Name: ${album.name}
+                    • Photos: ${album.photoUris.size}
+                    • Selected: ${album.isSelected}""".trimIndent())
+                }
+
+                // Update virtual albums state with repository data
+                _virtualAlbums.value = repoAlbums
+
                 val photos = mutableListOf<ManagedPhoto>()
 
                 // Get all available photos for management
-                val availablePhotos = photoRepository.getAllPhotos()  // Use the new method
+                val availablePhotos = photoRepository.getAllPhotos()
                 Log.d(TAG, "PhotoRepository has ${availablePhotos.size} photos")
 
                 // Convert existing photos from PhotoRepository
@@ -227,17 +274,8 @@ class PhotoManagerViewModel @Inject constructor(
                     photos.addAll(loadLocalPhotos())
                 }
 
-                // Update virtual albums state
-                val virtualAlbums = preferences.getVirtualAlbums()
-                _virtualAlbums.value = virtualAlbums.map { album ->
-                    VirtualAlbum(
-                        id = album.id,
-                        name = album.name,
-                        photoUris = album.photoUris,
-                        dateCreated = album.dateCreated,
-                        isSelected = preferences.getSelectedVirtualAlbumIds().contains(album.id)
-                    )
-                }
+                // Update virtual albums state from repository instead of preferences
+                _virtualAlbums.value = repoAlbums
 
                 // Log detailed photo counts by source
                 Log.d(TAG, """Photos loaded by source:
@@ -638,6 +676,22 @@ class PhotoManagerViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "ViewModel being cleared, saving ${_virtualAlbums.value.size} albums")
             saveVirtualAlbums(_virtualAlbums.value)
+        }
+    }
+
+    fun debugPrintAllAlbums() {
+        viewModelScope.launch {
+            Log.d(TAG, "=== All Albums in Repository ===")
+            photoRepository.getAllAlbums().forEach { album ->
+                Log.d(TAG, """
+                Album:
+                • ID: ${album.id}
+                • Name: ${album.name}
+                • Photos: ${album.photoUris.size}
+                • Selected: ${album.isSelected}
+            """.trimIndent())
+            }
+            Log.d(TAG, "=== End Album List ===")
         }
     }
 }

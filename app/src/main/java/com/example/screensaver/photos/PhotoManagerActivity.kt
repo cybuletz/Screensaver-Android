@@ -46,6 +46,7 @@ class PhotoManagerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "PhotoManagerActivity"
+        private const val MENU_DEBUG = Menu.FIRST + 1
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -132,6 +133,8 @@ class PhotoManagerActivity : AppCompatActivity() {
                 android.R.drawable.ic_menu_delete
             )
         }
+        // Add debug menu option
+        menu.add(0, MENU_DEBUG, 0, "Debug Albums")
         return true
     }
 
@@ -169,6 +172,10 @@ class PhotoManagerActivity : AppCompatActivity() {
             R.id.action_deselect_all -> {
                 viewModel.deselectAllPhotos()
                 invalidateOptionsMenu()
+                true
+            }
+            MENU_DEBUG -> {
+                viewModel.debugPrintAllAlbums()
                 true
             }
             android.R.id.home -> {
