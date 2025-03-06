@@ -7,13 +7,15 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="gradient_start">#1a237e</color> <!-- Deep Blue -->
-    <color name="gradient_end">#311b92</color>   <!-- Deep Purple -->
+    <color name="gradient_start">#2888FA</color> <!-- Deep Blue -->
+    <color name="gradient_end">#1976D2</color>   <!-- Deep Purple -->
     <color name="preference_background">#FAFAFA</color>
     <color name="preference_category_text">@color/material_dynamic_primary40</color>
     <color name="preference_item_background">#FFFFFF</color>
     <color name="preference_divider">#1F000000</color>
     <color name="link_color">#2196F3</color>
+    <color name="blue_dark">#1976D2</color>
+    <color name="blue_light">#2888FA</color>
 
     <color name="primary">#1976D2</color>
     <color name="primary_dark">#1565C0</color>
@@ -23,8 +25,8 @@
     <color name="photo_placeholder">#E0E0E0</color>
     <color name="error_color">#B00020</color>
     <color name="success_color">#4CAF50</color>
-    <color name="accent">#000000</color>          <!-- Pink A200 -->
-    <color name="background">#FFFFFF</color>       <!-- White -->
+    <color name="accent">#00BCD4</color>
+    <color name="background">#FFFFFF</color>
     <color name="background_dark">#121212</color>
 
     <!-- Optional additional colors for the PhotoManager -->

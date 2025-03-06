@@ -24,6 +24,12 @@
             style="@style/DialogPreference" />
     </PreferenceCategory>
 
+    <!-- Simple divider -->
+    <Preference
+        android:layout="@layout/preference_divider"
+        android:selectable="false"
+        android:enabled="false" />
+
     <!-- Google Photos Section -->
     <PreferenceCategory
         android:key="google_photos_category"

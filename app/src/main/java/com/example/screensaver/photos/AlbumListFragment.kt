@@ -84,7 +84,7 @@ class AlbumListFragment : Fragment() {
                         isEnabled = hasSelections
                         if (hasSelections) {
                             alpha = 1f
-                            setBackgroundColor(resources.getColor(R.color.purple_500, null))
+                            setBackgroundColor(resources.getColor(R.color.blue_light, null))
                         } else {
                             alpha = 0.5f
                             setBackgroundColor(resources.getColor(R.color.gray, null))
