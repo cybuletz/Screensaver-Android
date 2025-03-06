@@ -34,6 +34,7 @@ import android.widget.EditText
 import android.text.InputFilter
 import android.text.InputType
 import com.google.android.material.snackbar.Snackbar
+import com.example.screensaver.photos.VirtualAlbum
 
 @AndroidEntryPoint
 class PhotoManagerActivity : AppCompatActivity() {
@@ -287,7 +288,7 @@ class PhotoManagerActivity : AppCompatActivity() {
         }
     }
 
-    fun showVirtualAlbumOptions(album: PhotoManagerViewModel.VirtualAlbum) {
+    fun showVirtualAlbumOptions(album: VirtualAlbum) {
         MaterialAlertDialogBuilder(this)
             .setTitle("Album Options")
             .setItems(arrayOf("Delete Album")) { _, which ->

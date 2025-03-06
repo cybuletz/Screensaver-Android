@@ -24,6 +24,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 import javax.inject.Inject
+import com.example.screensaver.photos.VirtualAlbum
 
 
 @HiltViewModel
@@ -75,14 +76,6 @@ class PhotoManagerViewModel @Inject constructor(
         SOURCE
     }
 
-    data class VirtualAlbum(
-        val id: String,
-        val name: String,
-        val photoUris: List<String>,
-        val dateCreated: Long = System.currentTimeMillis(),
-        val isSelected: Boolean = false
-    )
-
     companion object {
         private const val TAG = "PhotoManagerViewModel"
     }
@@ -90,12 +83,7 @@ class PhotoManagerViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             try {
-                // Load saved albums from preferences
-                val savedAlbums = preferences.getString("virtual_albums", "[]")
-                val jsonArray = JSONArray(savedAlbums)
-                val albums = mutableListOf<VirtualAlbum>()
-
-                // First, get all albums from PhotoRepository
+                // First get all albums from repository
                 val repoAlbums = photoRepository.getAllAlbums().map { repoAlbum ->
                     VirtualAlbum(
                         id = repoAlbum.id,
@@ -105,54 +93,50 @@ class PhotoManagerViewModel @Inject constructor(
                         isSelected = repoAlbum.isSelected
                     )
                 }
-                albums.addAll(repoAlbums)
 
-                // Then add any additional albums from preferences
+                // Then load from preferences
+                val savedAlbums = preferences.getString("virtual_albums", "[]")
+                val jsonArray = JSONArray(savedAlbums)
+
+                // Use a map to ensure uniqueness by ID
+                val uniqueAlbums = mutableMapOf<String, VirtualAlbum>()
+
+                // Add repo albums first
+                repoAlbums.forEach { album ->
+                    uniqueAlbums[album.id] = album
+                }
+
+                // Add preference albums, potentially overwriting repo versions
                 for (i in 0 until jsonArray.length()) {
                     val albumJson = jsonArray.getJSONObject(i)
                     val albumId = albumJson.getString("id")
-                    // Only add if not already present
-                    if (!albums.any { it.id == albumId }) {
-                        val photoUrisArray = albumJson.getJSONArray("photoUris")
-                        val photoUris = mutableListOf<String>()
-                        for (j in 0 until photoUrisArray.length()) {
-                            photoUris.add(photoUrisArray.getString(j))
-                        }
-
-                        albums.add(VirtualAlbum(
-                            id = albumId,
-                            name = albumJson.getString("name"),
-                            photoUris = photoUris,
-                            dateCreated = albumJson.getLong("dateCreated"),
-                            isSelected = albumJson.optBoolean("isSelected", false)
-                        ))
+                    val photoUrisArray = albumJson.getJSONArray("photoUris")
+                    val photoUris = mutableListOf<String>()
+                    for (j in 0 until photoUrisArray.length()) {
+                        photoUris.add(photoUrisArray.getString(j))
                     }
+
+                    uniqueAlbums[albumId] = VirtualAlbum(
+                        id = albumId,
+                        name = albumJson.getString("name"),
+                        photoUris = photoUris,
+                        dateCreated = albumJson.getLong("dateCreated"),
+                        isSelected = albumJson.optBoolean("isSelected", false)
+                    )
                 }
 
-                Log.d(TAG, """Loading virtual albums:
-                • From repository: ${repoAlbums.size}
-                • From preferences: ${jsonArray.length()}
-                • Total unique: ${albums.size}""".trimIndent())
-
-                _virtualAlbums.value = albums
+                // Update the state with unique albums
+                _virtualAlbums.value = uniqueAlbums.values.toList()
 
                 // Sync back to repository
-                photoRepository.syncVirtualAlbums(albums.map { album ->
-                    PhotoRepository.VirtualAlbum(
-                        id = album.id,
-                        name = album.name,
-                        photoUris = album.photoUris,
-                        dateCreated = album.dateCreated,
-                        isSelected = album.isSelected
-                    )
-                })
+                photoRepository.syncVirtualAlbums(_virtualAlbums.value)
+
+                // Now load initial state
+                loadInitialState()
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading virtual albums", e)
             }
-
-            // Now load initial state
-            loadInitialState()
         }
     }
 
@@ -435,18 +419,13 @@ class PhotoManagerViewModel @Inject constructor(
                 val newAlbum = VirtualAlbum(
                     id = UUID.randomUUID().toString(),
                     name = name,
-                    photoUris = selectedPhotos.map { it.uri }
+                    photoUris = selectedPhotos.map { it.uri },
+                    dateCreated = System.currentTimeMillis(),
+                    isSelected = true  // Set to true since it's a new album
                 )
 
-                // Add to PhotoRepository
-                photoRepository.addVirtualAlbum(
-                    PhotoRepository.VirtualAlbum(
-                    id = newAlbum.id,
-                    name = newAlbum.name,
-                    photoUris = newAlbum.photoUris,
-                    dateCreated = newAlbum.dateCreated,
-                    isSelected = true
-                ))
+                // Add to PhotoRepository - no need for conversion since it's the same type now
+                photoRepository.addVirtualAlbum(newAlbum)
 
                 // Update local state
                 val currentAlbums = _virtualAlbums.value.toMutableList()
@@ -661,9 +640,26 @@ class PhotoManagerViewModel @Inject constructor(
         val currentAlbums = _virtualAlbums.value.toMutableList()
         val index = currentAlbums.indexOfFirst { it.id == albumId }
         if (index != -1) {
-            currentAlbums[index] = currentAlbums[index].copy(isSelected = !currentAlbums[index].isSelected)
+            val newState = !currentAlbums[index].isSelected
+            currentAlbums[index] = currentAlbums[index].copy(isSelected = newState)
             _virtualAlbums.value = currentAlbums
-            Log.d(TAG, "Album selection toggled: $albumId, new state: ${currentAlbums[index].isSelected}")
+
+            // Immediately sync with repository
+            viewModelScope.launch {
+                photoRepository.syncVirtualAlbums(currentAlbums)
+                saveVirtualAlbums(currentAlbums)
+
+                // Just reload photos - let observers handle the display update
+                photoRepository.loadPhotos()?.let { photos ->
+                    // Update state to trigger observers
+                    _state.value = PhotoManagerState.Success("Album selection updated")
+                } ?: run {
+                    // No photos available (no albums selected)
+                    _state.value = PhotoManagerState.Empty
+                }
+            }
+
+            Log.d(TAG, "Album selection toggled: $albumId, new state: $newState")
         }
     }
 

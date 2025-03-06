@@ -101,13 +101,13 @@ class AlbumListFragment : Fragment() {
     private fun setupVirtualAlbumsRecyclerView() {
         virtualAlbumsAdapter = VirtualAlbumsAdapter(
             glide = glide,
-            onAlbumClick = { album ->
+            onAlbumClick = { album: VirtualAlbum ->
                 Log.d(TAG, "Album clicked: ${album.id}")
             },
-            onAlbumOptionsClick = { album ->
+            onAlbumOptionsClick = { album: VirtualAlbum ->
                 (activity as? PhotoManagerActivity)?.showVirtualAlbumOptions(album)
             },
-            onAlbumSelectionChanged = { album, isSelected ->
+            onAlbumSelectionChanged = { album: VirtualAlbum, isSelected: Boolean ->
                 viewModel.toggleVirtualAlbumSelection(album.id)
                 Log.d(TAG, "Album selection changed: ${album.id}, selected: $isSelected")
                 // Force check button state

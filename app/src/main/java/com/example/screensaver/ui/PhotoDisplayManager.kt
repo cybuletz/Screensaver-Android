@@ -834,7 +834,14 @@ class PhotoDisplayManager @Inject constructor(
                 val photos = mutableListOf<Uri>()
 
                 // Get photos from PhotoManager, but only from selected virtual albums
-                photoManager.loadPhotos()?.forEach { mediaItem ->
+                val repoPhotos = photoManager.loadPhotos()
+                if (repoPhotos == null) {
+                    Log.d(TAG, "No photos available (no albums selected), showing default photo")
+                    showDefaultPhoto()
+                    return@launch
+                }
+
+                repoPhotos.forEach { mediaItem ->
                     try {
                         photos.add(Uri.parse(mediaItem.baseUrl))
                     } catch (e: Exception) {
