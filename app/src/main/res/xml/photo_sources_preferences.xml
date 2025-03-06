@@ -6,6 +6,8 @@
     <PreferenceCategory
         android:key="local_photos_category"
         android:title="@string/photo_source_local"
+        android:layout="@layout/preference_category_material"
+        style="@style/DialogPreference"
         app:iconSpaceReserved="true"
         app:icon="@drawable/ic_photo_library">
 
@@ -13,19 +15,21 @@
             android:key="local_photos_enabled"
             android:title="@string/photo_source_local"
             android:summary="@string/pref_select_local_photos_summary"
-            app:iconSpaceReserved="true" />
+            style="@style/DialogPreference" />
 
         <Preference
             android:key="select_local_photos"
             android:title="@string/select_photos"
             android:dependency="local_photos_enabled"
-            app:iconSpaceReserved="true" />
+            style="@style/DialogPreference" />
     </PreferenceCategory>
 
     <!-- Google Photos Section -->
     <PreferenceCategory
         android:key="google_photos_category"
         android:title="@string/photo_source_google"
+        android:layout="@layout/preference_category_material"
+        style="@style/DialogPreference"
         app:iconSpaceReserved="true"
         app:icon="@drawable/ic_google_photos">
 
@@ -33,13 +37,13 @@
             android:key="google_photos_enabled"
             android:title="@string/photo_source_google"
             android:summary="@string/pref_google_photos_signin_summary"
-            app:iconSpaceReserved="true" />
+            style="@style/DialogPreference" />
 
         <Preference
             android:key="select_google_albums"
             android:title="@string/pref_select_albums_title"
             android:dependency="google_photos_enabled"
-            app:iconSpaceReserved="true" />
+            style="@style/DialogPreference" />
     </PreferenceCategory>
 
 </PreferenceScreen>

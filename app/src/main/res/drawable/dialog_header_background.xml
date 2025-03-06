@@ -1,21 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Solid background -->
     <item>
         <shape>
-            <solid android:color="?attr/colorSurface" />
-            <corners android:radius="28dp" />
+            <solid android:color="?attr/colorSurfaceVariant" />
         </shape>
     </item>
-    <!-- Gradient overlay -->
     <item>
         <shape>
             <gradient
                 android:angle="135"
-                android:startColor="#20FFFFFF"
-                android:endColor="#05FFFFFF"
+                android:startColor="#40FFFFFF"
+                android:endColor="#10FFFFFF"
                 android:type="linear" />
-            <corners android:radius="28dp" />
         </shape>
     </item>
 </layer-list>

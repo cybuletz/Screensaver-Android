@@ -6,24 +6,24 @@
     android:orientation="vertical"
     android:background="@drawable/dialog_background">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/dialog_toolbar"
+    <!-- Title Section -->
+    <TextView
+        android:id="@+id/dialog_title"
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:background="@android:color/transparent"
-        android:elevation="0dp"
-        app:titleTextAppearance="@style/TextAppearance.Material3.HeadlineMedium"
-        app:titleTextColor="?attr/colorOnSurface"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp" />
+        android:layout_height="wrap_content"
+        android:text="@string/pref_photo_sources_title"
+        android:textAppearance="@style/TextAppearance.Material3.HeadlineMedium"
+        android:textColor="?attr/colorOnSurface"
+        android:padding="24dp"
+        android:background="@drawable/dialog_header_background"/>
 
     <FrameLayout
         android:id="@+id/photo_sources_container"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp" />
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp" />
 
     <com.google.android.material.divider.MaterialDivider
         android:layout_width="match_parent"
@@ -37,22 +37,24 @@
         android:padding="16dp"
         android:gravity="end">
 
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/cancel_button"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:layout_marginEnd="8dp"
             android:text="@string/cancel"
-            android:textAllCaps="false" />
+            android:textColor="@color/md_theme_primary" />
 
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/ok_button"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:text="@string/confirm"
-            android:textAllCaps="false" />
+            android:backgroundTint="@color/md_theme_primary" />
 
     </LinearLayout>
 </LinearLayout>

@@ -31,6 +31,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -320,15 +321,34 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun showSignInPrompt() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.sign_in_required)
+            .setMessage(R.string.google_photos_sign_in_required)
+            .setPositiveButton(R.string.sign_in) { _, _ ->
+                // Instead of performClick, directly initiate Google Sign-in
+                initiateGoogleSignIn()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     private fun launchGoogleAlbumSelection() {
+        if (GoogleSignIn.getLastSignedInAccount(requireContext()) == null ||
+            secureStorage.getGoogleCredentials() == null) {
+            showSignInPrompt()
+            return
+        }
+
         lifecycleScope.launch {
             try {
-                if (googlePhotosManager.initialize()) {
-                    startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
-                } else {
+                if (!googlePhotosManager.initialize()) {
                     showError(getString(R.string.google_photos_init_failed))
+                } else {
+                    startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize Google Photos", e)
                 showError(getString(R.string.google_photos_init_failed))
             }
         }

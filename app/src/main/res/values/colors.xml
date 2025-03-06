@@ -34,4 +34,13 @@
     <color name="on_secondary">#FFFFFF</color>
     <color name="gray">#FF888888</color>
 
+    <color name="blue_button_background">#1976D2</color>
+    <color name="blue_button_text">#1976D2</color>
+    <color name="blue_button_stroke">#1976D2</color>
+
+    <color name="md_theme_primary">#1976D2</color>
+    <color name="md_theme_onPrimary">#FFFFFF</color>
+    <color name="md_theme_primaryContainer">#1976D2</color>
+    <color name="md_theme_onPrimaryContainer">#FFFFFF</color>
+
 </resources>
