@@ -6,22 +6,21 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:minWidth="400dp"
+    android:background="@drawable/dialog_background"
     android:contentDescription="@string/widget_preferences_dialog">
 
-    <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/appbar"
+    <TextView
+        android:id="@+id/dialog_title"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
-
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/dialog_toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="?attr/colorPrimary"
-            app:title="@string/widget_preferences_title"
-            app:titleTextColor="?attr/colorOnPrimary"/>
-
-    </com.google.android.material.appbar.AppBarLayout>
+        android:layout_height="wrap_content"
+        android:text="@string/widget_preferences_title"
+        android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
+        android:textColor="?attr/colorOnPrimary"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:background="@drawable/dialog_title_background"/>
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
@@ -29,6 +28,7 @@
         android:contentDescription="@string/widget_preferences_scroll_area"
         android:clipToPadding="false"
         android:paddingBottom="70dp"
+        android:layout_marginTop="?actionBarSize"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout
@@ -37,52 +37,37 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingTop="8dp"
-            android:paddingStart="0dp"
-            android:paddingEnd="8dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
             android:minWidth="400dp"
             tools:ignore="UselessParent" />
 
     </androidx.core.widget.NestedScrollView>
 
-    <FrameLayout
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="62dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
         android:layout_gravity="bottom"
-        android:background="?android:attr/windowBackground">
+        android:gravity="end">
 
-        <com.google.android.material.divider.MaterialDivider
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_gravity="top"/>
+        <Button
+            android:id="@+id/cancel_button"
+            style="@style/PhotoSourceDialogButton.Cancel"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="@android:string/cancel" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginTop="4dp"
-            android:paddingHorizontal="8dp">
+        <Button
+            android:id="@+id/ok_button"
+            style="@style/PhotoSourceDialogButton.Confirm"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="@android:string/ok" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/cancel_button"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:layout_marginEnd="8dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="@android:string/cancel"
-                style="@style/Widget.MaterialComponents.Button.TextButton"/>
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/ok_button"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:text="@android:string/ok"
-                style="@style/Widget.MaterialComponents.Button.TextButton"/>
-
-        </LinearLayout>
-    </FrameLayout>
-
+    </LinearLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

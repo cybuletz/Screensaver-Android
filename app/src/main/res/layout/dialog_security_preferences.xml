@@ -1,38 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical">
-
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/dialog_toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"/>
-
-    <FrameLayout
-        android:id="@+id/security_preferences_container"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"/>
+    android:minWidth="400dp"
+    android:background="@drawable/dialog_background">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="16dp"
-        android:gravity="end">
+        android:orientation="vertical">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/cancel_button"
-            android:layout_width="wrap_content"
+        <TextView
+            android:id="@+id/dialog_title"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@android:string/cancel"
-            style="@style/Widget.MaterialComponents.Button.TextButton"/>
+            android:text="@string/security_preferences_title"
+            style="@style/DialogTitleStyle"
+            android:background="@drawable/dialog_title_background"/>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/ok_button"
-            android:layout_width="wrap_content"
+        <FrameLayout
+            android:id="@+id/security_preferences_container"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@android:string/ok"
-            style="@style/Widget.MaterialComponents.Button.TextButton"/>
+            android:minHeight="200dp"
+            android:paddingTop="8dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="16dp"
+            android:gravity="end">
+
+            <Button
+                android:id="@+id/cancel_button"
+                style="@style/PhotoSourceDialogButton.Cancel"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="@android:string/cancel" />
+
+            <Button
+                android:id="@+id/ok_button"
+                style="@style/PhotoSourceDialogButton.Confirm"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="@android:string/ok" />
+
+        </LinearLayout>
     </LinearLayout>
-</LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
