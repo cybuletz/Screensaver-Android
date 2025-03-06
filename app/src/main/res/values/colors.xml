@@ -23,7 +23,7 @@
     <color name="photo_placeholder">#E0E0E0</color>
     <color name="error_color">#B00020</color>
     <color name="success_color">#4CAF50</color>
-    <color name="accent">#FF4081</color>          <!-- Pink A200 -->
+    <color name="accent">#000000</color>          <!-- Pink A200 -->
     <color name="background">#FFFFFF</color>       <!-- White -->
     <color name="background_dark">#121212</color>
 

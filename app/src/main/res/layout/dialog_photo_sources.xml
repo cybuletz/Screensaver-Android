@@ -6,16 +6,18 @@
     android:orientation="vertical"
     android:background="@drawable/dialog_background">
 
-    <!-- Title Section -->
     <TextView
         android:id="@+id/dialog_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/pref_photo_sources_title"
-        android:textAppearance="@style/TextAppearance.Material3.HeadlineMedium"
-        android:textColor="?attr/colorOnSurface"
-        android:padding="24dp"
-        android:background="@drawable/dialog_header_background"/>
+        android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
+        android:textColor="?attr/colorOnPrimary"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:background="@drawable/dialog_title_background"/>
 
     <FrameLayout
         android:id="@+id/photo_sources_container"
@@ -39,22 +41,20 @@
 
         <Button
             android:id="@+id/cancel_button"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+            style="@style/PhotoSourceDialogButton.Cancel"
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:layout_marginEnd="8dp"
-            android:text="@string/cancel"
-            android:textColor="@color/md_theme_primary" />
+            android:text="@string/cancel" />
 
         <Button
             android:id="@+id/ok_button"
-            style="@style/Widget.Material3.Button"
+            style="@style/PhotoSourceDialogButton.Confirm"
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="wrap_content"
-            android:text="@string/confirm"
-            android:backgroundTint="@color/md_theme_primary" />
+            android:text="@string/confirm" />
 
     </LinearLayout>
 </LinearLayout>
