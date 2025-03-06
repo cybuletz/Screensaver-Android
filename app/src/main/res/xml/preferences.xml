@@ -9,52 +9,11 @@
         style="@style/PreferenceCategoryStyle"
         app:iconSpaceReserved="false">
 
-        <MultiSelectListPreference
-            android:key="photo_source_selection"
+        <Preference
+            android:key="photo_sources_dialog"
             android:title="@string/pref_photo_sources_title"
             android:summary="@string/pref_photo_sources_summary"
-            android:entries="@array/photo_source_entries"
-            android:entryValues="@array/photo_source_values" />
-    </PreferenceCategory>
-
-    <PreferenceCategory
-        android:title="@string/pref_category_google_photos"
-        android:key="google_photos_settings"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false"
-        app:dependency="photo_source_selection">
-
-        <SwitchPreferenceCompat
-            android:key="google_photos_enabled"
-            android:title="@string/pref_google_photos_signin_title"
-            android:summary="@string/pref_google_photos_signin_summary"
-            android:defaultValue="false" />
-
-        <Preference
-            android:key="select_albums"
-            android:title="@string/pref_select_albums_title"
-            android:summary="@string/pref_select_albums_summary"
-            android:enabled="false" />
-    </PreferenceCategory>
-
-    <PreferenceCategory
-        android:title="@string/pref_category_local_photos"
-        android:key="local_photos_settings"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false"
-        app:dependency="photo_source_selection">
-
-        <Preference
-            android:key="select_local_photos"
-            android:title="@string/pref_select_local_photos_title"
-            android:summary="@string/pref_select_local_photos_summary" />
-
-        <Preference
-            android:key="photo_folders"
-            android:title="@string/pref_photo_folders_title"
-            android:summary="@string/pref_photo_folders_summary" />
-            android:entries="@array/empty_array"
-            android:entryValues="@array/empty_array" />
+            android:icon="@drawable/ic_photo_library" />
     </PreferenceCategory>
 
     <PreferenceCategory
