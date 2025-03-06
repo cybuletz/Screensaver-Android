@@ -405,7 +405,7 @@ class PhotoManagerViewModel @Inject constructor(
         _selectedCount.value = 0
     }
 
-    fun createVirtualAlbum(name: String) {
+    fun createVirtualAlbum(name: String, isSelected: Boolean = false) {
         viewModelScope.launch {
             try {
                 _state.value = PhotoManagerState.Loading
@@ -421,10 +421,10 @@ class PhotoManagerViewModel @Inject constructor(
                     name = name,
                     photoUris = selectedPhotos.map { it.uri },
                     dateCreated = System.currentTimeMillis(),
-                    isSelected = true  // Set to true since it's a new album
+                    isSelected = isSelected  // Use the passed parameter
                 )
 
-                // Add to PhotoRepository - no need for conversion since it's the same type now
+                // Add to PhotoRepository
                 photoRepository.addVirtualAlbum(newAlbum)
 
                 // Update local state
@@ -438,7 +438,10 @@ class PhotoManagerViewModel @Inject constructor(
                 clearSelection()
                 _state.value = PhotoManagerState.Success("Album created successfully")
 
-                Log.d(TAG, "Created and saved album: ${newAlbum.name} with ${newAlbum.photoUris.size} photos")
+                Log.d(TAG, """Created and saved album: 
+                • Name: ${newAlbum.name}
+                • Photos: ${newAlbum.photoUris.size}
+                • Selected: $isSelected""".trimIndent())
             } catch (e: Exception) {
                 Log.e(TAG, "Error creating virtual album", e)
                 _state.value = PhotoManagerState.Error("Failed to create album")

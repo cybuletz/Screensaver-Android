@@ -20,20 +20,11 @@
             android:maxLines="1"/>
     </com.google.android.material.textfield.TextInputLayout>
 
-    <TextView
-        android:id="@+id/selectedPhotosCount"
+    <com.google.android.material.checkbox.MaterialCheckBox
+        android:id="@+id/albumSelectedCheckbox"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="@string/no_photos_selected"
-        android:textAlignment="center"/>
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/selectPhotosButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="8dp"
-        android:text="@string/select_photos"/>
+        android:text="@string/select_album_after_creation"
+        android:checked="false" />
 
 </LinearLayout>

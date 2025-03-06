@@ -91,23 +91,20 @@ class PhotoManagerActivity : AppCompatActivity() {
     }
 
     private fun showCreateAlbumDialog() {
-        val editText = EditText(this).apply {
-            hint = "Album Name"
-            inputType = InputType.TYPE_CLASS_TEXT
-            filters = arrayOf(InputFilter.LengthFilter(30))
-        }
+        val dialogBinding = DialogCreateAlbumBinding.inflate(layoutInflater)
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("Create Virtual Album")
-            .setView(editText)
-            .setPositiveButton("Create") { _, _ ->
-                val albumName = editText.text.toString().trim()
-                if (albumName.isNotEmpty()) {
-                    viewModel.createVirtualAlbum(albumName)
-                    // We'll switch to Albums tab after successful creation
+            .setTitle(R.string.create_album)
+            .setView(dialogBinding.root)
+            .setPositiveButton(R.string.dialog_create_title) { _, _ ->
+                val albumName = dialogBinding.albumNameInput.text?.toString()?.trim()
+                val isSelected = dialogBinding.albumSelectedCheckbox.isChecked // Get checkbox state
+
+                if (!albumName.isNullOrEmpty()) {
+                    viewModel.createVirtualAlbum(albumName, isSelected) // Pass checkbox state to ViewModel
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
