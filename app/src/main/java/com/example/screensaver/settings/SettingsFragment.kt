@@ -957,55 +957,63 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         Log.d(TAG, "Restoring settings state - Sources: ${currentState.photoSources}")
 
-        // Check if we have active Google Photos setup
+        // Check Google Photos state
         val hasGoogleCredentials = secureStorage.getGoogleCredentials() != null
-        val hasSelectedAlbums = appPreferences.getSelectedAlbumIds().isNotEmpty()
-        val hasGooglePhotosActive = hasGoogleCredentials && hasSelectedAlbums
+        val account = GoogleSignIn.getLastSignedInAccount(requireContext())
+        val hasRequiredScope = account?.grantedScopes?.contains(
+            Scope("https://www.googleapis.com/auth/photospicker.mediaitems.readonly")
+        ) == true
 
-        // Create updated photo sources set
+        // Google Photos is active if we have credentials and scope, albums not required initially
+        val hasGooglePhotosActive = hasGoogleCredentials && hasRequiredScope
+
+        // Update sources list
         val updatedSources = currentState.photoSources.toMutableSet()
         if (hasGooglePhotosActive && !updatedSources.contains("google_photos")) {
-            Log.d(TAG, "Adding Google Photos to sources due to active credentials and albums")
+            Log.d(TAG, "Adding Google Photos to sources due to active authentication")
             updatedSources.add("google_photos")
         }
 
-        // Restore photo source selection with potentially updated sources
+        // Update state if needed
+        if (hasGooglePhotosActive && !currentState.googlePhotosEnabled) {
+            Log.d(TAG, "Updating app state to reflect active Google Photos")
+            appDataManager.updateState { it.copy(
+                photoSources = updatedSources,
+                googlePhotosEnabled = true
+            )}
+        }
+
+        // Update UI elements
         findPreference<MultiSelectListPreference>("photo_source_selection")?.apply {
             values = updatedSources
             Log.d(TAG, "Updated photo sources to: $updatedSources")
         }
 
-        // Restore Local Photos state
+        // Update Local Photos UI
         findPreference<PreferenceCategory>("local_photos_settings")?.apply {
             isVisible = updatedSources.contains("local")
-            updateLocalPhotosUI() // Update UI to show selected photos count
+            updateLocalPhotosUI()
         }
 
-        // Restore Google Photos state
-        val account = GoogleSignIn.getLastSignedInAccount(requireContext())
-        val hasRequiredScope = account?.grantedScopes?.contains(
-            //Scope("https://www.googleapis.com/auth/photoslibrary.readonly")
-            Scope("https://www.googleapis.com/auth/photospicker.mediaitems.readonly")
-        ) == true
-
-        // Update Google Photos UI based on current state
+        // Update Google Photos UI
         findPreference<PreferenceCategory>("google_photos_settings")?.apply {
             isVisible = updatedSources.contains("google_photos")
             Log.d(TAG, "Google Photos category visibility: ${isVisible}")
         }
 
         findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.apply {
-            isChecked = hasGooglePhotosActive && hasRequiredScope
+            isChecked = hasGooglePhotosActive
             isVisible = updatedSources.contains("google_photos")
             Log.d(TAG, "Google Photos enabled state: ${isChecked}, visible: ${isVisible}")
         }
 
         findPreference<Preference>("select_albums")?.apply {
-            isEnabled = hasGooglePhotosActive && hasRequiredScope
+            isEnabled = hasGooglePhotosActive
             isVisible = updatedSources.contains("google_photos")
             // Update summary to show selected album count
-            if (isVisible && hasSelectedAlbums) {
-                val albumCount = appPreferences.getSelectedAlbumIds().size
+            val selectedAlbums = appPreferences.getSelectedAlbumIds()
+            if (isVisible && selectedAlbums.isNotEmpty()) {
+                val albumCount = selectedAlbums.size
                 summary = resources.getQuantityString(
                     R.plurals.selected_albums_count,
                     albumCount,
@@ -1017,21 +1025,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
         // Restore display mode
         findPreference<ListPreference>("display_mode_selection")?.value = currentState.displayMode
 
-        // Update app state if needed
-        if (hasGooglePhotosActive && !currentState.googlePhotosEnabled) {
-            Log.d(TAG, "Updating app state to reflect active Google Photos")
-            appDataManager.updateState { it.copy(
-                photoSources = updatedSources,
-                googlePhotosEnabled = true
-            )}
-        }
-
         Log.d(TAG, """Settings state restored:
-        - Google Photos enabled: ${hasGooglePhotosActive}
-        - Has credentials: ${hasGoogleCredentials}
-        - Has albums: ${hasSelectedAlbums}
-        - Required scope: ${hasRequiredScope}
-        - Sources: ${updatedSources}""".trimIndent())
+        - Google Photos enabled: $hasGooglePhotosActive
+        - Has credentials: $hasGoogleCredentials
+        - Required scope: $hasRequiredScope
+        - Sources: $updatedSources""".trimIndent())
     }
 
     private fun observeAppState() {
