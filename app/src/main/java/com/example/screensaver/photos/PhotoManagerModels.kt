@@ -26,7 +26,8 @@
         val id: String,
         val name: String,
         val photoUris: List<String>,
-        val dateCreated: Long = System.currentTimeMillis()
+        val dateCreated: Long = System.currentTimeMillis(),
+        val isSelected: Boolean = false
     ) : Parcelable
 
     enum class PhotoSourceType {

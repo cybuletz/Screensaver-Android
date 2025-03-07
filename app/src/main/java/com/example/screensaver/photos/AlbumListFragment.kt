@@ -84,7 +84,7 @@ class AlbumListFragment : Fragment() {
                         isEnabled = hasSelections
                         if (hasSelections) {
                             alpha = 1f
-                            setBackgroundColor(resources.getColor(R.color.purple_500, null))
+                            setBackgroundColor(resources.getColor(R.color.blue_light, null))
                         } else {
                             alpha = 0.5f
                             setBackgroundColor(resources.getColor(R.color.gray, null))
@@ -101,13 +101,13 @@ class AlbumListFragment : Fragment() {
     private fun setupVirtualAlbumsRecyclerView() {
         virtualAlbumsAdapter = VirtualAlbumsAdapter(
             glide = glide,
-            onAlbumClick = { album ->
+            onAlbumClick = { album: VirtualAlbum ->
                 Log.d(TAG, "Album clicked: ${album.id}")
             },
-            onAlbumOptionsClick = { album ->
+            onAlbumOptionsClick = { album: VirtualAlbum ->
                 (activity as? PhotoManagerActivity)?.showVirtualAlbumOptions(album)
             },
-            onAlbumSelectionChanged = { album, isSelected ->
+            onAlbumSelectionChanged = { album: VirtualAlbum, isSelected: Boolean ->
                 viewModel.toggleVirtualAlbumSelection(album.id)
                 Log.d(TAG, "Album selection changed: ${album.id}, selected: $isSelected")
                 // Force check button state

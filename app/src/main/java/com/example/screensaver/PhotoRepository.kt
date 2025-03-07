@@ -7,9 +7,8 @@ import android.provider.MediaStore
 import android.util.Log
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.models.AlbumInfo
-import com.example.screensaver.photos.PhotoManagerViewModel
+import com.example.screensaver.photos.VirtualAlbum
 import com.example.screensaver.photos.PhotoManagerViewModel.Companion
-import com.example.screensaver.photos.PhotoManagerViewModel.VirtualAlbum
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -54,14 +53,6 @@ class PhotoRepository @Inject constructor(
         REPLACE,
         MERGE
     }
-
-    data class VirtualAlbum(
-        val id: String,
-        val name: String,
-        val photoUris: List<String>,
-        val dateCreated: Long = System.currentTimeMillis(),
-        val isSelected: Boolean = false
-    )
 
     init {
         loadCachedItems()
@@ -214,8 +205,13 @@ class PhotoRepository @Inject constructor(
     fun loadPhotos(): List<MediaItem>? {
         _loadingState.value = LoadingState.LOADING
         return try {
+            loadVirtualAlbums() // Force reload latest state
+
             val selectedAlbums = virtualAlbums.filter { it.isSelected }
-            Log.d(TAG, "Loading photos from ${selectedAlbums.size} selected virtual albums")
+            Log.d(TAG, """Loading photos from virtual albums:
+            • Total albums: ${virtualAlbums.size}
+            • Selected albums: ${selectedAlbums.size}
+            • Selection states: ${virtualAlbums.map { "${it.id}: ${it.isSelected}" }}""".trimIndent())
 
             if (selectedAlbums.isEmpty()) {
                 Log.d(TAG, "No virtual albums selected, returning null")
@@ -226,19 +222,17 @@ class PhotoRepository @Inject constructor(
             val displayPhotos = mutableSetOf<MediaItem>()
             selectedAlbums.forEach { album ->
                 album.photoUris.forEach { uri ->
-                    if (!displayPhotos.any { it.baseUrl == uri }) {
-                        displayPhotos.add(MediaItem(
-                            id = "${album.id}_${uri.hashCode()}",
-                            albumId = album.id,
-                            baseUrl = uri,
-                            mimeType = "image/*",
-                            width = 0,
-                            height = 0,
-                            description = "From album: ${album.name}",
-                            createdAt = album.dateCreated,
-                            loadState = MediaItem.LoadState.IDLE
-                        ))
-                    }
+                    displayPhotos.add(MediaItem(
+                        id = "${album.id}_${uri.hashCode()}",
+                        albumId = album.id,
+                        baseUrl = uri,
+                        mimeType = "image/*",
+                        width = 0,
+                        height = 0,
+                        description = "From album: ${album.name}",
+                        createdAt = album.dateCreated,
+                        loadState = MediaItem.LoadState.IDLE
+                    ))
                 }
             }
 
@@ -385,7 +379,7 @@ class PhotoRepository @Inject constructor(
         • Total photos in albums: ${virtualAlbums.sumOf { it.photoUris.size }}""".trimIndent())
     }
 
-    fun saveVirtualAlbums() {
+    private fun saveVirtualAlbums() {
         try {
             val jsonArray = JSONArray()
             virtualAlbums.forEach { album ->
@@ -394,26 +388,18 @@ class PhotoRepository @Inject constructor(
                     put("name", album.name)
                     put("photoUris", JSONArray(album.photoUris))
                     put("dateCreated", album.dateCreated)
-                    put("isSelected", album.isSelected)  // Save selection state
+                    put("isSelected", album.isSelected)  // Ensure this is always saved
                 })
             }
 
-            // Save albums
             preferences.edit()
                 .putString(KEY_VIRTUAL_ALBUMS, jsonArray.toString())
                 .apply()
 
-            // Save selected album IDs separately for quick access
-            val selectedIds = virtualAlbums.filter { it.isSelected }
-                .map { it.id }
-                .toSet()
-            preferences.edit()
-                .putStringSet(KEY_SELECTED_ALBUM_IDS, selectedIds)
-                .apply()
-
-            Log.d(TAG, """Successfully saved virtual albums:
+            Log.d(TAG, """Saved virtual albums:
             • Total albums: ${virtualAlbums.size}
-            • Selected albums: ${selectedIds.size}""".trimIndent())
+            • Selected albums: ${virtualAlbums.count { it.isSelected }}
+            • Selection states: ${virtualAlbums.joinToString { "${it.id}: ${it.isSelected}" }}""".trimIndent())
         } catch (e: Exception) {
             Log.e(TAG, "Error saving virtual albums", e)
         }
@@ -467,25 +453,25 @@ class PhotoRepository @Inject constructor(
                         photoUris.add(urisArray.getString(j))
                     }
 
-                    val isSelected = obj.optBoolean("isSelected", false)
-                    virtualAlbums.add(
-                        VirtualAlbum(
-                            id = obj.getString("id"),
-                            name = obj.getString("name"),
-                            photoUris = photoUris,
-                            dateCreated = obj.getLong("dateCreated"),
-                            isSelected = isSelected
-                        )
+                    val album = VirtualAlbum(
+                        id = obj.getString("id"),
+                        name = obj.getString("name"),
+                        photoUris = photoUris,
+                        dateCreated = obj.getLong("dateCreated"),
+                        isSelected = obj.optBoolean("isSelected", false)  // Default to false if not present
                     )
-                    Log.d(TAG, "Loaded album ${obj.getString("name")} with selection state: $isSelected")
+                    virtualAlbums.add(album)
+
+                    Log.d(TAG, """Loaded album:
+                    • Name: ${album.name}
+                    • Selection state: ${album.isSelected}
+                    • Photos: ${album.photoUris.size}""".trimIndent())
                 }
 
-                // Save the loaded selection states immediately
-                saveVirtualAlbums()
-
+                val selectedCount = virtualAlbums.count { it.isSelected }
                 Log.d(TAG, """Successfully loaded virtual albums:
                 • Total albums: ${virtualAlbums.size}
-                • Selected albums: ${virtualAlbums.count { it.isSelected }}
+                • Selected albums: $selectedCount
                 • Total photos: ${virtualAlbums.sumOf { it.photoUris.size }}""".trimIndent())
             }
         } catch (e: Exception) {
@@ -595,6 +581,12 @@ class PhotoRepository @Inject constructor(
         virtualAlbums.clear()
         virtualAlbums.addAll(albums)
         saveVirtualAlbums()
-        Log.d(TAG, "Synced ${albums.size} albums to repository")
+        // Force reload to ensure consistency
+        loadVirtualAlbums()
+
+        Log.d(TAG, """Synced albums to repository:
+        • Total albums: ${virtualAlbums.size}
+        • Selected albums: ${virtualAlbums.count { it.isSelected }}
+        • Selection states: ${virtualAlbums.joinToString { "${it.id}: ${it.isSelected}" }}""".trimIndent())
     }
 }

@@ -7,10 +7,10 @@ import android.view.ViewGroup
 import androidx.fragment.app.DialogFragment
 import androidx.preference.*
 import com.example.screensaver.R
-import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
-import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import android.widget.TextView
+import androidx.preference.PreferenceFragmentCompat
 
 class WidgetPreferenceDialog : DialogFragment() {
 
@@ -35,7 +35,7 @@ class WidgetPreferenceDialog : DialogFragment() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         widgetType = WidgetType.valueOf(requireArguments().getString(ARG_WIDGET_TYPE)!!)
-        setStyle(STYLE_NORMAL, com.google.android.material.R.style.ThemeOverlay_MaterialComponents_Dialog)
+        setStyle(STYLE_NO_FRAME, R.style.PhotoSourcesDialog)
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -45,8 +45,8 @@ class WidgetPreferenceDialog : DialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val toolbar = view.findViewById<MaterialToolbar>(R.id.dialog_toolbar)
-        toolbar.title = when (widgetType) {
+        // Update title text using TextView instead of MaterialToolbar
+        view.findViewById<TextView>(R.id.dialog_title).text = when (widgetType) {
             WidgetType.CLOCK -> getString(R.string.clock_widget_preferences)
             WidgetType.WEATHER -> getString(R.string.weather_widget_preferences)
         }
