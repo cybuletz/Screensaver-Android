@@ -229,6 +229,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     setupCacheSettings(preferenceScreen)
                     setupChargingPreference()
 
+                    findPreference<Preference>("setup_wizard")?.setOnPreferenceClickListener {
+                        startActivity(Intent(requireContext(), SetupWizardActivity::class.java))
+                        true
+                    }
+
                     // Setup all preference click listeners
                     findPreference<Preference>("photo_sources_dialog")?.setOnPreferenceClickListener {
                         PhotoSourcesDialog.newInstance().show(childFragmentManager, "photo_sources")
