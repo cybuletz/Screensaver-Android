@@ -25,6 +25,7 @@ import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -53,43 +54,38 @@ class SourceSelectionFragment : Fragment(), WizardStep {
     ) { result ->
         when (result.resultCode) {
             Activity.RESULT_OK -> {
-                if (!isAuthenticationInProgress) {
-                    isAuthenticationInProgress = true
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        try {
-                            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                                .getResult(ApiException::class.java)
+                lifecycleScope.launch {
+                    try {
+                        val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                            .getResult(ApiException::class.java)
 
-                            account?.serverAuthCode?.let { authCode ->
-                                account.email?.let { email ->
-                                    val success = exchangeAuthCode(authCode, email)
-                                    withContext(Dispatchers.Main) {
-                                        isAuthenticationInProgress = false
-                                        if (success) {
-                                            binding.googleSourceSwitch.isChecked = true
-                                            updateSelectedSources()
-                                        } else {
-                                            binding.googleSourceSwitch.isChecked = false
-                                            showError(getString(R.string.sign_in_failed))
-                                        }
+                        account?.serverAuthCode?.let { authCode ->
+                            account.email?.let { email ->
+                                val success = exchangeAuthCode(authCode, email)
+                                withContext(Dispatchers.Main) {
+                                    if (success) {
+                                        binding.googleSourceSwitch.isChecked = true
+                                        updateSelectedSources()
+                                    } else {
+                                        showError(getString(R.string.sign_in_failed))
                                     }
                                 }
                             }
-                        } catch (e: ApiException) {
-                            withContext(Dispatchers.Main) {
-                                isAuthenticationInProgress = false
-                                binding.googleSourceSwitch.isChecked = false
-                                updateSelectedSources()
-                                showError(getString(R.string.sign_in_failed))
-                            }
+                        }
+                    } catch (e: ApiException) {
+                        Log.e(TAG, "Sign in failed", e)
+                        withContext(Dispatchers.Main) {
+                            showError(getString(R.string.sign_in_failed))
+                        }
+                    } finally {
+                        withContext(Dispatchers.Main) {
+                            isAuthenticationInProgress = false
                         }
                     }
                 }
             }
             else -> {
                 isAuthenticationInProgress = false
-                binding.googleSourceSwitch.isChecked = false
-                updateSelectedSources()
             }
         }
     }
@@ -129,17 +125,22 @@ class SourceSelectionFragment : Fragment(), WizardStep {
                 localSourceSwitch.toggle()
             }
             googleSourceCard.setOnClickListener {
-                googleSourceSwitch.toggle()
+                if (!isAuthenticationInProgress) {
+                    if (!googlePhotosManager.hasValidTokens()) {
+                        initiateGoogleSignIn()
+                    } else {
+                        googleSourceSwitch.toggle()
+                    }
+                }
             }
 
             localSourceSwitch.setOnCheckedChangeListener { _, _ ->
                 updateSelectedSources()
             }
 
-            googleSourceSwitch.setOnCheckedChangeListener { _, isChecked ->
+            googleSourceSwitch.setOnCheckedChangeListener { buttonView, isChecked ->
                 if (isChecked && !googlePhotosManager.hasValidTokens() && !isAuthenticationInProgress) {
-                    // Prevent automatic check and initiate sign-in
-                    googleSourceSwitch.isChecked = false
+                    buttonView.isChecked = false
                     initiateGoogleSignIn()
                 } else {
                     updateSelectedSources()
@@ -151,8 +152,15 @@ class SourceSelectionFragment : Fragment(), WizardStep {
     private fun initiateGoogleSignIn() {
         if (!isAuthenticationInProgress) {
             isAuthenticationInProgress = true
-            googleSignInClient?.signOut()?.addOnCompleteListener {
-                signInLauncher.launch(googleSignInClient?.signInIntent)
+            lifecycleScope.launch {
+                try {
+                    googleSignInClient?.signOut()?.await()
+                    signInLauncher.launch(googleSignInClient?.signInIntent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to initiate sign in", e)
+                    isAuthenticationInProgress = false
+                    showError(getString(R.string.sign_in_failed))
+                }
             }
         }
     }
