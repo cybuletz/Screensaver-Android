@@ -18,6 +18,8 @@ import javax.inject.Inject
 import kotlinx.coroutines.launch
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
+import android.util.Log
 import com.example.screensaver.localphotos.LocalPhotoSelectionActivity
 import com.example.screensaver.AlbumSelectionActivity
 import com.example.screensaver.models.MediaItem
@@ -52,8 +54,9 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
     }
 
     companion object {
+        private const val TAG = "PhotoSelectionState"
+        private const val REQUEST_GOOGLE_PHOTOS = AlbumSelectionActivity.REQUEST_PICKER
         private const val REQUEST_LOCAL_PHOTOS = 1001
-        private const val REQUEST_GOOGLE_PHOTOS = 1002
     }
 
     override fun onCreateView(
@@ -94,10 +97,6 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
         }
     }
 
-    override fun isValid(): Boolean {
-        return photoAdapter.currentList.any { it.isSelected }
-    }
-
     override fun getTitle(): String = getString(R.string.select_photos)
     override fun getDescription(): String = getString(R.string.photo_selection_description)
 
@@ -133,11 +132,19 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+
+        Log.d(TAG, "onActivityResult: requestCode=$requestCode, resultCode=$resultCode")
+
         if (resultCode != Activity.RESULT_OK) return
 
         when (requestCode) {
-            REQUEST_LOCAL_PHOTOS -> handleLocalPhotosResult(data)
-            REQUEST_GOOGLE_PHOTOS -> handleGooglePhotosResult(data)
+            REQUEST_GOOGLE_PHOTOS -> {
+                data?.getStringArrayListExtra("selected_photos")?.let { selectedPhotos ->
+                    Log.d(TAG, "Received ${selectedPhotos.size} photos from picker")
+                    photoSelectionState.addPhotos(selectedPhotos)
+                    updateSelectedCount()
+                }
+            }
         }
     }
 
@@ -165,25 +172,94 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
 
     private fun handleGooglePhotosResult(data: Intent?) {
         lifecycleScope.launch {
-            val photos = googlePhotosManager.loadPhotos()
-            photos?.let { mediaItems ->
-                photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
-                updatePhotoSelection(mediaItems.map { it.baseUrl })
+            try {
+                Log.d(TAG, "Handling Google Photos result")
+
+                // Get the URIs from the picker result
+                val clipData = data?.clipData
+                val selectedUris = mutableListOf<String>()
+
+                if (clipData != null) {
+                    // Multiple selections
+                    for (i in 0 until clipData.itemCount) {
+                        clipData.getItemAt(i).uri?.let { uri ->
+                            selectedUris.add(uri.toString())
+                        }
+                    }
+                } else {
+                    // Single selection
+                    data?.data?.let { uri ->
+                        selectedUris.add(uri.toString())
+                    }
+                }
+
+                if (selectedUris.isNotEmpty()) {
+                    Log.d(TAG, "Selected ${selectedUris.size} photos from Google Photos picker")
+
+                    // Update PhotoSelectionState first
+                    photoSelectionState.addPhotos(selectedUris)
+
+                    // Then create and add MediaItems to repository
+                    val mediaItems = selectedUris.map { uri ->
+                        MediaItem(
+                            id = uri,
+                            albumId = "google_photos",
+                            baseUrl = uri,
+                            mimeType = "image/*",
+                            width = 0,
+                            height = 0,
+                            createdAt = System.currentTimeMillis(),
+                            loadState = MediaItem.LoadState.IDLE
+                        )
+                    }
+                    photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
+
+                    // Update UI
+                    binding.selectedCountText.text = getString(
+                        R.string.photos_selected_count,
+                        photoSelectionState.selectedPhotos.value.size
+                    )
+                } else {
+                    Log.e(TAG, "No photos selected from picker")
+                    showError(getString(R.string.no_photos_selected))
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling Google Photos result", e)
+                showError(getString(R.string.photo_selection_failed))
             }
+        }
+    }
+
+    private fun createMediaItem(uri: Uri): MediaItem {
+        return MediaItem(
+            id = uri.toString(),
+            albumId = "google_photos",
+            baseUrl = uri.toString(),
+            mimeType = "image/*",
+            width = 0,
+            height = 0,
+            createdAt = System.currentTimeMillis(),
+            loadState = MediaItem.LoadState.IDLE
+        )
+    }
+
+    private fun updateSelectedCount() {
+        val count = photoSelectionState.selectedPhotos.value.size
+        binding.selectedCountText.text = getString(R.string.photos_selected_count, count)
+        // The wizard will automatically check isValid() when needed
+        // No need to explicitly trigger validation
+    }
+
+    override fun isValid(): Boolean {
+        return photoSelectionState.selectedPhotos.value.isNotEmpty().also { valid ->
+            Log.d(TAG, "Checking if step is valid: $valid (${photoSelectionState.selectedPhotos.value.size} photos selected)")
         }
     }
 
     private fun updatePhotoSelection(newPhotos: List<String>) {
         photoSelectionState.addPhotos(newPhotos)
         updateSelectedCount()
-    }
-
-
-    private fun updateSelectedCount() {
-        binding.selectedCountText.text = getString(
-            R.string.photos_selected_count,
-            photoSelectionState.selectedPhotos.value.size
-        )
     }
 
     private fun showError(message: String) {

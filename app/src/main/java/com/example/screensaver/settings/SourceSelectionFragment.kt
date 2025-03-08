@@ -1,7 +1,7 @@
 package com.example.screensaver.settings
 
 import android.app.Activity
-import android.content.ContentValues.TAG
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -38,6 +38,7 @@ class SourceSelectionFragment : Fragment(), WizardStep {
     private var _binding: FragmentSourceSelectionBinding? = null
     private val binding get() = _binding!!
     private val viewModel: SourceSelectionState by activityViewModels()
+    private val photoSelectionState: PhotoSelectionState by activityViewModels()
 
     private var isAuthenticationInProgress = false
 
@@ -88,6 +89,10 @@ class SourceSelectionFragment : Fragment(), WizardStep {
                 isAuthenticationInProgress = false
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "SourceSelectionFragment"
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -206,6 +211,18 @@ class SourceSelectionFragment : Fragment(), WizardStep {
             } catch (e: Exception) {
                 Log.e(TAG, "Error exchanging auth code", e)
                 false
+            }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode == Activity.RESULT_OK) {
+            val selectedPhotos = data?.getStringArrayListExtra("selected_photos")
+            if (!selectedPhotos.isNullOrEmpty()) {
+                photoSelectionState.addPhotos(selectedPhotos)
+                // Move to next step
+                (activity as? SetupWizardActivity)?.moveToNextStep()
             }
         }
     }

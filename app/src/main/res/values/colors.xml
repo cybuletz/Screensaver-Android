@@ -16,6 +16,8 @@
     <color name="link_color">#2196F3</color>
     <color name="blue_dark">#1976D2</color>
     <color name="blue_light">#2888FA</color>
+    <color name="red">#A20000</color>
+
 
     <color name="primary">#1976D2</color>
     <color name="primary_dark">#1565C0</color>

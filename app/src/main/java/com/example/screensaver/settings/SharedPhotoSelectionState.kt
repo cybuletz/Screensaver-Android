@@ -1,15 +1,14 @@
 package com.example.screensaver.settings
 
 import android.util.Log
-import androidx.lifecycle.ViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
+import kotlinx.coroutines.flow.asStateFlow
+import javax.inject.Singleton
 
-@HiltViewModel
-class PhotoSelectionState @Inject constructor() : ViewModel() {
+@Singleton
+class SharedPhotoSelectionState @Inject constructor() {
     private val _selectedPhotos = MutableStateFlow<Set<String>>(emptySet())
     val selectedPhotos: StateFlow<Set<String>> = _selectedPhotos.asStateFlow()
 
@@ -36,13 +35,7 @@ class PhotoSelectionState @Inject constructor() : ViewModel() {
 
     fun isValid(): Boolean = _selectedPhotos.value.isNotEmpty()
 
-    fun togglePhotoSelection(photos: ArrayList<String>) {
-        photos.forEach { photoId ->
-            togglePhotoSelection(photoId)
-        }
-    }
-
     companion object {
-        private const val TAG = "PhotoSelectionState"
+        private const val TAG = "SharedPhotoSelectionState"
     }
 }

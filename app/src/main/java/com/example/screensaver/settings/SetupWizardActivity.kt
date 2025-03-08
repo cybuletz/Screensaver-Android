@@ -20,11 +20,12 @@ import java.time.Instant
 class SetupWizardActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySetupWizardBinding
 
+    private val photoSelectionState: PhotoSelectionState by viewModels()
+
     @Inject
     lateinit var appDataManager: AppDataManager
 
     private val sourceSelectionState: SourceSelectionState by viewModels()
-    private val photoSelectionState: PhotoSelectionState by viewModels()
     private lateinit var pagerAdapter: WizardPagerAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,6 +73,11 @@ class SetupWizardActivity : AppCompatActivity() {
         } else {
             showError(getString(R.string.error_no_source_selected))
         }
+    }
+
+    fun moveToNextStep() {
+        binding.wizardViewPager.currentItem = 1
+        updateStepIndicator(1)
     }
 
     private fun handlePhotoSelectionNext() {

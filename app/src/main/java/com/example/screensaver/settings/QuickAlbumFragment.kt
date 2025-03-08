@@ -12,6 +12,7 @@ import com.bumptech.glide.RequestManager
 import com.example.screensaver.R
 import com.example.screensaver.databinding.DialogCreateAlbumBinding
 import com.example.screensaver.databinding.FragmentQuickAlbumBinding
+import com.example.screensaver.models.MediaItem
 import com.example.screensaver.photos.VirtualAlbum
 import com.example.screensaver.photos.PhotoManagerViewModel
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -19,6 +20,7 @@ import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
+import com.example.screensaver.photos.PhotoGridAdapter
 
 @AndroidEntryPoint
 class QuickAlbumFragment : Fragment(), WizardStep {
@@ -27,6 +29,13 @@ class QuickAlbumFragment : Fragment(), WizardStep {
 
     private val photoSelectionState: PhotoSelectionState by activityViewModels()
     private val photoManagerViewModel: PhotoManagerViewModel by activityViewModels()
+
+    private val photoAdapter by lazy {
+        PhotoGridAdapter(
+            glide = glide,
+            onPhotoClick = { _ -> } // Empty lambda instead of null
+        )
+    }
 
     @Inject
     lateinit var glide: RequestManager
@@ -48,16 +57,23 @@ class QuickAlbumFragment : Fragment(), WizardStep {
 
     private fun setupViews() {
         binding.apply {
+            // Setup RecyclerView
+            photoGrid.apply {
+                layoutManager = GridLayoutManager(requireContext(), 3)
+                adapter = photoAdapter
+            }
+
             createAlbumButton.setOnClickListener {
                 showCreateAlbumDialog()
             }
 
             skipButton.setOnClickListener {
-                // Skip album creation, move all photos to default album
                 createDefaultAlbum()
             }
 
-            photoGrid.layoutManager = GridLayoutManager(requireContext(), 3)
+            // Initially disable buttons
+            createAlbumButton.isEnabled = false
+            skipButton.isEnabled = false
         }
     }
 
@@ -107,8 +123,52 @@ class QuickAlbumFragment : Fragment(), WizardStep {
 
     private fun observePhotos() {
         viewLifecycleOwner.lifecycleScope.launch {
-            photoSelectionState.selectedPhotos.collect { photos ->
-                updatePhotoPreview(photos)
+            photoManagerViewModel.photos.collect { photos ->
+                if (photos.isNotEmpty()) {
+                    // Update photo count
+                    binding.photoCount.text = getString(R.string.photos_selected_count, photos.size)
+
+                    // Enable buttons when we have photos
+                    binding.createAlbumButton.isEnabled = true
+                    binding.skipButton.isEnabled = true
+
+                    // Convert first 6 photos to display format
+                    val previewPhotos = photos.take(6)
+                    photoAdapter.submitList(previewPhotos)
+                } else {
+                    binding.photoCount.text = getString(R.string.no_photos_selected)
+                    binding.createAlbumButton.isEnabled = false
+                    binding.skipButton.isEnabled = false
+                    photoAdapter.submitList(emptyList())
+                }
+            }
+        }
+
+
+        // Also observe PhotoManagerViewModel's state
+        viewLifecycleOwner.lifecycleScope.launch {
+            photoManagerViewModel.state.collect { state ->
+                when (state) {
+                    is PhotoManagerViewModel.PhotoManagerState.Loading -> {
+                        binding.createAlbumButton.isEnabled = false
+                        binding.skipButton.isEnabled = false
+                    }
+                    is PhotoManagerViewModel.PhotoManagerState.Empty -> {
+                        binding.photoCount.text = getString(R.string.no_photos_selected)
+                        binding.createAlbumButton.isEnabled = false
+                        binding.skipButton.isEnabled = false
+                        photoAdapter.submitList(emptyList())
+                    }
+                    is PhotoManagerViewModel.PhotoManagerState.Success -> {
+                        // State will be handled by photos observer
+                    }
+                    is PhotoManagerViewModel.PhotoManagerState.Error -> {
+                        showMessage(state.message)
+                    }
+                    is PhotoManagerViewModel.PhotoManagerState.Idle -> {
+                        // State will be handled by photos observer
+                    }
+                }
             }
         }
     }

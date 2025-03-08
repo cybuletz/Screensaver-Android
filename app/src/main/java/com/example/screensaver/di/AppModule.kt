@@ -28,6 +28,8 @@ import com.example.screensaver.data.PhotoCache
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.SecurityPreferences
+import com.example.screensaver.settings.PhotoSelectionState
+import com.example.screensaver.settings.SharedPhotoSelectionState
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -167,5 +169,11 @@ object AppModule {
         secureStorage: SecureStorage
     ): AppAuthManager {
         return AppAuthManager(context, securityPreferences, biometricHelper, secureStorage)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSharedPhotoSelectionState(): SharedPhotoSelectionState {
+        return SharedPhotoSelectionState()
     }
 }
