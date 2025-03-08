@@ -28,6 +28,11 @@
         <item name="materialCardViewStyle">@style/Widget.MaterialComponents.CardView</item>
     </style>
 
+    <style name="Theme.Screensaver.NoActionBar" parent="Theme.Screensaver">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
     <style name="Theme.Screensaver.PhotoSelection" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/blue_light</item>
         <item name="colorPrimaryVariant">@color/blue_light</item>

@@ -10,9 +10,21 @@
         app:iconSpaceReserved="false">
 
         <Preference
+            android:key="setup_wizard"
+            android:title="@string/setup_wizard_title"
+            android:summary="@string/setup_wizard_summary"
+            android:icon="@drawable/ic_photo" />
+
+        <Preference
             android:key="photo_sources_dialog"
             android:title="@string/pref_photo_sources_title"
             android:summary="@string/pref_photo_sources_summary"
+            android:icon="@drawable/ic_photo_library" />
+
+        <Preference
+            android:key="manage_photos"
+            android:title="@string/manage_photos"
+            android:summary="@string/pref_photo_manager_summary"
             android:icon="@drawable/ic_photo_library" />
     </PreferenceCategory>
 
@@ -21,12 +33,6 @@
         android:key="common_photo_settings"
         style="@style/PreferenceCategoryStyle"
         app:iconSpaceReserved="false">
-
-        <Preference
-            android:key="manage_photos"
-            android:title="@string/manage_photos"
-            android:summary="@string/pref_photo_manager_summary"
-            android:icon="@drawable/ic_photo_library" />
 
         <SwitchPreferenceCompat
             android:key="random_order"

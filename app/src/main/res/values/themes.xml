@@ -28,6 +28,11 @@
         <item name="android:listPreferredItemHeightSmall">72dp</item>
     </style>
 
+    <style name="Theme.Screensaver.NoActionBar" parent="Theme.Screensaver">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
     <!-- Theme for your local photo selection activity -->
     <style name="Theme.Screensaver.PhotoSelection" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="colorPrimary">@color/blue_light</item>

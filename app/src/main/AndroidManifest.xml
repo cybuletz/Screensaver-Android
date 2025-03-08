@@ -72,6 +72,12 @@
             </intent-filter>
         </activity>
 
+        <!-- SetupWizardActivity declaration -->
+        <activity
+            android:name=".settings.SetupWizardActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Screensaver.NoActionBar"/>
+
         <!-- Preview Activity -->
         <activity
             android:name=".preview.PreviewActivity"
