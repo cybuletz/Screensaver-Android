@@ -63,6 +63,7 @@ class PhotoRepository @Inject constructor(
 
     fun getLocalAlbums(): List<AlbumInfo> {
         val albums = mutableListOf<AlbumInfo>()
+        Log.d(TAG, "Starting getLocalAlbums()")
 
         val projection = arrayOf(
             MediaStore.Images.Media.BUCKET_ID,
@@ -70,21 +71,24 @@ class PhotoRepository @Inject constructor(
             MediaStore.Images.Media._ID
         )
 
-        val selection = "${MediaStore.Images.Media.SIZE} > 0"
-
         try {
+            Log.d(TAG, "Querying MediaStore for albums")
             val cursor = context.contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 projection,
-                selection,
+                null,  // Remove the size filter
                 null,
                 "${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} ASC"
             )
+
+            Log.d(TAG, "Cursor obtained: ${cursor != null}")
 
             cursor?.use {
                 val bucketIdColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
                 val bucketNameColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
                 val idColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+
+                Log.d(TAG, "Total rows in cursor: ${it.count}")
 
                 val processedBuckets = mutableSetOf<String>()
 
@@ -96,24 +100,29 @@ class PhotoRepository @Inject constructor(
                         val bucketName = it.getString(bucketNameColumn) ?: "Unknown Album"
                         val photoId = it.getLong(idColumn)
 
-                        val coverPhotoUri = ContentUris.withAppendedId(
-                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                            photoId
-                        )
-
                         val photoCount = getPhotoCountForAlbum(bucketId)
+                        Log.d(TAG, "Found album: $bucketName with $photoCount photos")
 
-                        albums.add(AlbumInfo(
-                            id = bucketId.toLong(),
-                            name = bucketName,
-                            photosCount = photoCount,
-                            coverPhotoUri = coverPhotoUri
-                        ))
+                        if (photoCount > 0) {
+                            val coverPhotoUri = ContentUris.withAppendedId(
+                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                photoId
+                            )
+
+                            albums.add(AlbumInfo(
+                                id = bucketId.toLong(),
+                                name = bucketName,
+                                photosCount = photoCount,
+                                coverPhotoUri = coverPhotoUri
+                            ))
+                        }
                     }
                 }
             }
+            Log.d(TAG, "Found ${albums.size} albums with photos")
         } catch (e: Exception) {
             Log.e(TAG, "Error loading albums", e)
+            throw e  // Rethrow to handle in calling function
         }
 
         return albums
@@ -135,8 +144,9 @@ class PhotoRepository @Inject constructor(
 
             count = cursor?.count ?: 0
             cursor?.close()
+            Log.d(TAG, "Album $bucketId has $count photos") // Add logging
         } catch (e: Exception) {
-            Log.e(TAG, "Error counting photos in album", e)
+            Log.e(TAG, "Error counting photos in album $bucketId", e)
         }
 
         return count

@@ -27,6 +27,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
 import android.content.Intent
+import android.content.pm.PackageManager
 import kotlinx.coroutines.*
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestManager
@@ -73,6 +74,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         const val SOURCE_GOOGLE_PHOTOS = "google_photos"
         const val SOURCE_LOCAL_PHOTOS = "local_photos"
         const val REQUEST_PICKER = 100
+        private const val PERMISSION_REQUEST_CODE = 100
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,11 +89,11 @@ class AlbumSelectionActivity : AppCompatActivity() {
         glideRequestManager = Glide.with(this)
             .setDefaultRequestOptions(
                 RequestOptions()
-                    .diskCacheStrategy(DiskCacheStrategy.ALL) // Cache both original & resized images
-                    .skipMemoryCache(false) // Use memory cache
-                    .centerCrop() // Consistent cropping
-                    .dontAnimate() // Prevent animation issues
-                    .timeout(10000) // 10 second timeout
+                    .diskCacheStrategy(DiskCacheStrategy.ALL)
+                    .skipMemoryCache(false)
+                    .centerCrop()
+                    .dontAnimate()
+                    .timeout(10000)
                     .placeholder(R.drawable.placeholder_album)
                     .error(R.drawable.placeholder_album_error)
             )
@@ -103,7 +105,33 @@ class AlbumSelectionActivity : AppCompatActivity() {
         if (photoSource == SOURCE_GOOGLE_PHOTOS) {
             initializeGooglePhotos()
         } else {
-            initializeLocalPhotos()
+            checkAndRequestPermissions() // Call here instead of initializeLocalPhotos()
+        }
+    }
+
+    private fun checkAndRequestPermissions() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES), PERMISSION_REQUEST_CODE)
+                return
+            }
+        } else {
+            if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), PERMISSION_REQUEST_CODE)
+                return
+            }
+        }
+        initializeLocalPhotos()  // Only initialize after permissions are granted
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                initializeLocalPhotos()
+            } else {
+                handleError(getString(R.string.permission_denied))
+            }
         }
     }
 
@@ -117,8 +145,10 @@ class AlbumSelectionActivity : AppCompatActivity() {
         activityScope.launch {
             try {
                 viewModel.setLoading(true)
+                Log.d(TAG, "Starting to load local albums")
                 loadLocalAlbums()
             } catch (e: Exception) {
+                Log.e(TAG, "Error loading local albums", e)
                 handleError(getString(R.string.albums_load_error, e.message))
             } finally {
                 viewModel.setLoading(false)
@@ -295,51 +325,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun createMediaItemFromUri(uri: Uri): MediaItem {
-        return withContext(Dispatchers.IO) {
-            val projection = arrayOf(
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DISPLAY_NAME,
-                MediaStore.Images.Media.DATE_ADDED,
-                MediaStore.Images.Media.MIME_TYPE,
-                MediaStore.Images.Media.WIDTH,
-                MediaStore.Images.Media.HEIGHT
-            )
-
-            contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                cursor.moveToFirst()
-
-                val nameColumn = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
-                val dateColumn = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
-                val mimeColumn = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
-                val widthColumn = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
-                val heightColumn = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
-
-                MediaItem(
-                    id = uri.toString(),
-                    albumId = "picked_photos",
-                    baseUrl = uri.toString(),
-                    mimeType = cursor.getString(mimeColumn) ?: "image/*",
-                    width = cursor.getInt(widthColumn),
-                    height = cursor.getInt(heightColumn),
-                    description = cursor.getString(nameColumn),
-                    createdAt = cursor.getLong(dateColumn) * 1000,
-                    loadState = MediaItem.LoadState.IDLE
-                )
-            } ?: MediaItem(
-                id = uri.toString(),
-                albumId = "picked_photos",
-                baseUrl = uri.toString(),
-                mimeType = "image/*",
-                width = 0,
-                height = 0,
-                description = uri.lastPathSegment,
-                createdAt = System.currentTimeMillis(),
-                loadState = MediaItem.LoadState.IDLE
-            )
-        }
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
@@ -382,7 +367,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                                 val mediaItems = uris.map { uri ->
                                     MediaItem(
                                         id = uri.toString(),
-                                        albumId = "picked_photos",  // Changed from google_photos
+                                        albumId = if (photoSource == SOURCE_GOOGLE_PHOTOS) "google_photos" else "local_photos",
                                         baseUrl = uri.toString(),
                                         mimeType = "image/*",
                                         width = 0,
@@ -397,6 +382,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                                 // Create result intent with selected URIs
                                 val resultIntent = Intent().apply {
                                     putStringArrayListExtra("selected_photos", ArrayList(uris.map { it.toString() }))
+                                    putExtra("source", photoSource)
                                 }
 
                                 setResult(Activity.RESULT_OK, resultIntent)
@@ -426,16 +412,41 @@ class AlbumSelectionActivity : AppCompatActivity() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
                     putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
+                    // Add a flag to identify this is part of the wizard flow
+                    putExtra("is_wizard_flow", true)
+                    putExtra("source", photoSource) // Pass the source to maintain context
                 }
-                // Add a flag to identify this is part of the wizard flow
-                intent.putExtra("is_wizard_flow", true)
                 startActivityForResult(intent, REQUEST_PICKER)
+            } else if (photoSource == SOURCE_LOCAL_PHOTOS) {
+                // For local photos on older devices
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    putExtra("is_wizard_flow", true)
+                    putExtra("source", photoSource)
+                }
+                startActivityForResult(
+                    Intent.createChooser(intent, getString(R.string.select_photos)),
+                    REQUEST_PICKER
+                )
             } else {
+                // For Google Photos, use existing flow
                 initializeGooglePhotos()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error launching photo picker: ${e.message}")
-            initializeGooglePhotos()
+            if (photoSource == SOURCE_GOOGLE_PHOTOS) {
+                initializeGooglePhotos()
+            } else {
+                // Fallback for local photos
+                val intent = Intent(Intent.ACTION_PICK).apply {
+                    type = "image/*"
+                    putExtra("is_wizard_flow", true)
+                    putExtra("source", photoSource)
+                }
+                startActivityForResult(intent, REQUEST_PICKER)
+            }
         }
     }
 

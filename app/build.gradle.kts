@@ -173,6 +173,7 @@ dependencies {
     implementation("com.google.api:gax:2.19.5")
     implementation("com.google.android.gms:play-services-location:21.1.0")
 
+
     // Google Photos Library
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")
     implementation("com.google.api-client:google-api-client-android:2.2.0")

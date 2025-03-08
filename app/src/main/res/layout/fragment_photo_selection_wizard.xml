@@ -33,6 +33,14 @@
                 app:icon="@drawable/ic_photo_library"/>
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/localAlbumsButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/select_local_albums"
+                app:icon="@drawable/ic_photo"/>
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/googlePhotosButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

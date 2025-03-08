@@ -19,7 +19,10 @@ import kotlinx.coroutines.launch
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import com.example.screensaver.localphotos.LocalPhotoSelectionActivity
 import com.example.screensaver.AlbumSelectionActivity
 import com.example.screensaver.models.MediaItem
@@ -53,10 +56,46 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
         )
     }
 
+    private val pickMultipleMedia = registerForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(
+            100
+        )
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            lifecycleScope.launch {
+                try {
+                    val mediaItems = uris.map { uri ->
+                        MediaItem(
+                            id = uri.toString(),
+                            albumId = "google_photos",
+                            baseUrl = uri.toString(),
+                            mimeType = "image/*",
+                            width = 0,
+                            height = 0,
+                            createdAt = System.currentTimeMillis(),
+                            loadState = MediaItem.LoadState.IDLE
+                        )
+                    }
+
+                    // Add to repository
+                    photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
+
+                    // Update selection state
+                    photoSelectionState.addPhotos(uris.map { it.toString() })
+                    updateSelectedCount()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing photo selection", e)
+                    showError(getString(R.string.photo_selection_failed))
+                }
+            }
+        }
+    }
+
     companion object {
         private const val TAG = "PhotoSelectionState"
         private const val REQUEST_GOOGLE_PHOTOS = AlbumSelectionActivity.REQUEST_PICKER
         private const val REQUEST_LOCAL_PHOTOS = 1001
+        private const val REQUEST_LOCAL_ALBUMS = 1002
     }
 
     override fun onCreateView(
@@ -86,13 +125,19 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
         val selectedSources = sourceSelectionState.selectedSources.value
 
         binding.apply {
+            // Local source buttons (both photos and albums)
             localPhotosButton.visibility =
                 if (selectedSources.contains("local")) View.VISIBLE else View.GONE
+            localAlbumsButton.visibility =
+                if (selectedSources.contains("local")) View.VISIBLE else View.GONE
 
+            // Google Photos button
             googlePhotosButton.visibility =
                 if (selectedSources.contains("google_photos")) View.VISIBLE else View.GONE
 
-            localPhotosButton.setOnClickListener { launchLocalPicker() }
+            // Set click listeners
+            localPhotosButton.setOnClickListener { launchLocalPhotosPicker() }
+            localAlbumsButton.setOnClickListener { launchLocalAlbumsPicker() }
             googlePhotosButton.setOnClickListener { launchGooglePicker() }
         }
     }
@@ -104,29 +149,55 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
         photoSelectionState.togglePhotoSelection(photoId)
     }
 
-    private fun launchLocalPicker() {
-        val intent = Intent(requireContext(), LocalPhotoSelectionActivity::class.java).apply {
+    private fun launchLocalPhotosPicker() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                // Use modern picker for individual photos
+                val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
+                }
+                startActivityForResult(intent, REQUEST_LOCAL_PHOTOS)
+            } else {
+                // Legacy picker for older devices
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                }
+                startActivityForResult(
+                    Intent.createChooser(intent, getString(R.string.select_photos)),
+                    REQUEST_LOCAL_PHOTOS
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching local photos picker", e)
+            // Fallback to basic picker
+            val intent = Intent(Intent.ACTION_PICK).apply {
+                type = "image/*"
+            }
+            startActivityForResult(intent, REQUEST_LOCAL_PHOTOS)
+        }
+    }
+
+    private fun launchLocalAlbumsPicker() {
+        // Use your existing AlbumSelectionActivity for album selection
+        val intent = Intent(requireContext(), AlbumSelectionActivity::class.java).apply {
+            putExtra(AlbumSelectionActivity.EXTRA_PHOTO_SOURCE, AlbumSelectionActivity.SOURCE_LOCAL_PHOTOS)
             val selectedPhotos = photoSelectionState.selectedPhotos.value
                 .filter { it.startsWith("content://") }
             putExtra("selected_photos", ArrayList(selectedPhotos))
         }
-        startActivityForResult(intent, REQUEST_LOCAL_PHOTOS)
+        startActivityForResult(intent, REQUEST_LOCAL_ALBUMS)
     }
 
     private fun launchGooglePicker() {
-        lifecycleScope.launch {
-            try {
-                if (googlePhotosManager.initialize()) {
-                    startActivityForResult(
-                        Intent(requireContext(), AlbumSelectionActivity::class.java),
-                        REQUEST_GOOGLE_PHOTOS
-                    )
-                } else {
-                    showError(getString(R.string.google_photos_init_failed))
-                }
-            } catch (e: Exception) {
-                showError(getString(R.string.google_photos_init_failed))
-            }
+        try {
+            pickMultipleMedia.launch(PickVisualMediaRequest(
+                ActivityResultContracts.PickVisualMedia.ImageOnly
+            ))
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching photo picker", e)
+            showError(getString(R.string.photo_picker_launch_failed))
         }
     }
 
@@ -138,9 +209,11 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
         if (resultCode != Activity.RESULT_OK) return
 
         when (requestCode) {
-            REQUEST_GOOGLE_PHOTOS -> {
+            REQUEST_LOCAL_PHOTOS -> {
+                handleLocalPhotosResult(data)
+            }
+            REQUEST_LOCAL_ALBUMS -> {
                 data?.getStringArrayListExtra("selected_photos")?.let { selectedPhotos ->
-                    Log.d(TAG, "Received ${selectedPhotos.size} photos from picker")
                     photoSelectionState.addPhotos(selectedPhotos)
                     updateSelectedCount()
                 }
@@ -168,80 +241,6 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
                 updatePhotoSelection(selectedPhotos)
             }
         }
-    }
-
-    private fun handleGooglePhotosResult(data: Intent?) {
-        lifecycleScope.launch {
-            try {
-                Log.d(TAG, "Handling Google Photos result")
-
-                // Get the URIs from the picker result
-                val clipData = data?.clipData
-                val selectedUris = mutableListOf<String>()
-
-                if (clipData != null) {
-                    // Multiple selections
-                    for (i in 0 until clipData.itemCount) {
-                        clipData.getItemAt(i).uri?.let { uri ->
-                            selectedUris.add(uri.toString())
-                        }
-                    }
-                } else {
-                    // Single selection
-                    data?.data?.let { uri ->
-                        selectedUris.add(uri.toString())
-                    }
-                }
-
-                if (selectedUris.isNotEmpty()) {
-                    Log.d(TAG, "Selected ${selectedUris.size} photos from Google Photos picker")
-
-                    // Update PhotoSelectionState first
-                    photoSelectionState.addPhotos(selectedUris)
-
-                    // Then create and add MediaItems to repository
-                    val mediaItems = selectedUris.map { uri ->
-                        MediaItem(
-                            id = uri,
-                            albumId = "google_photos",
-                            baseUrl = uri,
-                            mimeType = "image/*",
-                            width = 0,
-                            height = 0,
-                            createdAt = System.currentTimeMillis(),
-                            loadState = MediaItem.LoadState.IDLE
-                        )
-                    }
-                    photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
-
-                    // Update UI
-                    binding.selectedCountText.text = getString(
-                        R.string.photos_selected_count,
-                        photoSelectionState.selectedPhotos.value.size
-                    )
-                } else {
-                    Log.e(TAG, "No photos selected from picker")
-                    showError(getString(R.string.no_photos_selected))
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling Google Photos result", e)
-                showError(getString(R.string.photo_selection_failed))
-            }
-        }
-    }
-
-    private fun createMediaItem(uri: Uri): MediaItem {
-        return MediaItem(
-            id = uri.toString(),
-            albumId = "google_photos",
-            baseUrl = uri.toString(),
-            mimeType = "image/*",
-            width = 0,
-            height = 0,
-            createdAt = System.currentTimeMillis(),
-            loadState = MediaItem.LoadState.IDLE
-        )
     }
 
     private fun updateSelectedCount() {
