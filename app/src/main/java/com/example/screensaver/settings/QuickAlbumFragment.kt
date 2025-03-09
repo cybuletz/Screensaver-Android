@@ -12,8 +12,6 @@ import com.bumptech.glide.RequestManager
 import com.example.screensaver.R
 import com.example.screensaver.databinding.DialogCreateAlbumBinding
 import com.example.screensaver.databinding.FragmentQuickAlbumBinding
-import com.example.screensaver.models.MediaItem
-import com.example.screensaver.photos.VirtualAlbum
 import com.example.screensaver.photos.PhotoManagerViewModel
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -21,6 +19,12 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
 import com.example.screensaver.photos.PhotoGridAdapter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+
 
 @AndroidEntryPoint
 class QuickAlbumFragment : Fragment(), WizardStep {
@@ -53,8 +57,14 @@ class QuickAlbumFragment : Fragment(), WizardStep {
 
     override fun onResume() {
         super.onResume()
-        // Force reload of PhotoManagerViewModel state when fragment becomes visible
-        photoManagerViewModel.reloadState()
+        viewLifecycleOwner.lifecycleScope.launch {
+            // First reload state
+            photoManagerViewModel.reloadState()
+
+            // Wait for photos to be loaded before selecting
+            delay(300) // Give time for the state to update
+            selectAllDisplayedPhotos()
+        }
     }
 
     private fun setupViews() {
@@ -96,8 +106,8 @@ class QuickAlbumFragment : Fragment(), WizardStep {
     }
 
     private fun observePhotos() {
-        // Observe both PhotoSelectionState and PhotoManagerViewModel
         viewLifecycleOwner.lifecycleScope.launch {
+            // Observe PhotoSelectionState
             launch {
                 photoSelectionState.selectedPhotos.collect { selectedPhotos ->
                     if (selectedPhotos.isNotEmpty()) {
@@ -112,10 +122,11 @@ class QuickAlbumFragment : Fragment(), WizardStep {
                 }
             }
 
+            // Observe PhotoManagerViewModel photos
             launch {
                 photoManagerViewModel.photos.collect { photos ->
                     if (photos.isNotEmpty()) {
-                        // Convert first 6 photos to display format
+                        // Convert first 6 photos to display format and update adapter
                         val previewPhotos = photos.take(6)
                         photoAdapter.submitList(previewPhotos)
                     } else {
@@ -123,39 +134,63 @@ class QuickAlbumFragment : Fragment(), WizardStep {
                     }
                 }
             }
-        }
 
-        // Keep existing state observer
-        viewLifecycleOwner.lifecycleScope.launch {
-            photoManagerViewModel.state.collect { state ->
-                when (state) {
-                    is PhotoManagerViewModel.PhotoManagerState.Error -> {
-                        showMessage(state.message)
-                    }
-                    is PhotoManagerViewModel.PhotoManagerState.Empty -> {
-                        // Trigger reload if we have photos in PhotoSelectionState but ViewModel is empty
-                        if (photoSelectionState.selectedPhotos.value.isNotEmpty()) {
-                            photoManagerViewModel.reloadState()
+            // Keep existing state observer
+            launch {
+                photoManagerViewModel.state.collect { state ->
+                    when (state) {
+                        is PhotoManagerViewModel.PhotoManagerState.Error -> {
+                            showMessage(state.message)
                         }
+                        is PhotoManagerViewModel.PhotoManagerState.Empty -> {
+                            if (photoSelectionState.selectedPhotos.value.isNotEmpty()) {
+                                photoManagerViewModel.reloadState()
+                            }
+                        }
+                        else -> { /* Handle other states as needed */ }
                     }
-                    else -> { /* Handle other states as needed */ }
                 }
             }
         }
     }
 
+    private fun selectAllDisplayedPhotos() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val selectedPhotos = photoSelectionState.selectedPhotos.value
+            val currentPhotos = photoManagerViewModel.photos.value
+
+            currentPhotos.forEach { photo ->
+                if (selectedPhotos.contains(photo.uri) && !photo.isSelected) {
+                    photoManagerViewModel.togglePhotoSelection(photo.id)
+                }
+            }
+        }
+    }
 
     private fun createVirtualAlbum(name: String) {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             try {
-                // Get photos from PhotoSelectionState
                 val selectedPhotos = photoSelectionState.selectedPhotos.value
                 if (selectedPhotos.isEmpty()) {
                     showMessage(getString(R.string.no_photos_selected))
                     return@launch
                 }
 
-                // Create and add the album
+                // Update PhotoManagerViewModel selections first
+                photoManagerViewModel.updatePhotos(
+                    selectedPhotos.map { uri ->
+                        photoManagerViewModel.photos.value.find { it.uri == uri }
+                            ?: PhotoManagerViewModel.ManagedPhoto(
+                                id = uri,
+                                uri = uri,
+                                sourceType = PhotoManagerViewModel.PhotoSourceType.LOCAL_PICKED,
+                                albumId = "picked_photos",
+                                dateAdded = System.currentTimeMillis()
+                            )
+                    }
+                )
+
+                // Create the album
                 photoManagerViewModel.createVirtualAlbum(
                     name = name,
                     isSelected = true
@@ -170,16 +205,29 @@ class QuickAlbumFragment : Fragment(), WizardStep {
     }
 
     private fun createDefaultAlbum() {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             try {
-                // Get photos from PhotoSelectionState
                 val selectedPhotos = photoSelectionState.selectedPhotos.value
                 if (selectedPhotos.isEmpty()) {
                     showMessage(getString(R.string.no_photos_selected))
                     return@launch
                 }
 
-                // Create and add the album
+                // Update PhotoManagerViewModel selections first
+                photoManagerViewModel.updatePhotos(
+                    selectedPhotos.map { uri ->
+                        photoManagerViewModel.photos.value.find { it.uri == uri }
+                            ?: PhotoManagerViewModel.ManagedPhoto(
+                                id = uri,
+                                uri = uri,
+                                sourceType = PhotoManagerViewModel.PhotoSourceType.LOCAL_PICKED,
+                                albumId = "picked_photos",
+                                dateAdded = System.currentTimeMillis()
+                            )
+                    }
+                )
+
+                // Create the album
                 photoManagerViewModel.createVirtualAlbum(
                     name = getString(R.string.default_album_name),
                     isSelected = true
