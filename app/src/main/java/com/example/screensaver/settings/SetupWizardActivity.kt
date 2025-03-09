@@ -15,17 +15,20 @@ import javax.inject.Inject
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import java.time.Instant
+import com.example.screensaver.photos.PhotoManagerViewModel
+import kotlinx.coroutines.flow.take
 
 @AndroidEntryPoint
 class SetupWizardActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySetupWizardBinding
 
     private val photoSelectionState: PhotoSelectionState by viewModels()
+    private val photoManagerViewModel: PhotoManagerViewModel by viewModels()
+    private val sourceSelectionState: SourceSelectionState by viewModels()
 
     @Inject
     lateinit var appDataManager: AppDataManager
 
-    private val sourceSelectionState: SourceSelectionState by viewModels()
     private lateinit var pagerAdapter: WizardPagerAdapter
 
     companion object {
@@ -163,8 +166,22 @@ class SetupWizardActivity : AppCompatActivity() {
                     )
                 }
 
-                setResult(RESULT_OK)
-                finish()
+                // Explicitly type the state
+                photoManagerViewModel.state.take(1).collect { state: PhotoManagerViewModel.PhotoManagerState ->
+                    when (state) {
+                        is PhotoManagerViewModel.PhotoManagerState.Success,
+                        PhotoManagerViewModel.PhotoManagerState.Idle -> {
+                            setResult(RESULT_OK)
+                            finish()
+                        }
+                        is PhotoManagerViewModel.PhotoManagerState.Error -> {
+                            showError(getString(R.string.setup_save_error))
+                        }
+                        else -> {
+                            // Wait for a final state
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 showError(getString(R.string.setup_save_error))
             }

@@ -176,28 +176,25 @@ class QuickAlbumFragment : Fragment(), WizardStep {
                     return@launch
                 }
 
-                // Update PhotoManagerViewModel selections first
-                photoManagerViewModel.updatePhotos(
-                    selectedPhotos.map { uri ->
-                        photoManagerViewModel.photos.value.find { it.uri == uri }
-                            ?: PhotoManagerViewModel.ManagedPhoto(
-                                id = uri,
-                                uri = uri,
-                                sourceType = PhotoManagerViewModel.PhotoSourceType.LOCAL_PICKED,
-                                albumId = "picked_photos",
-                                dateAdded = System.currentTimeMillis()
-                            )
-                    }
-                )
-
-                // Create the album
+                // Simply create the album with selected photos
                 photoManagerViewModel.createVirtualAlbum(
                     name = name,
-                    isSelected = true
+                    isSelected = true  // Always true for quick album
                 )
 
-                showMessage(getString(R.string.album_created))
-                (requireActivity() as SetupWizardActivity).completeSetup()
+                // Wait for album creation to complete
+                photoManagerViewModel.state.take(1).collect { state ->
+                    when (state) {
+                        is PhotoManagerViewModel.PhotoManagerState.Success -> {
+                            showMessage(getString(R.string.album_created))
+                            (requireActivity() as SetupWizardActivity).completeSetup()
+                        }
+                        is PhotoManagerViewModel.PhotoManagerState.Error -> {
+                            showMessage(getString(R.string.album_creation_error))
+                        }
+                        else -> {} // Handle other states if needed
+                    }
+                }
             } catch (e: Exception) {
                 showMessage(getString(R.string.album_creation_error))
             }
@@ -205,39 +202,7 @@ class QuickAlbumFragment : Fragment(), WizardStep {
     }
 
     private fun createDefaultAlbum() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val selectedPhotos = photoSelectionState.selectedPhotos.value
-                if (selectedPhotos.isEmpty()) {
-                    showMessage(getString(R.string.no_photos_selected))
-                    return@launch
-                }
-
-                // Update PhotoManagerViewModel selections first
-                photoManagerViewModel.updatePhotos(
-                    selectedPhotos.map { uri ->
-                        photoManagerViewModel.photos.value.find { it.uri == uri }
-                            ?: PhotoManagerViewModel.ManagedPhoto(
-                                id = uri,
-                                uri = uri,
-                                sourceType = PhotoManagerViewModel.PhotoSourceType.LOCAL_PICKED,
-                                albumId = "picked_photos",
-                                dateAdded = System.currentTimeMillis()
-                            )
-                    }
-                )
-
-                // Create the album
-                photoManagerViewModel.createVirtualAlbum(
-                    name = getString(R.string.default_album_name),
-                    isSelected = true
-                )
-
-                (requireActivity() as SetupWizardActivity).completeSetup()
-            } catch (e: Exception) {
-                showMessage(getString(R.string.album_creation_error))
-            }
-        }
+        createVirtualAlbum(getString(R.string.default_album_name))
     }
 
     override fun isValid(): Boolean = true

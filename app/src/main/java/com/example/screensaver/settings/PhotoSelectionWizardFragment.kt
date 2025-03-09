@@ -156,6 +156,8 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
                 // Use modern picker for individual photos
                 val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
                     putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
+                    addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 startActivityForResult(intent, REQUEST_LOCAL_PHOTOS)
             } else {
@@ -163,6 +165,8 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
                 val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     type = "image/*"
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addCategory(Intent.CATEGORY_OPENABLE)
                 }
                 startActivityForResult(
@@ -175,6 +179,8 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
             // Fallback to basic picker
             val intent = Intent(Intent.ACTION_PICK).apply {
                 type = "image/*"
+                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             startActivityForResult(intent, REQUEST_LOCAL_PHOTOS)
         }
@@ -228,36 +234,54 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
             REQUEST_LOCAL_PHOTOS -> {
                 val selectedUris = mutableListOf<Uri>()
 
-                // Handle multiple selection
-                data.clipData?.let { clipData ->
-                    for (i in 0 until clipData.itemCount) {
-                        clipData.getItemAt(i).uri?.let { uri ->
-                            selectedUris.add(uri)
+                try {
+                    // Handle multiple selection
+                    data.clipData?.let { clipData ->
+                        for (i in 0 until clipData.itemCount) {
+                            clipData.getItemAt(i).uri?.let { uri ->
+                                // Take persistent permissions first
+                                requireContext().contentResolver.takePersistableUriPermission(
+                                    uri,
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                )
+                                selectedUris.add(uri)
+                            }
                         }
+                    } ?: data.data?.let { uri -> // Handle single selection
+                        // Take persistent permission for single selection
+                        requireContext().contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                        selectedUris.add(uri)
                     }
-                } ?: data.data?.let { uri -> // Handle single selection
-                    selectedUris.add(uri)
-                }
 
-                if (selectedUris.isNotEmpty()) {
-                    lifecycleScope.launch {
-                        val mediaItems = selectedUris.map { uri ->
-                            MediaItem(
-                                id = uri.toString(),
-                                albumId = "local_picked",
-                                baseUrl = uri.toString(),
-                                mimeType = "image/*",
-                                width = 0,
-                                height = 0,
-                                createdAt = System.currentTimeMillis(),
-                                loadState = MediaItem.LoadState.IDLE
-                            )
+                    if (selectedUris.isNotEmpty()) {
+                        lifecycleScope.launch {
+                            val mediaItems = selectedUris.map { uri ->
+                                MediaItem(
+                                    id = uri.toString(),
+                                    albumId = "local_picked",
+                                    baseUrl = uri.toString(),
+                                    mimeType = "image/*",
+                                    width = 0,
+                                    height = 0,
+                                    createdAt = System.currentTimeMillis(),
+                                    loadState = MediaItem.LoadState.IDLE
+                                )
+                            }
+                            photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
+                            photoSelectionState.addPhotos(selectedUris.map { it.toString() })
+                            updateSelectedCount()
+                            Log.d(TAG, "Added ${selectedUris.size} local photos")
                         }
-                        photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
-                        photoSelectionState.addPhotos(selectedUris.map { it.toString() })
-                        updateSelectedCount()
-                        Log.d(TAG, "Added ${selectedUris.size} local photos")
                     }
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "Failed to take persistent permissions", e)
+                    showError(getString(R.string.photo_permission_error))
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing selected photos", e)
+                    showError(getString(R.string.photo_selection_failed))
                 }
             }
         }

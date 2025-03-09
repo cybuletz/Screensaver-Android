@@ -36,6 +36,7 @@ import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import android.provider.MediaStore
 import android.net.Uri
+import android.os.Build
 import com.example.screensaver.PhotoRepository.PhotoAddMode
 import com.example.screensaver.photos.PhotoManagerViewModel
 import com.example.screensaver.settings.PhotoSelectionState
@@ -328,42 +329,37 @@ class AlbumSelectionActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        Log.d(TAG, "onActivityResult: requestCode=$requestCode, resultCode=$resultCode")
-
         if (resultCode != Activity.RESULT_OK) {
-            Log.d(TAG, "Result not OK")
-            setResult(Activity.RESULT_CANCELED)
-            finish()
             return
         }
 
         when (requestCode) {
             REQUEST_PICKER -> {
-                Log.d(TAG, "Handling photo picker result")
                 val uris = mutableListOf<Uri>()
-
                 try {
-                    // Check for multiple selection
                     data?.clipData?.let { clipData ->
-                        Log.d(TAG, "Multiple selection: ${clipData.itemCount} items")
                         for (i in 0 until clipData.itemCount) {
                             clipData.getItemAt(i).uri?.let { uri ->
+                                // Take persistable permission first
+                                contentResolver.takePersistableUriPermission(
+                                    uri,
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                )
                                 uris.add(uri)
                             }
                         }
-                    } ?: run {
-                        // Single selection
-                        data?.data?.let { uri ->
-                            Log.d(TAG, "Single selection: $uri")
-                            uris.add(uri)
-                        }
+                    } ?: data?.data?.let { uri ->
+                        // Single image selected
+                        contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                        uris.add(uri)
                     }
 
                     if (uris.isNotEmpty()) {
-                        Log.d(TAG, "Processing ${uris.size} selected photos")
                         lifecycleScope.launch {
                             try {
-                                // Create MediaItems first
                                 val mediaItems = uris.map { uri ->
                                     MediaItem(
                                         id = uri.toString(),
@@ -375,31 +371,21 @@ class AlbumSelectionActivity : AppCompatActivity() {
                                         createdAt = System.currentTimeMillis()
                                     )
                                 }
+                                photoRepository.addPhotos(mediaItems, PhotoAddMode.APPEND)
 
-                                // Add to repository
-                                photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
-
-                                // Create result intent with selected URIs
                                 val resultIntent = Intent().apply {
                                     putStringArrayListExtra("selected_photos", ArrayList(uris.map { it.toString() }))
                                     putExtra("source", photoSource)
                                 }
-
                                 setResult(Activity.RESULT_OK, resultIntent)
                                 finish()
                             } catch (e: Exception) {
-                                Log.e(TAG, "Error processing photos", e)
                                 setResult(Activity.RESULT_CANCELED)
                                 finish()
                             }
                         }
-                    } else {
-                        Log.e(TAG, "No URIs found in picker result")
-                        setResult(Activity.RESULT_CANCELED)
-                        finish()
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error handling picker result", e)
                     setResult(Activity.RESULT_CANCELED)
                     finish()
                 }
@@ -409,44 +395,28 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     private fun startPhotoPicker() {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
                     putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
-                    // Add a flag to identify this is part of the wizard flow
-                    putExtra("is_wizard_flow", true)
-                    putExtra("source", photoSource) // Pass the source to maintain context
+                    addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 startActivityForResult(intent, REQUEST_PICKER)
-            } else if (photoSource == SOURCE_LOCAL_PHOTOS) {
-                // For local photos on older devices
+            } else {
                 val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     type = "image/*"
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addCategory(Intent.CATEGORY_OPENABLE)
-                    putExtra("is_wizard_flow", true)
-                    putExtra("source", photoSource)
                 }
                 startActivityForResult(
                     Intent.createChooser(intent, getString(R.string.select_photos)),
                     REQUEST_PICKER
                 )
-            } else {
-                // For Google Photos, use existing flow
-                initializeGooglePhotos()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error launching photo picker: ${e.message}")
-            if (photoSource == SOURCE_GOOGLE_PHOTOS) {
-                initializeGooglePhotos()
-            } else {
-                // Fallback for local photos
-                val intent = Intent(Intent.ACTION_PICK).apply {
-                    type = "image/*"
-                    putExtra("is_wizard_flow", true)
-                    putExtra("source", photoSource)
-                }
-                startActivityForResult(intent, REQUEST_PICKER)
-            }
+            Log.e(TAG, "Error launching photo picker", e)
         }
     }
 
