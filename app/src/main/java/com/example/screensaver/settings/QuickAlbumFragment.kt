@@ -9,9 +9,11 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.bumptech.glide.RequestManager
+import com.example.screensaver.PhotoRepository
 import com.example.screensaver.R
 import com.example.screensaver.databinding.DialogCreateAlbumBinding
 import com.example.screensaver.databinding.FragmentQuickAlbumBinding
+import com.example.screensaver.models.MediaItem
 import com.example.screensaver.photos.PhotoManagerViewModel
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -19,17 +21,18 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.launch
 import com.example.screensaver.photos.PhotoGridAdapter
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.withContext
+import com.example.screensaver.photos.VirtualAlbum
 import kotlinx.coroutines.delay
+import java.util.UUID
 
 
 @AndroidEntryPoint
 class QuickAlbumFragment : Fragment(), WizardStep {
     private var _binding: FragmentQuickAlbumBinding? = null
     private val binding get() = _binding!!
+
+    @Inject
+    lateinit var photoRepository: PhotoRepository
 
     private val photoSelectionState: PhotoSelectionState by activityViewModels()
     private val photoManagerViewModel: PhotoManagerViewModel by activityViewModels()
@@ -176,25 +179,22 @@ class QuickAlbumFragment : Fragment(), WizardStep {
                     return@launch
                 }
 
-                // Simply create the album with selected photos
-                photoManagerViewModel.createVirtualAlbum(
-                    name = name,
-                    isSelected = true  // Always true for quick album
-                )
+                // First make sure the photos are in PhotoManagerViewModel
+                photoManagerViewModel.updatePhotos(selectedPhotos.map { uri ->
+                    PhotoManagerViewModel.ManagedPhoto(
+                        id = uri,
+                        uri = uri,
+                        sourceType = PhotoManagerViewModel.PhotoSourceType.LOCAL_PICKED,
+                        albumId = "picked_photos",
+                        dateAdded = System.currentTimeMillis()
+                    )
+                })
 
-                // Wait for album creation to complete
-                photoManagerViewModel.state.take(1).collect { state ->
-                    when (state) {
-                        is PhotoManagerViewModel.PhotoManagerState.Success -> {
-                            showMessage(getString(R.string.album_created))
-                            (requireActivity() as SetupWizardActivity).completeSetup()
-                        }
-                        is PhotoManagerViewModel.PhotoManagerState.Error -> {
-                            showMessage(getString(R.string.album_creation_error))
-                        }
-                        else -> {} // Handle other states if needed
-                    }
-                }
+                // Then use PhotoManagerViewModel to create the album
+                photoManagerViewModel.createVirtualAlbum(name, true)
+
+                // Complete setup
+                (requireActivity() as SetupWizardActivity).completeSetup()
             } catch (e: Exception) {
                 showMessage(getString(R.string.album_creation_error))
             }
