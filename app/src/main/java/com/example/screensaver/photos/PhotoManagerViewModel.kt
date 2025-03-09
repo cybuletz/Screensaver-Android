@@ -670,6 +670,13 @@ class PhotoManagerViewModel @Inject constructor(
         loadInitialState()
     }
 
+    fun updatePhotos(photos: List<ManagedPhoto>) {
+        viewModelScope.launch {
+            _photos.value = photos.map { it.copy(isSelected = true) }
+            _selectedCount.value = photos.size
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         viewModelScope.launch {

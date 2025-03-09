@@ -51,6 +51,12 @@ class QuickAlbumFragment : Fragment(), WizardStep {
         observePhotos()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Force reload of PhotoManagerViewModel state when fragment becomes visible
+        photoManagerViewModel.reloadState()
+    }
+
     private fun setupViews() {
         binding.apply {
             // Setup RecyclerView
@@ -89,14 +95,74 @@ class QuickAlbumFragment : Fragment(), WizardStep {
             .show()
     }
 
-    private fun createVirtualAlbum(name: String) {  // Changed from createAlbum
+    private fun observePhotos() {
+        // Observe both PhotoSelectionState and PhotoManagerViewModel
+        viewLifecycleOwner.lifecycleScope.launch {
+            launch {
+                photoSelectionState.selectedPhotos.collect { selectedPhotos ->
+                    if (selectedPhotos.isNotEmpty()) {
+                        binding.photoCount.text = getString(R.string.photos_selected_count, selectedPhotos.size)
+                        binding.createAlbumButton.isEnabled = true
+                        binding.skipButton.isEnabled = true
+                    } else {
+                        binding.photoCount.text = getString(R.string.no_photos_selected)
+                        binding.createAlbumButton.isEnabled = false
+                        binding.skipButton.isEnabled = false
+                    }
+                }
+            }
+
+            launch {
+                photoManagerViewModel.photos.collect { photos ->
+                    if (photos.isNotEmpty()) {
+                        // Convert first 6 photos to display format
+                        val previewPhotos = photos.take(6)
+                        photoAdapter.submitList(previewPhotos)
+                    } else {
+                        photoAdapter.submitList(emptyList())
+                    }
+                }
+            }
+        }
+
+        // Keep existing state observer
+        viewLifecycleOwner.lifecycleScope.launch {
+            photoManagerViewModel.state.collect { state ->
+                when (state) {
+                    is PhotoManagerViewModel.PhotoManagerState.Error -> {
+                        showMessage(state.message)
+                    }
+                    is PhotoManagerViewModel.PhotoManagerState.Empty -> {
+                        // Trigger reload if we have photos in PhotoSelectionState but ViewModel is empty
+                        if (photoSelectionState.selectedPhotos.value.isNotEmpty()) {
+                            photoManagerViewModel.reloadState()
+                        }
+                    }
+                    else -> { /* Handle other states as needed */ }
+                }
+            }
+        }
+    }
+
+
+    private fun createVirtualAlbum(name: String) {
         lifecycleScope.launch {
             try {
+                // Get photos from PhotoSelectionState
+                val selectedPhotos = photoSelectionState.selectedPhotos.value
+                if (selectedPhotos.isEmpty()) {
+                    showMessage(getString(R.string.no_photos_selected))
+                    return@launch
+                }
+
+                // Create and add the album
                 photoManagerViewModel.createVirtualAlbum(
                     name = name,
                     isSelected = true
                 )
+
                 showMessage(getString(R.string.album_created))
+                (requireActivity() as SetupWizardActivity).completeSetup()
             } catch (e: Exception) {
                 showMessage(getString(R.string.album_creation_error))
             }
@@ -106,65 +172,22 @@ class QuickAlbumFragment : Fragment(), WizardStep {
     private fun createDefaultAlbum() {
         lifecycleScope.launch {
             try {
+                // Get photos from PhotoSelectionState
+                val selectedPhotos = photoSelectionState.selectedPhotos.value
+                if (selectedPhotos.isEmpty()) {
+                    showMessage(getString(R.string.no_photos_selected))
+                    return@launch
+                }
+
+                // Create and add the album
                 photoManagerViewModel.createVirtualAlbum(
                     name = getString(R.string.default_album_name),
                     isSelected = true
                 )
+
                 (requireActivity() as SetupWizardActivity).completeSetup()
             } catch (e: Exception) {
                 showMessage(getString(R.string.album_creation_error))
-            }
-        }
-    }
-
-    private fun observePhotos() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            photoManagerViewModel.photos.collect { photos ->
-                if (photos.isNotEmpty()) {
-                    // Update photo count
-                    binding.photoCount.text = getString(R.string.photos_selected_count, photos.size)
-
-                    // Enable buttons when we have photos
-                    binding.createAlbumButton.isEnabled = true
-                    binding.skipButton.isEnabled = true
-
-                    // Convert first 6 photos to display format
-                    val previewPhotos = photos.take(6)
-                    photoAdapter.submitList(previewPhotos)
-                } else {
-                    binding.photoCount.text = getString(R.string.no_photos_selected)
-                    binding.createAlbumButton.isEnabled = false
-                    binding.skipButton.isEnabled = false
-                    photoAdapter.submitList(emptyList())
-                }
-            }
-        }
-
-
-        // Also observe PhotoManagerViewModel's state
-        viewLifecycleOwner.lifecycleScope.launch {
-            photoManagerViewModel.state.collect { state ->
-                when (state) {
-                    is PhotoManagerViewModel.PhotoManagerState.Loading -> {
-                        binding.createAlbumButton.isEnabled = false
-                        binding.skipButton.isEnabled = false
-                    }
-                    is PhotoManagerViewModel.PhotoManagerState.Empty -> {
-                        binding.photoCount.text = getString(R.string.no_photos_selected)
-                        binding.createAlbumButton.isEnabled = false
-                        binding.skipButton.isEnabled = false
-                        photoAdapter.submitList(emptyList())
-                    }
-                    is PhotoManagerViewModel.PhotoManagerState.Success -> {
-                        // State will be handled by photos observer
-                    }
-                    is PhotoManagerViewModel.PhotoManagerState.Error -> {
-                        showMessage(state.message)
-                    }
-                    is PhotoManagerViewModel.PhotoManagerState.Idle -> {
-                        // State will be handled by photos observer
-                    }
-                }
             }
         }
     }
