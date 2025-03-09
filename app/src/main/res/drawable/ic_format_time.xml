@@ -1,0 +1,29 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <!-- Clock circle -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="2"
+        android:pathData="M12,12m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"/>
+    <!-- 12 mark -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M11,4h2v3h-2z"/>
+    <!-- 3 mark -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M17,11v2h3v-2z"/>
+    <!-- 6 mark -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M11,17h2v3h-2z"/>
+    <!-- 9 mark -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M4,11v2h3v-2z"/>
+</vector>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <SwitchPreferenceCompat
+        android:key="show_clock"
+        android:title="@string/pref_show_clock_title"
+        android:summary="@string/pref_show_clock_summary"
+        android:icon="@drawable/ic_clock_pref"
+        android:defaultValue="false"/>
+
+    <SwitchPreferenceCompat
+        android:key="show_date"
+        android:title="@string/pref_show_date_title"
+        android:summary="@string/pref_show_date_summary"
+        android:icon="@drawable/ic_calendar_pref"
+        android:defaultValue="false"/>
+
+    <ListPreference
+        android:key="clock_format"
+        android:title="@string/pref_clock_format_title"
+        android:summary="@string/pref_clock_format_summary"
+        android:icon="@drawable/ic_format_time"
+        android:entries="@array/clock_format_entries"
+        android:entryValues="@array/clock_format_values"
+        android:defaultValue="24h"/>
+
+    <ListPreference
+        android:key="clock_position"
+        android:title="@string/pref_clock_position_title"
+        android:summary="@string/pref_clock_position_summary"
+        android:icon="@drawable/ic_position"
+        android:entries="@array/widget_position_entries"
+        android:entryValues="@array/widget_position_values"
+        android:defaultValue="TOP_START"/>
+</PreferenceScreen>

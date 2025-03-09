@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        android:title="@string/pref_category_photo_sources"
+        android:key="photo_sources"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="photo_sources_dialog"
+            android:title="@string/pref_photo_sources_title"
+            android:summary="@string/pref_photo_sources_summary"
+            android:icon="@drawable/ic_photo_library" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_common"
+        android:key="common_photo_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="manage_photos"
+            android:title="@string/manage_photos"
+            android:summary="@string/pref_photo_manager_summary"
+            android:icon="@drawable/ic_photo_library" />
+
+        <SwitchPreferenceCompat
+            android:key="random_order"
+            android:title="@string/pref_random_order_title"
+            android:summary="@string/pref_random_order_summary"
+            android:defaultValue="true" />
+
+        <ListPreference
+            android:key="photo_scale"
+            android:title="@string/pref_photo_scale_title"
+            android:summary="@string/pref_photo_scale_summary"
+            android:entries="@array/photo_scale_options"
+            android:entryValues="@array/photo_scale_values"
+            android:defaultValue="fill" />
+
+        <ListPreference
+            android:key="transition_effect"
+            android:title="@string/pref_transition_effect_title"
+            android:summary="@string/pref_transition_effect_summary"
+            android:entries="@array/transition_effects"
+            android:entryValues="@array/transition_effects_values"
+            android:defaultValue="fade"/>
+
+        <!-- Transition animation duration -->
+        <SeekBarPreference
+            android:key="transition_duration"
+            android:title="@string/pref_transition_duration_title"
+            android:summary="@string/pref_transition_duration_summary"
+            app:min="1"
+            android:max="5"
+            android:defaultValue="2"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true" />
+
+        <!-- Photo change interval -->
+        <SeekBarPreference
+            android:key="photo_interval"
+            android:title="@string/pref_photo_interval_title"
+            android:summary="@string/pref_photo_interval_summary"
+            app:min="5"
+            android:max="60"
+            android:defaultValue="5"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true"
+            android:persistent="true" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_widgets"
+        android:key="widget_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="clock_widget_settings"
+            android:title="@string/pref_category_clock_widget"
+            android:summary="@string/pref_clock_widget_enabled_summary" />
+
+        <Preference
+            android:key="weather_widget_settings"
+            android:title="@string/pref_category_weather_widget"
+            android:summary="@string/pref_show_weather_summary" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_security"
+        android:key="security_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="security_preferences"
+            android:title="@string/pref_security_settings_title"
+            android:summary="@string/pref_security_settings_summary"
+            app:icon="@drawable/ic_security"/>
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_display"
+        android:key="display_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat
+            android:key="keep_screen_on"
+            android:title="@string/pref_keep_screen_on_title"
+            android:summary="@string/pref_keep_screen_on_summary"
+            android:defaultValue="false"/>
+
+        <SeekBarPreference
+            android:key="brightness"
+            android:title="@string/pref_brightness_title"
+            android:summary="@string/pref_brightness_summary"
+            app:min="0"
+            android:max="100"
+            android:defaultValue="50"/>
+
+        <ListPreference
+            android:key="orientation"
+            android:title="@string/pref_orientation_title"
+            android:summary="@string/pref_orientation_summary"
+            android:entries="@array/orientation_options"
+            android:entryValues="@array/orientation_options_values"
+            android:defaultValue="auto" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_schedule"
+        android:key="schedule_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat
+            android:key="schedule_enabled"
+            android:title="@string/pref_schedule_enabled_title"
+            android:summary="@string/pref_schedule_enabled_summary"
+            android:defaultValue="false"/>
+
+        <Preference
+            android:key="start_time"
+            android:title="@string/pref_start_time_title"
+            app:dependency="schedule_enabled"/>
+
+        <Preference
+            android:key="end_time"
+            android:title="@string/pref_end_time_title"
+            app:dependency="schedule_enabled"/>
+
+        <MultiSelectListPreference
+            android:key="active_days"
+            android:title="@string/pref_active_days_title"
+            android:summary="@string/pref_active_days_summary"
+            android:entries="@array/days_of_week"
+            android:entryValues="@array/days_of_week_values"
+            app:dependency="schedule_enabled"/>
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="start_on_charge"
+            android:title="@string/start_on_charge_title"
+            android:summary="@string/start_on_charge_summary"
+            android:icon="@drawable/ic_battery_charging" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_debug"
+        android:key="debug_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat
+            android:key="debug_logging"
+            android:title="@string/pref_debug_logging_title"
+            android:summary="@string/pref_debug_logging_summary"
+            android:defaultValue="false" />
+
+        <Preference
+            android:key="view_logs"
+            android:title="@string/pref_view_logs_title"
+            android:summary="@string/pref_view_logs_summary" />
+    </PreferenceCategory>
+
+</PreferenceScreen>

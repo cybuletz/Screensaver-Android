@@ -2,6 +2,7 @@ package com.example.screensaver
 
 import android.content.Context
 import android.webkit.JavascriptInterface
+import android.widget.Toast
 
 class SmartTimerClient(private val context: Context) {
     @JavascriptInterface
@@ -11,8 +12,6 @@ class SmartTimerClient(private val context: Context) {
 
     @JavascriptInterface
     fun showMessage(message: String) {
-        // You can add implementation later
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
-
-    // Add more methods as needed
 }

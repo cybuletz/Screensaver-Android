@@ -1,0 +1,171 @@
+package com.example.screensaver.di
+
+import android.content.Context
+import com.bumptech.glide.Glide
+import com.bumptech.glide.RequestManager
+import com.example.screensaver.analytics.PhotoAnalytics
+import com.example.screensaver.shared.GooglePhotosManager
+import com.example.screensaver.utils.AppPreferences
+import com.example.screensaver.utils.NotificationHelper
+import com.example.screensaver.PhotoSourceState
+import com.example.screensaver.ui.PhotoDisplayManager
+import com.example.screensaver.utils.PhotoLoadingManager
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import com.example.screensaver.PhotoRepository
+import com.example.screensaver.data.AppDataManager
+import com.example.screensaver.data.SecureStorage
+import com.example.screensaver.recovery.StateRecoveryManager
+import com.example.screensaver.recovery.StateRestoration
+import com.example.screensaver.data.PhotoCache
+import com.example.screensaver.security.AppAuthManager
+import com.example.screensaver.security.BiometricHelper
+import com.example.screensaver.security.SecurityPreferences
+
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideApplicationScope(): CoroutineScope {
+        return CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    }
+
+    @Singleton
+    @Provides
+    fun provideContext(@ApplicationContext appContext: Context): Context {
+        return appContext
+    }
+
+    @Singleton
+    @Provides
+    fun providePhotoAnalytics(@ApplicationContext context: Context): PhotoAnalytics {
+        return PhotoAnalytics(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGlide(@ApplicationContext context: Context): RequestManager {
+        return Glide.with(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAppPreferences(
+        @ApplicationContext context: Context
+    ): AppPreferences {
+        return AppPreferences(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGooglePhotosManager(
+        @ApplicationContext context: Context,
+        preferences: AppPreferences,
+        secureStorage: SecureStorage
+    ): GooglePhotosManager {
+        return GooglePhotosManager(context, preferences, secureStorage)
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationHelper(@ApplicationContext context: Context): NotificationHelper {
+        return NotificationHelper(context)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoLoadingManager(
+        @ApplicationContext context: Context,
+        coroutineScope: CoroutineScope
+    ): PhotoLoadingManager {
+        return PhotoLoadingManager(context, coroutineScope)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoDisplayManager(
+        photoRepository: PhotoRepository,
+        photoCache: PhotoCache,
+        @ApplicationContext context: Context
+    ): PhotoDisplayManager {
+        return PhotoDisplayManager(
+            photoManager = photoRepository,
+            photoCache = photoCache,
+            context = context
+        )
+    }
+
+
+    @Provides
+    @Singleton
+    fun provideStateRecoveryManager(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager
+    ): StateRecoveryManager {
+        return StateRecoveryManager(context, appDataManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideStateRestoration(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager,
+        secureStorage: SecureStorage
+    ): StateRestoration {
+        return StateRestoration(context, appDataManager, secureStorage)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoSourceState(
+        @ApplicationContext context: Context,
+        appDataManager: AppDataManager
+    ): PhotoSourceState {
+        return PhotoSourceState(context, appDataManager)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoCache(
+        @ApplicationContext context: Context
+    ): PhotoCache {
+        return PhotoCache(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSecurityPreferences(
+        @ApplicationContext context: Context,
+        secureStorage: SecureStorage
+    ): SecurityPreferences {
+        return SecurityPreferences(context, secureStorage)
+    }
+
+    @Provides
+    @Singleton
+    fun provideBiometricHelper(
+        @ApplicationContext context: Context
+    ): BiometricHelper {
+        return BiometricHelper(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAppAuthManager(
+        @ApplicationContext context: Context,
+        securityPreferences: SecurityPreferences,
+        biometricHelper: BiometricHelper,
+        secureStorage: SecureStorage
+    ): AppAuthManager {
+        return AppAuthManager(context, securityPreferences, biometricHelper, secureStorage)
+    }
+}

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        android:title="@string/pref_display_settings_category"
+        app:iconSpaceReserved="false">
+
+        <SeekBarPreference
+            android:key="transition_duration"
+            android:title="@string/pref_transition_effect_title"
+            android:summary="@string/pref_transition_effect_summary"
+            android:defaultValue="1000"
+            android:max="3000"
+            app:min="500"
+            app:showSeekBarValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:key="show_location"
+            android:title="Location Information"
+            android:summary="Show photo location when available"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:key="random_order"
+            android:title="@string/pref_random_order_title"
+            android:summary="@string/pref_random_order_summary"
+            android:defaultValue="false"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+</PreferenceScreen>

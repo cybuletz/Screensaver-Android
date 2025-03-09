@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="photo_count">
+        <item quantity="one">%d photo</item>
+        <item quantity="other">%d photos</item>
+    </plurals>
+
+    <plurals name="photos_selected">
+        <item quantity="one">%d photo selected</item>
+        <item quantity="other">%d photos selected</item>
+    </plurals>
+
+    <plurals name="confirm_delete_photos">
+        <item quantity="one">Delete %d selected photo?</item>
+        <item quantity="other">Delete %d selected photos?</item>
+    </plurals>
+</resources>
