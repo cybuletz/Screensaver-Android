@@ -40,11 +40,7 @@ class QuickAlbumFragment : Fragment(), WizardStep {
     @Inject
     lateinit var glide: RequestManager
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentQuickAlbumBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -173,14 +169,7 @@ class QuickAlbumFragment : Fragment(), WizardStep {
         }
     }
 
-    private fun updatePhotoPreview(photos: Set<String>) {
-        binding.photoCount.text = getString(R.string.photos_selected_count, photos.size)
-        // Update preview grid with first few photos
-        val previewPhotos = photos.take(6)
-        // Update preview adapter (implementation depends on your existing photo preview system)
-    }
-
-    override fun isValid(): Boolean = true // Always valid as album creation is optional
+    override fun isValid(): Boolean = true
 
     override fun getTitle(): String = getString(R.string.organize_photos)
 

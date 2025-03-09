@@ -143,6 +143,7 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
     }
 
     override fun getTitle(): String = getString(R.string.select_photos)
+
     override fun getDescription(): String = getString(R.string.photo_selection_description)
 
     private fun togglePhotoSelection(photoId: String) {
@@ -206,39 +207,58 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
 
         Log.d(TAG, "onActivityResult: requestCode=$requestCode, resultCode=$resultCode")
 
-        if (resultCode != Activity.RESULT_OK) return
+        if (resultCode != Activity.RESULT_OK || data == null) return
 
         when (requestCode) {
-            REQUEST_LOCAL_PHOTOS -> {
-                handleLocalPhotosResult(data)
-            }
             REQUEST_LOCAL_ALBUMS -> {
-                data?.getStringArrayListExtra("selected_photos")?.let { selectedPhotos ->
-                    photoSelectionState.addPhotos(selectedPhotos)
-                    updateSelectedCount()
+                data.getStringArrayListExtra("selected_photos")?.let { selectedPhotos ->
+                    lifecycleScope.launch {
+                        // Add to PhotoSelectionState
+                        photoSelectionState.addPhotos(selectedPhotos)
+                        updateSelectedCount()
+                        Log.d(TAG, "Added ${selectedPhotos.size} photos from local albums")
+
+                        // Important: Move to quick album step if we have photos
+                        if (photoSelectionState.isValid()) {
+                            (requireActivity() as SetupWizardActivity).handlePhotoSelectionNext()
+                        }
+                    }
                 }
             }
-        }
-    }
+            REQUEST_LOCAL_PHOTOS -> {
+                val selectedUris = mutableListOf<Uri>()
 
-    private fun handleLocalPhotosResult(data: Intent?) {
-        data?.getStringArrayListExtra("selected_photos")?.let { selectedPhotos ->
-            lifecycleScope.launch {
-                val mediaItems = selectedPhotos.map { uri ->
-                    MediaItem(
-                        id = uri,
-                        albumId = "local_picked",
-                        baseUrl = uri,
-                        mimeType = "image/*",
-                        width = 0,
-                        height = 0,
-                        description = null,
-                        createdAt = System.currentTimeMillis(),
-                        loadState = MediaItem.LoadState.IDLE
-                    )
+                // Handle multiple selection
+                data.clipData?.let { clipData ->
+                    for (i in 0 until clipData.itemCount) {
+                        clipData.getItemAt(i).uri?.let { uri ->
+                            selectedUris.add(uri)
+                        }
+                    }
+                } ?: data.data?.let { uri -> // Handle single selection
+                    selectedUris.add(uri)
                 }
-                photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
-                updatePhotoSelection(selectedPhotos)
+
+                if (selectedUris.isNotEmpty()) {
+                    lifecycleScope.launch {
+                        val mediaItems = selectedUris.map { uri ->
+                            MediaItem(
+                                id = uri.toString(),
+                                albumId = "local_picked",
+                                baseUrl = uri.toString(),
+                                mimeType = "image/*",
+                                width = 0,
+                                height = 0,
+                                createdAt = System.currentTimeMillis(),
+                                loadState = MediaItem.LoadState.IDLE
+                            )
+                        }
+                        photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
+                        photoSelectionState.addPhotos(selectedUris.map { it.toString() })
+                        updateSelectedCount()
+                        Log.d(TAG, "Added ${selectedUris.size} local photos")
+                    }
+                }
             }
         }
     }
@@ -254,11 +274,6 @@ class PhotoSelectionWizardFragment : Fragment(), WizardStep {
         return photoSelectionState.selectedPhotos.value.isNotEmpty().also { valid ->
             Log.d(TAG, "Checking if step is valid: $valid (${photoSelectionState.selectedPhotos.value.size} photos selected)")
         }
-    }
-
-    private fun updatePhotoSelection(newPhotos: List<String>) {
-        photoSelectionState.addPhotos(newPhotos)
-        updateSelectedCount()
     }
 
     private fun showError(message: String) {

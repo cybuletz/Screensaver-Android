@@ -604,96 +604,54 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun saveLocalPhotos(selectedAlbumIds: Set<String>) {
-        updateLoadingText("Loading photos from local albums...")
-        val photos = withContext(Dispatchers.IO) {
-            val allPhotos = mutableListOf<MediaItem>()
-            selectedAlbumIds.forEach { albumId ->
-                try {
-                    Log.d(TAG, "Loading photos from album: $albumId")
-                    val albumPhotos = photoRepository.getPhotosFromAlbum(albumId)
-                    allPhotos.addAll(albumPhotos)
-                } catch (e: SecurityException) {
-                    Log.e(TAG, "Security permission error for album $albumId", e)
-                }
-            }
-            Log.d(TAG, "Loaded ${allPhotos.size} photos from local albums")
-            allPhotos
-        }
-
-        if (photos.isEmpty()) {
-            showToast(getString(R.string.no_photos_found))
-            return
-        }
-
-        updateLoadingText("Saving photos...")
-        withContext(Dispatchers.IO) {
-            photoRepository.addPhotos(
-                photos = photos,
-                mode = PhotoAddMode.APPEND
-            )
-        }
-    }
-
-    private suspend fun saveGooglePhotos() {
-        updateLoadingText("Loading photos from Google Photos...")
-        val photos = withContext(Dispatchers.IO) {
-            try {
-                photoManager.loadPhotos()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading Google Photos", e)
-                null
-            }
-        }
-
-        if (photos == null || photos.isEmpty()) {
-            showToast(getString(R.string.no_photos_found))
-            return
-        }
-
-        updateLoadingText("Saving photos...")
-        withContext(Dispatchers.IO) {
-            photoRepository.addPhotos(
-                photos = photos.toList(),
-                mode = PhotoAddMode.APPEND  // Use APPEND to ensure we don't lose existing photos
-            )
-        }
-    }
-
     private fun saveSelectedAlbums() {
         lifecycleScope.launch {
             try {
                 viewModel.setLoading(true)
                 updateLoadingText("Saving selected albums...")
 
-                // 1. Get currently selected albums from this view
-                val newSelectedAlbums = albumAdapter.currentList
+                // 1. Get currently selected albums
+                val selectedAlbums = albumAdapter.currentList
                     .filter { it.isSelected }
                     .map { it.id }
                     .toSet()
 
-                // 2. Get existing selected albums and merge with new selections
-                val existingSelectedAlbums = preferences.getSelectedAlbumIds()
-                val mergedSelections = existingSelectedAlbums + newSelectedAlbums
-
-                // 3. Save merged album IDs
-                preferences.setSelectedAlbumIds(mergedSelections)
-
-                // 4. Load and save photos based on source
+                // 2. Load photos from selected albums
+                val selectedPhotos = mutableListOf<String>()
                 if (photoSource == SOURCE_LOCAL_PHOTOS) {
-                    saveLocalPhotos(mergedSelections)
-                } else {
-                    saveGooglePhotos()
+                    selectedAlbums.forEach { albumId ->
+                        val photos = photoRepository.getPhotosFromAlbum(albumId)
+                        selectedPhotos.addAll(photos.map { it.baseUrl })
+                    }
                 }
 
-                // 5. Return to MainActivity but don't start slideshow
-                val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    putExtra("albums_saved", true)
-                    putExtra("photo_count", photoRepository.getPhotoCount())
-                    putExtra("timestamp", System.currentTimeMillis())
+                // 3. Save to PhotoRepository
+                val mediaItems = selectedPhotos.map { uri ->
+                    MediaItem(
+                        id = uri,
+                        albumId = "local_album",
+                        baseUrl = uri,
+                        mimeType = "image/*",
+                        width = 0,
+                        height = 0,
+                        createdAt = System.currentTimeMillis(),
+                        loadState = MediaItem.LoadState.IDLE
+                    )
                 }
-                startActivity(mainIntent)
+                photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
+
+                // 4. Save album IDs to preferences
+                preferences.setSelectedAlbumIds(selectedAlbums)
+
+                // 5. Set result with selected photos
+                val resultIntent = Intent().apply {
+                    putStringArrayListExtra("selected_photos", ArrayList(selectedPhotos))
+                    // Add flags to identify this is within the wizard flow
+                    putExtra("is_wizard_flow", true)
+                    putExtra("source", photoSource)
+                }
+
+                setResult(Activity.RESULT_OK, resultIntent)
                 finish()
 
             } catch (e: Exception) {

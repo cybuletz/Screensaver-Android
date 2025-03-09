@@ -28,6 +28,10 @@ class SetupWizardActivity : AppCompatActivity() {
     private val sourceSelectionState: SourceSelectionState by viewModels()
     private lateinit var pagerAdapter: WizardPagerAdapter
 
+    companion object {
+        const val TOTAL_STEPS = 3
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySetupWizardBinding.inflate(layoutInflater)
@@ -80,7 +84,7 @@ class SetupWizardActivity : AppCompatActivity() {
         updateStepIndicator(1)
     }
 
-    private fun handlePhotoSelectionNext() {
+    fun handlePhotoSelectionNext() {
         if (photoSelectionState.isValid()) {
             binding.wizardViewPager.currentItem = 2
             updateStepIndicator(2)
@@ -165,9 +169,5 @@ class SetupWizardActivity : AppCompatActivity() {
                 showError(getString(R.string.setup_save_error))
             }
         }
-    }
-
-    companion object {
-        const val TOTAL_STEPS = 3
     }
 }
