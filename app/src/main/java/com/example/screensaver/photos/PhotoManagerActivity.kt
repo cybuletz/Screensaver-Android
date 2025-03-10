@@ -1,5 +1,6 @@
 package com.example.screensaver.photos
 
+import android.content.DialogInterface
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -33,17 +34,41 @@ import com.google.android.material.tabs.TabLayoutMediator
 import android.widget.EditText
 import android.text.InputFilter
 import android.text.InputType
+import android.widget.Button
+import androidx.core.view.doOnNextLayout
 import com.google.android.material.snackbar.Snackbar
 import com.example.screensaver.photos.VirtualAlbum
+import com.example.screensaver.utils.AppPreferences
+import com.example.screensaver.settings.PhotoSourcesPreferencesFragment
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+
 
 @AndroidEntryPoint
-class PhotoManagerActivity : AppCompatActivity() {
+class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragment.PhotoSourcesListener {
     private lateinit var binding: ActivityPhotoManagerBinding
     private val viewModel: PhotoManagerViewModel by viewModels()
     private val PERMISSION_REQUEST_CODE = 123
 
+    private val _photos = MutableStateFlow<List<ManagedPhoto>>(emptyList())
+    private val photos: StateFlow<List<ManagedPhoto>> = _photos.asStateFlow()
+    private val dialogShownThisSession = MutableStateFlow(false)
+
     @Inject
     lateinit var glide: RequestManager
+
+    @Inject
+    lateinit var appPreferences: AppPreferences
+
+    private var isFirstTimeSetup = true
+    private lateinit var nextButton: Button
+    private var isShowingDialog = false
+    private var pendingPhotoCount = 0
+    private var hasSkippedThisSession = false
 
     companion object {
         private const val TAG = "PhotoManagerActivity"
@@ -52,9 +77,20 @@ class PhotoManagerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        checkPermissions()
+        hasSkippedThisSession = false
         binding = ActivityPhotoManagerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Setup next button
+        nextButton = binding.nextButton.apply {
+            visibility = View.VISIBLE
+            isEnabled = false
+            setOnClickListener {
+                showCreateDefaultAlbumDialog()
+            }
+        }
+
+        isFirstTimeSetup = appPreferences.getBoolean("is_first_time_setup", true)
 
         setupToolbar()
         setupObservers()
@@ -62,26 +98,216 @@ class PhotoManagerActivity : AppCompatActivity() {
         setupViewPager()
         setupFab()
         observeState()
+
+        viewModel.reloadState()
+
+        setupPhotoObserver()
     }
 
-    private fun setupViewPager() {
-        val pagerAdapter = PhotoManagerPagerAdapter(this)
-        binding.viewPager.adapter = pagerAdapter
+    private fun showCreateDefaultAlbumDialog() {
+        if (isShowingDialog || dialogShownThisSession.value) {
+            Log.d(TAG, "Skip showing dialog - already shown or showing")
+            return
+        }
 
-        TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
-            tab.text = when (position) {
-                0 -> getString(R.string.photos)
-                1 -> getString(R.string.albums)
-                else -> ""
-            }
-        }.attach()
+        val photoCount = viewModel.photos.value.size
+        if (photoCount == 0) {
+            Log.d(TAG, "Skip showing dialog - no photos")
+            return
+        }
 
-        binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
-            override fun onPageSelected(position: Int) {
-                // Show FAB only in Photos tab (position 0)
-                binding.createAlbumFab.isVisible = position == 0
+        isShowingDialog = true
+        dialogShownThisSession.value = true
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.create_default_album_title)
+            .setMessage(getString(R.string.create_default_album_message))
+            .setPositiveButton(getString(R.string.create)) { dialog, _ ->
+                Log.d(TAG, "Creating default album with $photoCount photos")
+                lifecycleScope.launch {
+                    try {
+                        viewModel.selectAllPhotos()
+
+                        viewModel.createVirtualAlbum(
+                            getString(R.string.default_album_name),
+                            true
+                        )
+
+                        appPreferences.edit {
+                            putBoolean("is_first_time_setup", false)
+                        }
+                        isFirstTimeSetup = false
+
+                        withContext(Dispatchers.Main) {
+                            // First enable navigation
+                            binding.viewPager.isUserInputEnabled = true
+
+                            // Force layout pass
+                            binding.viewPager.requestLayout()
+                            binding.viewPager.invalidate()
+
+                            // Navigate with a delay after layout
+                            binding.viewPager.post {
+                                binding.viewPager.postDelayed({
+                                    binding.viewPager.setCurrentItem(2, false)
+                                    binding.viewPager.adapter?.notifyDataSetChanged()
+                                }, 150)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error creating album", e)
+                        Snackbar.make(binding.root, getString(R.string.album_creation_error), Snackbar.LENGTH_LONG).show()
+                    } finally {
+                        isShowingDialog = false
+                        dialog.dismiss()
+                    }
+                }
             }
-        })
+            .setNegativeButton(getString(R.string.skip)) { dialog, _ ->
+                Log.d(TAG, "Skipping default album creation")
+                binding.tabLayout.getTabAt(0)?.view?.isClickable = true
+                binding.tabLayout.getTabAt(1)?.apply {
+                    view?.isClickable = true
+                    view?.alpha = 1f
+                    select()
+                }
+                binding.tabLayout.getTabAt(2)?.apply {
+                    view?.isClickable = true
+                    view?.alpha = 1f
+                }
+                binding.viewPager.isUserInputEnabled = true
+                isShowingDialog = false
+                dialog.dismiss()
+            }
+            .setOnDismissListener {
+                isShowingDialog = false
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun setupObservers() {
+        lifecycleScope.launch {
+            viewModel.selectedCount.collect { count ->
+                updateSelectionUI(count)
+                if (binding.viewPager.currentItem != 0) {
+                    binding.createAlbumFab.visibility = if (count > 0) View.VISIBLE else View.GONE
+                }
+                invalidateOptionsMenu()
+            }
+        }
+    }
+
+    private fun setupPhotoObserver() {
+        lifecycleScope.launch {
+            viewModel.photos.collect { photos ->
+                val hasPhotos = photos.isNotEmpty()
+                Log.d(TAG, "Photos updated: count = ${photos.size}")
+
+                // Update UI state
+                updateTabsVisibility(hasPhotos)
+                if (binding.viewPager.currentItem == 0) {
+                    binding.nextButton.isEnabled = hasPhotos
+                }
+
+                // Automatically create default album if we have photos and no dialog shown
+                if (hasPhotos && !dialogShownThisSession.value) {
+                    createDefaultAlbum()
+                    showPhotoAddedDialog()
+                }
+            }
+        }
+    }
+
+    private fun createDefaultAlbum() {
+        val photoCount = viewModel.photos.value.size
+        if (photoCount == 0) return
+
+        lifecycleScope.launch {
+            try {
+                // Get count of existing albums and create next numbered album
+                val existingAlbums = viewModel.virtualAlbums.value
+                val defaultAlbumCount = existingAlbums.count { it.name.startsWith("Default Album") }
+                val albumName = getString(R.string.default_album_name_numbered, defaultAlbumCount + 1)
+
+                viewModel.selectAllPhotos()
+                viewModel.createVirtualAlbum(albumName, true)
+
+                dialogShownThisSession.value = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating default album", e)
+            }
+        }
+    }
+
+    private fun showPhotoAddedDialog() {
+        if (isShowingDialog) return
+        isShowingDialog = true
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.photos_added_title)
+            .setMessage(R.string.photos_added_message)
+            .setPositiveButton(R.string.add_more_photos) { dialog, _ ->
+                // Reset the dialog shown flag so it shows again after next photo selection
+                dialogShownThisSession.value = false
+                isShowingDialog = false
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.go_to_photos) { dialog, _ ->
+                // Force navigation to Photos tab using multiple approaches
+                lifecycleScope.launch(Dispatchers.Main) {
+                    // First dismiss dialog
+                    dialog.dismiss()
+                    isShowingDialog = false
+
+                    // Keep dialog shown flag true since we're done adding photos
+                    dialogShownThisSession.value = true
+
+                    // Force tab selection using all possible methods
+                    binding.viewPager.apply {
+                        // Disable animations and user input temporarily
+                        isUserInputEnabled = false
+
+                        // Use post to ensure we're on the main thread and view is ready
+                        post {
+                            // Set current item without animation
+                            setCurrentItem(1, false)
+
+                            // Force tab selection
+                            binding.tabLayout.selectTab(binding.tabLayout.getTabAt(1))
+
+                            // Force a layout pass
+                            requestLayout()
+                            invalidate()
+
+                            // Re-enable user input after navigation
+                            postDelayed({
+                                isUserInputEnabled = true
+                            }, 100)
+                        }
+                    }
+                }
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    override fun onPhotosAdded(isFirstTime: Boolean) {
+        lifecycleScope.launch {
+            viewModel.reloadState()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            viewModel.reloadState()
+            viewModel.reloadVirtualAlbums()
+        }
+    }
+
+    override fun onSourceSelectionComplete() {
+        // Do nothing - let the dialog handle the navigation
     }
 
     private fun setupFab() {
@@ -184,60 +410,6 @@ class PhotoManagerActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupObservers() {
-        lifecycleScope.launch {
-            viewModel.state.collectLatest { state ->
-                when (state) {
-                    PhotoManagerState.Loading -> {
-                        binding.loadingState.root.isVisible = true
-                    }
-                    is PhotoManagerState.Success -> {
-                        binding.loadingState.root.isVisible = false
-                        showMessage(state.message)
-                        // If album was created successfully, switch to Albums tab
-                        if (state.message == "Album created successfully") {
-                            binding.viewPager.currentItem = 1
-                        }
-                    }
-                    is PhotoManagerState.Error -> {
-                        binding.loadingState.root.isVisible = false
-                        showError(state.message)
-                    }
-                    PhotoManagerState.Idle -> {
-                        binding.loadingState.root.isVisible = false
-                    }
-                    PhotoManagerState.Empty -> {
-                        binding.loadingState.root.isVisible = false
-                        showMessage(getString(R.string.no_photos_found))
-                    }
-                }
-            }
-        }
-
-        lifecycleScope.launch {
-            viewModel.selectedCount.collectLatest { count ->
-                updateSelectionUI(count)
-                invalidateOptionsMenu()
-            }
-        }
-
-        lifecycleScope.launch {
-            viewModel.virtualAlbums.collectLatest { albums ->
-                Log.d(TAG, "Received ${albums.size} virtual albums")
-                // Update UI or notify fragments if needed
-            }
-        }
-    }
-
-    private fun updateSelectionUI(count: Int) {
-        binding.toolbar.subtitle = if (count > 0) {
-            resources.getQuantityString(R.plurals.photos_selected, count, count)
-        } else {
-            null
-        }
-        binding.createAlbumFab.isEnabled = count > 0
-    }
-
     private fun setupToolbar() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
@@ -249,33 +421,94 @@ class PhotoManagerActivity : AppCompatActivity() {
         viewModel.saveVirtualAlbums()
     }
 
-    override fun onResume() {
-        super.onResume()
-        viewModel.reloadState()
-        viewModel.reloadVirtualAlbums()
+    private fun setupViewPager() {
+        val hasPhotos = viewModel.photos.value.isNotEmpty()
+        val pagerAdapter = PhotoManagerPagerAdapter(this, hasPhotos)
+        binding.viewPager.adapter = pagerAdapter
+
+        TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
+            tab.text = pagerAdapter.getPageTitle(position)
+        }.attach()
+
+        // Update adapter when photos change
+        lifecycleScope.launch {
+            viewModel.photos.collect { photos ->
+                val newHasPhotos = photos.isNotEmpty()
+                if (newHasPhotos) {
+                    // Force recreate adapter with photos enabled
+                    binding.viewPager.adapter = PhotoManagerPagerAdapter(this@PhotoManagerActivity, true).also {
+                        // Ensure tab layout is properly updated
+                        TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
+                            tab.text = it.getPageTitle(position)
+                        }.attach()
+                    }
+
+                    // Enable all tabs explicitly
+                    for (i in 0..2) {
+                        binding.tabLayout.getTabAt(i)?.apply {
+                            view?.isClickable = true
+                            view?.alpha = 1f
+                            view?.isEnabled = true
+                        }
+                    }
+
+                    // Ensure ViewPager can handle navigation
+                    binding.viewPager.apply {
+                        isUserInputEnabled = true
+                        offscreenPageLimit = 2  // Keep all pages in memory
+                    }
+
+                    // Force layout update
+                    binding.viewPager.requestLayout()
+                    binding.tabLayout.requestLayout()
+                }
+            }
+        }
+
+        // Handle tab changes
+        binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                updateButtonsVisibility(position)
+                // Only restrict navigation on Sources tab
+                binding.viewPager.isUserInputEnabled = position != 0 || viewModel.photos.value.isNotEmpty()
+            }
+        })
+
+        // Initial tab setup
+        updateTabsVisibility(hasPhotos)
     }
 
-    private fun checkPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(android.Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES), PERMISSION_REQUEST_CODE)
+    private fun updateTabsVisibility(enable: Boolean) {
+        for (i in 0..2) {
+            binding.tabLayout.getTabAt(i)?.apply {
+                view?.isClickable = enable || i == 0  // Always enable Sources tab
+                view?.alpha = if (enable || i == 0) 1f else 0.5f
+                view?.isEnabled = enable || i == 0
             }
-        } else {
-            if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), PERMISSION_REQUEST_CODE)
+        }
+        binding.viewPager.isUserInputEnabled = enable
+    }
+
+    private fun updateButtonsVisibility(position: Int) {
+        val hasPhotos = viewModel.photos.value.isNotEmpty()
+        when (position) {
+            0 -> { // Sources tab
+                binding.nextButton.visibility = View.VISIBLE
+                binding.nextButton.isEnabled = hasPhotos
+                binding.createAlbumFab.hide()
+            }
+            else -> { // Photos and Albums tabs
+                binding.nextButton.visibility = View.GONE
+                binding.createAlbumFab.visibility = if (viewModel.selectedCount.value > 0) View.VISIBLE else View.GONE
             }
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                viewModel.reloadState()
-            } else {
-                Toast.makeText(this, "Permission required to access photos", Toast.LENGTH_LONG).show()
-                finish()
-            }
+    private fun updateSelectionUI(count: Int) {
+        binding.toolbar.subtitle = if (count > 0) {
+            resources.getQuantityString(R.plurals.photos_selected, count, count)
+        } else {
+            null
         }
     }
 
@@ -312,13 +545,5 @@ class PhotoManagerActivity : AppCompatActivity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
-    }
-
-    private fun showError(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun showMessage(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 }

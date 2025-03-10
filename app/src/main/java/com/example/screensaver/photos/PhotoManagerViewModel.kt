@@ -615,6 +615,10 @@ class PhotoManagerViewModel @Inject constructor(
         }
     }
 
+    fun getDefaultAlbumCount(): Int {
+        return virtualAlbums.value.count { it.name.startsWith("Default Album") }
+    }
+
     private suspend fun saveVirtualAlbums(albums: List<VirtualAlbum>) {
         withContext(Dispatchers.IO) {
             try {

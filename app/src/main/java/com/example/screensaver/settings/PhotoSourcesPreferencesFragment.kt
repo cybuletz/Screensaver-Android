@@ -42,9 +42,15 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import android.content.Context
 
 @AndroidEntryPoint
 class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
+
+    interface PhotoSourcesListener {
+        fun onPhotosAdded(isFirstTime: Boolean)
+        fun onSourceSelectionComplete()
+    }
 
     @Inject
     lateinit var appDataManager: AppDataManager
@@ -63,10 +69,14 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
 
     private var googleSignInClient: GoogleSignInClient? = null
     private var pendingChanges = mutableMapOf<String, Any>()
+    private var listener: PhotoSourcesListener? = null
+    private var isApplyingChanges = false
+    private var isSourceSelectionComplete = false
 
     companion object {
         private const val TAG = "PhotoSourcesPrefFragment"
         private const val REQUEST_SELECT_PHOTOS = 1001
+        private const val PERMISSION_REQUEST_CODE = 100
         private const val SOURCE_LOCAL_PHOTOS = "local"
         private const val SOURCE_GOOGLE_PHOTOS = "google_photos"
     }
@@ -107,15 +117,68 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         }
     }
 
+    override fun onAttach(context: Context) {
+        super.onAttach(context)
+        listener = context as? PhotoSourcesListener
+    }
+
+    override fun onDetach() {
+        listener = null
+        super.onDetach()
+    }
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.photo_sources_preferences, rootKey)
+
+        // Setup local photos switch
+        findPreference<SwitchPreferenceCompat>("local_photos_enabled")?.apply {
+            setOnPreferenceChangeListener { _, newValue ->
+                if (newValue as Boolean) {
+                    // Only check permissions when enabling local photos
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissions(arrayOf(Manifest.permission.READ_MEDIA_IMAGES), PERMISSION_REQUEST_CODE)
+                            return@setOnPreferenceChangeListener false
+                        }
+                    } else {
+                        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), PERMISSION_REQUEST_CODE)
+                            return@setOnPreferenceChangeListener false
+                        }
+                    }
+                }
+                true
+            }
+        }
+
         setupPreferences()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        when (requestCode) {
+            PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // Permission granted, enable the switch
+                    findPreference<SwitchPreferenceCompat>("local_photos_enabled")?.isChecked = true
+                }
+            }
+            else -> super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         setupGoogleSignIn()
         restoreState()
+        updateSourceSelectionVisibility(photoManager.getAllPhotos().isNotEmpty())
+    }
+
+    private fun updateSourceSelectionVisibility(hasPhotos: Boolean) {
+        // Always keep sources enabled
+        findPreference<SwitchPreferenceCompat>("local_photos_enabled")?.isEnabled = true
+        findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isEnabled = true
+        findPreference<Preference>("select_local_photos")?.isEnabled = isLocalPhotosEnabled()
+        findPreference<Preference>("select_google_albums")?.isEnabled = isGooglePhotosEnabled()
     }
 
     private fun setupPreferences() {
@@ -303,6 +366,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                     )
                     handleGooglePhotosStateChange(true)
                     findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = true
+                    applyChanges()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error exchanging auth code", e)
@@ -388,37 +452,52 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     }
 
     fun applyChanges() {
-        pendingChanges.forEach { (key, value) ->
-            when (key) {
-                "photo_sources" -> {
-                    @Suppress("UNCHECKED_CAST")
-                    val sources = value as Set<String>
-                    PreferenceManager.getDefaultSharedPreferences(requireContext())
-                        .edit()
-                        .putStringSet("photo_source_selection", sources)
-                        .apply()
-                    appDataManager.updateState { it.copy(photoSources = sources) }
-                }
-                "google_photos_enabled" -> {
-                    val enabled = value as Boolean
-                    appDataManager.updateState { it.copy(googlePhotosEnabled = enabled) }
+        // Guard against recursive calls
+        if (isApplyingChanges) return
+
+        isApplyingChanges = true
+        try {
+            pendingChanges.forEach { (key, value) ->
+                when (key) {
+                    "photo_sources" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val sources = value as Set<String>
+                        PreferenceManager.getDefaultSharedPreferences(requireContext())
+                            .edit()
+                            .putStringSet("photo_source_selection", sources)
+                            .apply()
+                        appDataManager.updateState { it.copy(photoSources = sources) }
+                    }
+                    "google_photos_enabled" -> {
+                        val enabled = value as Boolean
+                        appDataManager.updateState { it.copy(googlePhotosEnabled = enabled) }
+                    }
                 }
             }
+            pendingChanges.clear()
+
+            if (!isSourceSelectionComplete && photoManager.getAllPhotos().isNotEmpty()) {
+                isSourceSelectionComplete = true
+                notifyPhotosAdded()
+                listener?.onSourceSelectionComplete()
+            }
+        } finally {
+            isApplyingChanges = false
+            isSourceSelectionComplete = false
         }
-        pendingChanges.clear()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_SELECT_PHOTOS && resultCode == Activity.RESULT_OK) {
             data?.getStringArrayListExtra("selected_photos")?.let { selectedPhotos ->
-                // Save selected photos to preferences
+                Log.d(TAG, "Selected photos count: ${selectedPhotos.size}")
+
                 PreferenceManager.getDefaultSharedPreferences(requireContext())
                     .edit()
                     .putStringSet("selected_local_photos", selectedPhotos.toSet())
                     .apply()
 
-                // Convert to MediaItems and add to PhotoManager
                 val mediaItems = selectedPhotos.map { uri ->
                     MediaItem(
                         id = uri,
@@ -433,9 +512,10 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                     )
                 }
 
+                Log.d(TAG, "Adding ${mediaItems.size} photos to repository")
                 photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
+                Log.d(TAG, "Current photo count: ${photoManager.getAllPhotos().size}")
 
-                // Update app state
                 appDataManager.updateState { currentState ->
                     currentState.copy(
                         photoSources = currentState.photoSources + SOURCE_LOCAL_PHOTOS,
@@ -443,11 +523,21 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                     )
                 }
 
-                // Update UI
                 findPreference<Preference>("select_local_photos")?.summary =
                     getString(R.string.photos_selected, selectedPhotos.size)
+
+                // Apply changes and notify activity
+                applyChanges()
+                notifyPhotosAdded()
             }
         }
+    }
+
+    private fun notifyPhotosAdded() {
+        val photoCount = photoManager.getAllPhotos().size
+        Log.d(TAG, "Notifying activity of photos added. Current count: $photoCount")
+        val isFirstTime = appPreferences.getBoolean("is_first_time_setup", true)
+        listener?.onPhotosAdded(isFirstTime)
     }
 
     override fun onDestroy() {
