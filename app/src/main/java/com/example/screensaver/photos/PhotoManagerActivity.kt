@@ -46,6 +46,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 
 @AndroidEntryPoint
@@ -232,13 +236,19 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
                     return@launch
                 }
 
+                val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+                    .apply { timeZone = TimeZone.getTimeZone("UTC") }
+                    .format(Date())
+
+                val userName = System.getProperty("user.name") ?: "unknown"
+                val albumName = getString(R.string.default_album_name_with_timestamp, timestamp, userName)
+
                 val existingAlbums = viewModel.virtualAlbums.value
                 if (existingAlbums.any { it.name.startsWith("Default Album") }) {
                     // Append to existing album
                     viewModel.appendToLatestDefaultAlbum(newPhotos)
                 } else {
                     // Create new album
-                    val albumName = getString(R.string.default_album_name_numbered, 1)
                     viewModel.selectAllPhotos()
                     viewModel.createVirtualAlbum(albumName, true)
                 }
@@ -264,36 +274,29 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
                 dialog.dismiss()
             }
             .setNegativeButton(R.string.go_to_photos) { dialog, _ ->
-                // Force navigation to Photos tab using multiple approaches
                 lifecycleScope.launch(Dispatchers.Main) {
                     // First dismiss dialog
                     dialog.dismiss()
                     isShowingDialog = false
 
-                    // Keep dialog shown flag true since we're done adding photos
-                    dialogShownThisSession.value = true
+                    // Reset photo picking session
+                    val currentFragment = supportFragmentManager.findFragmentByTag("f0")
+                    if (currentFragment is PhotoSourcesPreferencesFragment) {
+                        currentFragment.resetPhotoPickingSession()
+                    }
 
-                    // Force tab selection using all possible methods
+                    // Create default album with timestamp
+                    createDefaultAlbum()
+
+                    // Navigate to Photos tab
                     binding.viewPager.apply {
-                        // Disable animations and user input temporarily
                         isUserInputEnabled = false
-
-                        // Use post to ensure we're on the main thread and view is ready
                         post {
-                            // Set current item without animation
                             setCurrentItem(1, false)
-
-                            // Force tab selection
                             binding.tabLayout.selectTab(binding.tabLayout.getTabAt(1))
-
-                            // Force a layout pass
                             requestLayout()
                             invalidate()
-
-                            // Re-enable user input after navigation
-                            postDelayed({
-                                isUserInputEnabled = true
-                            }, 100)
+                            postDelayed({ isUserInputEnabled = true }, 100)
                         }
                     }
                 }

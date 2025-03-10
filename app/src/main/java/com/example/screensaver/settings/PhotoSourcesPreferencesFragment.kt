@@ -117,6 +117,41 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         }
     }
 
+    fun resetPhotoPickingSession() {
+        Log.d(TAG, "Resetting photo picking session")
+
+        view?.post {
+            try {
+                // Reset source toggles while maintaining Google auth
+                findPreference<SwitchPreferenceCompat>("local_photos_enabled")?.apply {
+                    isChecked = false
+                    callChangeListener(false)
+                }
+
+                findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.apply {
+                    isChecked = false
+                    callChangeListener(false)
+                }
+
+                // Clear source selections but maintain Google auth state
+                PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .edit()
+                    .putStringSet("photo_source_selection", emptySet())
+                    .apply()
+
+                // Clear pending changes
+                pendingChanges.clear()
+
+                // Update UI state
+                updateSourceSelectionVisibility(photoManager.getAllPhotos().isNotEmpty())
+
+                Log.d(TAG, "Photo picking session reset complete")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error resetting photo picking session", e)
+            }
+        }
+    }
+
     override fun onAttach(context: Context) {
         super.onAttach(context)
         listener = context as? PhotoSourcesListener
