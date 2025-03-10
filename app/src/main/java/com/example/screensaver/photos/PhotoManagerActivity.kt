@@ -79,6 +79,10 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         private const val MENU_DEBUG = Menu.FIRST + 1
     }
 
+    fun resetDialogShownFlag() {
+        dialogShownThisSession.value = false
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         hasSkippedThisSession = false
@@ -194,31 +198,49 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         lifecycleScope.launch {
             viewModel.selectedCount.collect { count ->
                 updateSelectionUI(count)
-                if (binding.viewPager.currentItem != 0) {
-                    binding.createAlbumFab.visibility = if (count > 0) View.VISIBLE else View.GONE
-                }
+                // Update FAB visibility based on selection count and current tab
+                updateFabVisibility(count, binding.viewPager.currentItem)
                 invalidateOptionsMenu()
             }
         }
     }
 
+    private fun updateFabVisibility(selectedCount: Int, currentTab: Int) {
+        if (currentTab != 0) { // Not on Sources tab
+            binding.createAlbumFab.apply {
+                if (selectedCount > 0) {
+                    show()
+                } else {
+                    hide()
+                }
+            }
+        } else {
+            binding.createAlbumFab.hide()
+        }
+    }
+
     private fun setupPhotoObserver() {
+        var lastPhotoCount = 0  // Track the previous photo count
+
         lifecycleScope.launch {
             viewModel.photos.collect { photos ->
                 val hasPhotos = photos.isNotEmpty()
-                Log.d(TAG, "Photos updated: count = ${photos.size}")
+                val currentCount = photos.size
+                Log.d(TAG, "Photos updated: count = $currentCount")
 
                 // Update UI state
                 updateTabsVisibility(hasPhotos)
                 if (binding.viewPager.currentItem == 0) {
                     binding.nextButton.isEnabled = hasPhotos
+
+                    // Only show dialog if we have new photos added in this session
+                    if (hasPhotos && !dialogShownThisSession.value && currentCount > lastPhotoCount) {
+                        createDefaultAlbum()
+                        showPhotoAddedDialog()
+                    }
                 }
 
-                // Automatically create default album if we have photos and no dialog shown
-                if (hasPhotos && !dialogShownThisSession.value) {
-                    createDefaultAlbum()
-                    showPhotoAddedDialog()
-                }
+                lastPhotoCount = currentCount
             }
         }
     }
@@ -448,15 +470,17 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
             viewModel.photos.collect { photos ->
                 val newHasPhotos = photos.isNotEmpty()
                 if (newHasPhotos) {
-                    // Force recreate adapter with photos enabled
+                    // Store current position
+                    val currentPosition = binding.viewPager.currentItem
+
+                    // Update adapter
                     binding.viewPager.adapter = PhotoManagerPagerAdapter(this@PhotoManagerActivity, true).also {
-                        // Ensure tab layout is properly updated
                         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
                             tab.text = it.getPageTitle(position)
                         }.attach()
                     }
 
-                    // Enable all tabs explicitly
+                    // Enable all tabs
                     for (i in 0..2) {
                         binding.tabLayout.getTabAt(i)?.apply {
                             view?.isClickable = true
@@ -465,13 +489,16 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
                         }
                     }
 
-                    // Ensure ViewPager can handle navigation
                     binding.viewPager.apply {
                         isUserInputEnabled = true
-                        offscreenPageLimit = 2  // Keep all pages in memory
+                        offscreenPageLimit = 2
+
+                        // Restore position after a brief delay
+                        post {
+                            setCurrentItem(currentPosition, false)
+                        }
                     }
 
-                    // Force layout update
                     binding.viewPager.requestLayout()
                     binding.tabLayout.requestLayout()
                 }
@@ -512,7 +539,8 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
             }
             else -> { // Photos and Albums tabs
                 binding.nextButton.visibility = View.GONE
-                binding.createAlbumFab.visibility = if (viewModel.selectedCount.value > 0) View.VISIBLE else View.GONE
+                // Update FAB based on current selection count
+                updateFabVisibility(viewModel.selectedCount.value, position)
             }
         }
     }

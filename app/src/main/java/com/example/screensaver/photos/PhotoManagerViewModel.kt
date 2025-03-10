@@ -141,15 +141,22 @@ class PhotoManagerViewModel @Inject constructor(
     }
 
     fun togglePhotoSelection(photoId: String) {
-        val currentPhotos = _photos.value.toMutableList()
-        val photoIndex = currentPhotos.indexOfFirst { it.id == photoId }
+        viewModelScope.launch {
+            val currentPhotos = _photos.value.toMutableList()
+            val photoIndex = currentPhotos.indexOfFirst { it.id == photoId }
 
-        if (photoIndex != -1) {
-            currentPhotos[photoIndex] = currentPhotos[photoIndex].copy(
-                isSelected = !currentPhotos[photoIndex].isSelected
-            )
-            _photos.value = currentPhotos
-            _selectedCount.value = currentPhotos.count { it.isSelected }
+            if (photoIndex != -1) {
+                currentPhotos[photoIndex] = currentPhotos[photoIndex].copy(
+                    isSelected = !currentPhotos[photoIndex].isSelected
+                )
+                // Update selected count first
+                _selectedCount.value = currentPhotos.count { it.isSelected }
+
+                // Then update photos without triggering a full refresh
+                withContext(Dispatchers.Main) {
+                    _photos.value = currentPhotos.toList()
+                }
+            }
         }
     }
 

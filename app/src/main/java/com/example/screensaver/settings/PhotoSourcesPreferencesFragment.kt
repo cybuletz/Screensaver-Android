@@ -43,6 +43,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import android.content.Context
+import com.example.screensaver.photos.PhotoManagerActivity
 
 @AndroidEntryPoint
 class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
@@ -138,6 +139,9 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                     .edit()
                     .putStringSet("photo_source_selection", emptySet())
                     .apply()
+
+                // Reset dialog flag in activity when sources are reset
+                (activity as? PhotoManagerActivity)?.resetDialogShownFlag()
 
                 // Clear pending changes
                 pendingChanges.clear()
