@@ -225,13 +225,23 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
 
         lifecycleScope.launch {
             try {
-                // Get count of existing albums and create next numbered album
-                val existingAlbums = viewModel.virtualAlbums.value
-                val defaultAlbumCount = existingAlbums.count { it.name.startsWith("Default Album") }
-                val albumName = getString(R.string.default_album_name_numbered, defaultAlbumCount + 1)
+                // Get photos that aren't in any album yet
+                val newPhotos = viewModel.getPhotosNotInAlbums()
+                if (newPhotos.isEmpty()) {
+                    Log.d(TAG, "No new photos to add to album")
+                    return@launch
+                }
 
-                viewModel.selectAllPhotos()
-                viewModel.createVirtualAlbum(albumName, true)
+                val existingAlbums = viewModel.virtualAlbums.value
+                if (existingAlbums.any { it.name.startsWith("Default Album") }) {
+                    // Append to existing album
+                    viewModel.appendToLatestDefaultAlbum(newPhotos)
+                } else {
+                    // Create new album
+                    val albumName = getString(R.string.default_album_name_numbered, 1)
+                    viewModel.selectAllPhotos()
+                    viewModel.createVirtualAlbum(albumName, true)
+                }
 
                 dialogShownThisSession.value = true
             } catch (e: Exception) {

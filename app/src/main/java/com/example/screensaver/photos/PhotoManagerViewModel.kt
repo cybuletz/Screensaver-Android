@@ -504,6 +504,52 @@ class PhotoManagerViewModel @Inject constructor(
         }
     }
 
+    fun appendToLatestDefaultAlbum(newPhotos: List<String>) {
+        viewModelScope.launch {
+            try {
+                val existingAlbums = _virtualAlbums.value
+                val latestDefaultAlbum = existingAlbums
+                    .filter { it.name.startsWith("Default Album") }
+                    .maxByOrNull { it.dateCreated }
+
+                if (latestDefaultAlbum != null) {
+                    // Create updated album with new photos
+                    val updatedAlbum = latestDefaultAlbum.copy(
+                        photoUris = (latestDefaultAlbum.photoUris + newPhotos).distinct()
+                    )
+
+                    // Update albums list
+                    val updatedAlbums = existingAlbums.map {
+                        if (it.id == latestDefaultAlbum.id) updatedAlbum else it
+                    }
+                    _virtualAlbums.value = updatedAlbums
+
+                    // Update repository
+                    photoRepository.syncVirtualAlbums(updatedAlbums)
+                    saveVirtualAlbums(updatedAlbums)
+
+                    Log.d(TAG, """Updated album ${latestDefaultAlbum.name}:
+                    • Previous photos: ${latestDefaultAlbum.photoUris.size}
+                    • Added photos: ${newPhotos.size}
+                    • New total: ${updatedAlbum.photoUris.size}
+                """.trimIndent())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error appending to default album", e)
+            }
+        }
+    }
+
+    fun getPhotosNotInAlbums(): List<String> {
+        val allAlbumPhotos = _virtualAlbums.value
+            .flatMap { it.photoUris }
+            .toSet()
+
+        return _photos.value
+            .map { it.uri }
+            .filterNot { allAlbumPhotos.contains(it) }
+    }
+
     fun sortPhotos(option: SortOption) {
         val sorted = when (option) {
             SortOption.DATE_DESC -> _photos.value.sortedByDescending { it.dateAdded }
