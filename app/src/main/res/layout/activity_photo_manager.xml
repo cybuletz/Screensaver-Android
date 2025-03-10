@@ -42,17 +42,6 @@
         android:visibility="gone"
         app:icon="@drawable/ic_create_album"/>
 
-    <!-- Next button for Sources tab -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/nextButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:layout_margin="16dp"
-        android:text="@string/next"
-        android:visibility="gone"
-        style="@style/Widget.MaterialComponents.Button.UnelevatedButton"/>
-
     <include
         android:id="@+id/loadingState"
         layout="@layout/loading_state"
