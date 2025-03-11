@@ -77,6 +77,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     companion object {
         private const val TAG = "PhotoSourcesPrefFragment"
         private const val REQUEST_SELECT_PHOTOS = 1001
+        private const val GOOGLE_PHOTOS_REQUEST_CODE = 1002
         private const val PERMISSION_REQUEST_CODE = 100
         private const val SOURCE_LOCAL_PHOTOS = "local"
         private const val SOURCE_GOOGLE_PHOTOS = "google_photos"
@@ -448,7 +449,11 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                 if (!googlePhotosManager.initialize()) {
                     showError(getString(R.string.google_photos_init_failed))
                 } else {
-                    startActivity(Intent(requireContext(), AlbumSelectionActivity::class.java))
+                    val intent = Intent(requireContext(), AlbumSelectionActivity::class.java).apply {
+                        // Add parent activity information
+                        putExtra("parent_activity", requireActivity().javaClass.name)
+                    }
+                    startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize Google Photos", e)

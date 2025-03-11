@@ -127,11 +127,7 @@
             android:name=".AlbumSelectionActivity"
             android:label="@string/album_selection_title"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-            android:parentActivityName=".SettingsActivity">
-            <meta-data
-                android:name="android.support.PARENT_ACTIVITY"
-                android:value=".SettingsActivity" />
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
         </activity>
 
         <activity
