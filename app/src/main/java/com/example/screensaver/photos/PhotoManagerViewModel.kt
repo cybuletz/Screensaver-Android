@@ -141,15 +141,22 @@ class PhotoManagerViewModel @Inject constructor(
     }
 
     fun togglePhotoSelection(photoId: String) {
-        val currentPhotos = _photos.value.toMutableList()
-        val photoIndex = currentPhotos.indexOfFirst { it.id == photoId }
+        viewModelScope.launch {
+            val currentPhotos = _photos.value.toMutableList()
+            val photoIndex = currentPhotos.indexOfFirst { it.id == photoId }
 
-        if (photoIndex != -1) {
-            currentPhotos[photoIndex] = currentPhotos[photoIndex].copy(
-                isSelected = !currentPhotos[photoIndex].isSelected
-            )
-            _photos.value = currentPhotos
-            _selectedCount.value = currentPhotos.count { it.isSelected }
+            if (photoIndex != -1) {
+                currentPhotos[photoIndex] = currentPhotos[photoIndex].copy(
+                    isSelected = !currentPhotos[photoIndex].isSelected
+                )
+                // Update selected count first
+                _selectedCount.value = currentPhotos.count { it.isSelected }
+
+                // Then update photos without triggering a full refresh
+                withContext(Dispatchers.Main) {
+                    _photos.value = currentPhotos.toList()
+                }
+            }
         }
     }
 
@@ -170,49 +177,42 @@ class PhotoManagerViewModel @Inject constructor(
                     )
                 }
 
-                Log.d(TAG, """Repository albums:
-                • Total albums: ${repoAlbums.size}
-                • Selected albums: ${repoAlbums.count { it.isSelected }}""".trimIndent())
-
-                repoAlbums.forEach { album ->
-                    Log.d(TAG, """Album details:
-                    • ID: ${album.id}
-                    • Name: ${album.name}
-                    • Photos: ${album.photoUris.size}
-                    • Selected: ${album.isSelected}""".trimIndent())
-                }
-
                 // Update virtual albums state with repository data
                 _virtualAlbums.value = repoAlbums
 
+                // Create a set of existing photo URIs to prevent duplicates
+                val existingPhotoUris = mutableSetOf<String>()
                 val photos = mutableListOf<ManagedPhoto>()
 
                 // Get all available photos for management
                 val availablePhotos = photoRepository.getAllPhotos()
                 Log.d(TAG, "PhotoRepository has ${availablePhotos.size} photos")
 
-                // Convert existing photos from PhotoRepository
+                // Convert existing photos from PhotoRepository, avoiding duplicates
                 availablePhotos.forEach { item ->
-                    val sourceType = when {
-                        item.baseUrl.contains("com.google.android.apps.photos.cloudpicker") -> PhotoSourceType.GOOGLE_PHOTOS
-                        item.baseUrl.contains("content://media/picker") -> PhotoSourceType.LOCAL_PICKED
-                        item.baseUrl.contains("content://media/external") -> PhotoSourceType.LOCAL_ALBUM
-                        else -> PhotoSourceType.VIRTUAL_ALBUM
-                    }
+                    if (!existingPhotoUris.contains(item.baseUrl)) {
+                        existingPhotoUris.add(item.baseUrl)
+                        val sourceType = when {
+                            item.baseUrl.contains("com.google.android.apps.photos.cloudpicker") -> PhotoSourceType.GOOGLE_PHOTOS
+                            item.baseUrl.contains("content://media/picker") -> PhotoSourceType.LOCAL_PICKED
+                            item.baseUrl.contains("content://media/external") -> PhotoSourceType.LOCAL_ALBUM
+                            else -> PhotoSourceType.VIRTUAL_ALBUM
+                        }
 
-                    photos.add(ManagedPhoto(
-                        id = item.baseUrl,
-                        uri = item.baseUrl,
-                        sourceType = sourceType,
-                        albumId = when(sourceType) {
-                            PhotoSourceType.GOOGLE_PHOTOS -> "google_photos"
-                            PhotoSourceType.LOCAL_PICKED -> "picked_photos"
-                            PhotoSourceType.LOCAL_ALBUM -> "local_albums"
-                            PhotoSourceType.VIRTUAL_ALBUM -> "virtual_albums"
-                        },
-                        dateAdded = item.createdAt
-                    ))
-                    Log.d(TAG, "Added photo from PhotoRepository: ${item.baseUrl} (type: $sourceType)")
+                        photos.add(ManagedPhoto(
+                            id = item.baseUrl,
+                            uri = item.baseUrl,
+                            sourceType = sourceType,
+                            albumId = when(sourceType) {
+                                PhotoSourceType.GOOGLE_PHOTOS -> "google_photos"
+                                PhotoSourceType.LOCAL_PICKED -> "picked_photos"
+                                PhotoSourceType.LOCAL_ALBUM -> "local_albums"
+                                PhotoSourceType.VIRTUAL_ALBUM -> "virtual_albums"
+                            },
+                            dateAdded = item.createdAt
+                        ))
+                        Log.d(TAG, "Added photo from PhotoRepository: ${item.baseUrl} (type: $sourceType)")
+                    }
                 }
 
                 // Add photos from picked URIs if they're not already included
@@ -220,7 +220,8 @@ class PhotoManagerViewModel @Inject constructor(
                 Log.d(TAG, "Found ${pickedUris.size} picked URIs in preferences")
 
                 pickedUris.forEach { uriString ->
-                    if (!photos.any { it.uri == uriString }) {
+                    if (!existingPhotoUris.contains(uriString)) {
+                        existingPhotoUris.add(uriString)
                         val sourceType = when {
                             uriString.contains("com.google.android.apps.photos.cloudpicker") -> PhotoSourceType.GOOGLE_PHOTOS
                             else -> PhotoSourceType.LOCAL_PICKED
@@ -234,20 +235,22 @@ class PhotoManagerViewModel @Inject constructor(
                         ))
                         Log.d(TAG, "Added picked photo: $uriString")
 
-                        // Make sure it's in the PhotoRepository
-                        val mediaItem = MediaItem(
-                            id = uriString,
-                            albumId = "local_picked",
-                            baseUrl = uriString,
-                            mimeType = "image/*",
-                            width = 0,
-                            height = 0,
-                            description = null,
-                            createdAt = System.currentTimeMillis(),
-                            loadState = MediaItem.LoadState.IDLE
-                        )
-                        photoRepository.addPhotos(listOf(mediaItem), PhotoRepository.PhotoAddMode.MERGE)
-                        Log.d(TAG, "Added missing photo to PhotoRepository: $uriString")
+                        // Make sure it's in the PhotoRepository if it's not already there
+                        if (!photoRepository.hasPhoto(uriString)) {
+                            val mediaItem = MediaItem(
+                                id = uriString,
+                                albumId = "local_picked",
+                                baseUrl = uriString,
+                                mimeType = "image/*",
+                                width = 0,
+                                height = 0,
+                                description = null,
+                                createdAt = System.currentTimeMillis(),
+                                loadState = MediaItem.LoadState.IDLE
+                            )
+                            photoRepository.addPhotos(listOf(mediaItem), PhotoRepository.PhotoAddMode.MERGE)
+                            Log.d(TAG, "Added missing photo to PhotoRepository: $uriString")
+                        }
                     }
                 }
 
@@ -255,11 +258,13 @@ class PhotoManagerViewModel @Inject constructor(
                 val selectedAlbumIds = preferences.getSelectedAlbumIds()
                 if (selectedAlbumIds.isNotEmpty()) {
                     Log.d(TAG, "Loading photos from ${selectedAlbumIds.size} local albums")
-                    photos.addAll(loadLocalPhotos())
+                    loadLocalPhotos().forEach { photo ->
+                        if (!existingPhotoUris.contains(photo.uri)) {
+                            existingPhotoUris.add(photo.uri)
+                            photos.add(photo)
+                        }
+                    }
                 }
-
-                // Update virtual albums state from repository instead of preferences
-                _virtualAlbums.value = repoAlbums
 
                 // Log detailed photo counts by source
                 Log.d(TAG, """Photos loaded by source:
@@ -504,6 +509,52 @@ class PhotoManagerViewModel @Inject constructor(
         }
     }
 
+    fun appendToLatestDefaultAlbum(newPhotos: List<String>) {
+        viewModelScope.launch {
+            try {
+                val existingAlbums = _virtualAlbums.value
+                val latestDefaultAlbum = existingAlbums
+                    .filter { it.name.startsWith("Default Album") }
+                    .maxByOrNull { it.dateCreated }
+
+                if (latestDefaultAlbum != null) {
+                    // Create updated album with new photos
+                    val updatedAlbum = latestDefaultAlbum.copy(
+                        photoUris = (latestDefaultAlbum.photoUris + newPhotos).distinct()
+                    )
+
+                    // Update albums list
+                    val updatedAlbums = existingAlbums.map {
+                        if (it.id == latestDefaultAlbum.id) updatedAlbum else it
+                    }
+                    _virtualAlbums.value = updatedAlbums
+
+                    // Update repository
+                    photoRepository.syncVirtualAlbums(updatedAlbums)
+                    saveVirtualAlbums(updatedAlbums)
+
+                    Log.d(TAG, """Updated album ${latestDefaultAlbum.name}:
+                    • Previous photos: ${latestDefaultAlbum.photoUris.size}
+                    • Added photos: ${newPhotos.size}
+                    • New total: ${updatedAlbum.photoUris.size}
+                """.trimIndent())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error appending to default album", e)
+            }
+        }
+    }
+
+    fun getPhotosNotInAlbums(): List<String> {
+        val allAlbumPhotos = _virtualAlbums.value
+            .flatMap { it.photoUris }
+            .toSet()
+
+        return _photos.value
+            .map { it.uri }
+            .filterNot { allAlbumPhotos.contains(it) }
+    }
+
     fun sortPhotos(option: SortOption) {
         val sorted = when (option) {
             SortOption.DATE_DESC -> _photos.value.sortedByDescending { it.dateAdded }
@@ -613,6 +664,10 @@ class PhotoManagerViewModel @Inject constructor(
                 Log.e(TAG, "Error saving virtual albums", e)
             }
         }
+    }
+
+    fun getDefaultAlbumCount(): Int {
+        return virtualAlbums.value.count { it.name.startsWith("Default Album") }
     }
 
     private suspend fun saveVirtualAlbums(albums: List<VirtualAlbum>) {

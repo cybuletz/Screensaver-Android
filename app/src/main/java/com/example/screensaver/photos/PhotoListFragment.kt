@@ -84,18 +84,17 @@ class PhotoListFragment : Fragment() {
     private fun observePhotos() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.photos.collectLatest { photos ->
-                photoAdapter.submitList(photos)
-                binding.photoRecyclerView.isVisible = photos.isNotEmpty()
-            }
-        }
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.state.collectLatest { state ->
-                binding.photoRecyclerView.isVisible = when (state) {
-                    PhotoManagerState.Loading -> false
-                    PhotoManagerState.Empty -> false
-                    else -> true
+                // Don't refresh the list if we're just updating selection state
+                if (photos.size != photoAdapter.currentList.size ||
+                    photos.any { newPhoto ->
+                        !photoAdapter.currentList.any { it.id == newPhoto.id }
+                    }) {
+                    photoAdapter.submitList(photos)
+                } else {
+                    // Just update the items that changed their selection state
+                    photoAdapter.notifyItemRangeChanged(0, photos.size)
                 }
+                binding.photoRecyclerView.isVisible = photos.isNotEmpty()
             }
         }
     }

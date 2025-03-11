@@ -498,37 +498,33 @@ class PhotoRepository @Inject constructor(
     }
 
     fun addPhotos(photos: List<MediaItem>, mode: PhotoAddMode = PhotoAddMode.MERGE) {
-        Log.d(
-            TAG, """Adding photos:
-            • Mode: $mode
-            • Current count: ${mediaItems.size}
-            • New photos: ${photos.size}""".trimMargin())
+        Log.d(TAG, """Adding photos:
+        • Mode: $mode
+        • Current count: ${mediaItems.size}
+        • New photos: ${photos.size}""".trimMargin())
 
         when (mode) {
             PhotoAddMode.REPLACE -> {
-                val previousCount = mediaItems.size
                 mediaItems.clear()
                 mediaItems.addAll(photos)
-                Log.d(TAG, "Replaced $previousCount photos with ${photos.size} new photos")
+                Log.d(TAG, "Replaced all photos with ${photos.size} new photos")
             }
-            PhotoAddMode.APPEND -> {
-                val previousCount = mediaItems.size
-                mediaItems.addAll(photos)
-                Log.d(TAG, "Appended ${photos.size} photos to existing $previousCount photos")
-            }
-            PhotoAddMode.MERGE -> {
-                val previousCount = mediaItems.size
-                val newPhotos = photos.filterNot { newPhoto -> isDuplicate(newPhoto) }
-                mediaItems.addAll(newPhotos)
-                Log.d(
-                    TAG, """Merged photos:
-                    • Previous count: $previousCount
-                    • New unique photos: ${newPhotos.size}
-                    • Duplicates filtered: ${photos.size - newPhotos.size}
-                    • Total now: ${mediaItems.size}""".trimMargin())
+            PhotoAddMode.APPEND, PhotoAddMode.MERGE -> {
+                // For both APPEND and MERGE, ensure no duplicates
+                val uniqueNewPhotos = photos.filterNot { newPhoto ->
+                    mediaItems.any { existing ->
+                        existing.baseUrl == newPhoto.baseUrl
+                    }
+                }
+                mediaItems.addAll(uniqueNewPhotos)
+                Log.d(TAG, """Added photos:
+                • New unique photos: ${uniqueNewPhotos.size}
+                • Duplicates filtered: ${photos.size - uniqueNewPhotos.size}
+                • Total now: ${mediaItems.size}""".trimMargin())
             }
         }
 
+        // Save changes if any photos were added
         saveItems()
         Log.d(TAG, "Final photo count: ${mediaItems.size}")
     }

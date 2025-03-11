@@ -1,5 +1,6 @@
 package com.example.screensaver
 
+import android.app.Activity
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -674,15 +675,21 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     saveGooglePhotos()
                 }
 
-                // 5. Return to MainActivity but don't start slideshow
-                val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    putExtra("albums_saved", true)
-                    putExtra("photo_count", photoRepository.getPhotoCount())
-                    putExtra("timestamp", System.currentTimeMillis())
+                // 5. Return to calling activity
+                if (intent.getStringExtra("parent_activity") == "com.example.screensaver.photos.PhotoManagerActivity") {
+                    setResult(Activity.RESULT_OK)
+                    finish()
+                } else {
+                    // Existing main activity navigation code
+                    val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        putExtra("albums_saved", true)
+                        putExtra("photo_count", photoRepository.getPhotoCount())
+                        putExtra("timestamp", System.currentTimeMillis())
+                    }
+                    startActivity(mainIntent)
+                    finish()
                 }
-                startActivity(mainIntent)
-                finish()
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error during album selection save", e)
