@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Bundle
 import android.util.Log
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,6 +43,8 @@ import java.net.URL
 import java.net.URLEncoder
 import android.content.Context
 import com.example.screensaver.photos.PhotoManagerActivity
+import android.os.Bundle
+import androidx.fragment.app.DialogFragment
 
 @AndroidEntryPoint
 class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
@@ -438,19 +439,24 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     }
 
     private fun launchGoogleAlbumSelection() {
+        Log.d(TAG, "Launching Google Album Selection")
         if (GoogleSignIn.getLastSignedInAccount(requireContext()) == null ||
             secureStorage.getGoogleCredentials() == null) {
+            Log.e(TAG, "No Google sign-in or credentials, showing sign-in prompt")
             showSignInPrompt()
             return
         }
 
         lifecycleScope.launch {
             try {
+                Log.d(TAG, "Initializing Google Photos Manager")
                 if (!googlePhotosManager.initialize()) {
+                    Log.e(TAG, "Failed to initialize Google Photos Manager")
                     showError(getString(R.string.google_photos_init_failed))
                 } else {
+                    Log.d(TAG, "Starting AlbumSelectionActivity")
+                    // Pass the parent activity class name to know where to return
                     val intent = Intent(requireContext(), AlbumSelectionActivity::class.java).apply {
-                        // Add parent activity information
                         putExtra("parent_activity", requireActivity().javaClass.name)
                     }
                     startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
@@ -531,48 +537,113 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         }
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        Log.d(TAG, "Fragment onCreate, isDialog=${parentFragment is DialogFragment}")
+
+        val fragmentTag = arguments?.getString("fragment_tag")
+        Log.d(TAG, "Fragment created with tag: $fragmentTag")
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        Log.d(TAG, "onActivityResult: requestCode=$requestCode, resultCode=$resultCode, parent=${parentFragment?.javaClass?.simpleName}")
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_SELECT_PHOTOS && resultCode == Activity.RESULT_OK) {
-            data?.getStringArrayListExtra("selected_photos")?.let { selectedPhotos ->
-                Log.d(TAG, "Selected photos count: ${selectedPhotos.size}")
 
-                PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    .edit()
-                    .putStringSet("selected_local_photos", selectedPhotos.toSet())
-                    .apply()
+        when (requestCode) {
+            GOOGLE_PHOTOS_REQUEST_CODE -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    Log.d(TAG, "Handling successful Google Photos result")
+                    lifecycleScope.launch {
+                        try {
+                            // Update sources
+                            val currentSources = getCurrentPhotoSources().toMutableSet()
+                            currentSources.add(SOURCE_GOOGLE_PHOTOS)
 
-                val mediaItems = selectedPhotos.map { uri ->
-                    MediaItem(
-                        id = uri,
-                        albumId = "local_picked",
-                        baseUrl = uri,
-                        mimeType = "image/*",
-                        width = 0,
-                        height = 0,
-                        description = null,
-                        createdAt = System.currentTimeMillis(),
-                        loadState = MediaItem.LoadState.IDLE
-                    )
+                            // Save to preferences first
+                            PreferenceManager.getDefaultSharedPreferences(requireContext())
+                                .edit()
+                                .putStringSet("photo_source_selection", currentSources)
+                                .apply()
+
+                            // Update pending changes
+                            pendingChanges["photo_sources"] = currentSources
+                            pendingChanges["google_photos_enabled"] = true
+
+                            // Update UI
+                            withContext(Dispatchers.Main) {
+                                findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = true
+                                updateGooglePhotosState(true)
+                            }
+
+                            // Apply changes
+                            applyChanges()
+                            notifyPhotosAdded()
+
+                            // Check if we're in a dialog
+                            if (parentFragment is DialogFragment) {
+                                Log.d(TAG, "In dialog, letting dialog handle navigation")
+                            } else {
+                                Log.d(TAG, "Not in dialog, handling navigation here")
+                                activity?.apply {
+                                    setResult(Activity.RESULT_OK)
+                                    finish()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error handling Google Photos result", e)
+                            showError(getString(R.string.save_error))
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "Google Photos selection cancelled")
+                    findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = false
+                    updateGooglePhotosState(false)
                 }
+            }
+            REQUEST_SELECT_PHOTOS -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    Log.d(TAG, "Local photos selection result received")
+                    data?.getStringArrayListExtra("selected_photos")?.let { selectedPhotos ->
+                        Log.d(TAG, "Processing ${selectedPhotos.size} selected local photos")
 
-                Log.d(TAG, "Adding ${mediaItems.size} photos to repository")
-                photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
-                Log.d(TAG, "Current photo count: ${photoManager.getAllPhotos().size}")
+                        PreferenceManager.getDefaultSharedPreferences(requireContext())
+                            .edit()
+                            .putStringSet("selected_local_photos", selectedPhotos.toSet())
+                            .apply()
 
-                appDataManager.updateState { currentState ->
-                    currentState.copy(
-                        photoSources = currentState.photoSources + SOURCE_LOCAL_PHOTOS,
-                        lastSyncTimestamp = System.currentTimeMillis()
-                    )
+                        val mediaItems = selectedPhotos.map { uri ->
+                            MediaItem(
+                                id = uri,
+                                albumId = "local_picked",
+                                baseUrl = uri,
+                                mimeType = "image/*",
+                                width = 0,
+                                height = 0,
+                                description = null,
+                                createdAt = System.currentTimeMillis(),
+                                loadState = MediaItem.LoadState.IDLE
+                            )
+                        }
+
+                        Log.d(TAG, "Adding ${mediaItems.size} local photos to repository")
+                        photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
+
+                        // Update sources
+                        val currentSources = getCurrentPhotoSources().toMutableSet()
+                        currentSources.add(SOURCE_LOCAL_PHOTOS)
+                        pendingChanges["photo_sources"] = currentSources
+
+                        Log.d(TAG, "Updating UI and applying changes")
+                        findPreference<Preference>("select_local_photos")?.summary =
+                            getString(R.string.photos_selected, selectedPhotos.size)
+
+                        // Apply changes and notify activity
+                        applyChanges()
+                        notifyPhotosAdded()
+                    } ?: run {
+                        Log.w(TAG, "No selected_photos in local photos result")
+                    }
                 }
-
-                findPreference<Preference>("select_local_photos")?.summary =
-                    getString(R.string.photos_selected, selectedPhotos.size)
-
-                // Apply changes and notify activity
-                applyChanges()
-                notifyPhotosAdded()
             }
         }
     }

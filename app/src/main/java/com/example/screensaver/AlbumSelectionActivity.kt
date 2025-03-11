@@ -36,6 +36,7 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 import android.provider.MediaStore
 import android.net.Uri
 import com.example.screensaver.PhotoRepository.PhotoAddMode
+import com.example.screensaver.photos.PhotoManagerActivity
 import com.example.screensaver.photos.PhotoManagerViewModel
 
 
@@ -723,6 +724,18 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 message,
                 Toast.LENGTH_SHORT
             ).show()
+        }
+    }
+
+    override fun finish() {
+        // Get the parent activity from the intent
+        val parentActivity = intent.getStringExtra("parent_activity")
+        if (parentActivity == "com.example.screensaver.photos.PhotoManagerActivity") {
+            // Return to PhotoManagerActivity
+            navigateUpTo(Intent(this, PhotoManagerActivity::class.java))
+        } else {
+            // Default behavior for SettingsActivity
+            super.finish()
         }
     }
 
