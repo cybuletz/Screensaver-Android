@@ -1,28 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:fillViewport="true">
 
-        <FrameLayout
-            android:id="@+id/settings_container"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"/>
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <FrameLayout
+                android:id="@+id/settings_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="88dp"/> <!-- Add padding here -->
+
+        </LinearLayout>
 
     </androidx.core.widget.NestedScrollView>
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/save_fab"
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/save_settings_fab"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
         android:layout_margin="16dp"
-        android:text="@string/save_settings"
-        app:icon="@drawable/ic_save"
-        android:layout_gravity="bottom|end"/>
+        app:srcCompat="@drawable/ic_save"
+        android:contentDescription="@string/save_settings"/>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

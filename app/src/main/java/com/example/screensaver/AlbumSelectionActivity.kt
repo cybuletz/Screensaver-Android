@@ -626,9 +626,12 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private suspend fun saveGooglePhotos() {
+        Log.d(TAG, "Starting saveGooglePhotos()")
         updateLoadingText("Loading photos from Google Photos...")
+
         val photos = withContext(Dispatchers.IO) {
             try {
+                Log.d(TAG, "Loading photos from photoManager")
                 photoManager.loadPhotos()
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading Google Photos", e)
@@ -637,16 +640,27 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
 
         if (photos == null || photos.isEmpty()) {
+            Log.e(TAG, "No photos loaded")
             showToast(getString(R.string.no_photos_found))
+            setResult(Activity.RESULT_CANCELED)
+            finish()
             return
         }
 
-        updateLoadingText("Saving photos...")
-        withContext(Dispatchers.IO) {
-            photoRepository.addPhotos(
-                photos = photos.toList(),
-                mode = PhotoAddMode.APPEND  // Use APPEND to ensure we don't lose existing photos
-            )
+        try {
+            withContext(Dispatchers.IO) {
+                photoRepository.addPhotos(
+                    photos = photos,
+                    mode = PhotoAddMode.APPEND
+                )
+            }
+            Log.d(TAG, "Photos saved successfully")
+            setResult(Activity.RESULT_OK)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving photos", e)
+            setResult(Activity.RESULT_CANCELED)
+        } finally {
+            finish()
         }
     }
 
