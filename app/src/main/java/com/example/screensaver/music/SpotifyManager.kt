@@ -30,8 +30,6 @@
     import com.spotify.protocol.types.ListItem
     import com.spotify.protocol.types.ListItems
 
-
-
     @Singleton
     class SpotifyManager @Inject constructor(
         @ApplicationContext private val context: Context,
@@ -295,29 +293,54 @@
             callback: (List<SpotifyPlaylist>) -> Unit,
             errorCallback: (Throwable) -> Unit
         ) {
-            spotifyAppRemote?.contentApi?.getRecommendedContentItems("default")
-                ?.setResultCallback { items: ListItems ->
-                    val playlists = items.items
-                        .filter { item: ListItem -> item.playable }
-                        .map { item: ListItem ->
-                            SpotifyPlaylist(
-                                title = item.title,
-                                uri = item.uri,
-                                imageUri = item.imageUri.raw
-                            )
-                        }
-                    callback(playlists)
+            try {
+                // First make sure we're connected
+                if (spotifyAppRemote?.isConnected != true) {
+                    errorCallback(Exception("Spotify not connected"))
+                    return
                 }
-                ?.setErrorCallback { error ->
-                    errorCallback(error)
-                } ?: errorCallback(Exception("Spotify not connected"))
+
+                // Try to get library content specifically
+                spotifyAppRemote?.contentApi?.getRecommendedContentItems("playlists")
+                    ?.setResultCallback { items: ListItems ->
+                        try {
+                            val playlists = items.items
+                                .filter { item ->
+                                    // Only include valid playlist items
+                                    item != null && !item.title.isNullOrEmpty()
+                                }
+                                .map { item ->
+                                    SpotifyPlaylist(
+                                        title = item.title,
+                                        uri = item.uri,
+                                        imageUri = item.imageUri?.raw
+                                    )
+                                }
+
+                            if (playlists.isEmpty()) {
+                                Timber.d("No playlists found")
+                            }
+                            // Even if empty, still call the callback
+                            callback(playlists)
+
+                        } catch (e: Exception) {
+                            Timber.e(e, "Error processing playlist response")
+                            errorCallback(e)
+                        }
+                    }
+                    ?.setErrorCallback { error ->
+                        Timber.e(error, "Error getting playlists")
+                        errorCallback(error)
+                    } ?: run {
+                    errorCallback(Exception("Failed to request playlists"))
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error in getPlaylists")
+                errorCallback(e)
+            }
         }
 
-        fun getPlaylistInfo(
-            uri: String,
-            callback: (SpotifyPlaylist?) -> Unit,
-            errorCallback: (Throwable) -> Unit
-        ) {
+        fun getPlaylistInfo(uri: String, callback: (SpotifyPlaylist?) -> Unit, errorCallback: (Throwable) -> Unit) {
             // Create ListItem using the correct constructor parameters
             val listItem = ListItem(
                 "",         // title
