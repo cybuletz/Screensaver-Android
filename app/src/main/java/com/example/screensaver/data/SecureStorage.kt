@@ -215,4 +215,38 @@ class SecureStorage @Inject constructor(
             get() = isExpired ||
                     Instant.now().epochSecond - lastAuthTime > 3600
     }
+
+
+    fun saveSecurely(key: String, value: String) {
+        try {
+            securePreferences.edit()
+                .putString(key, value)
+                .apply()
+            Timber.d("Saved secure value for key: $key")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to save secure value for key: $key")
+            throw SecurityException("Failed to save value securely", e)
+        }
+    }
+
+    fun getSecurely(key: String): String? {
+        return try {
+            securePreferences.getString(key, null)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to retrieve secure value for key: $key")
+            null
+        }
+    }
+
+    fun removeSecurely(key: String) {
+        try {
+            securePreferences.edit()
+                .remove(key)
+                .apply()
+            Timber.d("Removed secure value for key: $key")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to remove secure value for key: $key")
+            throw SecurityException("Failed to remove value securely", e)
+        }
+    }
 }

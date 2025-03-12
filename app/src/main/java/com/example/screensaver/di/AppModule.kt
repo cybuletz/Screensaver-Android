@@ -25,6 +25,8 @@ import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.recovery.StateRecoveryManager
 import com.example.screensaver.recovery.StateRestoration
 import com.example.screensaver.data.PhotoCache
+import com.example.screensaver.music.SpotifyManager
+import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.SecurityPreferences
@@ -95,12 +97,16 @@ object AppModule {
     fun providePhotoDisplayManager(
         photoRepository: PhotoRepository,
         photoCache: PhotoCache,
-        @ApplicationContext context: Context
+        @ApplicationContext context: Context,
+        spotifyManager: SpotifyManager,
+        spotifyPreferences: SpotifyPreferences
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
             photoCache = photoCache,
-            context = context
+            context = context,
+            spotifyManager = spotifyManager,
+            spotifyPreferences = spotifyPreferences
         )
     }
 

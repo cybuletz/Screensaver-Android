@@ -36,6 +36,7 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 import android.provider.MediaStore
 import android.net.Uri
 import com.example.screensaver.PhotoRepository.PhotoAddMode
+import com.example.screensaver.photos.PhotoManagerActivity
 import com.example.screensaver.photos.PhotoManagerViewModel
 
 
@@ -625,9 +626,12 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private suspend fun saveGooglePhotos() {
+        Log.d(TAG, "Starting saveGooglePhotos()")
         updateLoadingText("Loading photos from Google Photos...")
+
         val photos = withContext(Dispatchers.IO) {
             try {
+                Log.d(TAG, "Loading photos from photoManager")
                 photoManager.loadPhotos()
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading Google Photos", e)
@@ -636,16 +640,27 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
 
         if (photos == null || photos.isEmpty()) {
+            Log.e(TAG, "No photos loaded")
             showToast(getString(R.string.no_photos_found))
+            setResult(Activity.RESULT_CANCELED)
+            finish()
             return
         }
 
-        updateLoadingText("Saving photos...")
-        withContext(Dispatchers.IO) {
-            photoRepository.addPhotos(
-                photos = photos.toList(),
-                mode = PhotoAddMode.APPEND  // Use APPEND to ensure we don't lose existing photos
-            )
+        try {
+            withContext(Dispatchers.IO) {
+                photoRepository.addPhotos(
+                    photos = photos,
+                    mode = PhotoAddMode.APPEND
+                )
+            }
+            Log.d(TAG, "Photos saved successfully")
+            setResult(Activity.RESULT_OK)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving photos", e)
+            setResult(Activity.RESULT_CANCELED)
+        } finally {
+            finish()
         }
     }
 
@@ -723,6 +738,18 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 message,
                 Toast.LENGTH_SHORT
             ).show()
+        }
+    }
+
+    override fun finish() {
+        // Get the parent activity from the intent
+        val parentActivity = intent.getStringExtra("parent_activity")
+        if (parentActivity == "com.example.screensaver.photos.PhotoManagerActivity") {
+            // Return to PhotoManagerActivity
+            navigateUpTo(Intent(this, PhotoManagerActivity::class.java))
+        } else {
+            // Default behavior for SettingsActivity
+            super.finish()
         }
     }
 

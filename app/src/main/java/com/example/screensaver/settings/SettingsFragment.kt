@@ -30,6 +30,11 @@ import com.example.screensaver.data.AppDataState
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.data.PhotoCache
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.ActivityNotFoundException
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceCategory
@@ -49,6 +54,10 @@ import com.example.screensaver.security.SecurityPreferences
 import com.example.screensaver.widgets.WidgetPreferenceDialog
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.PhotoRepository.PhotoAddMode
+import com.example.screensaver.music.SpotifyManager
+import com.example.screensaver.music.SpotifyAuthManager
+import com.example.screensaver.music.SpotifyPreferences
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 
 @AndroidEntryPoint
@@ -86,11 +95,40 @@ class SettingsFragment : PreferenceFragmentCompat() {
     @Inject
     lateinit var biometricHelper: BiometricHelper
 
+    @Inject
+    lateinit var spotifyManager: SpotifyManager
+
+    @Inject
+    lateinit var spotifyPreferences: SpotifyPreferences
+
+    @Inject
+    lateinit var spotifyAuthManager: SpotifyAuthManager
+
     private var widgetPreferenceFragment: WidgetPreferenceFragment? = null
+
+    private val spotifyAuthLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        spotifyAuthManager.handleAuthResponse(
+            SpotifyAuthManager.REQUEST_CODE,
+            result.resultCode,
+            result.data
+        )
+        // After auth response, check if we need to retry connection
+        if (spotifyAuthManager.authState.value is SpotifyAuthManager.AuthState.Authenticated) {
+            spotifyManager.retry()
+        }
+        // Update UI
+        updateSpotifyLoginSummary()
+        findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked =
+            spotifyAuthManager.authState.value is SpotifyAuthManager.AuthState.Authenticated
+    }
+
 
     companion object {
         private const val TAG = "SettingsFragment"
         private const val REQUEST_SELECT_PHOTOS = 1001
+        private const val SPOTIFY_AUTH_REQUEST_CODE = 1337
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -139,6 +177,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     }
                 } else {
                     Log.d(TAG, "Local photos selection cancelled or failed")
+                }
+            }
+            SPOTIFY_AUTH_REQUEST_CODE -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    Log.d(TAG, "Spotify auth successful")
+                    spotifyAuthManager.handleAuthResponse(
+                        requestCode,
+                        resultCode,
+                        data
+                    )
+                } else {
+                    Log.d(TAG, "Spotify auth cancelled or failed")
                 }
             }
         }
@@ -226,7 +276,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
                     // Then initialize all components
                     setupPhotoDisplayManager()
-                    setupCacheSettings(preferenceScreen)
                     setupChargingPreference()
 
                     // Setup all preference click listeners
@@ -256,12 +305,20 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         true
                     }
 
+                    findPreference<ListPreference>("cache_size")?.setOnPreferenceChangeListener { _, newValue ->
+                        val size = (newValue as String).toInt()
+                        photoCache.setMaxCachedPhotos(size)
+                        true
+                    }
+
                     // Update widget summaries based on their states
                     updateWidgetSummaries()
 
                     observeAppState()
                     observeAppDataState()
                     observeWidgetState()
+                    setupSpotifyPreferences()
+
                 } catch (e: Exception) {
                     Log.e(TAG, "Error setting up preferences", e)
                 }
@@ -449,23 +506,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun setupCacheSettings(screen: PreferenceScreen) {
-        val cachePref = ListPreference(requireContext()).apply {
-            key = "cache_size"
-            title = getString(R.string.pref_cache_size_title)
-            summary = getString(R.string.pref_cache_size_summary)
-            entries = arrayOf("5", "10", "20", "30", "50")
-            entryValues = arrayOf("5", "10", "20", "30", "50")
-            setDefaultValue("10")
 
-            setOnPreferenceChangeListener { _, newValue ->
-                val size = (newValue as String).toInt()
-                photoCache.setMaxCachedPhotos(size)
-                true
-            }
-        }
-        screen.addPreference(cachePref)
-    }
 
     private fun restoreSettingsState() {
         val currentState = appDataManager.getCurrentState()
@@ -497,6 +538,138 @@ class SettingsFragment : PreferenceFragmentCompat() {
     override fun onDestroyView() {
         widgetPreferenceFragment = null
         super.onDestroyView()
+    }
+
+    private fun setupSpotifyPreferences() {
+        findPreference<SwitchPreferenceCompat>("spotify_enabled")?.apply {
+            isChecked = spotifyPreferences.isEnabled()
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                if (enabled) {
+                    if (!spotifyManager.isSpotifyInstalled()) {
+                        showSpotifyInstallDialog()
+                        false
+                    } else if (spotifyAuthManager.authState.value !is SpotifyAuthManager.AuthState.Authenticated) {
+                        // Start auth flow if not authenticated
+                        try {
+                            val authIntent = spotifyAuthManager.getAuthIntent(requireActivity())
+                            spotifyAuthLauncher.launch(authIntent)
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                requireContext(),
+                                "Error starting Spotify authentication",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        false
+                    } else {
+                        spotifyPreferences.setEnabled(true)
+                        spotifyManager.connect()
+                        true
+                    }
+                } else {
+                    spotifyPreferences.setEnabled(false)
+                    spotifyManager.disconnect()
+                    true
+                }
+            }
+        }
+
+        findPreference<Preference>("spotify_login")?.apply {
+            setOnPreferenceClickListener {
+                if (spotifyAuthManager.authState.value is SpotifyAuthManager.AuthState.Authenticated) {
+                    // Show logout dialog
+                    AlertDialog.Builder(requireContext())
+                        .setTitle("Spotify Account")
+                        .setMessage("Do you want to disconnect your Spotify account?")
+                        .setPositiveButton("Disconnect") { _, _ ->
+                            spotifyAuthManager.logout()
+                            updateSpotifyLoginSummary()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .create()
+                        .show()
+                } else {
+                    // Start login process
+                    try {
+                        val authIntent = spotifyAuthManager.getAuthIntent(requireActivity())
+                        spotifyAuthLauncher.launch(authIntent)
+                    } catch (e: Exception) {
+                        Toast.makeText(
+                            requireContext(),
+                            "Error: Spotify app not installed",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+                true
+            }
+        }
+
+        findPreference<SwitchPreferenceCompat>("spotify_autoplay")?.apply {
+            isChecked = spotifyPreferences.isAutoplayEnabled()
+            setOnPreferenceChangeListener { _, newValue ->
+                spotifyPreferences.setAutoplayEnabled(newValue as Boolean)
+                true
+            }
+        }
+
+        findPreference<Preference>("spotify_playlist")?.apply {
+            setOnPreferenceClickListener {
+                // We'll implement playlist selection in the next phase
+                Toast.makeText(
+                    requireContext(),
+                    "Playlist selection coming soon",
+                    Toast.LENGTH_SHORT
+                ).show()
+                true
+            }
+        }
+
+        // Start observing auth state
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                spotifyAuthManager.authState.collect { state ->
+                    updateSpotifyLoginSummary()
+                }
+            }
+        }
+    }
+
+    private fun showSpotifyInstallDialog() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.spotify_not_installed_title)
+            .setMessage(R.string.spotify_not_installed_message)
+            .setPositiveButton(R.string.install) { _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW,
+                        Uri.parse("market://details?id=com.spotify.music")))
+                } catch (e: ActivityNotFoundException) {
+                    startActivity(Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=com.spotify.music")))
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun updateSpotifyLoginSummary() {
+        findPreference<Preference>("spotify_login")?.apply {
+            when (val state = spotifyAuthManager.authState.value) {
+                is SpotifyAuthManager.AuthState.Authenticated -> {
+                    summary = "Connected to Spotify"
+                    isEnabled = true
+                }
+                is SpotifyAuthManager.AuthState.NotAuthenticated -> {
+                    summary = "Not connected"
+                    isEnabled = true
+                }
+                is SpotifyAuthManager.AuthState.Error -> {
+                    summary = "Error: ${state.error.message}"
+                    isEnabled = true
+                }
+            }
+        }
     }
 
 }

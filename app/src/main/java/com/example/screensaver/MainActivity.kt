@@ -45,6 +45,8 @@ import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.screensaver.data.SecureStorage
+import com.example.screensaver.music.SpotifyManager
+import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.photos.PhotoManagerViewModel
 
 
@@ -87,6 +89,11 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var secureStorage: SecureStorage
 
+    @Inject
+    lateinit var spotifyManager: SpotifyManager
+
+    @Inject
+    lateinit var spotifyPreferences: SpotifyPreferences
 
     private var isDestroyed = false
 
@@ -267,9 +274,10 @@ class MainActivity : AppCompatActivity() {
                         if (container is ConstraintLayout) {
                             Log.d(TAG, "Setting up widgets in ConstraintLayout")
 
-                            // Set up both widgets
+                            // Set up all widgets
                             widgetManager.setupClockWidget(container)
                             widgetManager.setupWeatherWidget(container)
+                            widgetManager.setupMusicWidget(container)
 
                             // Immediately show widgets based on preferences
                             val showClock = preferences.isShowClock()
@@ -282,7 +290,12 @@ class MainActivity : AppCompatActivity() {
                                 widgetManager.showWidget(WidgetType.WEATHER)
                             }
 
-                            Log.d(TAG, "Widgets initialized - Clock: $showClock, Weather: $showWeather")
+                            val showMusic = spotifyPreferences.isEnabled()
+                            if (showMusic) {
+                                widgetManager.showWidget(WidgetType.MUSIC)
+                            }
+
+                            Log.d(TAG, "Widgets initialized - Clock: $showClock, Weather: $showWeather, Music: $showMusic")
                         } else {
                             Log.e(TAG, "Container is not a ConstraintLayout, it is: ${container.javaClass.simpleName}")
                         }
@@ -303,6 +316,7 @@ class MainActivity : AppCompatActivity() {
                     when (type) {
                         WidgetType.CLOCK -> handleClockWidgetState(data)
                         WidgetType.WEATHER -> handleWeatherWidgetState(data)
+                        WidgetType.MUSIC -> handleMusicWidgetState(data)
                     }
                 }
             }
@@ -347,6 +361,27 @@ class MainActivity : AppCompatActivity() {
             }
             else -> {
                 Log.d(TAG, "Clock widget in unknown state: ${data.state}")
+            }
+        }
+    }
+
+    private fun handleMusicWidgetState(data: WidgetData) {
+        when (data.state) {
+            is WidgetState.Error -> {
+                Log.e(TAG, "Music widget error: ${(data.state as WidgetState.Error).message}")
+                showToast("Error with music widget")
+            }
+            is WidgetState.Active -> {
+                Log.d(TAG, "Music widget is active")
+            }
+            is WidgetState.Hidden -> {
+                Log.d(TAG, "Music widget is hidden")
+            }
+            is WidgetState.Loading -> {
+                Log.d(TAG, "Music widget is loading")
+            }
+            else -> {
+                Log.d(TAG, "Music widget in unknown state: ${data.state}")
             }
         }
     }
@@ -963,6 +998,14 @@ class MainActivity : AppCompatActivity() {
             delay(500)
             isAuthenticating = false
         }
+
+        binding.screensaverContainer?.let { container ->
+            if (container is ConstraintLayout) {
+                if (spotifyPreferences.isEnabled()) {
+                    widgetManager.updateMusicConfig()
+                }
+            }
+        }
     }
 
     private fun setupNavigation() {
@@ -1004,6 +1047,12 @@ class MainActivity : AppCompatActivity() {
                                             widgetManager.reinitializeWeatherWidget(container)
                                             widgetManager.showWidget(WidgetType.WEATHER)
                                         }
+
+                                        val showMusic = spotifyPreferences.isEnabled()
+                                        if (showMusic) {
+                                            widgetManager.updateMusicConfig()
+                                            widgetManager.showWidget(WidgetType.MUSIC)
+                                        }
                                     }
                                 }
                             } catch (e: Exception) {
@@ -1029,6 +1078,10 @@ class MainActivity : AppCompatActivity() {
             // Also clear the minimize flag since we've handled it
             secureStorage.setRemoveSecurityOnMinimize(false)
             Log.d(TAG, "Security settings have been removed on minimize")
+        }
+
+        if (!isChangingConfigurations) {
+            spotifyManager.disconnect()
         }
     }
 
@@ -1064,6 +1117,10 @@ class MainActivity : AppCompatActivity() {
                 navController.currentDestination?.id == R.id.mainFragment) {
                 photoDisplayManager.startPhotoDisplay()
             }
+        }
+
+        if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
+            spotifyManager.connect()
         }
     }
 

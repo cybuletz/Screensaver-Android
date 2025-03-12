@@ -16,13 +16,17 @@ android {
     namespace = "com.example.screensaver"
     compileSdk = 34
 
-    defaultConfig {
-        applicationId = "com.example.screensaver"
-        minSdk = 23
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
-        manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
+    android {
+        defaultConfig {
+            applicationId = "com.example.screensaver"
+            minSdk = 23
+            targetSdk = 34
+            versionCode = 1
+            versionName = "1.0"
+            manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
+            manifestPlaceholders["redirectSchemeName"] = "screensaver-spotify"
+            manifestPlaceholders["redirectHostName"] = "callback"
+        }
     }
 
     signingConfigs {
@@ -60,6 +64,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("Boolean", "DEV_MODE", "true")
+        }
+        release {
+            buildConfigField("Boolean", "DEV_MODE", "false")
+        }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -112,6 +122,7 @@ dependencies {
     val coroutinesVersion = "1.7.3"
     val grpcVersion = "1.58.0"
 
+
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
@@ -161,6 +172,10 @@ dependencies {
 
     // Material Design
     implementation("com.google.android.material:material:1.9.0")
+
+    //Spotify
+    implementation("com.spotify.android:auth:2.1.1")
+    implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
 
     // Google Services
     implementation("com.google.android.gms:play-services-base:18.2.0")
