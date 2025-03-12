@@ -64,12 +64,6 @@ android {
     }
 
     buildTypes {
-        debug {
-            buildConfigField("Boolean", "DEV_MODE", "true")
-        }
-        release {
-            buildConfigField("Boolean", "DEV_MODE", "false")
-        }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
