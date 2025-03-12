@@ -4,8 +4,8 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
-        android:title="@string/pref_category_common"
-        android:key="common_photo_settings"
+        android:title="@string/pref_category_photo_sources"
+        android:key="photo_sources"
         style="@style/PreferenceCategoryStyle"
         app:iconSpaceReserved="false">
 
@@ -14,6 +14,48 @@
             android:title="@string/manage_photos"
             android:summary="@string/pref_photo_manager_summary"
             android:icon="@drawable/ic_photo_library" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:key="music_category"
+        android:title="Music Settings"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="spotify_enabled"
+            android:title="Enable Spotify"
+            android:summary="Play music from Spotify while screensaver is active"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="spotify_login"
+            android:title="Spotify Account"
+            android:summary="Connect your Spotify Premium account"
+            app:iconSpaceReserved="false"
+            android:dependency="spotify_enabled" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="spotify_autoplay"
+            android:title="Autoplay"
+            android:summary="Automatically start playing when screensaver activates"
+            app:iconSpaceReserved="false"
+            android:dependency="spotify_enabled" />
+
+        <Preference
+            android:key="spotify_playlist"
+            android:title="Select Playlist"
+            android:summary="Choose which playlist to play"
+            app:iconSpaceReserved="false"
+            android:dependency="spotify_enabled" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_common"
+        android:key="common_photo_settings"
+        style="@style/PreferenceCategoryStyle"
+        app:iconSpaceReserved="false">
 
         <SwitchPreferenceCompat
             android:key="random_order"
@@ -169,6 +211,14 @@
         style="@style/PreferenceCategoryStyle"
         app:iconSpaceReserved="false">
 
+        <ListPreference
+            android:key="cache_size"
+            android:title="@string/pref_cache_size_title"
+            android:summary="@string/pref_cache_size_summary"
+            android:entries="@array/cache_size_entries"
+            android:entryValues="@array/cache_size_values"
+            android:defaultValue="10"/>
+
         <SwitchPreferenceCompat
             android:key="debug_logging"
             android:title="@string/pref_debug_logging_title"
@@ -180,5 +230,9 @@
             android:title="@string/pref_view_logs_title"
             android:summary="@string/pref_view_logs_summary" />
     </PreferenceCategory>
+
+    <Preference
+        android:layout="@layout/preference_bottom_spacing"
+        android:key="bottom_spacing" />
 
 </PreferenceScreen>

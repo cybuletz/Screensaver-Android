@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <SwitchPreferenceCompat
+        android:key="show_music"
+        android:title="@string/pref_show_music_title"
+        android:summary="@string/pref_show_music_summary"
+        android:icon="@drawable/ic_music_pref"
+        android:defaultValue="false"/>
+
+    <ListPreference
+        android:key="music_position"
+        android:title="@string/pref_music_position_title"
+        android:summary="@string/pref_music_position_summary"
+        android:icon="@drawable/ic_position"
+        android:entries="@array/widget_position_entries"
+        android:entryValues="@array/widget_position_values"
+        android:defaultValue="TOP_END"/>
+
+    <SwitchPreferenceCompat
+        android:key="show_music_controls"
+        android:title="@string/pref_show_music_controls_title"
+        android:summary="@string/pref_show_music_controls_summary"
+        android:icon="@drawable/ic_controls_pref"
+        android:defaultValue="true"/>
+
+    <SwitchPreferenceCompat
+        android:key="show_music_progress"
+        android:title="@string/pref_show_music_progress_title"
+        android:summary="@string/pref_show_music_progress_summary"
+        android:icon="@drawable/ic_progress_pref"
+        android:defaultValue="true"/>
+</PreferenceScreen>

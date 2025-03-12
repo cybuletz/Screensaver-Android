@@ -32,6 +32,22 @@
         <item>next_photo</item>
     </string-array>
 
+    <string-array name="cache_size_entries">
+        <item>5</item>
+        <item>10</item>
+        <item>20</item>
+        <item>30</item>
+        <item>50</item>
+    </string-array>
+
+    <string-array name="cache_size_values">
+        <item>5</item>
+        <item>10</item>
+        <item>20</item>
+        <item>30</item>
+        <item>50</item>
+    </string-array>
+
     <!-- Transition Effects -->
     <string-array name="transition_effects">
         <item>@string/transition_fade</item>
@@ -135,23 +151,29 @@
         <item>12h</item>
     </string-array>
 
-    <string-array name="widget_position_entries">
+    <array name="widget_position_entries">
         <item>Top Left</item>
         <item>Top Center</item>
         <item>Top Right</item>
+        <item>Center Left</item>
+        <item>Center</item>
+        <item>Center Right</item>
         <item>Bottom Left</item>
         <item>Bottom Center</item>
         <item>Bottom Right</item>
-    </string-array>
+    </array>
 
-    <string-array name="widget_position_values">
+    <array name="widget_position_values">
         <item>TOP_START</item>
         <item>TOP_CENTER</item>
         <item>TOP_END</item>
+        <item>CENTER_START</item>
+        <item>CENTER</item>
+        <item>CENTER_END</item>
         <item>BOTTOM_START</item>
         <item>BOTTOM_CENTER</item>
         <item>BOTTOM_END</item>
-    </string-array>
+    </array>
 
     <string-array name="date_format_entries">
         <item>Full (February 2, 2024)</item>

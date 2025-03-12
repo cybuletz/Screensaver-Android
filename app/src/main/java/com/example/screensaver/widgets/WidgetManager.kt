@@ -11,6 +11,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
 import android.view.ViewGroup
+import com.example.screensaver.music.SpotifyManager
+import com.example.screensaver.music.SpotifyPreferences
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -19,6 +21,12 @@ class WidgetManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val preferences: AppPreferences
 ) {
+
+    @Inject
+    lateinit var spotifyManager: SpotifyManager
+
+    @Inject
+    lateinit var spotifyPreferences: SpotifyPreferences
 
     private val widgets = mutableMapOf<WidgetType, ScreenWidget>()
     private val _widgetStates = MutableStateFlow<Map<WidgetType, WidgetData>>(emptyMap())
@@ -377,6 +385,107 @@ class WidgetManager @Inject constructor(
             updateWidgetState(type, WidgetState.Hidden)
         } catch (e: Exception) {
             Log.e(TAG, "Error cleaning up widget: $type", e)
+        }
+    }
+
+    fun setupMusicWidget(container: ViewGroup) {
+        Log.d(TAG, "Setting up music widget")
+        val config = loadMusicConfig()
+        Log.d(TAG, "Loaded music config: $config")
+
+        try {
+            // Save states of other widgets
+            val weatherWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
+            val weatherState = weatherWidget?.currentWeatherState
+
+            val musicWidget = MusicControlWidget(container, config, spotifyManager)
+            registerWidget(WidgetType.MUSIC, musicWidget)
+            musicWidget.init()
+
+            // Show the widget if enabled
+            if (config.enabled) {
+                showWidget(WidgetType.MUSIC)
+            }
+
+            // Restore weather widget state if needed
+            weatherState?.let { state ->
+                weatherWidget?.updateState(state)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up music widget", e)
+            updateWidgetState(WidgetType.MUSIC, WidgetState.Error(e.message ?: "Unknown error"))
+        }
+    }
+
+    private fun loadMusicConfig(): WidgetConfig.MusicConfig {
+        val enabled = preferences.getBoolean("spotify_enabled", false)
+        val position = parseWidgetPosition(preferences.getString("music_position", "BOTTOM_CENTER"))
+        val showControls = preferences.getBoolean("music_show_controls", true)
+        val autoplay = preferences.getBoolean("spotify_autoplay", false)
+
+        Log.d(TAG, "Loading music config - enabled: $enabled, " +
+                "position: $position, showControls: $showControls, " +
+                "autoplay: $autoplay")
+
+        return WidgetConfig.MusicConfig(
+            enabled = enabled,
+            position = position,
+            showControls = showControls,
+            autoplay = autoplay
+        )
+    }
+
+    fun updateMusicConfig() {
+        Log.d(TAG, "Updating music widget config")
+        val config = loadMusicConfig()
+        Log.d(TAG, "New config loaded: $config")
+
+        val currentWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
+        if (currentWidget != null) {
+            updateWidgetConfig(WidgetType.MUSIC, config)
+            if (config.enabled) {
+                currentWidget.show()
+            } else {
+                currentWidget.hide()
+            }
+        } else {
+            lastKnownContainer?.let { container ->
+                setupMusicWidget(container)
+            }
+        }
+    }
+
+    fun updateMusicPosition(position: WidgetPosition) {
+        Log.d(TAG, "Updating music widget position to: $position")
+
+        val widget = widgets[WidgetType.MUSIC] as? MusicControlWidget ?: return
+        val currentConfig = widget.config as? WidgetConfig.MusicConfig ?: return
+
+        // Update widget position without reinitialization
+        val newConfig = currentConfig.copy(position = position)
+        widget.updateConfiguration(newConfig)
+
+        // Update preferences
+        preferences.setString("music_position", position.name)
+
+        Log.d(TAG, "Music position updated: $position")
+    }
+
+    fun updateMusicVisibility(visible: Boolean) {
+        Log.d(TAG, "Updating music visibility: $visible")
+        spotifyPreferences.setEnabled(visible)  // Use SpotifyPreferences instead
+
+        val currentWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
+        if (currentWidget != null) {
+            if (visible) {
+                currentWidget.show()
+            } else {
+                currentWidget.hide()
+            }
+        } else if (visible) {
+            lastKnownContainer?.let { container ->
+                setupMusicWidget(container)
+            }
         }
     }
 

@@ -49,6 +49,7 @@ class WidgetPreferenceDialog : DialogFragment() {
         view.findViewById<TextView>(R.id.dialog_title).text = when (widgetType) {
             WidgetType.CLOCK -> getString(R.string.clock_widget_preferences)
             WidgetType.WEATHER -> getString(R.string.weather_widget_preferences)
+            WidgetType.MUSIC -> getString(R.string.music_widget_preferences)
         }
 
         val fragment = when (widgetType) {
@@ -60,6 +61,11 @@ class WidgetPreferenceDialog : DialogFragment() {
             WidgetType.WEATHER -> WidgetPreferenceFragment().apply {
                 arguments = Bundle().apply {
                     putString("widget_type", WidgetType.WEATHER.name)
+                }
+            }
+            WidgetType.MUSIC -> WidgetPreferenceFragment().apply { // Add this case
+                arguments = Bundle().apply {
+                    putString("widget_type", WidgetType.MUSIC.name)
                 }
             }
         }

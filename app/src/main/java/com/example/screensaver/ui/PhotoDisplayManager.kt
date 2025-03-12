@@ -37,13 +37,18 @@ import android.animation.ObjectAnimator
 import android.graphics.drawable.BitmapDrawable
 import com.bumptech.glide.load.HttpException
 import com.example.screensaver.glide.GlideApp
+import com.example.screensaver.music.PlaybackState
+import com.example.screensaver.music.SpotifyManager
+import com.example.screensaver.music.SpotifyPreferences
 
 
 @Singleton
 class PhotoDisplayManager @Inject constructor(
     private val photoManager: PhotoRepository,
     private val photoCache: PhotoCache,
-    private val context: Context
+    private val context: Context,
+    private val spotifyManager: SpotifyManager,
+    private val spotifyPreferences: SpotifyPreferences
 ) {
     private val managerJob = SupervisorJob()
     private val managerScope = CoroutineScope(Dispatchers.Main + managerJob)
@@ -58,6 +63,9 @@ class PhotoDisplayManager @Inject constructor(
 
     private var lastLoadedSource: String? = null
     private var lastPhotoUrl: String? = null
+
+    private var isScreensaverActive = false
+    private var wasDisplayingPhotos = false
 
     private var hasLoadedPhotos = false
 
@@ -89,6 +97,7 @@ class PhotoDisplayManager @Inject constructor(
         const val PREF_KEY_INTERVAL = "photo_interval"
         const val DEFAULT_INTERVAL_SECONDS = 5
         private const val MILLIS_PER_SECOND = 1000L
+        private const val SPOTIFY_RECONNECT_DELAY = 5000L
     }
 
     init {
@@ -246,6 +255,12 @@ class PhotoDisplayManager @Inject constructor(
             return
         }
 
+        // Check if music should be playing
+        if (isScreensaverActive && spotifyPreferences.isEnabled() &&
+            spotifyManager.playbackState.value is SpotifyManager.PlaybackState.Idle) {
+            spotifyManager.resume()
+        }
+
         val photoCount = photoManager.getPhotoCount()
         if (photoCount == 0) {
             Log.d(TAG, "No photos available, showing default photo")
@@ -320,6 +335,14 @@ class PhotoDisplayManager @Inject constructor(
         val interval = getIntervalMillis()
         Log.d(TAG, "Starting photo display with interval: ${interval}ms")
 
+        // Set screensaver state
+        isScreensaverActive = true
+
+        // Notify Spotify
+        if (spotifyPreferences.isEnabled()) {
+            spotifyManager.onScreensaverStarted()
+        }
+
         // Hide any existing messages immediately
         hideLoadingOverlay()
         hideAllMessages()
@@ -335,6 +358,7 @@ class PhotoDisplayManager @Inject constructor(
             return
         }
 
+        wasDisplayingPhotos = true
         displayJob = currentScope.launch {
             try {
                 // Start with first photo immediately
@@ -803,6 +827,15 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Stopping photo display")
         displayJob?.cancel()
         displayJob = null
+
+        // Handle screensaver state
+        isScreensaverActive = false
+
+        // Notify Spotify if we were actually displaying photos
+        if (wasDisplayingPhotos && spotifyPreferences.isEnabled()) {
+            spotifyManager.onScreensaverStopped()
+        }
+        wasDisplayingPhotos = false
     }
 
     fun clearPhotoCache() {
@@ -812,7 +845,7 @@ class PhotoDisplayManager @Inject constructor(
     fun cleanup(clearCache: Boolean = false) {
         Log.d(TAG, "Cleaning up PhotoDisplayManager, clearCache: $clearCache")
         managerScope.launch {
-            stopPhotoDisplay()
+            stopPhotoDisplay()  // This will handle Spotify cleanup
             views = null
             lifecycleScope = null
             _photoLoadingState.value = LoadingState.IDLE
@@ -894,6 +927,11 @@ class PhotoDisplayManager @Inject constructor(
         Log.w(TAG, "Low memory condition detected")
         lifecycleScope?.launch {
             try {
+                // Pause Spotify playback if necessary
+                if (isScreensaverActive && spotifyPreferences.isEnabled()) {
+                    spotifyManager.pause()
+                }
+
                 photoCache.performSmartCleanup()
                 displayJob?.cancel()
 

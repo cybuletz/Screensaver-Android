@@ -37,6 +37,7 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
         when (widgetType) {
             WidgetType.CLOCK -> setPreferencesFromResource(R.xml.widget_clock_preferences, rootKey)
             WidgetType.WEATHER -> setPreferencesFromResource(R.xml.widget_weather_preferences, rootKey)
+            WidgetType.MUSIC -> setPreferencesFromResource(R.xml.widget_music_preferences, rootKey)
         }
 
         setupPreferenceListeners()

@@ -18,6 +18,13 @@ sealed class WidgetConfig {
         val manualLocation: String = "",
         val updateInterval: Long = 1800000 // 30 minutes in milliseconds
     ) : WidgetConfig()
+
+    data class MusicConfig(
+        val enabled: Boolean = false,
+        val position: WidgetPosition = WidgetPosition.BOTTOM_CENTER,
+        val showControls: Boolean = true,
+        val autoplay: Boolean = false
+    ) : WidgetConfig()
 }
 
 enum class WidgetPosition {
@@ -31,5 +38,6 @@ enum class WidgetPosition {
 
 enum class WidgetType {
     CLOCK,
-    WEATHER  // Future extension
+    WEATHER,
+    MUSIC
 }
