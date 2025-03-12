@@ -36,6 +36,9 @@ class MusicControlWidget(
             }
             updateConfiguration(config)
 
+            observeConnectionState() // Add this
+            observeErrors()         // Make sure this is called
+
             if (config.enabled) {
                 show()
             } else {
@@ -46,10 +49,15 @@ class MusicControlWidget(
         }
     }
 
-
     private fun setupControls() {
         binding?.apply {
             getPlayPauseButton()?.setOnClickListener {
+                if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
+                    Log.d(TAG, "Cannot control playback - Spotify not connected")
+                    spotifyManager.connect()
+                    return@setOnClickListener
+                }
+
                 val currentState = spotifyManager.playbackState.value
                 when {
                     currentState is SpotifyManager.PlaybackState.Playing && currentState.isPlaying -> {
@@ -61,12 +69,17 @@ class MusicControlWidget(
                 }
             }
 
+            // Similar checks for previous/next buttons
             getPreviousButton()?.setOnClickListener {
-                spotifyManager.previousTrack()
+                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                    spotifyManager.previousTrack()
+                }
             }
 
             getNextButton()?.setOnClickListener {
-                spotifyManager.nextTrack()
+                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                    spotifyManager.nextTrack()
+                }
             }
         }
 
@@ -74,6 +87,27 @@ class MusicControlWidget(
         scope.launch {
             spotifyManager.playbackState.collect { state ->
                 updatePlaybackState(state)
+            }
+        }
+    }
+
+    private fun observeConnectionState() {
+        scope.launch {
+            spotifyManager.connectionState.collect { state ->
+                when (state) {
+                    is SpotifyManager.ConnectionState.Connected -> {
+                        Log.d(TAG, "Spotify connected, enabling controls")
+                        clearErrorState()
+                    }
+                    is SpotifyManager.ConnectionState.Disconnected -> {
+                        Log.d(TAG, "Spotify disconnected, disabling controls")
+                        updateErrorState("Spotify disconnected")
+                    }
+                    is SpotifyManager.ConnectionState.Error -> {
+                        Log.d(TAG, "Spotify connection error: ${state.error}")
+                        updateErrorState("Connection error")
+                    }
+                }
             }
         }
     }

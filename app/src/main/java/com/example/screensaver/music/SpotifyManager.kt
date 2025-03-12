@@ -204,25 +204,9 @@
             }
         }
 
-        fun playPlaylist(playlistUri: String) {
-            try {
-                spotifyAppRemote?.playerApi?.play(playlistUri)
-                _errorState.value = null
-            } catch (e: Exception) {
-                Timber.e(e, "Error playing playlist")
-                _errorState.value = SpotifyError.PlaybackFailed(e)
-            }
-        }
-
         fun retry() {
             _errorState.value = null
             connect()
-        }
-
-        private fun observePlayerState() {
-            spotifyAppRemote?.playerApi?.subscribeToPlayerState()?.setEventCallback { playerState ->
-                updatePlaybackState(playerState)
-            }
         }
 
         private fun updatePlaybackState(playerState: PlayerState) {
@@ -289,10 +273,7 @@
             }
         }
 
-        fun getPlaylists(
-            callback: (List<SpotifyPlaylist>) -> Unit,
-            errorCallback: (Throwable) -> Unit
-        ) {
+        fun getPlaylists(callback: (List<SpotifyPlaylist>) -> Unit, errorCallback: (Throwable) -> Unit) {
             try {
                 // First make sure we're connected
                 if (spotifyAppRemote?.isConnected != true) {
@@ -371,6 +352,56 @@
             }?.setErrorCallback { error ->
                 errorCallback(error)
             } ?: errorCallback(Exception("Spotify not connected"))
+        }
+
+        fun playPlaylist(playlistUri: String) {
+            try {
+                // First verify connection
+                if (spotifyAppRemote?.isConnected != true) {
+                    _errorState.value = SpotifyError.ConnectionFailed(Exception("Spotify not connected"))
+                    return
+                }
+
+                Timber.d("Attempting to play playlist: $playlistUri")
+
+                spotifyAppRemote?.playerApi?.play(playlistUri)
+                    ?.setResultCallback {
+                        Timber.d("Successfully started playlist playback")
+                        _errorState.value = null
+
+                        // Subscribe to player state to confirm playback
+                        observePlayerState()
+                    }
+                    ?.setErrorCallback { error ->
+                        Timber.e(error, "Error starting playlist playback")
+                        _errorState.value = SpotifyError.PlaybackFailed(error)
+                    } ?: run {
+                    val error = Exception("Failed to request playlist playback")
+                    Timber.e(error)
+                    _errorState.value = SpotifyError.PlaybackFailed(error)
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "Error playing playlist")
+                _errorState.value = SpotifyError.PlaybackFailed(e)
+            }
+        }
+
+        private fun observePlayerState() {
+            spotifyAppRemote?.playerApi?.subscribeToPlayerState()
+                ?.setEventCallback { playerState ->
+                    _playbackState.value = PlaybackState.Playing(
+                        isPlaying = !playerState.isPaused,
+                        trackName = playerState.track.name,
+                        artistName = playerState.track.artist.name,
+                        trackDuration = playerState.track.duration
+                    )
+
+                    Timber.d("Player state updated: playing=${!playerState.isPaused}, track=${playerState.track.name}")
+                }
+                ?.setErrorCallback { error ->
+                    Timber.e(error, "Error observing player state")
+                }
         }
 
         sealed class ConnectionState {
