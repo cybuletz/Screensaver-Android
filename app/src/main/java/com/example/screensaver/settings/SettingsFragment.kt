@@ -304,6 +304,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         true
                     }
 
+                    findPreference<Preference>("music_widget_settings")?.setOnPreferenceClickListener {
+                        showWidgetDialog(WidgetType.MUSIC)
+                        true
+                    }
+
                     findPreference<Preference>("security_preferences")?.setOnPreferenceClickListener {
                         SecurityPreferenceDialog.newInstance()
                             .show(childFragmentManager, "security_settings")
@@ -357,6 +362,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 .getBoolean("show_weather", false)
             summary = if (enabled) {
                 getString(R.string.pref_show_weather_summary)
+            } else {
+                getString(R.string.pref_widget_settings_summary)
+            }
+        }
+
+        findPreference<Preference>("music_widget_settings")?.apply {
+            val enabled = spotifyPreferences.isEnabled()
+            summary = if (enabled) {
+                getString(R.string.pref_music_widget_enabled_summary)
             } else {
                 getString(R.string.pref_widget_settings_summary)
             }
@@ -626,12 +640,85 @@ class SettingsFragment : PreferenceFragmentCompat() {
         // Keep playlist selection
         findPreference<Preference>("spotify_playlist")?.apply {
             setOnPreferenceClickListener {
-                Toast.makeText(
-                    requireContext(),
-                    "Playlist selection coming soon",
-                    Toast.LENGTH_SHORT
-                ).show()
+                if (!spotifyPreferences.isEnabled()) {
+                    Toast.makeText(
+                        requireContext(),
+                        "Please enable and connect to Spotify first",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setOnPreferenceClickListener true
+                }
+
+                // Check if we have a connection to Spotify
+                if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
+                    Toast.makeText(
+                        requireContext(),
+                        "Connecting to Spotify...",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    spotifyManager.retry()
+                    return@setOnPreferenceClickListener true
+                }
+
+                // Show loading dialog
+                val loadingDialog = MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Loading Playlists")
+                    .setMessage("Please wait...")
+                    .setCancelable(false)
+                    .create()
+                loadingDialog.show()
+
+                // Get playlists in background
+                lifecycleScope.launch {
+                    spotifyManager.getPlaylists(
+                        callback = { playlists ->
+                            loadingDialog.dismiss()
+                            MaterialAlertDialogBuilder(requireContext())
+                                .setTitle("Select Playlist")
+                                .setItems(playlists.map { it.title }.toTypedArray()) { _, which ->
+                                    val selectedPlaylist = playlists[which]
+                                    // Save selected playlist
+                                    spotifyPreferences.setSelectedPlaylist(selectedPlaylist.uri)
+                                    // Update summary
+                                    summary = selectedPlaylist.title
+                                    Toast.makeText(
+                                        requireContext(),
+                                        "Selected: ${selectedPlaylist.title}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
+                        },
+                        errorCallback = { error ->
+                            loadingDialog.dismiss()
+                            Toast.makeText(
+                                requireContext(),
+                                "Error loading playlists: ${error.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    )
+                }
                 true
+            }
+
+            // Set initial summary if a playlist is already selected
+            spotifyPreferences.getSelectedPlaylist()?.let { uri ->
+                // Get playlist name from Spotify and update summary
+                lifecycleScope.launch {
+                    spotifyManager.getPlaylistInfo(
+                        uri = uri,
+                        callback = { playlist ->
+                            summary = playlist?.title ?: "Select Playlist"
+                        },
+                        errorCallback = {
+                            summary = "Select Playlist"
+                        }
+                    )
+                }
+            } ?: run {
+                summary = "Select Playlist"
             }
         }
 

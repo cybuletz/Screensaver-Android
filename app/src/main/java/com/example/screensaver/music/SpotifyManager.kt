@@ -27,6 +27,8 @@
     import com.spotify.android.appremote.api.error.UserNotAuthorizedException
     import android.os.Handler
     import android.os.Looper
+    import com.spotify.protocol.types.ListItem
+    import com.spotify.protocol.types.ListItems
 
     @Singleton
     class SpotifyManager @Inject constructor(
@@ -287,18 +289,88 @@
             }
         }
 
-        fun toggleSpotify(activity: Activity, enabled: Boolean) {
-            if (enabled) {
-                if (!isSpotifyInstalled()) {
-                    _errorState.value = SpotifyError.AppNotInstalled
-                    spotifyPreferences.setEnabled(false)
+        fun getPlaylists(
+            callback: (List<SpotifyPlaylist>) -> Unit,
+            errorCallback: (Throwable) -> Unit
+        ) {
+            try {
+                // First make sure we're connected
+                if (spotifyAppRemote?.isConnected != true) {
+                    errorCallback(Exception("Spotify not connected"))
                     return
                 }
-                connect()
-            } else {
-                disconnect()
-                spotifyPreferences.setEnabled(false)
+
+                // Try to get library content specifically
+                spotifyAppRemote?.contentApi?.getRecommendedContentItems("playlists")
+                    ?.setResultCallback { items: ListItems ->
+                        try {
+                            val playlists = items.items
+                                .filter { item ->
+                                    // Only include valid playlist items
+                                    item != null && !item.title.isNullOrEmpty()
+                                }
+                                .map { item ->
+                                    SpotifyPlaylist(
+                                        title = item.title,
+                                        uri = item.uri,
+                                        imageUri = item.imageUri?.raw
+                                    )
+                                }
+
+                            if (playlists.isEmpty()) {
+                                Timber.d("No playlists found")
+                            }
+                            // Even if empty, still call the callback
+                            callback(playlists)
+
+                        } catch (e: Exception) {
+                            Timber.e(e, "Error processing playlist response")
+                            errorCallback(e)
+                        }
+                    }
+                    ?.setErrorCallback { error ->
+                        Timber.e(error, "Error getting playlists")
+                        errorCallback(error)
+                    } ?: run {
+                    errorCallback(Exception("Failed to request playlists"))
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error in getPlaylists")
+                errorCallback(e)
             }
+        }
+
+        fun getPlaylistInfo(uri: String, callback: (SpotifyPlaylist?) -> Unit, errorCallback: (Throwable) -> Unit) {
+            // Create ListItem using the correct constructor parameters
+            val listItem = ListItem(
+                "",         // title
+                "",         // subtitle
+                null,       // imageUri
+                uri,        // uri
+                "",         // category
+                false,      // hasChildren
+                true        // playable
+            )
+
+            // Now call getChildrenOfItem with all three required parameters
+            spotifyAppRemote?.contentApi?.getChildrenOfItem(
+                listItem,
+                0,  // options flags
+                0   // page
+            )?.setResultCallback { result: ListItems ->
+                val item = result.items.firstOrNull()
+                if (item != null) {
+                    callback(SpotifyPlaylist(
+                        title = item.title,
+                        uri = item.uri,
+                        imageUri = item.imageUri.raw
+                    ))
+                } else {
+                    callback(null)
+                }
+            }?.setErrorCallback { error ->
+                errorCallback(error)
+            } ?: errorCallback(Exception("Spotify not connected"))
         }
 
         sealed class ConnectionState {
@@ -324,4 +396,10 @@
             object AuthenticationRequired : SpotifyError()
             object PremiumRequired : SpotifyError()
         }
+
+        data class SpotifyPlaylist(
+            val title: String,
+            val uri: String,
+            val imageUri: String? = null
+        )
     }
