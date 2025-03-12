@@ -50,7 +50,6 @@
             private const val CLIENT_ID = "b6d959e9ca544b2aaebb37d0bb41adb5"
             private const val REDIRECT_URI = "screensaver-spotify://callback"
             private const val RECONNECT_DELAY = 5000L
-            private const val DEV_MODE = true
         }
 
         fun onScreensaverStarted() {

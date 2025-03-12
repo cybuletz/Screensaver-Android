@@ -58,6 +58,7 @@ import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyAuthManager
 import com.example.screensaver.music.SpotifyPreferences
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import timber.log.Timber
 
 
 @AndroidEntryPoint
@@ -109,19 +110,40 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private val spotifyAuthLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        Timber.d("Spotify auth result received: ${result.resultCode}")
+
+        // Handle the auth response
         spotifyAuthManager.handleAuthResponse(
             SpotifyAuthManager.REQUEST_CODE,
             result.resultCode,
             result.data
         )
-        // After auth response, check if we need to retry connection
-        if (spotifyAuthManager.authState.value is SpotifyAuthManager.AuthState.Authenticated) {
-            spotifyManager.retry()
+
+        // Update UI based on auth state
+        when (val state = spotifyAuthManager.authState.value) {
+            is SpotifyAuthManager.AuthState.Authenticated -> {
+                Timber.d("Spotify authentication successful")
+                spotifyPreferences.setEnabled(true)
+                spotifyManager.retry()
+                findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = true
+            }
+            is SpotifyAuthManager.AuthState.Error -> {
+                Timber.e("Spotify authentication failed: ${state.error.message}")
+                spotifyPreferences.setEnabled(false)
+                findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
+                Toast.makeText(
+                    requireContext(),
+                    "Authentication failed: ${state.error.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            else -> {
+                Timber.d("Spotify authentication cancelled or unknown state")
+                spotifyPreferences.setEnabled(false)
+                findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
+            }
         }
-        // Update UI
         updateSpotifyLoginSummary()
-        findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked =
-            spotifyAuthManager.authState.value is SpotifyAuthManager.AuthState.Authenticated
     }
 
 
@@ -177,18 +199,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     }
                 } else {
                     Log.d(TAG, "Local photos selection cancelled or failed")
-                }
-            }
-            SPOTIFY_AUTH_REQUEST_CODE -> {
-                if (resultCode == Activity.RESULT_OK) {
-                    Log.d(TAG, "Spotify auth successful")
-                    spotifyAuthManager.handleAuthResponse(
-                        requestCode,
-                        resultCode,
-                        data
-                    )
-                } else {
-                    Log.d(TAG, "Spotify auth cancelled or failed")
                 }
             }
         }
@@ -549,23 +559,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     if (!spotifyManager.isSpotifyInstalled()) {
                         showSpotifyInstallDialog()
                         false
-                    } else if (spotifyAuthManager.authState.value !is SpotifyAuthManager.AuthState.Authenticated) {
-                        // Start auth flow if not authenticated
+                    } else {
+                        // Always start auth flow when enabling
                         try {
                             val authIntent = spotifyAuthManager.getAuthIntent(requireActivity())
+                            Log.d(TAG, "Launching Spotify auth intent")
                             spotifyAuthLauncher.launch(authIntent)
+                            // Don't update preference yet - wait for auth result
+                            false
                         } catch (e: Exception) {
+                            Log.e(TAG, "Error starting Spotify authentication", e)
                             Toast.makeText(
                                 requireContext(),
                                 "Error starting Spotify authentication",
                                 Toast.LENGTH_LONG
                             ).show()
+                            false
                         }
-                        false
-                    } else {
-                        spotifyPreferences.setEnabled(true)
-                        spotifyManager.connect()
-                        true
                     }
                 } else {
                     spotifyPreferences.setEnabled(false)
