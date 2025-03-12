@@ -122,6 +122,11 @@
             android:title="@string/pref_category_weather_widget"
             android:summary="@string/pref_show_weather_summary" />
 
+        <Preference
+            android:key="music_widget_settings"
+            android:title="@string/pref_music_widget"
+            android:summary="@string/pref_show_music_summary" />
+
     </PreferenceCategory>
 
     <PreferenceCategory
