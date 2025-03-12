@@ -61,17 +61,22 @@ class SpotifyAuthManager @Inject constructor(
                 "playlist-read-collaborative",
                 "app-remote-control"
             ))
-            setShowDialog(true)  // Force show dialog
+            setShowDialog(true)
 
+            // Add additional authorization parameters
             if (DEV_MODE) {
-                // Now these will work with our extension function
                 setCustomParam("environment", "development")
                 setCustomParam("debug", "true")
                 setCustomParam("nosignup", "true")
+                setCustomParam("auth_type", "client_credentials") // Try this auth type
             }
+
+            // Force authentication every time
+            setCustomParam("show_dialog", "true")
+            setCustomParam("auth_flow", "implicit")
         }
 
-        Timber.d("Creating auth request with URI: $REDIRECT_URI and client ID: $CLIENT_ID in ${if (DEV_MODE) "development" else "production"} mode")
+        Timber.d("Creating auth request with URI: $REDIRECT_URI")
         val request = builder.build()
         return AuthorizationClient.createLoginActivityIntent(activity, request)
     }
