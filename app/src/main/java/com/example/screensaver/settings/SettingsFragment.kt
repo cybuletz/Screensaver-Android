@@ -110,7 +110,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private val spotifyAuthLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        Timber.d("Spotify auth result received: ${result.resultCode}")
+        Timber.d("Spotify auth result received: resultCode=${result.resultCode}, data=${result.data?.data}")
 
         // Handle the auth response
         spotifyAuthManager.handleAuthResponse(
@@ -560,15 +560,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         showSpotifyInstallDialog()
                         false
                     } else {
-                        // Always start auth flow when enabling
+                        // First start the auth flow
                         try {
                             val authIntent = spotifyAuthManager.getAuthIntent(requireActivity())
-                            Log.d(TAG, "Launching Spotify auth intent")
                             spotifyAuthLauncher.launch(authIntent)
                             // Don't update preference yet - wait for auth result
                             false
                         } catch (e: Exception) {
-                            Log.e(TAG, "Error starting Spotify authentication", e)
                             Toast.makeText(
                                 requireContext(),
                                 "Error starting Spotify authentication",
@@ -600,14 +598,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         .create()
                         .show()
                 } else {
-                    // Start login process
+                    // Start authorization flow
                     try {
                         val authIntent = spotifyAuthManager.getAuthIntent(requireActivity())
                         spotifyAuthLauncher.launch(authIntent)
                     } catch (e: Exception) {
                         Toast.makeText(
                             requireContext(),
-                            "Error: Spotify app not installed",
+                            "Error starting Spotify authentication",
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -616,6 +614,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
+        // Keep autoplay preference
         findPreference<SwitchPreferenceCompat>("spotify_autoplay")?.apply {
             isChecked = spotifyPreferences.isAutoplayEnabled()
             setOnPreferenceChangeListener { _, newValue ->
@@ -624,9 +623,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
+        // Keep playlist selection
         findPreference<Preference>("spotify_playlist")?.apply {
             setOnPreferenceClickListener {
-                // We'll implement playlist selection in the next phase
                 Toast.makeText(
                     requireContext(),
                     "Playlist selection coming soon",
@@ -636,11 +635,32 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        // Start observing auth state
+        // Keep auth state observation
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 spotifyAuthManager.authState.collect { state ->
                     updateSpotifyLoginSummary()
+                    // Update enabled state based on authentication
+                    when (state) {
+                        is SpotifyAuthManager.AuthState.Authenticated -> {
+                            findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = true
+                            spotifyPreferences.setEnabled(true)
+                            spotifyManager.retry()
+                        }
+                        is SpotifyAuthManager.AuthState.Error -> {
+                            findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
+                            spotifyPreferences.setEnabled(false)
+                            Toast.makeText(
+                                requireContext(),
+                                "Authentication failed: ${state.error.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        else -> {
+                            findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
+                            spotifyPreferences.setEnabled(false)
+                        }
+                    }
                 }
             }
         }

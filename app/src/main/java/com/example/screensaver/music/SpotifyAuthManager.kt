@@ -15,6 +15,15 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.example.screensaver.data.SecureStorage
+import android.util.Base64
+import okhttp3.OkHttpClient
+import okhttp3.FormBody
+import okhttp3.Request
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
+import org.json.JSONObject
+import java.io.IOException
 
 @Singleton
 class SpotifyAuthManager @Inject constructor(
@@ -30,8 +39,8 @@ class SpotifyAuthManager @Inject constructor(
         private const val CLIENT_ID = "b6d959e9ca544b2aaebb37d0bb41adb5"
         private const val REDIRECT_URI = "screensaver-spotify://callback"
         const val REQUEST_CODE = 1337
-        const val KEY_SPOTIFY_TOKEN = "afba4ceb5c5b466da28c58b5d0c5d54f"
-        private const val DEV_MODE = true
+        private const val DEV_MODE = false
+        const val KEY_SPOTIFY_TOKEN = "spotify_access_token"
     }
 
     private fun AuthorizationRequest.Builder.setCustomParam(key: String, value: String): AuthorizationRequest.Builder {
@@ -59,21 +68,11 @@ class SpotifyAuthManager @Inject constructor(
                 "streaming",
                 "playlist-read-private",
                 "playlist-read-collaborative",
-                "app-remote-control"
+                "app-remote-control",
+                "user-read-playback-state",
+                "user-modify-playback-state"
             ))
             setShowDialog(true)
-
-            // Add additional authorization parameters
-            if (DEV_MODE) {
-                setCustomParam("environment", "development")
-                setCustomParam("debug", "true")
-                setCustomParam("nosignup", "true")
-                setCustomParam("auth_type", "client_credentials") // Try this auth type
-            }
-
-            // Force authentication every time
-            setCustomParam("show_dialog", "true")
-            setCustomParam("auth_flow", "implicit")
         }
 
         Timber.d("Creating auth request with URI: $REDIRECT_URI")

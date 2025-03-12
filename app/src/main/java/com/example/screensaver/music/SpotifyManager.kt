@@ -2,6 +2,7 @@
 
     import android.app.Activity
     import android.content.Context
+    import android.content.Intent
     import android.content.pm.PackageManager
     import com.spotify.android.appremote.api.ConnectionParams
     import com.spotify.android.appremote.api.Connector
@@ -24,6 +25,8 @@
     import kotlinx.coroutines.launch
     import kotlinx.coroutines.flow.asStateFlow
     import com.spotify.android.appremote.api.error.UserNotAuthorizedException
+    import android.os.Handler
+    import android.os.Looper
 
     @Singleton
     class SpotifyManager @Inject constructor(
@@ -104,29 +107,55 @@
             // Check if Spotify is installed before attempting to connect
             if (!isSpotifyInstalled()) {
                 handleConnectionError(CouldNotFindSpotifyApp())
-                spotifyPreferences.setEnabled(false) // Auto-disable preference
+                spotifyPreferences.setEnabled(false)
                 return
             }
 
+            // First ensure we have a valid auth token
+            if (secureStorage.getSecurely(SpotifyAuthManager.KEY_SPOTIFY_TOKEN) == null) {
+                _errorState.value = SpotifyError.AuthenticationRequired
+                spotifyPreferences.setEnabled(false)
+                return
+            }
+
+            connectToSpotify()
+        }
+
+        private fun connectToSpotify() {
             try {
                 val connectionParams = ConnectionParams.Builder(CLIENT_ID)
                     .setRedirectUri(REDIRECT_URI)
                     .showAuthView(true)
                     .build()
 
-                SpotifyAppRemote.connect(context, connectionParams, object : Connector.ConnectionListener {
-                    override fun onConnected(appRemote: SpotifyAppRemote) {
-                        spotifyAppRemote = appRemote
-                        _connectionState.value = ConnectionState.Connected
-                        _errorState.value = null
-                        Timber.d("Connected to Spotify")
-                        observePlayerState()
-                    }
+                // Launch Spotify app first to ensure it's running
+                try {
+                    val launchIntent = context.packageManager.getLaunchIntentForPackage("com.spotify.music")
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(launchIntent)
 
-                    override fun onFailure(error: Throwable) {
-                        handleConnectionError(error)
+                        // Give Spotify app time to launch before connecting
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            SpotifyAppRemote.connect(context, connectionParams, object : Connector.ConnectionListener {
+                                override fun onConnected(appRemote: SpotifyAppRemote) {
+                                    spotifyAppRemote = appRemote
+                                    _connectionState.value = ConnectionState.Connected
+                                    _errorState.value = null
+                                    Timber.d("Connected to Spotify")
+                                    observePlayerState()
+                                }
+
+                                override fun onFailure(error: Throwable) {
+                                    handleConnectionError(error)
+                                }
+                            })
+                        }, 1000) // 1 second delay
                     }
-                })
+                } catch (e: Exception) {
+                    Timber.e(e, "Error launching Spotify app")
+                    handleConnectionError(e)
+                }
             } catch (e: Exception) {
                 handleConnectionError(e)
             }
@@ -143,14 +172,19 @@
                 }
                 is NotLoggedInException,
                 is UserNotAuthorizedException -> {
-                    // Check if the error message indicates a Premium account is required
-                    if (error.message?.contains("premium", ignoreCase = true) == true) {
-                        _errorState.value = SpotifyError.PremiumRequired
-                    } else {
-                        // Disable features and clear token
-                        spotifyPreferences.setEnabled(false)
-                        tokenManager.clearToken()
-                        // Set error state to trigger UI to show auth flow
+                    // Launch Spotify app to ensure user is logged in
+                    try {
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage("com.spotify.music")
+                        if (launchIntent != null) {
+                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(launchIntent)
+                            // Retry connection after a delay
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                retry()
+                            }, 2000)
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error launching Spotify app")
                         _errorState.value = SpotifyError.AuthenticationRequired
                     }
                 }

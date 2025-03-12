@@ -119,7 +119,6 @@
         <activity
             android:name=".music.SpotifyAuthCallbackActivity"
             android:exported="true"
-            android:launchMode="singleTask"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
