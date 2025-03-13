@@ -5,6 +5,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
+import android.widget.ProgressBar
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import com.example.screensaver.R
@@ -265,6 +266,14 @@ class MusicControlWidget(
                         isClickable = true
                         isFocusable = true
                     }
+
+                    // Update progress bar
+                    getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
+                        max = state.trackDuration.toInt()
+                        progress = state.playbackPosition.toInt()
+                        visibility = if (config.showProgress) View.VISIBLE else View.GONE
+                        Log.e(TAG, "Progress bar updated - duration: ${state.trackDuration}, position: ${state.playbackPosition}")
+                    }
                 }
                 SpotifyManager.PlaybackState.Idle -> {
                     Log.e(TAG, "Setting up Idle state UI")
@@ -294,6 +303,13 @@ class MusicControlWidget(
                     getNextButton()?.apply {
                         isEnabled = false
                         isClickable = false
+                    }
+
+                    // Reset progress bar
+                    getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
+                        progress = 0
+                        visibility = if (config.showProgress) View.VISIBLE else View.GONE
+                        Log.e(TAG, "Progress bar reset to 0")
                     }
                 }
             }
@@ -391,18 +407,23 @@ class MusicControlWidget(
         this.config = config
 
         binding?.apply {
-            // Get the controls container by ID
+            // Handle show music widget (enabled state)
+            if (config.enabled) show() else hide()
+
+            // Handle controls visibility
             getRootView()?.findViewById<ViewGroup>(R.id.controls_container)?.apply {
                 visibility = if (config.showControls) View.VISIBLE else View.GONE
+            }
+
+            // Handle progress visibility
+            getRootView()?.findViewById<View>(R.id.track_progress)?.apply {
+                visibility = if (config.showProgress) View.VISIBLE else View.GONE
             }
 
             // Update position if changed
             if (oldConfig.position != config.position) {
                 updatePosition(config.position)
             }
-
-            // Update enabled state
-            if (config.enabled) show() else hide()
         }
     }
 

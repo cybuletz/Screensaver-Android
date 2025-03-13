@@ -116,4 +116,16 @@
             android:enabled="true" />
     </LinearLayout>
 
+    <ProgressBar
+        android:id="@+id/track_progress"
+        android:layout_width="0dp"
+        android:layout_height="4dp"
+        android:layout_marginTop="8dp"
+        android:progressTint="@android:color/holo_blue_light"
+        android:progressBackgroundTint="#44FFFFFF"
+        style="?android:attr/progressBarStyleHorizontal"
+        app:layout_constraintTop_toBottomOf="@id/controls_container"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>

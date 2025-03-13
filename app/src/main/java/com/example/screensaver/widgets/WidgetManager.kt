@@ -362,7 +362,6 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Weather position updated: $position")
     }
 
-
     private fun cleanupWidget(type: WidgetType) {
         try {
             Log.d(TAG, "Cleaning up widget: $type")
@@ -379,11 +378,11 @@ class WidgetManager @Inject constructor(
     }
 
     private fun loadMusicConfig(): WidgetConfig.MusicConfig {
-        // Use consistent keys from widget_music_preferences.xml
-        val enabled = spotifyPreferences.isEnabled()  // For Spotify-specific enabled state
+        val enabled = preferences.getBoolean("show_music", false)
+        val position = parseWidgetPosition(preferences.getString("music_position", "BOTTOM_CENTER"))
         val showControls = preferences.getBoolean("show_music_controls", true)
         val showProgress = preferences.getBoolean("show_music_progress", true)
-        val position = parseWidgetPosition(preferences.getString("music_position", "BOTTOM_CENTER"))
+        val autoplay = spotifyPreferences.isAutoplayEnabled()
 
         Log.d(TAG, """
         Loading music config:
@@ -391,29 +390,58 @@ class WidgetManager @Inject constructor(
         - position: $position
         - showControls: $showControls
         - showProgress: $showProgress
+        - autoplay: $autoplay
     """.trimIndent())
 
         return WidgetConfig.MusicConfig(
             enabled = enabled,
             position = position,
             showControls = showControls,
-            autoplay = spotifyPreferences.isAutoplayEnabled()
+            showProgress = showProgress,
+            autoplay = autoplay
         )
     }
 
-    fun updateMusicWidgetPreferences() {
-        val config = loadMusicConfig()
-        val widget = widgets[WidgetType.MUSIC] as? MusicControlWidget
+    fun updateMusicWidgetSetting(key: String, value: Boolean) {
+        Log.d(TAG, "Updating music widget config - key: $key, value: $value")
 
-        if (widget != null) {
-            widget.updateConfiguration(config)
-            if (config.enabled) {
-                widget.show()
-            } else {
-                widget.hide()
+        when (key) {
+            "show_music" -> {
+                spotifyPreferences.setEnabled(value)
             }
-        } else if (config.enabled && lastKnownContainer != null) {
-            setupMusicWidget(lastKnownContainer!!)
+            "show_music_controls", "show_music_progress" -> {
+                preferences.edit { putBoolean(key, value) }
+            }
+        }
+
+        val widget = widgets[WidgetType.MUSIC] as? MusicControlWidget
+        if (widget != null) {
+            val newConfig = loadMusicConfig()
+            Log.d(TAG, "Applying new config to widget: $newConfig")
+            widget.updateConfiguration(newConfig)
+        } else {
+            Log.d(TAG, "No music widget found to update")
+            if (lastKnownContainer != null && value) {
+                setupMusicWidget(lastKnownContainer!!)
+            }
+        }
+    }
+
+    fun updateMusicVisibility(visible: Boolean) {
+        Log.d(TAG, "Updating music visibility: $visible")
+        spotifyPreferences.setEnabled(visible)  // Use SpotifyPreferences instead
+
+        val currentWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
+        if (currentWidget != null) {
+            if (visible) {
+                currentWidget.show()
+            } else {
+                currentWidget.hide()
+            }
+        } else if (visible) {
+            lastKnownContainer?.let { container ->
+                setupMusicWidget(container)
+            }
         }
     }
 
@@ -480,24 +508,6 @@ class WidgetManager @Inject constructor(
         preferences.setString("music_position", position.name)
 
         Log.d(TAG, "Music position updated: $position")
-    }
-
-    fun updateMusicVisibility(visible: Boolean) {
-        Log.d(TAG, "Updating music visibility: $visible")
-        spotifyPreferences.setEnabled(visible)  // Use SpotifyPreferences instead
-
-        val currentWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
-        if (currentWidget != null) {
-            if (visible) {
-                currentWidget.show()
-            } else {
-                currentWidget.hide()
-            }
-        } else if (visible) {
-            lastKnownContainer?.let { container ->
-                setupMusicWidget(container)
-            }
-        }
     }
 
     fun cleanup() {

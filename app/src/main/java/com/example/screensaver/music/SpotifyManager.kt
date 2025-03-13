@@ -188,7 +188,8 @@
                                         isPlaying = !playerState.isPaused,
                                         trackName = track.name,
                                         artistName = track.artist.name,
-                                        trackDuration = track.duration
+                                        trackDuration = track.duration,
+                                        playbackPosition = playerState.playbackPosition
                                     )
                                 } else {
                                     // Log why track might be null
@@ -578,7 +579,8 @@
                             isPlaying = !state.isPaused,
                             trackName = state.track.name,
                             artistName = state.track.artist.name,
-                            trackDuration = state.track.duration
+                            trackDuration = state.track.duration,
+                            playbackPosition = state.playbackPosition
                         )
                         Timber.d("Updated playback state to: ${_playbackState.value}")
                     } else {
@@ -644,7 +646,8 @@
                 val isPlaying: Boolean = false,
                 val trackName: String = "",
                 val artistName: String = "",
-                val trackDuration: Long = 0
+                val trackDuration: Long,
+                val playbackPosition: Long
             ) : PlaybackState()
         }
 
