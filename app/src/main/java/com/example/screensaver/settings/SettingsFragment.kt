@@ -672,7 +672,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 spotifyManager.getPlaylists(
                     callback = { playlists ->
                         loadingDialog.dismiss()
-                        Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})" }}")
+                        Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})"}}")
 
                         MaterialAlertDialogBuilder(requireContext())
                             .setTitle("Select Playlist")
@@ -681,7 +681,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
                                 Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
 
                                 spotifyPreferences.setSelectedPlaylist(selectedPlaylist.uri)
-                                Timber.d("Saved playlist URI: ${spotifyPreferences.getSelectedPlaylist()}")
+                                // Just save the title for now
+                                spotifyPreferences.setPlaylistSummary(selectedPlaylist.title)
 
                                 summary = selectedPlaylist.title
                                 Toast.makeText(
@@ -707,20 +708,27 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
 
             // Update initial preference description to show currently selected playlist
-            spotifyPreferences.getSelectedPlaylist()?.let { uri ->
-                lifecycleScope.launch {
-                    spotifyManager.getPlaylistInfo(
-                        uri = uri,
-                        callback = { playlist ->
-                            findPreference<Preference>("spotify_playlist")?.setSummary(playlist?.title ?: "Select playlist")
-                        },
-                        errorCallback = {
-                            findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
-                        }
-                    )
-                }
+            spotifyPreferences.getPlaylistSummary()?.let { savedSummary ->
+                setSummary(savedSummary)
             } ?: run {
-                setSummary("Select playlist")
+                // If no summary is saved, try to get playlist info from Spotify
+                spotifyPreferences.getSelectedPlaylist()?.let { uri ->
+                    lifecycleScope.launch {
+                        spotifyManager.getPlaylistInfo(
+                            uri = uri,
+                            callback = { playlist ->
+                                val summary = playlist?.title ?: "Select playlist"
+                                spotifyPreferences.setPlaylistSummary(summary)  // Save the summary
+                                findPreference<Preference>("spotify_playlist")?.setSummary(summary)
+                            },
+                            errorCallback = {
+                                findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                            }
+                        )
+                    }
+                } ?: run {
+                    setSummary("Select playlist")
+                }
             }
         }
 
@@ -765,20 +773,32 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 spotifyManager.connectionState.collect { state ->
                     when (state) {
                         is SpotifyManager.ConnectionState.Connected -> {
-                            spotifyPreferences.getSelectedPlaylist()?.let { uri ->
-                                spotifyManager.getPlaylistInfo(
-                                    uri = uri,
-                                    callback = { playlist ->
-                                        findPreference<Preference>("spotify_playlist")?.setSummary(playlist?.title ?: "Select playlist")
-                                    },
-                                    errorCallback = {
-                                        findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
-                                    }
-                                )
+                            // First try to use the saved summary
+                            val savedSummary = spotifyPreferences.getPlaylistSummary()
+                            if (savedSummary != null) {
+                                findPreference<Preference>("spotify_playlist")?.setSummary(savedSummary)
+                            } else {
+                                // Only fetch from Spotify if we don't have a saved summary
+                                spotifyPreferences.getSelectedPlaylist()?.let { uri ->
+                                    spotifyManager.getPlaylistInfo(
+                                        uri = uri,
+                                        callback = { playlist ->
+                                            val summary = playlist?.title ?: "Select playlist"
+                                            spotifyPreferences.setPlaylistSummary(summary)  // Save the summary
+                                            findPreference<Preference>("spotify_playlist")?.setSummary(summary)
+                                        },
+                                        errorCallback = {
+                                            findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                                        }
+                                    )
+                                }
                             }
                         }
                         else -> {
-                            // Keep current summary
+                            // Keep current summary from preferences
+                            spotifyPreferences.getPlaylistSummary()?.let { savedSummary ->
+                                findPreference<Preference>("spotify_playlist")?.setSummary(savedSummary)
+                            }
                         }
                     }
                 }
