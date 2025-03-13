@@ -16,6 +16,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
 
 class MusicControlWidget(
     private val container: ViewGroup,
@@ -25,6 +27,8 @@ class MusicControlWidget(
     private var binding: MusicControlWidgetBinding? = null
     private var isVisible = false
     private val scope = CoroutineScope(Dispatchers.Main + Job())
+
+    private var progressUpdateJob: Job? = null
 
     companion object {
         private const val TAG = "MusicControlWidget"
@@ -229,6 +233,7 @@ class MusicControlWidget(
 
         if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
             Log.e(TAG, "Not updating state - Spotify not connected")
+            stopProgressUpdates()  // Add this
             return
         }
 
@@ -274,9 +279,17 @@ class MusicControlWidget(
                         visibility = if (config.showProgress) View.VISIBLE else View.GONE
                         Log.e(TAG, "Progress bar updated - duration: ${state.trackDuration}, position: ${state.playbackPosition}")
                     }
+
+                    // Add progress update handling
+                    if (state.isPlaying) {
+                        startProgressUpdates()
+                    } else {
+                        stopProgressUpdates()
+                    }
                 }
                 SpotifyManager.PlaybackState.Idle -> {
                     Log.e(TAG, "Setting up Idle state UI")
+                    stopProgressUpdates()  // Add this
                     getTrackNameView()?.apply {
                         text = if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected)
                             "Select a track to play"
@@ -378,6 +391,7 @@ class MusicControlWidget(
     override fun cleanup() {
         try {
             Log.d(TAG, "Starting music widget cleanup")
+            stopProgressUpdates() // Add this line
             binding?.getRootView()?.let { view ->
                 try {
                     (view.parent as? ViewGroup)?.removeView(view)
@@ -469,6 +483,26 @@ class MusicControlWidget(
             view.layoutParams = params
             view.requestLayout()
         }
+    }
+
+    private fun startProgressUpdates() {
+        progressUpdateJob?.cancel() // Cancel any existing job
+        progressUpdateJob = scope.launch {
+            while (isActive) {
+                binding?.getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
+                    val currentState = spotifyManager.playbackState.value
+                    if (currentState is SpotifyManager.PlaybackState.Playing && currentState.isPlaying) {
+                        progress = (progress + 1000).coerceAtMost(max) // Update every second
+                    }
+                }
+                delay(1000) // Update every second
+            }
+        }
+    }
+
+    private fun stopProgressUpdates() {
+        progressUpdateJob?.cancel()
+        progressUpdateJob = null
     }
 
     private fun clearErrorState() {
