@@ -538,8 +538,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-
-
     private fun restoreSettingsState() {
         val currentState = appDataManager.getCurrentState()
 
@@ -735,6 +733,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                             spotifyPreferences.setEnabled(true)
                             spotifyPreferences.setConnectionState(true)
                             spotifyManager.retry()
+                            updateSpotifyLoginSummary()
                         }
                         is SpotifyAuthManager.AuthState.Error -> {
                             findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
@@ -779,21 +778,35 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     private fun updateSpotifyLoginSummary() {
         findPreference<Preference>("spotify_login")?.apply {
-            when (val state = spotifyAuthManager.authState.value) {
-                is SpotifyAuthManager.AuthState.Authenticated -> {
+            // First check if Spotify is enabled at all
+            if (!spotifyPreferences.isEnabled()) {
+                summary = "Not connected"
+                isEnabled = true
+                return@apply
+            }
+
+            // Then check the current connection state
+            when (spotifyManager.connectionState.value) {
+                is SpotifyManager.ConnectionState.Connected -> {
                     summary = "Connected to Spotify"
                     isEnabled = true
                 }
-                is SpotifyAuthManager.AuthState.NotAuthenticated -> {
-                    summary = "Not connected"
+                is SpotifyManager.ConnectionState.Error -> {
+                    summary = "Connection error"
                     isEnabled = true
                 }
-                is SpotifyAuthManager.AuthState.Error -> {
-                    summary = "Error: ${state.error.message}"
-                    isEnabled = true
+                is SpotifyManager.ConnectionState.Disconnected -> {
+                    if (spotifyAuthManager.authState.value is SpotifyAuthManager.AuthState.Authenticated) {
+                        summary = "Disconnected - tap to reconnect"
+                        isEnabled = true
+                    } else {
+                        summary = "Not connected"
+                        isEnabled = true
+                    }
                 }
             }
+
+            Timber.d("Spotify login summary updated: state=${spotifyManager.connectionState.value}")
         }
     }
-
 }
