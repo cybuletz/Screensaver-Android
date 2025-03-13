@@ -267,10 +267,11 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Starting widget system initialization")
         try {
             ensureBinding()
-            binding.screensaverContainer?.post {
+            // Use widgets_layer instead of screensaverContainer
+            binding.screensaverContainer?.findViewById<ConstraintLayout>(R.id.widgets_layer)?.post {
                 try {
                     Log.d(TAG, "Container posted callback executing")
-                    binding.screensaverContainer?.let { container ->
+                    binding.screensaverContainer?.findViewById<ConstraintLayout>(R.id.widgets_layer)?.let { container ->
                         if (container is ConstraintLayout) {
                             Log.d(TAG, "Setting up widgets in ConstraintLayout")
 
@@ -299,11 +300,11 @@ class MainActivity : AppCompatActivity() {
                         } else {
                             Log.e(TAG, "Container is not a ConstraintLayout, it is: ${container.javaClass.simpleName}")
                         }
-                    } ?: Log.e(TAG, "screensaverContainer is null")
+                    } ?: Log.e(TAG, "widgets_layer is null")
                 } catch (e: Exception) {
                     Log.e(TAG, "Error in widget system initialization", e)
                 }
-            } ?: Log.e(TAG, "Could not post to screensaverContainer")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing widget system", e)
         }

@@ -27,6 +27,7 @@
     import com.spotify.android.appremote.api.error.UserNotAuthorizedException
     import android.os.Handler
     import android.os.Looper
+    import android.util.Log
     import com.spotify.protocol.types.ListItem
     import com.spotify.protocol.types.ListItems
     import com.spotify.android.appremote.api.ConnectApi
@@ -303,8 +304,20 @@
         }
 
         fun resume() {
+            Log.e("SpotifyManager", "resume called")
             try {
-                spotifyAppRemote?.playerApi?.resume()
+                if (playbackState.value is PlaybackState.Idle) {
+                    // If we're idle, try to start the selected playlist
+                    spotifyPreferences.getSelectedPlaylist()?.let { uri ->
+                        playPlaylist(uri)
+                    } ?: run {
+                        // If no playlist selected, try simple resume
+                        spotifyAppRemote?.playerApi?.resume()
+                    }
+                } else {
+                    // If we have an active track, just resume
+                    spotifyAppRemote?.playerApi?.resume()
+                }
                 _errorState.value = null
             } catch (e: Exception) {
                 Timber.e(e, "Error resuming playback")
@@ -313,6 +326,7 @@
         }
 
         fun pause() {
+            Log.e("SpotifyManager", "pause called")
             try {
                 spotifyAppRemote?.playerApi?.pause()
                 _errorState.value = null
@@ -323,6 +337,7 @@
         }
 
         fun nextTrack() {
+            Log.e("SpotifyManager", "nextTrack called")
             try {
                 spotifyAppRemote?.playerApi?.skipNext()
                 _errorState.value = null
@@ -333,6 +348,7 @@
         }
 
         fun previousTrack() {
+            Log.e("SpotifyManager", "previousTrack called")
             try {
                 spotifyAppRemote?.playerApi?.skipPrevious()
                 _errorState.value = null
@@ -437,15 +453,24 @@
                 spotifyAppRemote?.connectApi?.connectSwitchToLocalDevice()
                     ?.setResultCallback {
                         Timber.d("Successfully switched to local device")
-                        // Play the playlist
-                        spotifyAppRemote?.playerApi?.play(finalUri)
+
+                        // Set repeat mode to context to keep playing the playlist
+                        spotifyAppRemote?.playerApi?.setRepeat(Repeat.ALL)
                             ?.setResultCallback {
-                                Timber.d("Successfully started playlist playback")
-                                refreshPlayerState()
-                            }
-                            ?.setErrorCallback { error ->
-                                Timber.e(error, "Failed to play playlist")
-                                _errorState.value = SpotifyError.PlaybackFailed(error)
+                                // Set shuffle mode if needed
+                                spotifyAppRemote?.playerApi?.setShuffle(true)
+                                    ?.setResultCallback {
+                                        // Finally play the playlist
+                                        spotifyAppRemote?.playerApi?.play(finalUri)
+                                            ?.setResultCallback {
+                                                Timber.d("Successfully started playlist playback")
+                                                refreshPlayerState()
+                                            }
+                                            ?.setErrorCallback { error ->
+                                                Timber.e(error, "Failed to play playlist")
+                                                _errorState.value = SpotifyError.PlaybackFailed(error)
+                                            }
+                                    }
                             }
                     }
                     ?.setErrorCallback { error ->

@@ -4,39 +4,68 @@
     android:id="@+id/music_control_container"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
+    android:minWidth="280dp"
     android:background="@drawable/widget_background"
-    android:padding="16dp">
+    android:padding="8dp"
+    android:clickable="false"
+    android:focusable="false">
 
     <TextView
         android:id="@+id/track_name"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textColor="@android:color/white"
-        android:textSize="16sp"
-        android:maxLines="1"
-        android:ellipsize="end"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
-    <TextView
-        android:id="@+id/artist_name"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:textColor="@android:color/white"
         android:textSize="14sp"
-        android:maxLines="1"
-        android:ellipsize="end"
+        android:singleLine="true"
+        android:ellipsize="marquee"
+        android:marqueeRepeatLimit="marquee_forever"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:scrollHorizontally="true"
+        android:maxWidth="240dp"
+        android:gravity="center"
+        android:paddingHorizontal="8dp"
+        android:contentDescription="@string/track_name_description"
+        android:text="@string/no_track_playing"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constrainedWidth="true" />
+
+    <TextView
+        android:id="@+id/artist_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textColor="@android:color/white"
+        android:alpha="0.7"
+        android:textSize="12sp"
+        android:singleLine="true"
+        android:ellipsize="marquee"
+        android:marqueeRepeatLimit="marquee_forever"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:scrollHorizontally="true"
+        android:maxWidth="240dp"
+        android:gravity="center"
+        android:paddingHorizontal="8dp"
         android:layout_marginTop="4dp"
+        android:contentDescription="@string/artist_name_description"
+        android:text="@string/no_artist"
         app:layout_constraintTop_toBottomOf="@id/track_name"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constrainedWidth="true" />
 
     <LinearLayout
+        android:id="@+id/controls_container"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:background="@android:color/transparent"
+        android:clickable="false"
+        android:focusable="false"
         app:layout_constraintTop_toBottomOf="@id/artist_name"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
@@ -45,26 +74,46 @@
             android:id="@+id/previous_button"
             android:layout_width="48dp"
             android:layout_height="48dp"
+            android:layout_marginHorizontal="8dp"
             android:background="?attr/selectableItemBackgroundBorderless"
+            android:foreground="?attr/selectableItemBackground"
             android:src="@drawable/ic_music_previous"
-            android:contentDescription="Previous track" />
+            android:padding="12dp"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/previous_track"
+            android:clickable="true"
+            android:focusable="true"
+            android:enabled="true" />
 
         <ImageButton
             android:id="@+id/play_pause_button"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginHorizontal="24dp"
+            android:layout_width="68dp"
+            android:layout_height="68dp"
+            android:layout_marginHorizontal="12dp"
             android:background="?attr/selectableItemBackgroundBorderless"
+            android:foreground="?attr/selectableItemBackground"
             android:src="@drawable/ic_music_play"
-            android:contentDescription="Play or pause" />
+            android:padding="16dp"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/play_pause"
+            android:clickable="true"
+            android:focusable="true"
+            android:enabled="true" />
 
         <ImageButton
             android:id="@+id/next_button"
             android:layout_width="48dp"
             android:layout_height="48dp"
+            android:layout_marginHorizontal="8dp"
             android:background="?attr/selectableItemBackgroundBorderless"
+            android:foreground="?attr/selectableItemBackground"
             android:src="@drawable/ic_music_next"
-            android:contentDescription="Next track" />
+            android:padding="12dp"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/next_track"
+            android:clickable="true"
+            android:focusable="true"
+            android:enabled="true" />
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
