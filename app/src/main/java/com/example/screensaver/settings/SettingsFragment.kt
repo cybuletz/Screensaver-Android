@@ -119,6 +119,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
             result.data
         )
 
+        // Bring our activity to front properly
+        requireActivity().apply {
+            val intent = Intent(this, this::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            }
+            startActivity(intent)
+        }
+
         // Update UI based on auth state
         when (val state = spotifyAuthManager.authState.value) {
             is SpotifyAuthManager.AuthState.Authenticated -> {
