@@ -41,23 +41,13 @@ class MusicControlWidgetBinding(
                         "Artist: ${artistNameView != null}, " +
                         "PlayPause: ${playPauseButton != null}")
 
-                // Add the view to container
+                // Create params but DON'T add to container
                 val params = ConstraintLayout.LayoutParams(
                     ConstraintLayout.LayoutParams.WRAP_CONTENT,
                     ConstraintLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    // Default to BOTTOM_CENTER
-                    bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                    startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                    setMargins(32, 32, 32, 32)
-                }
-
+                )
                 rootView?.layoutParams = params
-                container.addView(rootView)
-                Log.d(TAG, "Root view added to container with params")
-            } else {
-                Log.d(TAG, "Root view already exists")
+                Log.d(TAG, "Root view parameters set")
             }
             return rootView!!
         } catch (e: Exception) {

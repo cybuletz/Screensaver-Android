@@ -37,7 +37,6 @@ import android.animation.ObjectAnimator
 import android.graphics.drawable.BitmapDrawable
 import com.bumptech.glide.load.HttpException
 import com.example.screensaver.glide.GlideApp
-import com.example.screensaver.music.PlaybackState
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
 

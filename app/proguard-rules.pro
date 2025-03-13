@@ -130,3 +130,35 @@
 -keep public class * implements com.bumptech.glide.module.GlideModule
 -keep public class * extends com.bumptech.glide.module.AppGlideModule
 -keep class com.bumptech.glide.** { *; }
+
+# Suppress specific R8 warnings for Spotify SDK
+-dontwarn com.spotify.**
+-keep class com.spotify.** { *; }
+
+# Specifically handle annotation warnings
+-dontwarn kotlin.annotations.jvm.**
+-dontwarn javax.annotation.**
+-dontwarn org.jetbrains.annotations.**
+
+# Keep all Spotify SDK related classes
+-keepclassmembers class * {
+    @com.spotify.protocol.types.** *;
+}
+
+# Keep annotation classes
+-keep @interface com.spotify.protocol.types.**
+-keep class com.spotify.protocol.types.** { *; }
+
+# Suppress specific warning messages
+-keepattributes SourceFile,LineNumberTable
+-keep class com.spotify.protocol.types.ListItems { *; }
+-keep class com.spotify.protocol.types.ListItem { *; }
+-keep class com.spotify.protocol.types.PlayerRestrictions { *; }
+-keep class com.spotify.protocol.types.PlayerState { *; }
+-keep class com.spotify.protocol.types.Track { *; }
+-keep class com.spotify.protocol.types.Album { *; }
+-keep class com.spotify.protocol.types.Artist { *; }
+-keep class com.spotify.protocol.types.Uri { *; }
+
+# Additional rules to suppress annotation processing warnings
+-dontwarn com.spotify.protocol.annotations.**

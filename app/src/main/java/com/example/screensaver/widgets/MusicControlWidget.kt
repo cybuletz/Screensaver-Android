@@ -6,7 +6,6 @@ import android.view.ViewGroup
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import com.example.screensaver.R
-import com.example.screensaver.music.PlaybackState
 import com.example.screensaver.music.SpotifyManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -84,41 +83,54 @@ class MusicControlWidget(
     }
 
     private fun setupControls() {
+        Log.d(TAG, "Setting up music controls")
         binding?.apply {
-            getPlayPauseButton()?.setOnClickListener {
-                Timber.d("Play/Pause button clicked")
-                if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
-                    Timber.d("Cannot control playback - Spotify not connected")
-                    spotifyManager.connect()
-                    return@setOnClickListener
-                }
-
-                val currentState = spotifyManager.playbackState.value
-                when {
-                    currentState is SpotifyManager.PlaybackState.Playing && currentState.isPlaying -> {
-                        Timber.d("Pausing playback")
-                        spotifyManager.pause()
+            getPlayPauseButton()?.also { button ->
+                Timber.d("Raw click on play/pause button, view enabled: ${view.isEnabled}")
+                Log.d(TAG, "Setting up play/pause button")
+                button.setOnClickListener {
+                    Log.d(TAG, "Play/Pause button clicked")
+                    if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
+                        Log.d(TAG, "Cannot control playback - Spotify not connected")
+                        spotifyManager.connect()
+                        return@setOnClickListener
                     }
-                    else -> {
-                        Timber.d("Resuming playback")
-                        spotifyManager.resume()
+
+                    val currentState = spotifyManager.playbackState.value
+                    when {
+                        currentState is SpotifyManager.PlaybackState.Playing && currentState.isPlaying -> {
+                            Log.d(TAG, "Pausing playback")
+                            spotifyManager.pause()
+                        }
+                        else -> {
+                            Log.d(TAG, "Resuming playback")
+                            spotifyManager.resume()
+                        }
                     }
                 }
-            }
+            } ?: Log.e(TAG, "Play/pause button not found!")
 
-            getPreviousButton()?.setOnClickListener {
-                Timber.d("Previous button clicked")
-                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
-                    spotifyManager.previousTrack()
+            getPreviousButton()?.also { button ->
+                Timber.d("Raw click on previous button, view enabled: ${view.isEnabled}")
+                Log.d(TAG, "Setting up previous button")
+                button.setOnClickListener {
+                    Log.d(TAG, "Previous button clicked")
+                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                        spotifyManager.previousTrack()
+                    }
                 }
-            }
+            } ?: Log.e(TAG, "Previous button not found!")
 
-            getNextButton()?.setOnClickListener {
-                Timber.d("Next button clicked")
-                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
-                    spotifyManager.nextTrack()
+            getNextButton()?.also { button ->
+                Timber.d("Raw click on next button, view enabled: ${view.isEnabled}")
+                Log.d(TAG, "Setting up next button")
+                button.setOnClickListener {
+                    Log.d(TAG, "Next button clicked")
+                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                        spotifyManager.nextTrack()
+                    }
                 }
-            }
+            } ?: Log.e(TAG, "Next button not found!")
         }
     }
 
@@ -159,7 +171,9 @@ class MusicControlWidget(
             Log.d(TAG, "Showing music widget")
             val rootView = binding.getRootView()
             rootView?.apply {
+                // Only add if not already added
                 if (parent == null) {
+                    Log.d(TAG, "Adding music widget view to container")
                     container.addView(this)
                 }
 
@@ -171,6 +185,7 @@ class MusicControlWidget(
                     updatePosition(config.position)
                     requestLayout()
                     invalidate()
+                    Log.d(TAG, "Music widget view configured and visible")
                 }
             }
         }

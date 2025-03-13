@@ -30,6 +30,7 @@
     import com.spotify.protocol.types.ListItem
     import com.spotify.protocol.types.ListItems
     import com.spotify.android.appremote.api.ConnectApi
+    import com.spotify.protocol.types.Repeat
 
     @Singleton
     class SpotifyManager @Inject constructor(
@@ -152,8 +153,56 @@
                         _connectionState.value = ConnectionState.Connected
                         _errorState.value = null
                         Timber.d("Connected to Spotify")
-                        // Use refreshPlayerState instead of observePlayerState
+
+                        // First refresh current state
                         refreshPlayerState()
+
+                        // Set up player state subscription with detailed logging
+                        appRemote.playerApi.subscribeToPlayerState()
+                            .setEventCallback { playerState ->
+                                Timber.d("Player state update: isPaused=${playerState.isPaused}, " +
+                                        "track=${playerState.track?.name}, " +
+                                        "playbackPosition=${playerState.playbackPosition}")
+
+                                val track = playerState.track
+                                if (track != null) {
+                                    _playbackState.value = PlaybackState.Playing(
+                                        isPlaying = !playerState.isPaused,
+                                        trackName = track.name,
+                                        artistName = track.artist.name,
+                                        trackDuration = track.duration
+                                    )
+                                } else {
+                                    // Log why track might be null
+                                    Timber.w("Track is null. isPaused=${playerState.isPaused}, " +
+                                            "position=${playerState.playbackPosition}")
+
+                                    // If track is null but we're connected and not paused
+                                    if (spotifyAppRemote?.isConnected == true && !playerState.isPaused) {
+                                        Timber.d("Track is null but player is not paused, trying to resume")
+                                        // Try to resume playback
+                                        spotifyAppRemote?.playerApi?.resume()
+                                            ?.setResultCallback {
+                                                Timber.d("Resume attempt completed")
+                                                refreshPlayerState()
+                                            }
+                                            ?.setErrorCallback { error ->
+                                                Timber.e(error, "Resume attempt failed")
+                                            }
+                                    }
+                                    _playbackState.value = PlaybackState.Idle
+                                }
+                            }
+                            .setErrorCallback { error ->
+                                Timber.e(error, "Error in player state subscription")
+                            }
+
+                        // If autoplay is enabled and we're in screensaver mode, start playback
+                        if (isScreensaverActive && spotifyPreferences.isAutoplayEnabled()) {
+                            spotifyPreferences.getSelectedPlaylist()?.let { playlistUri ->
+                                playPlaylist(playlistUri)
+                            }
+                        }
                     }
 
                     override fun onFailure(error: Throwable) {
@@ -358,31 +407,50 @@
                     return
                 }
 
-                // First check if we need to handle any current playback
+                // First play any track to ensure Spotify is active
                 spotifyAppRemote?.playerApi?.playerState
                     ?.setResultCallback { playerState ->
-                        // First pause any current playback
-                        spotifyAppRemote?.playerApi?.pause()
-                            ?.setResultCallback {
-                                // Then try to play the new playlist
-                                spotifyAppRemote?.playerApi?.play(finalUri)
-                                    ?.setResultCallback {
-                                        Timber.d("Successfully queued playlist")
-                                        // Give Spotify a moment to process
-                                        Handler(Looper.getMainLooper()).postDelayed({
-                                            // Then resume playback and force a state refresh
-                                            spotifyAppRemote?.playerApi?.resume()
-                                                ?.setResultCallback {
-                                                    Timber.d("Successfully started playback")
-                                                    // Force multiple state refreshes to ensure we get the track
-                                                    refreshPlayerState()
-                                                    Handler(Looper.getMainLooper()).postDelayed({
-                                                        refreshPlayerState()
-                                                    }, 500)
-                                                }
-                                        }, 1000)
-                                    }
-                            }
+                        val defaultTrackUri = "spotify:track:4iV5W9uYEdYUVa79Axb7Rh" // Prelude - Bach
+
+                        // If nothing is playing, play the default track first
+                        if (playerState.track == null) {
+                            spotifyAppRemote?.playerApi?.play(defaultTrackUri)
+                                ?.setResultCallback {
+                                    Timber.d("Playing default track to activate Spotify")
+                                    // Wait for Spotify to start playing
+                                    Handler(Looper.getMainLooper()).postDelayed({
+                                        // Now play the actual playlist
+                                        spotifyAppRemote?.playerApi?.play(finalUri)
+                                            ?.setResultCallback {
+                                                Timber.d("Successfully started playlist playback")
+                                                refreshPlayerState()
+                                            }
+                                            ?.setErrorCallback { error ->
+                                                Timber.e(error, "Failed to play playlist")
+                                                _errorState.value = SpotifyError.PlaybackFailed(error)
+                                            }
+                                    }, 1000)
+                                }
+                                ?.setErrorCallback { error ->
+                                    Timber.e(error, "Failed to play default track")
+                                    _errorState.value = SpotifyError.PlaybackFailed(error)
+                                }
+                        } else {
+                            // If something is already playing, just switch to the playlist
+                            spotifyAppRemote?.playerApi?.play(finalUri)
+                                ?.setResultCallback {
+                                    Timber.d("Successfully started playlist playback")
+                                    refreshPlayerState()
+                                }
+                                ?.setErrorCallback { error ->
+                                    Timber.e(error, "Failed to play playlist")
+                                    _errorState.value = SpotifyError.PlaybackFailed(error)
+                                }
+                        }
+                    }
+                    ?.setErrorCallback { error ->
+                        Timber.e(error, "Failed to get player state")
+                        _errorState.value = SpotifyError.PlaybackFailed(error)
                     }
 
             } catch (e: Exception) {
