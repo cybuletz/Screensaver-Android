@@ -142,10 +142,24 @@
 
         private fun connectToSpotify() {
             try {
+                // First verify we have a token
+                if (secureStorage.getSecurely(SpotifyAuthManager.KEY_SPOTIFY_TOKEN) == null) {
+                    Timber.e("No auth token found")
+                    _errorState.value = SpotifyError.AuthenticationRequired
+                    return
+                }
+
+                // Ensure any existing connection is properly closed
+                if (spotifyAppRemote?.isConnected == true) {
+                    disconnect()
+                }
+
                 val connectionParams = ConnectionParams.Builder(CLIENT_ID)
                     .setRedirectUri(REDIRECT_URI)
                     .showAuthView(true)
                     .build()
+
+                Timber.d("Attempting to connect to Spotify")
 
                 SpotifyAppRemote.connect(context, connectionParams, object : Connector.ConnectionListener {
                     override fun onConnected(appRemote: SpotifyAppRemote) {
@@ -154,7 +168,10 @@
                         _errorState.value = null
                         Timber.d("Connected to Spotify")
 
-                        // First refresh current state
+                        // Initialize player first
+                        initializePlayer()
+
+                        // Then refresh current state
                         refreshPlayerState()
 
                         // Set up player state subscription with detailed logging
@@ -226,20 +243,21 @@
                 }
                 is NotLoggedInException,
                 is UserNotAuthorizedException -> {
+                    // Clear the token as it's no longer valid
+                    secureStorage.removeSecurely(SpotifyAuthManager.KEY_SPOTIFY_TOKEN)
+                    tokenManager.clearToken()
+                    spotifyPreferences.setEnabled(false)
+                    _errorState.value = SpotifyError.AuthenticationRequired
+
                     // Launch Spotify app to ensure user is logged in
                     try {
                         val launchIntent = context.packageManager.getLaunchIntentForPackage("com.spotify.music")
                         if (launchIntent != null) {
                             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             context.startActivity(launchIntent)
-                            // Retry connection after a delay
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                retry()
-                            }, 2000)
                         }
                     } catch (e: Exception) {
                         Timber.e(e, "Error launching Spotify app")
-                        _errorState.value = SpotifyError.AuthenticationRequired
                     }
                 }
                 else -> {
@@ -266,9 +284,17 @@
                 if (isScreensaverActive && spotifyPreferences.isAutoplayEnabled()) {
                     pause()
                 }
-                SpotifyAppRemote.disconnect(spotifyAppRemote)
+                // Clear any cached state
+                spotifyAppRemote?.playerApi?.pause()
+                    ?.setResultCallback {
+                        spotifyAppRemote?.playerApi?.skipPrevious()
+                            ?.setResultCallback {
+                                SpotifyAppRemote.disconnect(spotifyAppRemote)
+                            }
+                    }
             } catch (e: Exception) {
                 Timber.e(e, "Error disconnecting from Spotify")
+                SpotifyAppRemote.disconnect(spotifyAppRemote)
             } finally {
                 spotifyAppRemote = null
                 _connectionState.value = ConnectionState.Disconnected
@@ -407,49 +433,23 @@
                     return
                 }
 
-                // First play any track to ensure Spotify is active
-                spotifyAppRemote?.playerApi?.playerState
-                    ?.setResultCallback { playerState ->
-                        val defaultTrackUri = "spotify:track:4iV5W9uYEdYUVa79Axb7Rh" // Prelude - Bach
-
-                        // If nothing is playing, play the default track first
-                        if (playerState.track == null) {
-                            spotifyAppRemote?.playerApi?.play(defaultTrackUri)
-                                ?.setResultCallback {
-                                    Timber.d("Playing default track to activate Spotify")
-                                    // Wait for Spotify to start playing
-                                    Handler(Looper.getMainLooper()).postDelayed({
-                                        // Now play the actual playlist
-                                        spotifyAppRemote?.playerApi?.play(finalUri)
-                                            ?.setResultCallback {
-                                                Timber.d("Successfully started playlist playback")
-                                                refreshPlayerState()
-                                            }
-                                            ?.setErrorCallback { error ->
-                                                Timber.e(error, "Failed to play playlist")
-                                                _errorState.value = SpotifyError.PlaybackFailed(error)
-                                            }
-                                    }, 1000)
-                                }
-                                ?.setErrorCallback { error ->
-                                    Timber.e(error, "Failed to play default track")
-                                    _errorState.value = SpotifyError.PlaybackFailed(error)
-                                }
-                        } else {
-                            // If something is already playing, just switch to the playlist
-                            spotifyAppRemote?.playerApi?.play(finalUri)
-                                ?.setResultCallback {
-                                    Timber.d("Successfully started playlist playback")
-                                    refreshPlayerState()
-                                }
-                                ?.setErrorCallback { error ->
-                                    Timber.e(error, "Failed to play playlist")
-                                    _errorState.value = SpotifyError.PlaybackFailed(error)
-                                }
-                        }
+                // First ensure we're the active device
+                spotifyAppRemote?.connectApi?.connectSwitchToLocalDevice()
+                    ?.setResultCallback {
+                        Timber.d("Successfully switched to local device")
+                        // Play the playlist
+                        spotifyAppRemote?.playerApi?.play(finalUri)
+                            ?.setResultCallback {
+                                Timber.d("Successfully started playlist playback")
+                                refreshPlayerState()
+                            }
+                            ?.setErrorCallback { error ->
+                                Timber.e(error, "Failed to play playlist")
+                                _errorState.value = SpotifyError.PlaybackFailed(error)
+                            }
                     }
                     ?.setErrorCallback { error ->
-                        Timber.e(error, "Failed to get player state")
+                        Timber.e(error, "Failed to switch to local device")
                         _errorState.value = SpotifyError.PlaybackFailed(error)
                     }
 
@@ -482,6 +482,43 @@
                 ?.setErrorCallback { error ->
                     Timber.e(error, "Error getting player state")
                 }
+        }
+
+        private fun initializePlayer() {
+            try {
+                Timber.d("Initializing player...")
+                spotifyAppRemote?.playerApi?.playerState
+                    ?.setResultCallback { playerState ->
+                        // Using Shape of You as default track - highly available worldwide
+                        val defaultTrackUri = "spotify:track:7qiZfU4dY1lWllzX7mPBI3"
+                        Timber.d("Setting up player with default track: $defaultTrackUri")
+
+                        spotifyAppRemote?.playerApi?.play(defaultTrackUri)
+                            ?.setResultCallback {
+                                Timber.d("Default track played, pausing...")
+                                // Immediately pause it
+                                spotifyAppRemote?.playerApi?.pause()
+                                    ?.setResultCallback {
+                                        Timber.d("Player initialized successfully")
+                                    }
+                                    ?.setErrorCallback { error ->
+                                        Timber.e(error, "Failed to pause after initialization")
+                                        _errorState.value = SpotifyError.PlaybackFailed(error)
+                                    }
+                            }
+                            ?.setErrorCallback { error ->
+                                Timber.e(error, "Failed to play initialization track")
+                                _errorState.value = SpotifyError.PlaybackFailed(error)
+                            }
+                    }
+                    ?.setErrorCallback { error ->
+                        Timber.e(error, "Failed to get player state during initialization")
+                        _errorState.value = SpotifyError.PlaybackFailed(error)
+                    }
+            } catch (e: Exception) {
+                Timber.e(e, "Error initializing player")
+                _errorState.value = SpotifyError.PlaybackFailed(e)
+            }
         }
 
         sealed class ConnectionState {
