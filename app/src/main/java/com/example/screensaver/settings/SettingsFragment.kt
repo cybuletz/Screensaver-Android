@@ -597,6 +597,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     }
                 } else {
                     spotifyPreferences.setEnabled(false)
+                    spotifyPreferences.setConnectionState(false)
                     spotifyManager.disconnect()
                     true
                 }
@@ -732,11 +733,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         is SpotifyAuthManager.AuthState.Authenticated -> {
                             findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = true
                             spotifyPreferences.setEnabled(true)
+                            spotifyPreferences.setConnectionState(true)
                             spotifyManager.retry()
                         }
                         is SpotifyAuthManager.AuthState.Error -> {
                             findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
                             spotifyPreferences.setEnabled(false)
+                            spotifyPreferences.setConnectionState(false)
                             Toast.makeText(
                                 requireContext(),
                                 "Authentication failed: ${state.error.message}",
@@ -744,8 +747,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
                             ).show()
                         }
                         else -> {
-                            findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
-                            spotifyPreferences.setEnabled(false)
+                            // Only update UI based on stored preference
+                            val isEnabled = spotifyPreferences.isEnabled()
+                            findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = isEnabled
+                            if (!isEnabled) {
+                                spotifyPreferences.setConnectionState(false)
+                            }
                         }
                     }
                 }

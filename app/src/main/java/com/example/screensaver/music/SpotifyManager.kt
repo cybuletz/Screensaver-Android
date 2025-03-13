@@ -1,6 +1,7 @@
     package com.example.screensaver.music
 
     import android.app.Activity
+    import android.content.ContentValues.TAG
     import android.content.Context
     import android.content.Intent
     import android.content.pm.PackageManager
@@ -98,8 +99,31 @@
             }
         }
 
+        fun initialize() {
+            Timber.d("Initializing Spotify Manager")
+
+            // Check both conditions
+            val isEnabled = spotifyPreferences.isEnabled()
+            val wasConnected = spotifyPreferences.wasConnected()
+
+            Timber.d("Spotify preferences - enabled: $isEnabled, wasConnected: $wasConnected")
+
+            if (isEnabled && wasConnected) {
+                Timber.d("Spotify was enabled and connected, attempting to reconnect")
+                connect()
+            } else if (isEnabled) {
+                Timber.d("Spotify was enabled but not connected, requesting auth")
+                _connectionState.value = ConnectionState.Disconnected
+                // Don't automatically connect - wait for user to authenticate
+            } else {
+                Timber.d("Spotify is not enabled, staying disconnected")
+                _connectionState.value = ConnectionState.Disconnected
+            }
+        }
+
         fun connect() {
             if (!spotifyPreferences.isEnabled()) {
+                Timber.d("Cannot connect - Spotify is not enabled")
                 return
             }
 
@@ -114,6 +138,7 @@
                             connectToSpotify()
                         } else {
                             refreshPlayerState()
+                            spotifyPreferences.setConnectionState(true)
                         }
                     }
                     ?.setErrorCallback { error ->
@@ -167,6 +192,7 @@
                         spotifyAppRemote = appRemote
                         _connectionState.value = ConnectionState.Connected
                         _errorState.value = null
+                        spotifyPreferences.setConnectionState(true)
                         Timber.d("Connected to Spotify")
 
                         // Initialize player first
@@ -226,11 +252,13 @@
 
                     override fun onFailure(error: Throwable) {
                         handleConnectionError(error)
+                        spotifyPreferences.setConnectionState(false)
                     }
                 })
 
             } catch (e: Exception) {
                 handleConnectionError(e)
+                spotifyPreferences.setConnectionState(false)
             }
         }
 
@@ -277,7 +305,13 @@
         }
 
         fun retry() {
-            _errorState.value = null
+            if (!spotifyPreferences.isEnabled()) {
+                Timber.d("Cannot retry - Spotify is not enabled")
+                return
+            }
+
+            Timber.d("Retrying Spotify connection")
+            disconnect()
             connect()
         }
 
@@ -301,6 +335,7 @@
                 spotifyAppRemote = null
                 _connectionState.value = ConnectionState.Disconnected
                 _playbackState.value = PlaybackState.Idle
+                spotifyPreferences.setConnectionState(false)
             }
         }
 
