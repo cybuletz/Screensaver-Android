@@ -18,6 +18,7 @@ class MusicControlWidgetBinding(
     private var playPauseButton: ImageButton? = null
     private var previousButton: ImageButton? = null
     private var nextButton: ImageButton? = null
+    private var controlsContainer: ViewGroup? = null
 
     companion object {
         private const val TAG = "MusicControlWidgetBinding"
@@ -46,6 +47,7 @@ class MusicControlWidgetBinding(
                 nextButton = rootView?.findViewById<ImageButton>(R.id.next_button)?.also {
                     Log.e(TAG, "Found next_button")
                 }
+                controlsContainer = rootView?.findViewById(R.id.controls_container)
 
                 Log.e(TAG, "Views found and initialized:" +
                         "\nTrack name view: ${trackNameView != null}" +

@@ -385,14 +385,25 @@ class MusicControlWidget(
     override fun updateConfiguration(config: WidgetConfig) {
         if (config !is WidgetConfig.MusicConfig) return
 
-        val oldPosition = this.config.position
+        Log.d(TAG, "Updating music widget configuration: $config")
+
+        val oldConfig = this.config
         this.config = config
 
-        if (oldPosition != config.position) {
-            updatePosition(config.position)
-        }
+        binding?.apply {
+            // Get the controls container by ID
+            getRootView()?.findViewById<ViewGroup>(R.id.controls_container)?.apply {
+                visibility = if (config.showControls) View.VISIBLE else View.GONE
+            }
 
-        if (config.enabled) show() else hide()
+            // Update position if changed
+            if (oldConfig.position != config.position) {
+                updatePosition(config.position)
+            }
+
+            // Update enabled state
+            if (config.enabled) show() else hide()
+        }
     }
 
     override fun updatePosition(position: WidgetPosition) {
