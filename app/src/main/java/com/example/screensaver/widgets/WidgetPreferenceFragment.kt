@@ -25,6 +25,14 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
     @Inject
     lateinit var widgetManager: WidgetManager
 
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val locationGranted = permissions.entries.any { it.value }
+
+        handleLocationPermissionResult(locationGranted)
+    }
+
     companion object {
         private const val TAG = "WidgetPreferenceFragment"
     }
@@ -56,7 +64,6 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
             .show()
     }
 
-    // Helper method to create clock config
     private fun createClockConfig(): WidgetConfig.ClockConfig {
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         return WidgetConfig.ClockConfig(
@@ -69,13 +76,15 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
         )
     }
 
-
-    private val locationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val locationGranted = permissions.entries.any { it.value }
-
-        handleLocationPermissionResult(locationGranted)
+    private fun createMusicConfig(): WidgetConfig.MusicConfig {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        return WidgetConfig.MusicConfig(
+            enabled = prefs.getBoolean("show_music", false),
+            position = WidgetPosition.valueOf(prefs.getString("music_position", "BOTTOM_CENTER") ?: "BOTTOM_CENTER"),
+            showControls = prefs.getBoolean("show_music_controls", true),
+            showProgress = prefs.getBoolean("show_music_progress", true),
+            autoplay = prefs.getBoolean("spotify_autoplay", false)
+        )
     }
 
     private fun handleLocationPermissionResult(granted: Boolean) {
@@ -139,8 +148,6 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
         ))
     }
 
-    // In WidgetPreferenceFragment.kt
-
     override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
         return when (preference.key) {
             "weather_position" -> {
@@ -194,6 +201,25 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
                     true
                 }
             }
+            "show_music" -> {
+                val enabled = newValue as Boolean
+                widgetManager.updateMusicVisibility(enabled)  // Use this instead of show/hideWidget
+                true
+            }
+            "show_music_controls", "show_music_progress" -> {
+                widgetManager.updateMusicWidgetSetting(preference.key, newValue as Boolean)  // Use this instead of direct config update
+                true
+            }
+            "music_position" -> {
+                try {
+                    val position = WidgetPosition.valueOf(newValue.toString())
+                    widgetManager.updateMusicPosition(position)
+                    true
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating music position", e)
+                    false
+                }
+            }
             else -> true
         }
     }
@@ -210,7 +236,11 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
             "weather_use_celsius",
             "weather_update_interval",
             "weather_use_device_location",
-            "weather_manual_location"
+            "weather_manual_location",
+            "show_music",
+            "show_music_controls",
+            "show_music_progress",
+            "music_position"
         )
 
         allPrefs.forEach { key ->
@@ -237,9 +267,20 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
             widgetManager.hideWidget(WidgetType.WEATHER)
         }
 
+        // Use updateMusicVisibility for music widget
+        widgetManager.updateMusicVisibility(prefs.getBoolean("show_music", false))
+
         // Update configs with current settings
         widgetManager.updateWidgetConfig(WidgetType.CLOCK, createClockConfig())
         widgetManager.updateWidgetConfig(WidgetType.WEATHER, createWeatherConfig())
+
+        // Update initial music settings
+        prefs.getBoolean("show_music_controls", true).also { showControls ->
+            widgetManager.updateMusicWidgetSetting("show_music_controls", showControls)
+        }
+        prefs.getBoolean("show_music_progress", true).also { showProgress ->
+            widgetManager.updateMusicWidgetSetting("show_music_progress", showProgress)
+        }
     }
 
     fun createWeatherConfig(): WidgetConfig.WeatherConfig {

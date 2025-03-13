@@ -122,6 +122,8 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    fun isScreensaverActive(): Boolean = isScreensaverActive
+
     private fun loadPhotosInBackground() {
         lifecycleScope?.launch(Dispatchers.IO) {
             try {

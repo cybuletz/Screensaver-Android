@@ -394,7 +394,4 @@ class AppPreferences @Inject constructor(
         _virtualAlbumsFlow.value = getVirtualAlbums()
     }
 
-    fun getPhotoSources(): Set<String> {
-        return prefs.getStringSet("photo_source_selection", setOf("local")) ?: setOf("local")
-    }
 }

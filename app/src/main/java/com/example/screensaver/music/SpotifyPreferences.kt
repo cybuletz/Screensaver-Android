@@ -21,6 +21,7 @@ class SpotifyPreferences @Inject constructor(
         private const val PREF_AUTOPLAY_ENABLED = "spotify_autoplay"
         private const val PREF_SELECTED_PLAYLIST = "spotify_selected_playlist"
         private const val PREF_LAST_VOLUME = "spotify_last_volume"
+        private const val PREF_CONNECTION_STATE = "spotify_connection_state"
     }
 
     private val preferences: SharedPreferences by lazy {
@@ -29,6 +30,15 @@ class SpotifyPreferences @Inject constructor(
 
     fun isEnabled(): Boolean =
         preferences.getBoolean(PREF_SPOTIFY_ENABLED, false)
+
+    fun setConnectionState(isConnected: Boolean) {
+        preferences.edit()
+            .putBoolean(PREF_CONNECTION_STATE, isConnected)
+            .apply()
+    }
+
+    fun wasConnected(): Boolean =
+        preferences.getBoolean(PREF_CONNECTION_STATE, false)
 
     fun setEnabled(enabled: Boolean) {
         preferences.edit()

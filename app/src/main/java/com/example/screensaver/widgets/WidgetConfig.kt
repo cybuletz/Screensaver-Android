@@ -23,6 +23,7 @@ sealed class WidgetConfig {
         val enabled: Boolean = false,
         val position: WidgetPosition = WidgetPosition.BOTTOM_CENTER,
         val showControls: Boolean = true,
+        val showProgress: Boolean = true,
         val autoplay: Boolean = false
     ) : WidgetConfig()
 }

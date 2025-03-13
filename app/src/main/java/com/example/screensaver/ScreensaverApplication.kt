@@ -22,7 +22,10 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import com.example.screensaver.data.AppDataManager
 import androidx.preference.PreferenceManager
+import com.example.screensaver.music.SpotifyManager
+import com.example.screensaver.music.SpotifyPreferences
 import java.io.File
+import kotlinx.coroutines.NonCancellable
 
 /**
  * Custom Application class for initialization and global state management
@@ -38,6 +41,12 @@ class ScreensaverApplication : Application() {
 
     @Inject
     lateinit var appDataManager: AppDataManager
+
+    @Inject
+    lateinit var spotifyManager: SpotifyManager
+
+    @Inject
+    lateinit var spotifyPreferences: SpotifyPreferences
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var firebaseAnalytics: FirebaseAnalytics
@@ -67,8 +76,8 @@ class ScreensaverApplication : Application() {
         initializeTheme()
         initializeWorkManager()
         initializePhotoSourceState()
-        // Add new initialization
         initializeAppData()
+        initializeSpotify()
         logApplicationStart()
     }
 
@@ -210,6 +219,26 @@ class ScreensaverApplication : Application() {
         }
     }
 
+    private fun initializeSpotify() {
+        applicationScope.launch {
+            try {
+                spotifyManager.initialize()
+                // Track in analytics
+                firebaseAnalytics.setUserProperty(
+                    "spotify_enabled",
+                    spotifyPreferences.isEnabled().toString()
+                )
+                firebaseAnalytics.setUserProperty(
+                    "spotify_connected",
+                    spotifyPreferences.wasConnected().toString()
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize Spotify")
+                FirebaseCrashlytics.getInstance().recordException(e)
+            }
+        }
+    }
+
     private fun setupCacheCleanupWork() {
         val cacheCleanupRequest = PeriodicWorkRequestBuilder<CacheCleanupWorker>(
             CACHE_CLEANUP_INTERVAL_HOURS, TimeUnit.HOURS
@@ -286,5 +315,16 @@ class ScreensaverApplication : Application() {
 
     private fun clearNonEssentialCaches() {
         // Implementation for clearing non-essential caches
+    }
+
+    override fun onTerminate() {
+        applicationScope.launch(NonCancellable) {
+            try {
+                spotifyManager.disconnect()
+            } catch (e: Exception) {
+                Timber.e(e, "Error disconnecting Spotify")
+            }
+        }
+        super.onTerminate()
     }
 }

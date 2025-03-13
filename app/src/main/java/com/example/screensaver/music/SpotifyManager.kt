@@ -1,37 +1,44 @@
-    package com.example.screensaver.music
+package com.example.screensaver.music
 
-    import android.app.Activity
-    import android.content.Context
-    import android.content.Intent
-    import android.content.pm.PackageManager
-    import com.spotify.android.appremote.api.ConnectionParams
-    import com.spotify.android.appremote.api.Connector
-    import com.spotify.android.appremote.api.SpotifyAppRemote
-    import com.spotify.android.appremote.api.error.CouldNotFindSpotifyApp
-    import com.spotify.android.appremote.api.error.NotLoggedInException
-    import com.spotify.protocol.types.PlayerState
-    import dagger.hilt.android.qualifiers.ApplicationContext
-    import kotlinx.coroutines.flow.MutableStateFlow
-    import kotlinx.coroutines.flow.StateFlow
-    import timber.log.Timber
-    import javax.inject.Inject
-    import javax.inject.Singleton
-    import com.example.screensaver.BuildConfig
-    import com.example.screensaver.data.SecureStorage
-    import com.example.screensaver.music.SpotifyAuthManager.Companion
-    import kotlinx.coroutines.CoroutineScope
-    import kotlinx.coroutines.Dispatchers
-    import kotlinx.coroutines.SupervisorJob
-    import kotlinx.coroutines.launch
-    import kotlinx.coroutines.flow.asStateFlow
-    import com.spotify.android.appremote.api.error.UserNotAuthorizedException
-    import android.os.Handler
-    import android.os.Looper
-    import android.util.Log
-    import com.spotify.protocol.types.ListItem
-    import com.spotify.protocol.types.ListItems
-    import com.spotify.android.appremote.api.ConnectApi
-    import com.spotify.protocol.types.Repeat
+import android.app.Activity
+import android.content.ContentValues.TAG
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import com.spotify.android.appremote.api.ConnectionParams
+import com.spotify.android.appremote.api.ConnectApi
+import com.spotify.android.appremote.api.Connector
+import com.spotify.android.appremote.api.SpotifyAppRemote
+import com.spotify.android.appremote.api.error.CouldNotFindSpotifyApp
+import com.spotify.android.appremote.api.error.NotLoggedInException
+import com.spotify.android.appremote.api.error.UserNotAuthorizedException
+import com.spotify.protocol.types.ListItem
+import com.spotify.protocol.types.ListItems
+import com.spotify.protocol.types.PlayerState
+import com.spotify.protocol.types.Repeat
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import org.json.JSONObject
+import timber.log.Timber
+import java.io.IOException
+import com.example.screensaver.BuildConfig
+import com.example.screensaver.data.SecureStorage
 
     @Singleton
     class SpotifyManager @Inject constructor(
@@ -98,8 +105,31 @@
             }
         }
 
+        fun initialize() {
+            Timber.d("Initializing Spotify Manager")
+
+            // Check both conditions
+            val isEnabled = spotifyPreferences.isEnabled()
+            val wasConnected = spotifyPreferences.wasConnected()
+
+            Timber.d("Spotify preferences - enabled: $isEnabled, wasConnected: $wasConnected")
+
+            if (isEnabled && wasConnected) {
+                Timber.d("Spotify was enabled and connected, attempting to reconnect")
+                connect()
+            } else if (isEnabled) {
+                Timber.d("Spotify was enabled but not connected, requesting auth")
+                _connectionState.value = ConnectionState.Disconnected
+                // Don't automatically connect - wait for user to authenticate
+            } else {
+                Timber.d("Spotify is not enabled, staying disconnected")
+                _connectionState.value = ConnectionState.Disconnected
+            }
+        }
+
         fun connect() {
             if (!spotifyPreferences.isEnabled()) {
+                Timber.d("Cannot connect - Spotify is not enabled")
                 return
             }
 
@@ -114,6 +144,7 @@
                             connectToSpotify()
                         } else {
                             refreshPlayerState()
+                            spotifyPreferences.setConnectionState(true)
                         }
                     }
                     ?.setErrorCallback { error ->
@@ -167,6 +198,7 @@
                         spotifyAppRemote = appRemote
                         _connectionState.value = ConnectionState.Connected
                         _errorState.value = null
+                        spotifyPreferences.setConnectionState(true)
                         Timber.d("Connected to Spotify")
 
                         // Initialize player first
@@ -188,7 +220,8 @@
                                         isPlaying = !playerState.isPaused,
                                         trackName = track.name,
                                         artistName = track.artist.name,
-                                        trackDuration = track.duration
+                                        trackDuration = track.duration,
+                                        playbackPosition = playerState.playbackPosition
                                     )
                                 } else {
                                     // Log why track might be null
@@ -225,11 +258,13 @@
 
                     override fun onFailure(error: Throwable) {
                         handleConnectionError(error)
+                        spotifyPreferences.setConnectionState(false)
                     }
                 })
 
             } catch (e: Exception) {
                 handleConnectionError(e)
+                spotifyPreferences.setConnectionState(false)
             }
         }
 
@@ -276,7 +311,13 @@
         }
 
         fun retry() {
-            _errorState.value = null
+            if (!spotifyPreferences.isEnabled()) {
+                Timber.d("Cannot retry - Spotify is not enabled")
+                return
+            }
+
+            Timber.d("Retrying Spotify connection")
+            disconnect()
             connect()
         }
 
@@ -300,6 +341,7 @@
                 spotifyAppRemote = null
                 _connectionState.value = ConnectionState.Disconnected
                 _playbackState.value = PlaybackState.Idle
+                spotifyPreferences.setConnectionState(false)
             }
         }
 
@@ -578,7 +620,8 @@
                             isPlaying = !state.isPaused,
                             trackName = state.track.name,
                             artistName = state.track.artist.name,
-                            trackDuration = state.track.duration
+                            trackDuration = state.track.duration,
+                            playbackPosition = state.playbackPosition
                         )
                         Timber.d("Updated playback state to: ${_playbackState.value}")
                     } else {
@@ -632,6 +675,72 @@
             }
         }
 
+        fun getCurrentUser(
+            callback: (SpotifyUser?) -> Unit,
+            errorCallback: (Throwable) -> Unit
+        ) {
+            val token = tokenManager.getAccessToken()
+            if (token == null) {
+                errorCallback(IllegalStateException("No access token available"))
+                return
+            }
+
+            // Use OkHttp or your preferred HTTP client
+            val client = OkHttpClient()
+            val request = Request.Builder()
+                .url("https://api.spotify.com/v1/me")
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+
+            client.newCall(request).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    errorCallback(e)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    if (!response.isSuccessful) {
+                        errorCallback(IOException("Unexpected response ${response.code}"))
+                        return
+                    }
+
+                    try {
+                        val json = JSONObject(response.body?.string() ?: "")
+                        val user = SpotifyUser(
+                            id = json.getString("id"),
+                            displayName = json.optString("display_name").takeIf { it.isNotEmpty() },
+                            email = json.optString("email").takeIf { it.isNotEmpty() },
+                            images = json.optJSONArray("images")?.let { imagesArray ->
+                                List(imagesArray.length()) { i ->
+                                    val imageObj = imagesArray.getJSONObject(i)
+                                    SpotifyUser.SpotifyImage(
+                                        url = imageObj.getString("url"),
+                                        width = imageObj.optInt("width").takeIf { it > 0 },
+                                        height = imageObj.optInt("height").takeIf { it > 0 }
+                                    )
+                                }
+                            }
+                        )
+                        callback(user)
+                    } catch (e: Exception) {
+                        errorCallback(e)
+                    }
+                }
+            })
+        }
+
+        data class SpotifyUser(
+            val id: String,
+            val displayName: String?,
+            val email: String?,
+            val images: List<SpotifyImage>?
+        ) {
+            data class SpotifyImage(
+                val url: String,
+                val width: Int?,
+                val height: Int?
+            )
+        }
+
         sealed class ConnectionState {
             object Connected : ConnectionState()
             object Disconnected : ConnectionState()
@@ -644,7 +753,8 @@
                 val isPlaying: Boolean = false,
                 val trackName: String = "",
                 val artistName: String = "",
-                val trackDuration: Long = 0
+                val trackDuration: Long,
+                val playbackPosition: Long
             ) : PlaybackState()
         }
 

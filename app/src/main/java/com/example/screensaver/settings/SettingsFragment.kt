@@ -34,6 +34,8 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -538,8 +540,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-
-
     private fun restoreSettingsState() {
         val currentState = appDataManager.getCurrentState()
 
@@ -597,6 +597,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     }
                 } else {
                     spotifyPreferences.setEnabled(false)
+                    spotifyPreferences.setConnectionState(false)
                     spotifyManager.disconnect()
                     true
                 }
@@ -705,21 +706,21 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 true
             }
 
-            // Set initial summary if a playlist is already selected
+            // Update initial preference description to show currently selected playlist
             spotifyPreferences.getSelectedPlaylist()?.let { uri ->
                 lifecycleScope.launch {
                     spotifyManager.getPlaylistInfo(
                         uri = uri,
                         callback = { playlist ->
-                            summary = playlist?.title ?: "Select Playlist"
+                            findPreference<Preference>("spotify_playlist")?.setSummary(playlist?.title ?: "Select playlist")
                         },
                         errorCallback = {
-                            summary = "Select Playlist"
+                            findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
                         }
                     )
                 }
             } ?: run {
-                summary = "Select Playlist"
+                setSummary("Select playlist")
             }
         }
 
@@ -732,11 +733,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         is SpotifyAuthManager.AuthState.Authenticated -> {
                             findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = true
                             spotifyPreferences.setEnabled(true)
+                            spotifyPreferences.setConnectionState(true)
                             spotifyManager.retry()
+                            updateSpotifyLoginSummary()
                         }
                         is SpotifyAuthManager.AuthState.Error -> {
                             findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
                             spotifyPreferences.setEnabled(false)
+                            spotifyPreferences.setConnectionState(false)
                             Toast.makeText(
                                 requireContext(),
                                 "Authentication failed: ${state.error.message}",
@@ -744,8 +748,37 @@ class SettingsFragment : PreferenceFragmentCompat() {
                             ).show()
                         }
                         else -> {
-                            findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
-                            spotifyPreferences.setEnabled(false)
+                            // Only update UI based on stored preference
+                            val isEnabled = spotifyPreferences.isEnabled()
+                            findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = isEnabled
+                            if (!isEnabled) {
+                                spotifyPreferences.setConnectionState(false)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Add a collector to update the preference description whenever the playlist changes
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                spotifyManager.connectionState.collect { state ->
+                    when (state) {
+                        is SpotifyManager.ConnectionState.Connected -> {
+                            spotifyPreferences.getSelectedPlaylist()?.let { uri ->
+                                spotifyManager.getPlaylistInfo(
+                                    uri = uri,
+                                    callback = { playlist ->
+                                        findPreference<Preference>("spotify_playlist")?.setSummary(playlist?.title ?: "Select playlist")
+                                    },
+                                    errorCallback = {
+                                        findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                                    }
+                                )
+                            }
+                        }
+                        else -> {
+                            // Keep current summary
                         }
                     }
                 }
@@ -772,21 +805,76 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     private fun updateSpotifyLoginSummary() {
         findPreference<Preference>("spotify_login")?.apply {
-            when (val state = spotifyAuthManager.authState.value) {
-                is SpotifyAuthManager.AuthState.Authenticated -> {
+            // First check if Spotify is enabled at all
+            if (!spotifyPreferences.isEnabled()) {
+                summary = "Not connected"
+                isEnabled = true
+                return@apply
+            }
+
+            // Then check the current connection state
+            when (val state = spotifyManager.connectionState.value) {
+                is SpotifyManager.ConnectionState.Connected -> {
+                    // Get user info when connected
+                    spotifyManager.getCurrentUser(
+                        callback = { user ->
+                            // Ensure we update UI on main thread
+                            Handler(Looper.getMainLooper()).post {
+                                // Double check we're still connected when callback returns
+                                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                                    val displayName = user?.displayName ?: user?.id
+                                    if (displayName != null) {
+                                        summary = "Connected as $displayName"
+                                    } else {
+                                        summary = "Connected to Spotify"
+                                    }
+                                    isEnabled = true
+                                }
+                            }
+                        },
+                        errorCallback = { error ->
+                            Handler(Looper.getMainLooper()).post {
+                                Timber.e(error, "Failed to get Spotify user info")
+                                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                                    summary = "Connected to Spotify"
+                                    isEnabled = true
+                                }
+                            }
+                        }
+                    )
+                    // Set temporary state while we fetch user info
                     summary = "Connected to Spotify"
                     isEnabled = true
                 }
-                is SpotifyAuthManager.AuthState.NotAuthenticated -> {
-                    summary = "Not connected"
+                is SpotifyManager.ConnectionState.Error -> {
+                    summary = "Connection error: ${(state.error.message ?: "Unknown error")}"
                     isEnabled = true
                 }
-                is SpotifyAuthManager.AuthState.Error -> {
-                    summary = "Error: ${state.error.message}"
+                is SpotifyManager.ConnectionState.Disconnected -> {
+                    val authState = spotifyAuthManager.authState.value
+                    summary = when {
+                        authState is SpotifyAuthManager.AuthState.Authenticated && spotifyPreferences.wasConnected() -> {
+                            "Disconnected - tap to reconnect"
+                        }
+                        authState is SpotifyAuthManager.AuthState.Authenticated -> {
+                            "Tap to connect"
+                        }
+                        else -> {
+                            "Not connected"
+                        }
+                    }
                     isEnabled = true
                 }
             }
+
+            Timber.d("""
+            Spotify login summary updated:
+            Connection state: ${spotifyManager.connectionState.value}
+            Auth state: ${spotifyAuthManager.authState.value}
+            Was connected: ${spotifyPreferences.wasConnected()}
+            Is enabled: ${spotifyPreferences.isEnabled()}
+            Current summary: $summary
+        """.trimIndent())
         }
     }
-
 }

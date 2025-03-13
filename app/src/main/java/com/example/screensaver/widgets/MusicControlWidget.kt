@@ -5,6 +5,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
+import android.widget.ProgressBar
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import com.example.screensaver.R
@@ -15,6 +16,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
 
 class MusicControlWidget(
     private val container: ViewGroup,
@@ -24,6 +27,8 @@ class MusicControlWidget(
     private var binding: MusicControlWidgetBinding? = null
     private var isVisible = false
     private val scope = CoroutineScope(Dispatchers.Main + Job())
+
+    private var progressUpdateJob: Job? = null
 
     companion object {
         private const val TAG = "MusicControlWidget"
@@ -228,6 +233,7 @@ class MusicControlWidget(
 
         if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
             Log.e(TAG, "Not updating state - Spotify not connected")
+            stopProgressUpdates()  // Add this
             return
         }
 
@@ -265,9 +271,25 @@ class MusicControlWidget(
                         isClickable = true
                         isFocusable = true
                     }
+
+                    // Update progress bar
+                    getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
+                        max = state.trackDuration.toInt()
+                        progress = state.playbackPosition.toInt()
+                        visibility = if (config.showProgress) View.VISIBLE else View.GONE
+                        Log.e(TAG, "Progress bar updated - duration: ${state.trackDuration}, position: ${state.playbackPosition}")
+                    }
+
+                    // Add progress update handling
+                    if (state.isPlaying) {
+                        startProgressUpdates()
+                    } else {
+                        stopProgressUpdates()
+                    }
                 }
                 SpotifyManager.PlaybackState.Idle -> {
                     Log.e(TAG, "Setting up Idle state UI")
+                    stopProgressUpdates()  // Add this
                     getTrackNameView()?.apply {
                         text = if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected)
                             "Select a track to play"
@@ -294,6 +316,13 @@ class MusicControlWidget(
                     getNextButton()?.apply {
                         isEnabled = false
                         isClickable = false
+                    }
+
+                    // Reset progress bar
+                    getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
+                        progress = 0
+                        visibility = if (config.showProgress) View.VISIBLE else View.GONE
+                        Log.e(TAG, "Progress bar reset to 0")
                     }
                 }
             }
@@ -362,6 +391,7 @@ class MusicControlWidget(
     override fun cleanup() {
         try {
             Log.d(TAG, "Starting music widget cleanup")
+            stopProgressUpdates() // Add this line
             binding?.getRootView()?.let { view ->
                 try {
                     (view.parent as? ViewGroup)?.removeView(view)
@@ -385,14 +415,30 @@ class MusicControlWidget(
     override fun updateConfiguration(config: WidgetConfig) {
         if (config !is WidgetConfig.MusicConfig) return
 
-        val oldPosition = this.config.position
+        Log.d(TAG, "Updating music widget configuration: $config")
+
+        val oldConfig = this.config
         this.config = config
 
-        if (oldPosition != config.position) {
-            updatePosition(config.position)
-        }
+        binding?.apply {
+            // Handle show music widget (enabled state)
+            if (config.enabled) show() else hide()
 
-        if (config.enabled) show() else hide()
+            // Handle controls visibility
+            getRootView()?.findViewById<ViewGroup>(R.id.controls_container)?.apply {
+                visibility = if (config.showControls) View.VISIBLE else View.GONE
+            }
+
+            // Handle progress visibility
+            getRootView()?.findViewById<View>(R.id.track_progress)?.apply {
+                visibility = if (config.showProgress) View.VISIBLE else View.GONE
+            }
+
+            // Update position if changed
+            if (oldConfig.position != config.position) {
+                updatePosition(config.position)
+            }
+        }
     }
 
     override fun updatePosition(position: WidgetPosition) {
@@ -437,6 +483,26 @@ class MusicControlWidget(
             view.layoutParams = params
             view.requestLayout()
         }
+    }
+
+    private fun startProgressUpdates() {
+        progressUpdateJob?.cancel() // Cancel any existing job
+        progressUpdateJob = scope.launch {
+            while (isActive) {
+                binding?.getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
+                    val currentState = spotifyManager.playbackState.value
+                    if (currentState is SpotifyManager.PlaybackState.Playing && currentState.isPlaying) {
+                        progress = (progress + 1000).coerceAtMost(max) // Update every second
+                    }
+                }
+                delay(1000) // Update every second
+            }
+        }
+    }
+
+    private fun stopProgressUpdates() {
+        progressUpdateJob?.cancel()
+        progressUpdateJob = null
     }
 
     private fun clearErrorState() {
