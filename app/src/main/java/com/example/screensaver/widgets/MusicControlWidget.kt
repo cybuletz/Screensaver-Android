@@ -6,13 +6,13 @@ import android.view.ViewGroup
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import com.example.screensaver.R
-import com.example.screensaver.music.PlaybackState
 import com.example.screensaver.music.SpotifyManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 class MusicControlWidget(
     private val container: ViewGroup,
@@ -36,6 +36,42 @@ class MusicControlWidget(
             }
             updateConfiguration(config)
 
+            // First observe connection state
+            scope.launch {
+                spotifyManager.connectionState.collect { state ->
+                    Log.d(TAG, "Connection state update: $state")
+                    when (state) {
+                        is SpotifyManager.ConnectionState.Connected -> {
+                            Log.d(TAG, "Spotify connected, enabling controls")
+                            clearErrorState()
+                            // Force refresh current state
+                            updatePlaybackState(spotifyManager.playbackState.value)
+                        }
+                        is SpotifyManager.ConnectionState.Disconnected -> {
+                            Log.d(TAG, "Spotify disconnected, disabling controls")
+                            updateErrorState("Spotify disconnected")
+                        }
+                        is SpotifyManager.ConnectionState.Error -> {
+                            Log.d(TAG, "Spotify connection error: ${state.error}")
+                            updateErrorState("Connection error")
+                        }
+                    }
+                }
+            }
+
+            // Then observe playback state
+            scope.launch {
+                spotifyManager.playbackState.collect { state ->
+                    Log.d(TAG, "Playback state update received: $state")
+                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                        Log.d(TAG, "Updating widget with new playback state")
+                        updatePlaybackState(state)
+                    } else {
+                        Log.d(TAG, "Ignoring playback state update - not connected")
+                    }
+                }
+            }
+
             if (config.enabled) {
                 show()
             } else {
@@ -46,39 +82,64 @@ class MusicControlWidget(
         }
     }
 
-
     private fun setupControls() {
+        Log.d(TAG, "Setting up music controls")
         binding?.apply {
-            getPlayPauseButton()?.setOnClickListener {
-                val currentState = spotifyManager.playbackState.value
-                when {
-                    currentState is SpotifyManager.PlaybackState.Playing && currentState.isPlaying -> {
-                        spotifyManager.pause()
+            getPlayPauseButton()?.also { button ->
+                Timber.d("Raw click on play/pause button, view enabled: ${view.isEnabled}")
+                Log.d(TAG, "Setting up play/pause button")
+                button.setOnClickListener {
+                    Log.d(TAG, "Play/Pause button clicked")
+                    if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
+                        Log.d(TAG, "Cannot control playback - Spotify not connected")
+                        spotifyManager.connect()
+                        return@setOnClickListener
                     }
-                    else -> {
-                        spotifyManager.resume()
+
+                    val currentState = spotifyManager.playbackState.value
+                    when {
+                        currentState is SpotifyManager.PlaybackState.Playing && currentState.isPlaying -> {
+                            Log.d(TAG, "Pausing playback")
+                            spotifyManager.pause()
+                        }
+                        else -> {
+                            Log.d(TAG, "Resuming playback")
+                            spotifyManager.resume()
+                        }
                     }
                 }
-            }
+            } ?: Log.e(TAG, "Play/pause button not found!")
 
-            getPreviousButton()?.setOnClickListener {
-                spotifyManager.previousTrack()
-            }
+            getPreviousButton()?.also { button ->
+                Timber.d("Raw click on previous button, view enabled: ${view.isEnabled}")
+                Log.d(TAG, "Setting up previous button")
+                button.setOnClickListener {
+                    Log.d(TAG, "Previous button clicked")
+                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                        spotifyManager.previousTrack()
+                    }
+                }
+            } ?: Log.e(TAG, "Previous button not found!")
 
-            getNextButton()?.setOnClickListener {
-                spotifyManager.nextTrack()
-            }
-        }
-
-        // Start observing playback state
-        scope.launch {
-            spotifyManager.playbackState.collect { state ->
-                updatePlaybackState(state)
-            }
+            getNextButton()?.also { button ->
+                Timber.d("Raw click on next button, view enabled: ${view.isEnabled}")
+                Log.d(TAG, "Setting up next button")
+                button.setOnClickListener {
+                    Log.d(TAG, "Next button clicked")
+                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                        spotifyManager.nextTrack()
+                    }
+                }
+            } ?: Log.e(TAG, "Next button not found!")
         }
     }
 
     private fun updatePlaybackState(state: SpotifyManager.PlaybackState) {
+        // Only update playback state if we're connected
+        if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
+            return
+        }
+
         binding?.apply {
             when (state) {
                 is SpotifyManager.PlaybackState.Playing -> {
@@ -88,11 +149,13 @@ class MusicControlWidget(
                         if (state.isPlaying) R.drawable.ic_music_pause
                         else R.drawable.ic_music_play
                     )
+                    clearErrorState()
                 }
                 SpotifyManager.PlaybackState.Idle -> {
-                    getTrackNameView()?.text = ""
+                    getTrackNameView()?.text = "No track playing"
                     getArtistNameView()?.text = ""
                     getPlayPauseButton()?.setImageResource(R.drawable.ic_music_play)
+                    clearErrorState()
                 }
             }
         }
@@ -108,7 +171,9 @@ class MusicControlWidget(
             Log.d(TAG, "Showing music widget")
             val rootView = binding.getRootView()
             rootView?.apply {
+                // Only add if not already added
                 if (parent == null) {
+                    Log.d(TAG, "Adding music widget view to container")
                     container.addView(this)
                 }
 
@@ -120,6 +185,7 @@ class MusicControlWidget(
                     updatePosition(config.position)
                     requestLayout()
                     invalidate()
+                    Log.d(TAG, "Music widget view configured and visible")
                 }
             }
         }
@@ -217,37 +283,11 @@ class MusicControlWidget(
         }
     }
 
-    private fun observeErrors() {
-        scope.launch {
-            spotifyManager.errorState.collect { error ->
-                when (error) {
-                    is SpotifyManager.SpotifyError.AppNotInstalled -> {
-                        updateErrorState("Spotify app not installed")
-                    }
-                    is SpotifyManager.SpotifyError.ConnectionFailed -> {
-                        updateErrorState("Connection failed")
-                        // Try to reconnect after delay
-                        kotlinx.coroutines.delay(5000)
-                        spotifyManager.connect()
-                    }
-                    is SpotifyManager.SpotifyError.PlaybackFailed -> {
-                        updateErrorState("Playback error")
-                        // Try to recover playback
-                        kotlinx.coroutines.delay(2000)
-                        spotifyManager.resume()
-                    }
-                    is SpotifyManager.SpotifyError.AuthenticationRequired -> {
-                        updateErrorState("Authentication failed")
-                    }
-                    is SpotifyManager.SpotifyError.PremiumRequired -> {
-                        updateErrorState("Premium account required")
-                    }
-                    null -> {
-                        // Clear error state
-                        clearErrorState()
-                    }
-                }
-            }
+    private fun clearErrorState() {
+        binding?.apply {
+            getPlayPauseButton()?.isEnabled = true
+            getPreviousButton()?.isEnabled = true
+            getNextButton()?.isEnabled = true
         }
     }
 
@@ -258,14 +298,6 @@ class MusicControlWidget(
             getPlayPauseButton()?.isEnabled = false
             getPreviousButton()?.isEnabled = false
             getNextButton()?.isEnabled = false
-        }
-    }
-
-    private fun clearErrorState() {
-        binding?.apply {
-            getPlayPauseButton()?.isEnabled = true
-            getPreviousButton()?.isEnabled = true
-            getNextButton()?.isEnabled = true
         }
     }
 }
