@@ -18,36 +18,39 @@
 
     <PreferenceCategory
         android:key="music_category"
-        android:title="Music Settings"
+        android:title="@string/pref_category_music"
+        style="@style/PreferenceCategoryStyle"
         app:iconSpaceReserved="false">
 
         <SwitchPreferenceCompat
-            android:defaultValue="false"
             android:key="spotify_enabled"
-            android:title="Enable Spotify"
-            android:summary="Play music from Spotify while screensaver is active"
-            app:iconSpaceReserved="false" />
+            android:title="@string/pref_spotify_enabled_title"
+            android:summary="@string/pref_spotify_enabled_summary"
+            android:icon="@drawable/ic_spotify"/>
+
+
 
         <Preference
+            android:defaultValue="false"
             android:key="spotify_login"
-            android:title="Spotify Account"
-            android:summary="Connect your Spotify Premium account"
-            app:iconSpaceReserved="false"
+            android:title="@string/pref_spotify_account_title"
+            android:summary="@string/pref_spotify_account_summary"
+            android:icon="@drawable/ic_music_note"
+            android:dependency="spotify_enabled"/>
+
+        <Preference
+            android:key="spotify_playlist"
+            android:title="@string/pref_spotify_playlist_title"
+            android:summary="@string/pref_spotify_playlist_summary"
+            android:icon="@drawable/ic_playlist"
             android:dependency="spotify_enabled" />
 
         <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="spotify_autoplay"
-            android:title="Autoplay"
-            android:summary="Automatically start playing when screensaver activates"
-            app:iconSpaceReserved="false"
-            android:dependency="spotify_enabled" />
-
-        <Preference
-            android:key="spotify_playlist"
-            android:title="Select Playlist"
-            android:summary="Choose which playlist to play"
-            app:iconSpaceReserved="false"
+            android:title="@string/pref_spotify_autoplay_title"
+            android:summary="@string/pref_spotify_autoplay_summary"
+            android:icon="@drawable/ic_play_circle"
             android:dependency="spotify_enabled" />
     </PreferenceCategory>
 

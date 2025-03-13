@@ -81,6 +81,15 @@ class SpotifyAuthManager @Inject constructor(
         return AuthorizationClient.createLoginActivityIntent(activity, request)
     }
 
+    override fun clearToken() {
+        secureStorage.removeSecurely(KEY_SPOTIFY_TOKEN)
+        _authState.value = AuthState.NotAuthenticated
+    }
+
+    override fun getAccessToken(): String? {
+        return secureStorage.getSecurely(KEY_SPOTIFY_TOKEN)
+    }
+
     fun handleAuthResponse(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode != REQUEST_CODE) {
             Timber.w("Received response for unknown request code: $requestCode")
@@ -171,11 +180,6 @@ class SpotifyAuthManager @Inject constructor(
         secureStorage.removeSecurely(KEY_SPOTIFY_TOKEN)
         _authState.value = AuthState.NotAuthenticated
         spotifyPreferences.setEnabled(false)
-    }
-
-    override fun clearToken() {
-        secureStorage.removeSecurely(KEY_SPOTIFY_TOKEN)
-        _authState.value = AuthState.NotAuthenticated
     }
 
     sealed class AuthState {

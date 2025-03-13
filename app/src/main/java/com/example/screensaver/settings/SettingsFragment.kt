@@ -34,6 +34,8 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -786,27 +788,68 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
 
             // Then check the current connection state
-            when (spotifyManager.connectionState.value) {
+            when (val state = spotifyManager.connectionState.value) {
                 is SpotifyManager.ConnectionState.Connected -> {
+                    // Get user info when connected
+                    spotifyManager.getCurrentUser(
+                        callback = { user ->
+                            // Ensure we update UI on main thread
+                            Handler(Looper.getMainLooper()).post {
+                                // Double check we're still connected when callback returns
+                                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                                    val displayName = user?.displayName ?: user?.id
+                                    if (displayName != null) {
+                                        summary = "Connected as $displayName"
+                                    } else {
+                                        summary = "Connected to Spotify"
+                                    }
+                                    isEnabled = true
+                                }
+                            }
+                        },
+                        errorCallback = { error ->
+                            Handler(Looper.getMainLooper()).post {
+                                Timber.e(error, "Failed to get Spotify user info")
+                                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                                    summary = "Connected to Spotify"
+                                    isEnabled = true
+                                }
+                            }
+                        }
+                    )
+                    // Set temporary state while we fetch user info
                     summary = "Connected to Spotify"
                     isEnabled = true
                 }
                 is SpotifyManager.ConnectionState.Error -> {
-                    summary = "Connection error"
+                    summary = "Connection error: ${(state.error.message ?: "Unknown error")}"
                     isEnabled = true
                 }
                 is SpotifyManager.ConnectionState.Disconnected -> {
-                    if (spotifyAuthManager.authState.value is SpotifyAuthManager.AuthState.Authenticated) {
-                        summary = "Disconnected - tap to reconnect"
-                        isEnabled = true
-                    } else {
-                        summary = "Not connected"
-                        isEnabled = true
+                    val authState = spotifyAuthManager.authState.value
+                    summary = when {
+                        authState is SpotifyAuthManager.AuthState.Authenticated && spotifyPreferences.wasConnected() -> {
+                            "Disconnected - tap to reconnect"
+                        }
+                        authState is SpotifyAuthManager.AuthState.Authenticated -> {
+                            "Tap to connect"
+                        }
+                        else -> {
+                            "Not connected"
+                        }
                     }
+                    isEnabled = true
                 }
             }
 
-            Timber.d("Spotify login summary updated: state=${spotifyManager.connectionState.value}")
+            Timber.d("""
+            Spotify login summary updated:
+            Connection state: ${spotifyManager.connectionState.value}
+            Auth state: ${spotifyAuthManager.authState.value}
+            Was connected: ${spotifyPreferences.wasConnected()}
+            Is enabled: ${spotifyPreferences.isEnabled()}
+            Current summary: $summary
+        """.trimIndent())
         }
     }
 }

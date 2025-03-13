@@ -1,38 +1,44 @@
-    package com.example.screensaver.music
+package com.example.screensaver.music
 
-    import android.app.Activity
-    import android.content.ContentValues.TAG
-    import android.content.Context
-    import android.content.Intent
-    import android.content.pm.PackageManager
-    import com.spotify.android.appremote.api.ConnectionParams
-    import com.spotify.android.appremote.api.Connector
-    import com.spotify.android.appremote.api.SpotifyAppRemote
-    import com.spotify.android.appremote.api.error.CouldNotFindSpotifyApp
-    import com.spotify.android.appremote.api.error.NotLoggedInException
-    import com.spotify.protocol.types.PlayerState
-    import dagger.hilt.android.qualifiers.ApplicationContext
-    import kotlinx.coroutines.flow.MutableStateFlow
-    import kotlinx.coroutines.flow.StateFlow
-    import timber.log.Timber
-    import javax.inject.Inject
-    import javax.inject.Singleton
-    import com.example.screensaver.BuildConfig
-    import com.example.screensaver.data.SecureStorage
-    import com.example.screensaver.music.SpotifyAuthManager.Companion
-    import kotlinx.coroutines.CoroutineScope
-    import kotlinx.coroutines.Dispatchers
-    import kotlinx.coroutines.SupervisorJob
-    import kotlinx.coroutines.launch
-    import kotlinx.coroutines.flow.asStateFlow
-    import com.spotify.android.appremote.api.error.UserNotAuthorizedException
-    import android.os.Handler
-    import android.os.Looper
-    import android.util.Log
-    import com.spotify.protocol.types.ListItem
-    import com.spotify.protocol.types.ListItems
-    import com.spotify.android.appremote.api.ConnectApi
-    import com.spotify.protocol.types.Repeat
+import android.app.Activity
+import android.content.ContentValues.TAG
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import com.spotify.android.appremote.api.ConnectionParams
+import com.spotify.android.appremote.api.ConnectApi
+import com.spotify.android.appremote.api.Connector
+import com.spotify.android.appremote.api.SpotifyAppRemote
+import com.spotify.android.appremote.api.error.CouldNotFindSpotifyApp
+import com.spotify.android.appremote.api.error.NotLoggedInException
+import com.spotify.android.appremote.api.error.UserNotAuthorizedException
+import com.spotify.protocol.types.ListItem
+import com.spotify.protocol.types.ListItems
+import com.spotify.protocol.types.PlayerState
+import com.spotify.protocol.types.Repeat
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import org.json.JSONObject
+import timber.log.Timber
+import java.io.IOException
+import com.example.screensaver.BuildConfig
+import com.example.screensaver.data.SecureStorage
 
     @Singleton
     class SpotifyManager @Inject constructor(
@@ -667,6 +673,72 @@
                 Timber.e(e, "Error initializing player")
                 _errorState.value = SpotifyError.PlaybackFailed(e)
             }
+        }
+
+        fun getCurrentUser(
+            callback: (SpotifyUser?) -> Unit,
+            errorCallback: (Throwable) -> Unit
+        ) {
+            val token = tokenManager.getAccessToken()
+            if (token == null) {
+                errorCallback(IllegalStateException("No access token available"))
+                return
+            }
+
+            // Use OkHttp or your preferred HTTP client
+            val client = OkHttpClient()
+            val request = Request.Builder()
+                .url("https://api.spotify.com/v1/me")
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+
+            client.newCall(request).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    errorCallback(e)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    if (!response.isSuccessful) {
+                        errorCallback(IOException("Unexpected response ${response.code}"))
+                        return
+                    }
+
+                    try {
+                        val json = JSONObject(response.body?.string() ?: "")
+                        val user = SpotifyUser(
+                            id = json.getString("id"),
+                            displayName = json.optString("display_name").takeIf { it.isNotEmpty() },
+                            email = json.optString("email").takeIf { it.isNotEmpty() },
+                            images = json.optJSONArray("images")?.let { imagesArray ->
+                                List(imagesArray.length()) { i ->
+                                    val imageObj = imagesArray.getJSONObject(i)
+                                    SpotifyUser.SpotifyImage(
+                                        url = imageObj.getString("url"),
+                                        width = imageObj.optInt("width").takeIf { it > 0 },
+                                        height = imageObj.optInt("height").takeIf { it > 0 }
+                                    )
+                                }
+                            }
+                        )
+                        callback(user)
+                    } catch (e: Exception) {
+                        errorCallback(e)
+                    }
+                }
+            })
+        }
+
+        data class SpotifyUser(
+            val id: String,
+            val displayName: String?,
+            val email: String?,
+            val images: List<SpotifyImage>?
+        ) {
+            data class SpotifyImage(
+                val url: String,
+                val width: Int?,
+                val height: Int?
+            )
         }
 
         sealed class ConnectionState {
