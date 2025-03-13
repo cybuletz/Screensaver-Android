@@ -255,6 +255,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             observeWidgetStates()
+            setupKeepScreenOnObserver()
 
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
@@ -648,6 +649,48 @@ class MainActivity : AppCompatActivity() {
                 startLockTask()
             }
         }
+    }
+
+    private fun updateKeepScreenOn() {
+        val keepScreenOn = PreferenceManager.getDefaultSharedPreferences(this)
+            .getBoolean("keep_screen_on", false)
+
+        // Keep screen on if preference is enabled AND either:
+        // 1. Photos are being displayed
+        // 2. Spotify is playing music
+        val shouldKeepScreenOn = keepScreenOn && (
+                photoDisplayManager.isScreensaverActive() ||
+                        (spotifyPreferences.isEnabled() &&
+                                spotifyManager.playbackState.value is SpotifyManager.PlaybackState.Playing)
+                )
+
+        window.addFlags(if (shouldKeepScreenOn)
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        else 0)
+
+        Log.d(TAG, "Screen keep-on updated: $shouldKeepScreenOn")
+    }
+
+    private fun setupKeepScreenOnObserver() {
+        // Initial state
+        updateKeepScreenOn()
+
+        // Observe Spotify playback state
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                spotifyManager.playbackState.collect { state ->
+                    updateKeepScreenOn()
+                }
+            }
+        }
+
+        // Observe preference changes
+        PreferenceManager.getDefaultSharedPreferences(this)
+            .registerOnSharedPreferenceChangeListener { _, key ->
+                if (key == "keep_screen_on") {
+                    updateKeepScreenOn()
+                }
+            }
     }
 
     private fun checkInitialChargingState() {
@@ -1070,6 +1113,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         if (secureStorage.shouldRemoveSecurityOnMinimize()) {
             Log.d(TAG, "Removing security settings on minimize")
@@ -1102,6 +1146,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         setupFullScreen()
+        updateKeepScreenOn()
 
         // Always check security on resume if enabled
         if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
