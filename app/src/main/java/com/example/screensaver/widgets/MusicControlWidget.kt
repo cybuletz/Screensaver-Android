@@ -1,8 +1,10 @@
 package com.example.screensaver.widgets
 
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import com.example.screensaver.R
@@ -29,45 +31,97 @@ class MusicControlWidget(
 
     override fun init() {
         try {
-            Log.d(TAG, "Initializing MusicControlWidget with config: $config")
+            Log.e(TAG, "Initializing MusicControlWidget with config: $config")
             binding = MusicControlWidgetBinding(container).apply {
                 inflate()
-                setupControls()
+
+                // Get direct references to the buttons
+                val playPauseButton = getRootView()?.findViewById<ImageButton>(R.id.play_pause_button)
+                val previousButton = getRootView()?.findViewById<ImageButton>(R.id.previous_button)
+                val nextButton = getRootView()?.findViewById<ImageButton>(R.id.next_button)
+
+                // Set up click listeners directly
+                playPauseButton?.setOnClickListener { view ->
+                    Log.e(TAG, "Play/Pause button direct click")
+                    when (spotifyManager.connectionState.value) {
+                        !is SpotifyManager.ConnectionState.Connected -> {
+                            Log.e(TAG, "Not connected - attempting to connect")
+                            spotifyManager.connect()
+                        }
+                        else -> {
+                            when (val state = spotifyManager.playbackState.value) {
+                                is SpotifyManager.PlaybackState.Playing -> {
+                                    if (state.isPlaying) spotifyManager.pause() else spotifyManager.resume()
+                                }
+                                is SpotifyManager.PlaybackState.Idle -> spotifyManager.resume()
+                            }
+                        }
+                    }
+                }
+
+                previousButton?.setOnClickListener { view ->
+                    Log.e(TAG, "Previous button direct click")
+                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                        view.isEnabled = false
+                        spotifyManager.previousTrack()
+                        view.postDelayed({ view.isEnabled = true }, 500)
+                    }
+                }
+
+                nextButton?.setOnClickListener { view ->
+                    Log.e(TAG, "Next button direct click")
+                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                        view.isEnabled = false
+                        spotifyManager.nextTrack()
+                        view.postDelayed({ view.isEnabled = true }, 500)
+                    }
+                }
+
+                // Enable all buttons
+                playPauseButton?.isEnabled = true
+                previousButton?.isEnabled = true
+                nextButton?.isEnabled = true
+
+                // Log button states
+                Log.e(TAG, """
+                Button states after direct setup:
+                Play/Pause - enabled: ${playPauseButton?.isEnabled}, clickable: ${playPauseButton?.isClickable}
+                Previous - enabled: ${previousButton?.isEnabled}, clickable: ${previousButton?.isClickable}
+                Next - enabled: ${nextButton?.isEnabled}, clickable: ${nextButton?.isClickable}
+            """.trimIndent())
             }
+
             updateConfiguration(config)
 
-            // First observe connection state
             scope.launch {
                 spotifyManager.connectionState.collect { state ->
-                    Log.d(TAG, "Connection state update: $state")
+                    Log.e(TAG, "Connection state update: $state")
                     when (state) {
                         is SpotifyManager.ConnectionState.Connected -> {
-                            Log.d(TAG, "Spotify connected, enabling controls")
+                            Log.e(TAG, "Spotify connected, enabling controls")
                             clearErrorState()
-                            // Force refresh current state
                             updatePlaybackState(spotifyManager.playbackState.value)
                         }
                         is SpotifyManager.ConnectionState.Disconnected -> {
-                            Log.d(TAG, "Spotify disconnected, disabling controls")
+                            Log.e(TAG, "Spotify disconnected, disabling controls")
                             updateErrorState("Spotify disconnected")
                         }
                         is SpotifyManager.ConnectionState.Error -> {
-                            Log.d(TAG, "Spotify connection error: ${state.error}")
+                            Log.e(TAG, "Spotify connection error: ${state.error}")
                             updateErrorState("Connection error")
                         }
                     }
                 }
             }
 
-            // Then observe playback state
             scope.launch {
                 spotifyManager.playbackState.collect { state ->
-                    Log.d(TAG, "Playback state update received: $state")
+                    Log.e(TAG, "Playback state update received: $state")
                     if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
-                        Log.d(TAG, "Updating widget with new playback state")
+                        Log.e(TAG, "Updating widget with new playback state")
                         updatePlaybackState(state)
                     } else {
-                        Log.d(TAG, "Ignoring playback state update - not connected")
+                        Log.e(TAG, "Ignoring playback state update - not connected")
                     }
                 }
             }
@@ -83,77 +137,182 @@ class MusicControlWidget(
     }
 
     private fun setupControls() {
-        Log.d(TAG, "Setting up music controls")
+        Log.e(TAG, "setupControls() called with binding = ${binding != null}")
         binding?.apply {
             getPlayPauseButton()?.also { button ->
-                Log.d(TAG, "Setting up play/pause button")
+                Log.e(TAG, "Setting up play/pause button")
                 button.setOnClickListener {
-                    Log.d(TAG, "Play/Pause button clicked")
-                    if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
-                        Log.d(TAG, "Cannot control playback - Spotify not connected")
-                        spotifyManager.connect()
-                        return@setOnClickListener
-                    }
+                    Log.e(TAG, "Play/Pause button clicked")
+                    Log.e(TAG, "Current Spotify connection state: ${spotifyManager.connectionState.value}")
+                    Log.e(TAG, "Current playback state: ${spotifyManager.playbackState.value}")
 
-                    val currentState = spotifyManager.playbackState.value
-                    when {
-                        currentState is SpotifyManager.PlaybackState.Playing && currentState.isPlaying -> {
-                            Log.d(TAG, "Pausing playback")
-                            spotifyManager.pause()
+                    when (val connectionState = spotifyManager.connectionState.value) {
+                        !is SpotifyManager.ConnectionState.Connected -> {
+                            Log.e(TAG, "Not connected - attempting to connect")
+                            spotifyManager.connect()
                         }
                         else -> {
-                            Log.d(TAG, "Resuming playback")
-                            spotifyManager.resume()
+                            Log.e(TAG, "Connected - handling playback state")
+                            val playbackState = spotifyManager.playbackState.value
+                            Log.e(TAG, "Current playback state details: $playbackState")
+
+                            when (playbackState) {
+                                is SpotifyManager.PlaybackState.Playing -> {
+                                    if (playbackState.isPlaying) {
+                                        Log.e(TAG, "Currently playing - calling pause()")
+                                        spotifyManager.pause()
+                                    } else {
+                                        Log.e(TAG, "Currently paused - calling resume()")
+                                        spotifyManager.resume()
+                                    }
+                                }
+                                is SpotifyManager.PlaybackState.Idle -> {
+                                    Log.e(TAG, "Currently idle - calling resume()")
+                                    spotifyManager.resume()
+                                }
+                                else -> {
+                                    Log.e(TAG, "Unknown playback state: $playbackState")
+                                }
+                            }
                         }
                     }
                 }
-            } ?: Log.e(TAG, "Play/pause button not found!")
+            }
 
             getPreviousButton()?.also { button ->
-                Log.d(TAG, "Setting up previous button")
+                Log.e(TAG, "Setting up previous button")
                 button.setOnClickListener {
-                    Log.d(TAG, "Previous button clicked")
+                    Log.e(TAG, "Previous button clicked")
+                    Log.e(TAG, "Current Spotify connection state: ${spotifyManager.connectionState.value}")
                     if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                        Log.e(TAG, "Connected - calling previousTrack()")
+                        button.isEnabled = false
                         spotifyManager.previousTrack()
+                        button.postDelayed({
+                            button.isEnabled = true
+                            Log.e(TAG, "Previous button re-enabled")
+                        }, 500)
+                    } else {
+                        Log.e(TAG, "Not connected - cannot play previous track")
                     }
                 }
-            } ?: Log.e(TAG, "Previous button not found!")
+            }
 
             getNextButton()?.also { button ->
-                Log.d(TAG, "Setting up next button")
+                Log.e(TAG, "Setting up next button")
                 button.setOnClickListener {
-                    Log.d(TAG, "Next button clicked")
+                    Log.e(TAG, "Next button clicked")
+                    Log.e(TAG, "Current Spotify connection state: ${spotifyManager.connectionState.value}")
                     if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                        Log.e(TAG, "Connected - calling nextTrack()")
+                        button.isEnabled = false
                         spotifyManager.nextTrack()
+                        button.postDelayed({
+                            button.isEnabled = true
+                            Log.e(TAG, "Next button re-enabled")
+                        }, 500)
+                    } else {
+                        Log.e(TAG, "Not connected - cannot play next track")
                     }
                 }
-            } ?: Log.e(TAG, "Next button not found!")
+            }
         }
+
+        // Verify initial states
+        Log.e(TAG, "Initial Spotify connection state: ${spotifyManager.connectionState.value}")
+        Log.e(TAG, "Initial playback state: ${spotifyManager.playbackState.value}")
     }
 
     private fun updatePlaybackState(state: SpotifyManager.PlaybackState) {
-        // Only update playback state if we're connected
+        Log.e(TAG, "Updating playback state: $state")
+
         if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
+            Log.e(TAG, "Not updating state - Spotify not connected")
             return
         }
 
         binding?.apply {
             when (state) {
                 is SpotifyManager.PlaybackState.Playing -> {
-                    getTrackNameView()?.text = state.trackName
-                    getArtistNameView()?.text = state.artistName
-                    getPlayPauseButton()?.setImageResource(
-                        if (state.isPlaying) R.drawable.ic_music_pause
-                        else R.drawable.ic_music_play
-                    )
-                    clearErrorState()
+                    Log.e(TAG, "Setting up Playing state UI")
+                    getTrackNameView()?.apply {
+                        text = state.trackName
+                        isSelected = true
+                    }
+                    getArtistNameView()?.apply {
+                        text = state.artistName
+                        isSelected = true
+                    }
+                    getPlayPauseButton()?.apply {
+                        Log.e(TAG, "Configuring play/pause button - isEnabled will be true")
+                        setImageResource(
+                            if (state.isPlaying) R.drawable.ic_music_pause
+                            else R.drawable.ic_music_play
+                        )
+                        isEnabled = true
+                        isClickable = true
+                        isFocusable = true
+                    }
+                    getPreviousButton()?.apply {
+                        Log.e(TAG, "Configuring previous button - isEnabled will be true")
+                        isEnabled = true
+                        isClickable = true
+                        isFocusable = true
+                    }
+                    getNextButton()?.apply {
+                        Log.e(TAG, "Configuring next button - isEnabled will be true")
+                        isEnabled = true
+                        isClickable = true
+                        isFocusable = true
+                    }
                 }
                 SpotifyManager.PlaybackState.Idle -> {
-                    getTrackNameView()?.text = "No track playing"
-                    getArtistNameView()?.text = ""
-                    getPlayPauseButton()?.setImageResource(R.drawable.ic_music_play)
-                    clearErrorState()
+                    Log.e(TAG, "Setting up Idle state UI")
+                    getTrackNameView()?.apply {
+                        text = if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected)
+                            "Select a track to play"
+                        else
+                            "Not connected"
+                        isSelected = false
+                    }
+                    getArtistNameView()?.apply {
+                        text = ""
+                        isSelected = false
+                    }
+                    getPlayPauseButton()?.apply {
+                        val shouldBeEnabled = spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected
+                        Log.e(TAG, "Configuring play/pause button - isEnabled will be $shouldBeEnabled")
+                        setImageResource(R.drawable.ic_music_play)
+                        isEnabled = shouldBeEnabled
+                        isClickable = shouldBeEnabled
+                        isFocusable = shouldBeEnabled
+                    }
+                    getPreviousButton()?.apply {
+                        isEnabled = false
+                        isClickable = false
+                    }
+                    getNextButton()?.apply {
+                        isEnabled = false
+                        isClickable = false
+                    }
                 }
+            }
+        } ?: Log.e(TAG, "Binding is null during updatePlaybackState!")
+    }
+
+    private fun updateButtonState(enabled: Boolean) {
+        binding?.apply {
+            getPlayPauseButton()?.apply {
+                isEnabled = enabled
+                alpha = if (enabled) 1.0f else 0.7f
+            }
+            getPreviousButton()?.apply {
+                isEnabled = enabled
+                alpha = if (enabled) 1.0f else 0.7f
+            }
+            getNextButton()?.apply {
+                isEnabled = enabled
+                alpha = if (enabled) 1.0f else 0.7f
             }
         }
     }
@@ -281,20 +440,14 @@ class MusicControlWidget(
     }
 
     private fun clearErrorState() {
-        binding?.apply {
-            getPlayPauseButton()?.isEnabled = true
-            getPreviousButton()?.isEnabled = true
-            getNextButton()?.isEnabled = true
-        }
+        updateButtonState(true)
     }
 
     private fun updateErrorState(message: String) {
         binding?.apply {
             getTrackNameView()?.text = message
             getArtistNameView()?.text = ""
-            getPlayPauseButton()?.isEnabled = false
-            getPreviousButton()?.isEnabled = false
-            getNextButton()?.isEnabled = false
         }
+        updateButtonState(false)
     }
 }
