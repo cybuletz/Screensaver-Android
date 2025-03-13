@@ -70,7 +70,8 @@ class SpotifyAuthManager @Inject constructor(
                 "playlist-read-collaborative",
                 "app-remote-control",
                 "user-read-playback-state",
-                "user-modify-playback-state"
+                "user-modify-playback-state",
+                "user-read-currently-playing"
             ))
             setShowDialog(true)
         }

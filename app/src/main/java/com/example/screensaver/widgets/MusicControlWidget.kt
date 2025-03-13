@@ -86,7 +86,6 @@ class MusicControlWidget(
         Log.d(TAG, "Setting up music controls")
         binding?.apply {
             getPlayPauseButton()?.also { button ->
-                Timber.d("Raw click on play/pause button, view enabled: ${view.isEnabled}")
                 Log.d(TAG, "Setting up play/pause button")
                 button.setOnClickListener {
                     Log.d(TAG, "Play/Pause button clicked")
@@ -111,7 +110,6 @@ class MusicControlWidget(
             } ?: Log.e(TAG, "Play/pause button not found!")
 
             getPreviousButton()?.also { button ->
-                Timber.d("Raw click on previous button, view enabled: ${view.isEnabled}")
                 Log.d(TAG, "Setting up previous button")
                 button.setOnClickListener {
                     Log.d(TAG, "Previous button clicked")
@@ -122,7 +120,6 @@ class MusicControlWidget(
             } ?: Log.e(TAG, "Previous button not found!")
 
             getNextButton()?.also { button ->
-                Timber.d("Raw click on next button, view enabled: ${view.isEnabled}")
                 Log.d(TAG, "Setting up next button")
                 button.setOnClickListener {
                     Log.d(TAG, "Next button clicked")
