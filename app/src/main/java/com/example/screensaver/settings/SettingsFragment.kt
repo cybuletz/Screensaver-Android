@@ -706,21 +706,21 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 true
             }
 
-            // Set initial summary if a playlist is already selected
+            // Update initial preference description to show currently selected playlist
             spotifyPreferences.getSelectedPlaylist()?.let { uri ->
                 lifecycleScope.launch {
                     spotifyManager.getPlaylistInfo(
                         uri = uri,
                         callback = { playlist ->
-                            summary = playlist?.title ?: "Select Playlist"
+                            findPreference<Preference>("spotify_playlist")?.setSummary(playlist?.title ?: "Select playlist")
                         },
                         errorCallback = {
-                            summary = "Select Playlist"
+                            findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
                         }
                     )
                 }
             } ?: run {
-                summary = "Select Playlist"
+                setSummary("Select playlist")
             }
         }
 
@@ -754,6 +754,31 @@ class SettingsFragment : PreferenceFragmentCompat() {
                             if (!isEnabled) {
                                 spotifyPreferences.setConnectionState(false)
                             }
+                        }
+                    }
+                }
+            }
+        }
+        // Add a collector to update the preference description whenever the playlist changes
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                spotifyManager.connectionState.collect { state ->
+                    when (state) {
+                        is SpotifyManager.ConnectionState.Connected -> {
+                            spotifyPreferences.getSelectedPlaylist()?.let { uri ->
+                                spotifyManager.getPlaylistInfo(
+                                    uri = uri,
+                                    callback = { playlist ->
+                                        findPreference<Preference>("spotify_playlist")?.setSummary(playlist?.title ?: "Select playlist")
+                                    },
+                                    errorCallback = {
+                                        findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                                    }
+                                )
+                            }
+                        }
+                        else -> {
+                            // Keep current summary
                         }
                     }
                 }
