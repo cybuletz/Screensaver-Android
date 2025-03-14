@@ -347,6 +347,12 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         true
                     }
 
+                    findPreference<Preference>("common_settings")?.setOnPreferenceClickListener {
+                        CommonSettingsDialog.newInstance()
+                            .show(childFragmentManager, "common_settings")
+                        true
+                    }
+
                     findPreference<ListPreference>("cache_size")?.setOnPreferenceChangeListener { _, newValue ->
                         val size = (newValue as String).toInt()
                         photoCache.setMaxCachedPhotos(size)

@@ -11,7 +11,7 @@
         android:id="@+id/dialog_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/pref_category_display"
+        android:text="@string/pref_category_common"
         style="@style/DialogTitleStyle"
         android:background="@drawable/dialog_title_background"/>
 
@@ -21,11 +21,11 @@
         android:clipToPadding="false"
         android:paddingBottom="70dp"
         android:layout_marginTop="?actionBarSize"
-        android:contentDescription="@string/display_settings_scroll_area"
+        android:contentDescription="@string/common_settings_scroll_area"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <FrameLayout
-            android:id="@+id/display_settings_container"
+            android:id="@+id/common_settings_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="200dp"
