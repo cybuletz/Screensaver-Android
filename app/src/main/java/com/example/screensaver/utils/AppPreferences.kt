@@ -394,4 +394,16 @@ class AppPreferences @Inject constructor(
         _virtualAlbumsFlow.value = getVirtualAlbums()
     }
 
+    fun getScreenOrientation(): ScreenOrientation {
+        val value = prefs.getString(PreferenceKeys.SCREEN_ORIENTATION, "SYSTEM") ?: "SYSTEM"
+        return try {
+            ScreenOrientation.valueOf(value)
+        } catch (e: Exception) {
+            ScreenOrientation.SYSTEM
+        }
+    }
+
+    fun setScreenOrientation(orientation: ScreenOrientation) {
+        prefs.edit().putString(PreferenceKeys.SCREEN_ORIENTATION, orientation.name).apply()
+    }
 }

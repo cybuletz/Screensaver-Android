@@ -158,21 +158,21 @@
             android:summary="@string/pref_keep_screen_on_summary"
             android:defaultValue="false"/>
 
-        <SeekBarPreference
-            android:key="brightness"
-            android:title="@string/pref_brightness_title"
-            android:summary="@string/pref_brightness_summary"
-            app:min="0"
-            android:max="100"
-            android:defaultValue="50"/>
+        <Preference
+            android:key="brightness_settings"
+            android:title="Brightness Settings"
+            android:icon="@drawable/ic_brightness"
+            android:summary="Control screen brightness" />
 
         <ListPreference
-            android:key="orientation"
-            android:title="@string/pref_orientation_title"
-            android:summary="@string/pref_orientation_summary"
-            android:entries="@array/orientation_options"
-            android:entryValues="@array/orientation_options_values"
-            android:defaultValue="auto" />
+            android:defaultValue="SYSTEM"
+            android:entries="@array/screen_orientation_entries"
+            android:entryValues="@array/screen_orientation_values"
+            android:key="screen_orientation"
+            android:title="Screen Orientation"
+            android:summary="%s"
+            android:icon="@drawable/ic_screen_rotation"
+            app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
     <PreferenceCategory
