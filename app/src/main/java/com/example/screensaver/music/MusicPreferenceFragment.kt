@@ -115,11 +115,9 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                     }
                     MUSIC_SOURCE_LOCAL -> {
                         // Disable local music if needed
-                        // Add any cleanup needed for local music
                     }
                     MUSIC_SOURCE_RADIO -> {
                         // Disable radio if needed
-                        // Add any cleanup needed for radio
                     }
                 }
 
@@ -128,14 +126,17 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             }
         }
 
-        setupSpotifyPreferences()
         updateVisiblePreferences(currentMusicSource)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        setupSpotifyPreferences()
+        setupSpotifyObservers()
+    }
 
-        // Single auth state observer
+    private fun setupSpotifyObservers() {
+        // Auth state observer
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 spotifyAuthManager.authState.collect { state ->
@@ -165,13 +166,12 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                             }
                         }
                     }
-                    // Update visibility after auth state changes
                     updateVisiblePreferences(currentMusicSource)
                 }
             }
         }
 
-        // Single connection state observer that handles both login summary and playlist updates
+        // Connection state observer
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 spotifyManager.connectionState.collect { state ->
@@ -203,8 +203,6 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                             }
                         }
                     }
-                    // Update visibility after connection state changes
-                    updateVisiblePreferences(currentMusicSource)
                 }
             }
         }
