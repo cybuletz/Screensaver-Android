@@ -32,13 +32,9 @@ import com.example.screensaver.data.PhotoCache
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
-import android.content.Context
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.view.WindowManager
-import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -63,13 +59,8 @@ import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyAuthManager
 import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.utils.BrightnessManager
-import com.example.screensaver.utils.PreferenceKeys
-import com.example.screensaver.utils.ScreenOrientation
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.slider.Slider
-import com.google.android.material.switchmaterial.SwitchMaterial
 import timber.log.Timber
-import android.provider.Settings
 
 
 @AndroidEntryPoint
@@ -342,28 +333,16 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         true
                     }
 
-                    findPreference<Preference>("brightness_settings")?.apply {
-                        setOnPreferenceClickListener {
-                            showBrightnessDialog()
-                            true
-                        }
-
-                        // Update summary to show current brightness state
-                        updateBrightnessSummary()
+                    findPreference<Preference>("display_settings")?.setOnPreferenceClickListener {
+                        DisplaySettingsDialog.newInstance()
+                            .show(childFragmentManager, "display_settings")
+                        true
                     }
 
-                    findPreference<ListPreference>(PreferenceKeys.SCREEN_ORIENTATION)?.apply {
-                        setOnPreferenceChangeListener { _, newValue ->
-                            try {
-                                val orientation = ScreenOrientation.valueOf(newValue as String)
-                                activity?.requestedOrientation = orientation.value
-                                true
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error setting orientation", e)
-                                Toast.makeText(context, "Failed to set orientation", Toast.LENGTH_SHORT).show()
-                                false
-                            }
-                        }
+                    findPreference<Preference>("common_settings")?.setOnPreferenceClickListener {
+                        PhotoShowSettingsDialog.newInstance()
+                            .show(childFragmentManager, "common_settings")
+                        true
                     }
 
                     findPreference<ListPreference>("cache_size")?.setOnPreferenceChangeListener { _, newValue ->
@@ -591,77 +570,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 .getString("cache_size", "10")
 
         Log.d(TAG, "General settings state restored")
-    }
-
-    private fun checkWriteSettingsPermission(): Boolean {
-        return requireContext().let { context ->
-            if (!Settings.System.canWrite(context)) {
-                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-                    data = Uri.parse("package:" + context.packageName)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(intent)
-                false
-            } else {
-                true
-            }
-        }
-    }
-
-    private fun showBrightnessDialog() {
-        if (!checkWriteSettingsPermission()) {
-            Toast.makeText(requireContext(), "Permission needed to control brightness", Toast.LENGTH_LONG).show()
-            return
-        }
-        val dialog = MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Screen Brightness")
-            .setView(R.layout.dialog_brightness_settings)
-            .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
-            .create()
-
-        dialog.show()
-
-        // Get references to views
-        val brightnessSwitch = dialog.findViewById<SwitchMaterial>(R.id.custom_brightness)!!
-        val brightnessSlider = dialog.findViewById<Slider>(R.id.brightness_slider)!!
-        val brightnessValue = dialog.findViewById<TextView>(R.id.brightness_value)!!
-
-        // Set initial states
-        brightnessSwitch.isChecked = brightnessManager.isCustomBrightnessEnabled()
-        brightnessSlider.value = brightnessManager.getCurrentBrightness().toFloat()
-        brightnessSlider.isEnabled = brightnessSwitch.isChecked
-        brightnessValue.text = "${brightnessManager.getCurrentBrightness()}%"
-
-        // Handle switch changes
-        brightnessSwitch.setOnCheckedChangeListener { _, isChecked ->
-            brightnessSlider.isEnabled = isChecked
-            if (isChecked) {
-                brightnessManager.setBrightness(requireActivity().window, brightnessSlider.value.toInt())
-            } else {
-                brightnessManager.resetBrightness(requireActivity().window)
-            }
-            updateBrightnessSummary()
-        }
-
-        // Handle slider changes
-        brightnessSlider.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
-                val brightness = value.toInt()
-                brightnessValue.text = "$brightness%"
-                if (brightnessSwitch.isChecked) {
-                    brightnessManager.setBrightness(requireActivity().window, brightness)
-                }
-                updateBrightnessSummary()
-            }
-        }
-    }
-
-    private fun updateBrightnessSummary() {
-        findPreference<Preference>("brightness_settings")?.summary = if (brightnessManager.isCustomBrightnessEnabled()) {
-            "Custom: ${brightnessManager.getCurrentBrightness()}%"
-        } else {
-            "Using system brightness"
-        }
     }
 
     private fun observeAppState() {
