@@ -31,6 +31,8 @@ import android.view.KeyEvent
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.view.inputmethod.EditorInfo
+import com.example.screensaver.ScreensaverApplication
+import com.example.screensaver.widgets.WidgetManager
 
 
 @AndroidEntryPoint
@@ -56,6 +58,9 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var radioPreferences: RadioPreferences
+
+    @Inject
+    lateinit var widgetManager: WidgetManager
 
     private var currentMusicSource: String = MUSIC_SOURCE_SPOTIFY
 
@@ -141,6 +146,11 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                 // Update UI immediately
                 updateVisiblePreferences(newSource)
                 setupRadioPreferences()
+
+                view?.post {
+                    widgetManager.updateMusicWidgetBasedOnSource()
+                }
+
                 true
             }
         }
@@ -148,6 +158,9 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         // Initialize preferences
         updateVisiblePreferences(currentMusicSource)
         setupRadioPreferences()
+
+        // Check initial state for widget visibility
+        widgetManager.updateMusicWidgetBasedOnSource()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -286,6 +299,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         try {
                             val authIntent = spotifyAuthManager.getAuthIntent(requireActivity())
                             spotifyAuthLauncher.launch(authIntent)
+                            // Simply use the injected widgetManager
+                            widgetManager.updateMusicWidgetBasedOnSource()
                             false
                         } catch (e: Exception) {
                             Toast.makeText(
@@ -548,6 +563,9 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
                 if (!enabled) {
                     radioManager.disconnect()
+                } else {
+                    // Update music widget visibility when radio is enabled
+                    widgetManager.updateMusicWidgetBasedOnSource()
                 }
                 true
             }

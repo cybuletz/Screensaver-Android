@@ -6,7 +6,7 @@
         android:key="keep_screen_on"
         android:title="@string/pref_keep_screen_on_title"
         android:summary="@string/pref_keep_screen_on_summary"
-        android:defaultValue="false"/>
+        android:defaultValue="true"/>
 
     <Preference
         android:key="brightness_settings"

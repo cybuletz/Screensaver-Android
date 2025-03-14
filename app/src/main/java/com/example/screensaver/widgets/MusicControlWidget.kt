@@ -13,6 +13,7 @@ import com.example.screensaver.R
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.RadioManager
 import com.example.screensaver.music.RadioPreferences
+import com.example.screensaver.music.SpotifyPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,6 +27,7 @@ class MusicControlWidget(
     private val container: ViewGroup,
     var config: WidgetConfig.MusicConfig,
     private val spotifyManager: SpotifyManager,
+    private val spotifyPreferences: SpotifyPreferences,
     private val radioManager: RadioManager,
     private val radioPreferences: RadioPreferences
 ) : ScreenWidget {
@@ -179,6 +181,15 @@ class MusicControlWidget(
     private fun getMusicSource(): String {
         return PreferenceManager.getDefaultSharedPreferences(container.context)
             .getString("music_source", MUSIC_SOURCE_SPOTIFY) ?: MUSIC_SOURCE_SPOTIFY
+    }
+
+    private fun isMusicSourceEnabled(): Boolean {
+        val source = getMusicSource()
+        return when (source) {
+            MUSIC_SOURCE_SPOTIFY -> spotifyPreferences.isEnabled()
+            MUSIC_SOURCE_RADIO -> radioPreferences.isEnabled()
+            else -> false
+        }
     }
 
     private fun handleSpotifyPlayPause() {
@@ -383,23 +394,27 @@ class MusicControlWidget(
         }
     }
 
-    // Your existing methods remain unchanged
     override fun update() {
         // Not needed for music widget as it updates via state observation
     }
 
     override fun show() {
-        isVisible = true
+        if (isVisible) {
+            Log.d(TAG, "Widget already visible, skipping show()")
+            return
+        }
+
         binding?.let { binding ->
             Log.d(TAG, "Showing music widget")
             val rootView = binding.getRootView()
             rootView?.apply {
-                // Only add if not already added
-                if (parent == null) {
-                    Log.d(TAG, "Adding music widget view to container")
-                    container.addView(this)
-                }
+                // Remove from parent if already attached
+                (parent as? ViewGroup)?.removeView(this)
 
+                // Add to container
+                container.addView(this)
+
+                // Configure view
                 post {
                     visibility = View.VISIBLE
                     background = ContextCompat.getDrawable(context, R.drawable.widget_background)
@@ -412,6 +427,7 @@ class MusicControlWidget(
                 }
             }
         }
+        isVisible = true
     }
 
     override fun hide() {
@@ -464,23 +480,31 @@ class MusicControlWidget(
         this.config = config
 
         binding?.apply {
-            // Handle show music widget (enabled state)
-            if (config.enabled) show() else hide()
-
-            // Handle controls visibility
-            getRootView()?.findViewById<ViewGroup>(R.id.controls_container)?.apply {
-                visibility = if (config.showControls) View.VISIBLE else View.GONE
+            // Handle visibility immediately
+            if (config.enabled != oldConfig.enabled) {
+                if (config.enabled) show() else hide()
             }
 
-            // Handle progress visibility
-            getRootView()?.findViewById<View>(R.id.track_progress)?.apply {
-                visibility = if (config.showProgress && getMusicSource() == MUSIC_SOURCE_SPOTIFY)
-                    View.VISIBLE else View.GONE
-            }
+            getRootView()?.apply {
+                // Handle controls visibility
+                findViewById<ViewGroup>(R.id.controls_container)?.apply {
+                    visibility = if (config.showControls) View.VISIBLE else View.GONE
+                }
 
-            // Update position if changed
-            if (oldConfig.position != config.position) {
-                updatePosition(config.position)
+                // Handle progress visibility
+                findViewById<View>(R.id.track_progress)?.apply {
+                    visibility = if (config.showProgress && getMusicSource() == MUSIC_SOURCE_SPOTIFY)
+                        View.VISIBLE else View.GONE
+                }
+
+                // Update position if changed
+                if (oldConfig.position != config.position) {
+                    updatePosition(config.position)
+                }
+
+                // Force layout update
+                requestLayout()
+                invalidate()
             }
         }
     }
