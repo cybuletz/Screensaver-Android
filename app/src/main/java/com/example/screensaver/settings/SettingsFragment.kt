@@ -32,10 +32,13 @@ import com.example.screensaver.data.PhotoCache
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.view.WindowManager
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -59,8 +62,14 @@ import com.example.screensaver.PhotoRepository.PhotoAddMode
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyAuthManager
 import com.example.screensaver.music.SpotifyPreferences
+import com.example.screensaver.utils.BrightnessManager
+import com.example.screensaver.utils.PreferenceKeys
+import com.example.screensaver.utils.ScreenOrientation
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.slider.Slider
+import com.google.android.material.switchmaterial.SwitchMaterial
 import timber.log.Timber
+import android.provider.Settings
 
 
 @AndroidEntryPoint
@@ -106,6 +115,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var spotifyAuthManager: SpotifyAuthManager
+
+    @Inject
+    lateinit var brightnessManager: BrightnessManager
 
     private var widgetPreferenceFragment: WidgetPreferenceFragment? = null
 
@@ -328,6 +340,30 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     findPreference<Preference>("manage_photos")?.setOnPreferenceClickListener {
                         startActivity(Intent(requireContext(), PhotoManagerActivity::class.java))
                         true
+                    }
+
+                    findPreference<Preference>("brightness_settings")?.apply {
+                        setOnPreferenceClickListener {
+                            showBrightnessDialog()
+                            true
+                        }
+
+                        // Update summary to show current brightness state
+                        updateBrightnessSummary()
+                    }
+
+                    findPreference<ListPreference>(PreferenceKeys.SCREEN_ORIENTATION)?.apply {
+                        setOnPreferenceChangeListener { _, newValue ->
+                            try {
+                                val orientation = ScreenOrientation.valueOf(newValue as String)
+                                activity?.requestedOrientation = orientation.value
+                                true
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error setting orientation", e)
+                                Toast.makeText(context, "Failed to set orientation", Toast.LENGTH_SHORT).show()
+                                false
+                            }
+                        }
                     }
 
                     findPreference<ListPreference>("cache_size")?.setOnPreferenceChangeListener { _, newValue ->
@@ -557,6 +593,77 @@ class SettingsFragment : PreferenceFragmentCompat() {
         Log.d(TAG, "General settings state restored")
     }
 
+    private fun checkWriteSettingsPermission(): Boolean {
+        return requireContext().let { context ->
+            if (!Settings.System.canWrite(context)) {
+                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                    data = Uri.parse("package:" + context.packageName)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+                false
+            } else {
+                true
+            }
+        }
+    }
+
+    private fun showBrightnessDialog() {
+        if (!checkWriteSettingsPermission()) {
+            Toast.makeText(requireContext(), "Permission needed to control brightness", Toast.LENGTH_LONG).show()
+            return
+        }
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Screen Brightness")
+            .setView(R.layout.dialog_brightness_settings)
+            .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
+            .create()
+
+        dialog.show()
+
+        // Get references to views
+        val brightnessSwitch = dialog.findViewById<SwitchMaterial>(R.id.custom_brightness)!!
+        val brightnessSlider = dialog.findViewById<Slider>(R.id.brightness_slider)!!
+        val brightnessValue = dialog.findViewById<TextView>(R.id.brightness_value)!!
+
+        // Set initial states
+        brightnessSwitch.isChecked = brightnessManager.isCustomBrightnessEnabled()
+        brightnessSlider.value = brightnessManager.getCurrentBrightness().toFloat()
+        brightnessSlider.isEnabled = brightnessSwitch.isChecked
+        brightnessValue.text = "${brightnessManager.getCurrentBrightness()}%"
+
+        // Handle switch changes
+        brightnessSwitch.setOnCheckedChangeListener { _, isChecked ->
+            brightnessSlider.isEnabled = isChecked
+            if (isChecked) {
+                brightnessManager.setBrightness(requireActivity().window, brightnessSlider.value.toInt())
+            } else {
+                brightnessManager.resetBrightness(requireActivity().window)
+            }
+            updateBrightnessSummary()
+        }
+
+        // Handle slider changes
+        brightnessSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val brightness = value.toInt()
+                brightnessValue.text = "$brightness%"
+                if (brightnessSwitch.isChecked) {
+                    brightnessManager.setBrightness(requireActivity().window, brightness)
+                }
+                updateBrightnessSummary()
+            }
+        }
+    }
+
+    private fun updateBrightnessSummary() {
+        findPreference<Preference>("brightness_settings")?.summary = if (brightnessManager.isCustomBrightnessEnabled()) {
+            "Custom: ${brightnessManager.getCurrentBrightness()}%"
+        } else {
+            "Using system brightness"
+        }
+    }
+
     private fun observeAppState() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -672,7 +779,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 spotifyManager.getPlaylists(
                     callback = { playlists ->
                         loadingDialog.dismiss()
-                        Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})" }}")
+                        Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})"}}")
 
                         MaterialAlertDialogBuilder(requireContext())
                             .setTitle("Select Playlist")
@@ -681,7 +788,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
                                 Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
 
                                 spotifyPreferences.setSelectedPlaylist(selectedPlaylist.uri)
-                                Timber.d("Saved playlist URI: ${spotifyPreferences.getSelectedPlaylist()}")
+                                // Just save the title for now
+                                spotifyPreferences.setPlaylistSummary(selectedPlaylist.title)
 
                                 summary = selectedPlaylist.title
                                 Toast.makeText(
@@ -707,20 +815,27 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
 
             // Update initial preference description to show currently selected playlist
-            spotifyPreferences.getSelectedPlaylist()?.let { uri ->
-                lifecycleScope.launch {
-                    spotifyManager.getPlaylistInfo(
-                        uri = uri,
-                        callback = { playlist ->
-                            findPreference<Preference>("spotify_playlist")?.setSummary(playlist?.title ?: "Select playlist")
-                        },
-                        errorCallback = {
-                            findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
-                        }
-                    )
-                }
+            spotifyPreferences.getPlaylistSummary()?.let { savedSummary ->
+                setSummary(savedSummary)
             } ?: run {
-                setSummary("Select playlist")
+                // If no summary is saved, try to get playlist info from Spotify
+                spotifyPreferences.getSelectedPlaylist()?.let { uri ->
+                    lifecycleScope.launch {
+                        spotifyManager.getPlaylistInfo(
+                            uri = uri,
+                            callback = { playlist ->
+                                val summary = playlist?.title ?: "Select playlist"
+                                spotifyPreferences.setPlaylistSummary(summary)  // Save the summary
+                                findPreference<Preference>("spotify_playlist")?.setSummary(summary)
+                            },
+                            errorCallback = {
+                                findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                            }
+                        )
+                    }
+                } ?: run {
+                    setSummary("Select playlist")
+                }
             }
         }
 
@@ -765,20 +880,32 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 spotifyManager.connectionState.collect { state ->
                     when (state) {
                         is SpotifyManager.ConnectionState.Connected -> {
-                            spotifyPreferences.getSelectedPlaylist()?.let { uri ->
-                                spotifyManager.getPlaylistInfo(
-                                    uri = uri,
-                                    callback = { playlist ->
-                                        findPreference<Preference>("spotify_playlist")?.setSummary(playlist?.title ?: "Select playlist")
-                                    },
-                                    errorCallback = {
-                                        findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
-                                    }
-                                )
+                            // First try to use the saved summary
+                            val savedSummary = spotifyPreferences.getPlaylistSummary()
+                            if (savedSummary != null) {
+                                findPreference<Preference>("spotify_playlist")?.setSummary(savedSummary)
+                            } else {
+                                // Only fetch from Spotify if we don't have a saved summary
+                                spotifyPreferences.getSelectedPlaylist()?.let { uri ->
+                                    spotifyManager.getPlaylistInfo(
+                                        uri = uri,
+                                        callback = { playlist ->
+                                            val summary = playlist?.title ?: "Select playlist"
+                                            spotifyPreferences.setPlaylistSummary(summary)  // Save the summary
+                                            findPreference<Preference>("spotify_playlist")?.setSummary(summary)
+                                        },
+                                        errorCallback = {
+                                            findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                                        }
+                                    )
+                                }
                             }
                         }
                         else -> {
-                            // Keep current summary
+                            // Keep current summary from preferences
+                            spotifyPreferences.getPlaylistSummary()?.let { savedSummary ->
+                                findPreference<Preference>("spotify_playlist")?.setSummary(savedSummary)
+                            }
                         }
                     }
                 }

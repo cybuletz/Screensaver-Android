@@ -1,7 +1,7 @@
 package com.example.screensaver.utils
 
 object PreferenceKeys {
-    const val DEVICE_ADMIN_ACTIVE = "device_admin_active"
-    const val DISPLAY_MODE = "display_mode_selection"
-    const val DISPLAY_MODE_LOCK = "lock_screen"
+    const val USE_CUSTOM_BRIGHTNESS = "use_custom_brightness"
+    const val BRIGHTNESS_LEVEL = "brightness_level"
+    const val SCREEN_ORIENTATION = "screen_orientation"
 }

@@ -22,6 +22,7 @@ class SpotifyPreferences @Inject constructor(
         private const val PREF_SELECTED_PLAYLIST = "spotify_selected_playlist"
         private const val PREF_LAST_VOLUME = "spotify_last_volume"
         private const val PREF_CONNECTION_STATE = "spotify_connection_state"
+        private const val PREF_PLAYLIST_SUMMARY = "spotify_playlist_summary"
     }
 
     private val preferences: SharedPreferences by lazy {
@@ -73,5 +74,16 @@ class SpotifyPreferences @Inject constructor(
         preferences.edit()
             .putFloat(PREF_LAST_VOLUME, volume)
             .apply()
+    }
+
+    fun getPlaylistSummary(): String? =
+        secureStorage.getSecurely(PREF_PLAYLIST_SUMMARY)
+
+    fun setPlaylistSummary(summary: String?) {
+        if (summary != null) {
+            secureStorage.saveSecurely(PREF_PLAYLIST_SUMMARY, summary)
+        } else {
+            secureStorage.removeSecurely(PREF_PLAYLIST_SUMMARY)
+        }
     }
 }

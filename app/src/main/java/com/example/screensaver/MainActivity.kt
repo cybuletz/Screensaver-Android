@@ -28,6 +28,7 @@ import com.example.screensaver.ui.SettingsButtonController
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.shared.GooglePhotosManager
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.os.BatteryManager
 import android.net.Uri
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -41,6 +42,8 @@ import com.example.screensaver.widgets.WidgetManager
 import com.example.screensaver.widgets.WidgetState
 import com.example.screensaver.widgets.WidgetType
 import android.content.res.Configuration
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -48,6 +51,9 @@ import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.photos.PhotoManagerViewModel
+import com.example.screensaver.utils.BrightnessManager
+import com.example.screensaver.utils.PreferenceKeys
+import com.example.screensaver.utils.ScreenOrientation
 
 
 @AndroidEntryPoint
@@ -95,6 +101,9 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var spotifyPreferences: SpotifyPreferences
 
+    @Inject
+    lateinit var brightnessManager: BrightnessManager
+
     private var isDestroyed = false
 
     private var isAuthenticating = false
@@ -117,59 +126,6 @@ class MainActivity : AppCompatActivity() {
         private const val PHOTO_TRANSITION_DELAY = 500L
         private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
         private const val SECURITY_CHECK_DELAY = 500L
-    }
-
-    private fun enableFullScreen() {
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.attributes.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
-
-        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
-
-        // Add a listener to maintain fullscreen when system UI visibility changes
-        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
-            if (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
-                // The system bars are visible. Make any desired adjustments.
-                window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
-            }
-        }
-    }
-
-    private fun observeSecurityState() {
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
-                    checkSecurityWithCallback {
-                        // Continue with normal app flow
-                        continueWithAuthenticated()
-                    }
-                }
-            }
-        }
-    }
-
-    private fun observeSecurityPreferences() {
-        lifecycleScope.launch {
-            securityPreferences.securityEnabledFlow.collect { isEnabled ->
-                if (isEnabled) {
-                    setupSecurityLock()
-                } else {
-                    clearSecurityState()
-                }
-            }
-        }
     }
 
     private fun continueWithAuthenticated() {
@@ -256,6 +212,11 @@ class MainActivity : AppCompatActivity() {
 
             observeWidgetStates()
             setupKeepScreenOnObserver()
+            updateOrientation()
+
+            if (brightnessManager.isCustomBrightnessEnabled()) {
+                brightnessManager.startMonitoring(window)
+            }
 
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
@@ -320,6 +281,31 @@ class MainActivity : AppCompatActivity() {
                         WidgetType.WEATHER -> handleWeatherWidgetState(data)
                         WidgetType.MUSIC -> handleMusicWidgetState(data)
                     }
+                }
+            }
+        }
+    }
+
+    private fun observeSecurityState() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
+                    checkSecurityWithCallback {
+                        // Continue with normal app flow
+                        continueWithAuthenticated()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun observeSecurityPreferences() {
+        lifecycleScope.launch {
+            securityPreferences.securityEnabledFlow.collect { isEnabled ->
+                if (isEnabled) {
+                    setupSecurityLock()
+                } else {
+                    clearSecurityState()
                 }
             }
         }
@@ -651,6 +637,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun enableFullScreen() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+
+        // Add a listener to maintain fullscreen when system UI visibility changes
+        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+            if (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
+                // The system bars are visible. Make any desired adjustments.
+                window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        or View.SYSTEM_UI_FLAG_FULLSCREEN
+                        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+            }
+        }
+    }
+
     private fun updateKeepScreenOn() {
         val keepScreenOn = PreferenceManager.getDefaultSharedPreferences(this)
             .getBoolean("keep_screen_on", false)
@@ -669,6 +683,20 @@ class MainActivity : AppCompatActivity() {
         else 0)
 
         Log.d(TAG, "Screen keep-on updated: $shouldKeepScreenOn")
+    }
+
+    private fun updateOrientation() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val orientationValue = prefs.getString(PreferenceKeys.SCREEN_ORIENTATION, "SYSTEM") ?: "SYSTEM"
+
+        try {
+            val orientation = ScreenOrientation.valueOf(orientationValue)
+            requestedOrientation = orientation.value
+            Log.d(TAG, "Screen orientation set to: $orientationValue")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting orientation", e)
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
     }
 
     private fun setupKeepScreenOnObserver() {
@@ -979,6 +1007,11 @@ class MainActivity : AppCompatActivity() {
             } else {
                 enableFullScreen()  // Maintain fullscreen even without security
             }
+
+            // Add brightness management after security checks
+            if (brightnessManager.isCustomBrightnessEnabled()) {
+                brightnessManager.startMonitoring(window)
+            }
         }
     }
 
@@ -1114,6 +1147,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        brightnessManager.stopMonitoring()
 
         if (secureStorage.shouldRemoveSecurityOnMinimize()) {
             Log.d(TAG, "Removing security settings on minimize")
@@ -1167,6 +1201,13 @@ class MainActivity : AppCompatActivity() {
 
         if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
             spotifyManager.connect()
+        }
+
+        if (brightnessManager.isCustomBrightnessEnabled()) {
+            // Small delay to ensure window is ready
+            Handler(Looper.getMainLooper()).postDelayed({
+                brightnessManager.startMonitoring(window)
+            }, 100)
         }
     }
 
@@ -1293,5 +1334,4 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error clearing security state", e)
         }
     }
-
 }

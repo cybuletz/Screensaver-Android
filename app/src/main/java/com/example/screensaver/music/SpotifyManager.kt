@@ -675,10 +675,7 @@ import com.example.screensaver.data.SecureStorage
             }
         }
 
-        fun getCurrentUser(
-            callback: (SpotifyUser?) -> Unit,
-            errorCallback: (Throwable) -> Unit
-        ) {
+        fun getCurrentUser(callback: (SpotifyUser?) -> Unit, errorCallback: (Throwable) -> Unit) {
             val token = tokenManager.getAccessToken()
             if (token == null) {
                 errorCallback(IllegalStateException("No access token available"))
