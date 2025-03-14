@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <ListPreference
+        android:key="music_source"
+        android:title="@string/pref_music_source_title"
+        android:summary="%s"
+        android:entries="@array/music_source_entries"
+        android:entryValues="@array/music_source_values"
+        android:defaultValue="spotify"/>
+
+    <!-- Spotify Settings -->
+    <SwitchPreferenceCompat
+        android:key="spotify_enabled"
+        android:title="@string/pref_spotify_enabled_title"
+        android:summary="@string/pref_spotify_enabled_summary"
+        android:icon="@drawable/ic_spotify"
+        app:isPreferenceVisible="false"/>
+
+
+    <Preference
+        android:key="spotify_login"
+        android:title="@string/pref_spotify_account_title"
+        android:summary="@string/pref_spotify_account_summary"
+        android:icon="@drawable/ic_music_note"
+        app:isPreferenceVisible="false"/>
+
+    <Preference
+        android:key="spotify_playlist"
+        android:title="@string/pref_spotify_playlist_title"
+        android:summary="@string/pref_spotify_playlist_summary"
+        android:icon="@drawable/ic_playlist"
+        app:isPreferenceVisible="false"/>
+
+    <SwitchPreferenceCompat
+        android:key="spotify_autoplay"
+        android:title="@string/pref_spotify_autoplay_title"
+        android:summary="@string/pref_spotify_autoplay_summary"
+        android:icon="@drawable/ic_play_circle"
+        android:defaultValue="false"
+        app:isPreferenceVisible="false"/>
+
+    <!-- Local Music Settings -->
+    <Preference
+        android:key="local_music_folder"
+        android:title="@string/pref_local_music_folder_title"
+        android:summary="@string/pref_local_music_folder_summary"
+        android:icon="@drawable/ic_folder_music"
+        app:isPreferenceVisible="false"/>
+
+    <!-- Radio Settings -->
+    <EditTextPreference
+        android:key="radio_url"
+        android:title="@string/pref_radio_url_title"
+        android:summary="@string/pref_radio_url_summary"
+        android:icon="@drawable/ic_radio"
+        app:isPreferenceVisible="false"/>
+
+</PreferenceScreen>

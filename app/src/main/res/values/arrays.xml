@@ -223,6 +223,19 @@
         <item>passcode</item>
     </string-array>
 
+    <!-- Music source arrays -->
+    <string-array name="music_source_entries">
+        <item>Spotify</item>
+        <item>Local Music</item>
+        <item>Internet Radio</item>
+    </string-array>
+
+    <string-array name="music_source_values">
+        <item>spotify</item>
+        <item>local</item>
+        <item>radio</item>
+    </string-array>
+
     <!-- Empty Array for Dynamic Content -->
     <string-array name="empty_array"/>
 </resources>
