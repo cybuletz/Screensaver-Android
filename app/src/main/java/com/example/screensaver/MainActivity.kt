@@ -691,7 +691,7 @@ class MainActivity : AppCompatActivity() {
 
         try {
             val orientation = ScreenOrientation.valueOf(orientationValue)
-            requestedOrientation = orientation.value
+            requestedOrientation = orientation.androidValue
             Log.d(TAG, "Screen orientation set to: $orientationValue")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting orientation", e)

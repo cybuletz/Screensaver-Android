@@ -1,8 +1,10 @@
 package com.example.screensaver.utils
 
-enum class ScreenOrientation(val value: Int) {
-    SYSTEM(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED),
-    PORTRAIT(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT),
-    LANDSCAPE(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE),
-    AUTO_ROTATE(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR)
+import android.content.pm.ActivityInfo
+
+enum class ScreenOrientation(val androidValue: Int) {
+    SYSTEM(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED),
+    PORTRAIT(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT),
+    LANDSCAPE(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE),
+    AUTO_ROTATE(ActivityInfo.SCREEN_ORIENTATION_SENSOR)
 }

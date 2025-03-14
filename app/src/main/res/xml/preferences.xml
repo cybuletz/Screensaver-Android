@@ -148,31 +148,15 @@
 
     <PreferenceCategory
         android:title="@string/pref_category_display"
-        android:key="display_settings"
+        android:key="display_settings_category"
         style="@style/PreferenceCategoryStyle"
         app:iconSpaceReserved="false">
 
-        <SwitchPreferenceCompat
-            android:key="keep_screen_on"
-            android:title="@string/pref_keep_screen_on_title"
-            android:summary="@string/pref_keep_screen_on_summary"
-            android:defaultValue="false"/>
-
         <Preference
-            android:key="brightness_settings"
-            android:title="Brightness Settings"
-            android:icon="@drawable/ic_brightness"
-            android:summary="Control screen brightness" />
-
-        <ListPreference
-            android:defaultValue="SYSTEM"
-            android:entries="@array/screen_orientation_entries"
-            android:entryValues="@array/screen_orientation_values"
-            android:key="screen_orientation"
-            android:title="Screen Orientation"
-            android:summary="%s"
-            android:icon="@drawable/ic_screen_rotation"
-            app:useSimpleSummaryProvider="true" />
+            android:key="display_settings"
+            android:title="@string/pref_category_display"
+            android:summary="@string/pref_display_summary"
+            android:icon="@drawable/ic_display" />
     </PreferenceCategory>
 
     <PreferenceCategory
