@@ -6,7 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import android.view.LayoutInflater
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,6 +24,14 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.textfield.TextInputEditText
+import android.view.KeyEvent
+import android.widget.ProgressBar
+import android.widget.TextView
+import android.view.inputmethod.EditorInfo
+
 
 @AndroidEntryPoint
 class MusicPreferenceFragment : PreferenceFragmentCompat() {
@@ -42,6 +50,12 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var spotifyPreferences: SpotifyPreferences
+
+    @Inject
+    lateinit var radioManager: RadioManager
+
+    @Inject
+    lateinit var radioPreferences: RadioPreferences
 
     private var currentMusicSource: String = MUSIC_SOURCE_SPOTIFY
 
@@ -117,16 +131,23 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         // Disable local music if needed
                     }
                     MUSIC_SOURCE_RADIO -> {
-                        // Disable radio if needed
+                        disableRadio()
                     }
                 }
 
+                // Important: Update current source before updating preferences
+                currentMusicSource = newSource
+
+                // Update UI immediately
                 updateVisiblePreferences(newSource)
+                setupRadioPreferences()
                 true
             }
         }
 
+        // Initialize preferences
         updateVisiblePreferences(currentMusicSource)
+        setupRadioPreferences()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -211,15 +232,18 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
     private fun updateVisiblePreferences(musicSource: String) {
         Timber.d("Updating visible preferences for music source: $musicSource")
 
-        // First hide ALL preferences
+        // Hide ALL preferences first
         findPreference<Preference>("spotify_enabled")?.isVisible = false
         findPreference<Preference>("spotify_login")?.isVisible = false
         findPreference<Preference>("spotify_playlist")?.isVisible = false
         findPreference<Preference>("spotify_autoplay")?.isVisible = false
         findPreference<Preference>("local_music_folder")?.isVisible = false
-        findPreference<Preference>("radio_url")?.isVisible = false
+        findPreference<Preference>("radio_enabled")?.isVisible = false
+        findPreference<Preference>("radio_station_search")?.isVisible = false
+        findPreference<Preference>("radio_favorites")?.isVisible = false
+        findPreference<Preference>("radio_recent")?.isVisible = false
 
-        // Then show only the relevant ones based on selected source
+        // Show only the relevant ones based on selected source
         when (musicSource) {
             MUSIC_SOURCE_SPOTIFY -> {
                 findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isVisible = true
@@ -228,16 +252,25 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                 findPreference<Preference>("spotify_playlist")?.isVisible = showSpotifyOptions
                 findPreference<Preference>("spotify_autoplay")?.isVisible = showSpotifyOptions
             }
+            MUSIC_SOURCE_RADIO -> {
+                // Show radio switch first
+                findPreference<SwitchPreferenceCompat>("radio_enabled")?.isVisible = true
+
+                // Check if radio is enabled
+                val radioEnabled = radioPreferences.isEnabled()
+
+                // Show options if radio is enabled
+                findPreference<Preference>("radio_station_search")?.isVisible = radioEnabled
+                findPreference<Preference>("radio_favorites")?.isVisible = radioEnabled
+                findPreference<Preference>("radio_recent")?.isVisible = radioEnabled
+
+                // Force preference screen to redraw
+                preferenceScreen.notifyDependencyChange(false)
+            }
             MUSIC_SOURCE_LOCAL -> {
                 findPreference<Preference>("local_music_folder")?.isVisible = true
             }
-            MUSIC_SOURCE_RADIO -> {
-                findPreference<Preference>("radio_url")?.isVisible = true
-            }
         }
-
-        // Update current source AFTER handling visibility
-        currentMusicSource = musicSource
     }
 
     private fun setupSpotifyPreferences() {
@@ -498,6 +531,234 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun setupRadioPreferences() {
+        // Radio Enable Switch
+        findPreference<SwitchPreferenceCompat>("radio_enabled")?.apply {
+            isChecked = radioPreferences.isEnabled()
+            setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                radioPreferences.setEnabled(enabled)
+
+                // Force immediate UI update
+                findPreference<Preference>("radio_station_search")?.isVisible = enabled
+                findPreference<Preference>("radio_favorites")?.isVisible = enabled
+                findPreference<Preference>("radio_recent")?.isVisible = enabled
+
+                if (!enabled) {
+                    radioManager.disconnect()
+                }
+                true
+            }
+        }
+
+        // Station Search
+        findPreference<Preference>("radio_station_search")?.apply {
+            isVisible = radioPreferences.isEnabled()
+            setOnPreferenceClickListener {
+                if (radioPreferences.isEnabled()) {
+                    showStationSearchDialog()
+                } else {
+                    Toast.makeText(requireContext(), "Please enable radio first", Toast.LENGTH_SHORT).show()
+                }
+                true
+            }
+        }
+
+        // Recent Stations
+        findPreference<Preference>("radio_recent")?.apply {
+            isVisible = radioPreferences.isEnabled()
+            setOnPreferenceClickListener {
+                if (radioPreferences.isEnabled()) {
+                    showRecentStationsDialog()
+                } else {
+                    Toast.makeText(requireContext(), "Please enable radio first", Toast.LENGTH_SHORT).show()
+                }
+                true
+            }
+        }
+
+        // Favorites Management
+        findPreference<Preference>("radio_favorites")?.apply {
+            isVisible = radioPreferences.isEnabled()
+            setOnPreferenceClickListener {
+                if (radioPreferences.isEnabled()) {
+                    showFavoritesDialog()
+                } else {
+                    Toast.makeText(requireContext(), "Please enable radio first", Toast.LENGTH_SHORT).show()
+                }
+                true
+            }
+        }
+    }
+
+    private fun showStationSearchDialog() {
+        val dialogView = LayoutInflater.from(requireContext())
+            .inflate(R.layout.dialog_radio_station_search, null)
+
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Search Radio Stations")
+            .setView(dialogView)
+            .create()
+
+        val searchInput = dialogView.findViewById<TextInputEditText>(R.id.search_input)
+        val stationsList = dialogView.findViewById<RecyclerView>(R.id.stations_list)
+        val loadingIndicator = dialogView.findViewById<ProgressBar>(R.id.loading_indicator)
+        val noResultsText = dialogView.findViewById<TextView>(R.id.no_results_text)
+
+        // Create adapter reference that can be captured by lambda
+        lateinit var stationsAdapter: RadioStationAdapter
+
+        stationsAdapter = RadioStationAdapter(
+            onStationClick = { station ->
+                radioManager.playStation(station)
+                radioPreferences.setLastStation(station)
+                dialog.dismiss()
+            },
+            onFavoriteClick = { station ->
+                val favorites = radioPreferences.getFavoriteStations().toMutableList()
+                if (favorites.any { it.id == station.id }) {
+                    favorites.removeAll { it.id == station.id }
+                    Toast.makeText(requireContext(), "Removed from favorites", Toast.LENGTH_SHORT).show()
+                } else {
+                    favorites.add(station)
+                    Toast.makeText(requireContext(), "Added to favorites", Toast.LENGTH_SHORT).show()
+                }
+                radioPreferences.saveFavoriteStations(favorites)
+                stationsAdapter.notifyDataSetChanged()
+            },
+            getFavoriteStatus = { station ->
+                radioPreferences.getFavoriteStations().any { it.id == station.id }
+            }
+        )
+
+        stationsList.layoutManager = LinearLayoutManager(context)
+        stationsList.adapter = stationsAdapter
+
+        searchInput.setOnEditorActionListener { _, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH ||
+                (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)) {
+
+                val query = searchInput.text?.toString() ?: ""
+                if (query.length >= 3) {
+                    loadingIndicator.visibility = View.VISIBLE
+                    stationsList.visibility = View.GONE
+                    noResultsText.visibility = View.GONE
+
+                    radioManager.searchStations(query) { stations ->
+                        loadingIndicator.visibility = View.GONE
+                        if (stations.isEmpty()) {
+                            noResultsText.visibility = View.VISIBLE
+                            stationsList.visibility = View.GONE
+                        } else {
+                            noResultsText.visibility = View.GONE
+                            stationsList.visibility = View.VISIBLE
+                            stationsAdapter.submitList(stations)
+                        }
+                    }
+                }
+                true
+            } else false
+        }
+
+        dialog.show()
+    }
+
+    private fun showRecentStationsDialog() {
+        val dialogView = LayoutInflater.from(requireContext())
+            .inflate(R.layout.dialog_radio_stations_list, null)
+
+        val stationsList = dialogView.findViewById<RecyclerView>(R.id.stations_list)
+
+        // Create adapter reference that can be captured by lambda
+        lateinit var recentAdapter: RadioStationAdapter
+
+        recentAdapter = RadioStationAdapter(
+            onStationClick = { station ->
+                radioManager.playStation(station)
+                radioPreferences.setLastStation(station)
+                radioPreferences.addToRecentStations(station)
+            },
+            onFavoriteClick = { station ->
+                val favorites = radioPreferences.getFavoriteStations().toMutableList()
+                if (favorites.any { it.id == station.id }) {
+                    favorites.removeAll { it.id == station.id }
+                    Toast.makeText(requireContext(), "Removed from favorites", Toast.LENGTH_SHORT).show()
+                } else {
+                    favorites.add(station)
+                    Toast.makeText(requireContext(), "Added to favorites", Toast.LENGTH_SHORT).show()
+                }
+                radioPreferences.saveFavoriteStations(favorites)
+                recentAdapter.notifyDataSetChanged()
+            },
+            getFavoriteStatus = { station ->
+                radioPreferences.getFavoriteStations().any { it.id == station.id }
+            }
+        )
+
+        stationsList.layoutManager = LinearLayoutManager(context)
+        stationsList.adapter = recentAdapter
+
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Recent Stations")
+            .setView(dialogView)
+            .setPositiveButton("Close", null)
+            .create()
+
+        dialog.show()
+
+        // Load and display the recent stations
+        val recentStations = radioPreferences.getRecentStations()
+        if (recentStations.isEmpty()) {
+            Toast.makeText(requireContext(), "No recent stations", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        } else {
+            recentAdapter.submitList(recentStations)
+        }
+    }
+
+    private fun showFavoritesDialog() {
+        val dialogView = LayoutInflater.from(requireContext())
+            .inflate(R.layout.dialog_radio_favorites, null)
+
+        val stationsList = dialogView.findViewById<RecyclerView>(R.id.stations_list)
+
+        // Create adapter reference that can be captured by lambda
+        lateinit var favoritesAdapter: RadioStationAdapter
+
+        favoritesAdapter = RadioStationAdapter(
+            onStationClick = { station ->
+                radioManager.playStation(station)
+                radioPreferences.setLastStation(station)
+            },
+            onFavoriteClick = { station ->
+                val favorites = radioPreferences.getFavoriteStations().toMutableList()
+                favorites.removeAll { it.id == station.id }
+                radioPreferences.saveFavoriteStations(favorites)
+                favoritesAdapter.submitList(radioPreferences.getFavoriteStations())
+                Toast.makeText(requireContext(), "Removed from favorites", Toast.LENGTH_SHORT).show()
+            },
+            getFavoriteStatus = { true }
+        )
+
+        stationsList.layoutManager = LinearLayoutManager(context)
+        stationsList.adapter = favoritesAdapter
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Favorite Stations")
+            .setView(dialogView)
+            .setPositiveButton("Close", null)
+            .show()
+
+        favoritesAdapter.submitList(radioPreferences.getFavoriteStations())
+    }
+
+    private fun disableRadio() {
+        if (radioPreferences.isEnabled()) {
+            radioPreferences.setEnabled(false)
+            radioManager.disconnect()
+        }
     }
 
     fun applyChanges() {

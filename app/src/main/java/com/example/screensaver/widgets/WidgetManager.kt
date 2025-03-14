@@ -11,6 +11,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
 import android.view.ViewGroup
+import com.example.screensaver.music.RadioManager
+import com.example.screensaver.music.RadioPreferences
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
 import java.text.SimpleDateFormat
@@ -27,6 +29,12 @@ class WidgetManager @Inject constructor(
 
     @Inject
     lateinit var spotifyPreferences: SpotifyPreferences
+
+    @Inject
+    lateinit var radioManager: RadioManager
+
+    @Inject
+    lateinit var radioPreferences: RadioPreferences
 
     private val widgets = mutableMapOf<WidgetType, ScreenWidget>()
     private val _widgetStates = MutableStateFlow<Map<WidgetType, WidgetData>>(emptyMap())
@@ -455,7 +463,13 @@ class WidgetManager @Inject constructor(
             val weatherWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
             val weatherState = weatherWidget?.currentWeatherState
 
-            val musicWidget = MusicControlWidget(container, config, spotifyManager)
+            val musicWidget = MusicControlWidget(
+                container = container,
+                config = config,
+                spotifyManager = spotifyManager,
+                radioManager = radioManager,
+                radioPreferences = radioPreferences
+            )
             registerWidget(WidgetType.MUSIC, musicWidget)
             musicWidget.init()
 

@@ -50,12 +50,34 @@
         android:icon="@drawable/ic_folder_music"
         app:isPreferenceVisible="false"/>
 
-    <!-- Radio Settings -->
-    <EditTextPreference
-        android:key="radio_url"
-        android:title="@string/pref_radio_url_title"
-        android:summary="@string/pref_radio_url_summary"
-        android:icon="@drawable/ic_radio"
-        app:isPreferenceVisible="false"/>
+    <!-- Radio Section -->
+    <SwitchPreferenceCompat
+        android:key="radio_enabled"
+        android:title="Enable Radio"
+        android:summary="Enable radio playback"
+        android:defaultValue="false" />
 
+    <Preference
+        android:key="radio_station_search"
+        android:title="Search Radio Stations"
+        android:summary="Search and select radio stations"
+        android:dependency="radio_enabled" />
+
+    <Preference
+        android:key="radio_recent"
+        android:title="Recent Stations"
+        android:summary="Recently played Stations"
+        android:dependency="radio_enabled" />
+
+    <Preference
+        android:key="radio_favorites"
+        android:title="Favorite Stations"
+        android:summary="Manage your favorite radio stations"
+        android:dependency="radio_enabled" />
+
+    <SwitchPreferenceCompat
+        android:key="radio_autoplay"
+        android:title="Auto-play Last Station"
+        android:summary="Automatically play last station when screensaver starts"
+        android:dependency="radio_enabled" />
 </PreferenceScreen>

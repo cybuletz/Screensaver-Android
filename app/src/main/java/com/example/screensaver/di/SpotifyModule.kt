@@ -5,6 +5,8 @@ import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyAuthManager
 import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.data.SecureStorage
+import com.example.screensaver.music.RadioManager
+import com.example.screensaver.music.RadioPreferences
 import com.example.screensaver.music.SpotifyTokenManager
 import dagger.Module
 import dagger.Provides
@@ -57,5 +59,23 @@ object SpotifyModule {
             secureStorage,
             tokenManager
         )
+    }
+
+    @Provides
+    @Singleton
+    fun provideRadioPreferences(
+        @ApplicationContext context: Context,
+        secureStorage: SecureStorage
+    ): RadioPreferences {
+        return RadioPreferences(context, secureStorage)
+    }
+
+    @Provides
+    @Singleton
+    fun provideRadioManager(
+        @ApplicationContext context: Context,
+        radioPreferences: RadioPreferences
+    ): RadioManager {
+        return RadioManager(context, radioPreferences)
     }
 }
