@@ -2,33 +2,26 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <PreferenceCategory
-        android:title="@string/pref_category_display"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false">
+    <SwitchPreferenceCompat
+        android:key="keep_screen_on"
+        android:title="@string/pref_keep_screen_on_title"
+        android:summary="@string/pref_keep_screen_on_summary"
+        android:defaultValue="false"/>
 
-        <SwitchPreferenceCompat
-            android:key="keep_screen_on"
-            android:title="@string/pref_keep_screen_on_title"
-            android:summary="@string/pref_keep_screen_on_summary"
-            android:defaultValue="false"/>
+    <Preference
+        android:key="brightness_settings"
+        android:title="Brightness Settings"
+        android:icon="@drawable/ic_brightness"
+        android:summary="Control screen brightness" />
 
-        <Preference
-            android:key="brightness_settings"
-            android:title="Brightness Settings"
-            android:icon="@drawable/ic_brightness"
-            android:summary="Control screen brightness" />
-
-        <ListPreference
-            android:defaultValue="SYSTEM"
-            android:entries="@array/screen_orientation_entries"
-            android:entryValues="@array/screen_orientation_values"
-            android:key="screen_orientation"
-            android:title="Screen Orientation"
-            android:summary="%s"
-            android:icon="@drawable/ic_screen_rotation"
-            app:useSimpleSummaryProvider="true" />
-
-    </PreferenceCategory>
+    <ListPreference
+        android:defaultValue="SYSTEM"
+        android:entries="@array/screen_orientation_entries"
+        android:entryValues="@array/screen_orientation_values"
+        android:key="screen_orientation"
+        android:title="Screen Orientation"
+        android:summary="%s"
+        android:icon="@drawable/ic_screen_rotation"
+        app:useSimpleSummaryProvider="true" />
 
 </PreferenceScreen>

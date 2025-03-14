@@ -10,11 +10,11 @@ import com.example.screensaver.R
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
-class CommonSettingsDialog : DialogFragment() {
-    private var commonSettingsFragment: CommonSettingsPreferenceFragment? = null
+class PhotoShowSettingsDialog : DialogFragment() {
+    private var commonSettingsFragment: PhotoShowSettingsPreferenceFragment? = null
 
     companion object {
-        fun newInstance() = CommonSettingsDialog()
+        fun newInstance() = PhotoShowSettingsDialog()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -23,7 +23,7 @@ class CommonSettingsDialog : DialogFragment() {
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        val view = inflater.inflate(R.layout.dialog_common_settings, container, false)
+        val view = inflater.inflate(R.layout.dialog_photoshow_settings, container, false)
 
         // Set width to wrap content with minimum width
         dialog?.window?.setLayout(
@@ -37,7 +37,7 @@ class CommonSettingsDialog : DialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        commonSettingsFragment = CommonSettingsPreferenceFragment()
+        commonSettingsFragment = PhotoShowSettingsPreferenceFragment()
         childFragmentManager
             .beginTransaction()
             .replace(R.id.common_settings_container, commonSettingsFragment!!)

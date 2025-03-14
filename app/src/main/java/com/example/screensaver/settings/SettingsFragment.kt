@@ -32,13 +32,9 @@ import com.example.screensaver.data.PhotoCache
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
-import android.content.Context
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.view.WindowManager
-import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -63,12 +59,8 @@ import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyAuthManager
 import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.utils.BrightnessManager
-import com.example.screensaver.utils.PreferenceKeys
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.slider.Slider
-import com.google.android.material.switchmaterial.SwitchMaterial
 import timber.log.Timber
-import android.provider.Settings
 
 
 @AndroidEntryPoint
@@ -348,7 +340,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     }
 
                     findPreference<Preference>("common_settings")?.setOnPreferenceClickListener {
-                        CommonSettingsDialog.newInstance()
+                        PhotoShowSettingsDialog.newInstance()
                             .show(childFragmentManager, "common_settings")
                         true
                     }

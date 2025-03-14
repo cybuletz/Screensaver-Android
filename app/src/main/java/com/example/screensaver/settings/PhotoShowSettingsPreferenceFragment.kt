@@ -8,7 +8,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class CommonSettingsPreferenceFragment : PreferenceFragmentCompat() {
+class PhotoShowSettingsPreferenceFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
@@ -16,7 +16,7 @@ class CommonSettingsPreferenceFragment : PreferenceFragmentCompat() {
     private var initialPreferences: Bundle? = null
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        setPreferencesFromResource(R.xml.common_settings_preferences, rootKey)
+        setPreferencesFromResource(R.xml.photoshow_settings_preferences, rootKey)
         initialPreferences = Bundle().apply {
             savePreferenceState(preferenceScreen, this)
         }
