@@ -135,7 +135,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Observe auth state changes
+        // Single auth state observer
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 spotifyAuthManager.authState.collect { state ->
@@ -165,6 +165,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                             }
                         }
                     }
+                    // Update visibility after auth state changes
+                    updateVisiblePreferences(currentMusicSource)
                 }
             }
         }
@@ -201,6 +203,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                             }
                         }
                     }
+                    // Update visibility after connection state changes
+                    updateVisiblePreferences(currentMusicSource)
                 }
             }
         }
@@ -220,24 +224,11 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         // Then show only the relevant ones based on selected source
         when (musicSource) {
             MUSIC_SOURCE_SPOTIFY -> {
-                findPreference<SwitchPreferenceCompat>("spotify_enabled")?.apply {
-                    isVisible = true
-                    // Only show other Spotify preferences if enabled is checked
-                    if (isChecked) {
-                        findPreference<Preference>("spotify_login")?.isVisible = true
-                        findPreference<Preference>("spotify_playlist")?.isVisible = true
-                        findPreference<Preference>("spotify_autoplay")?.isVisible = true
-                    }
-
-                    // Add listener to update visibility when the switch changes
-                    setOnPreferenceChangeListener { _, newValue ->
-                        val enabled = newValue as Boolean
-                        findPreference<Preference>("spotify_login")?.isVisible = enabled
-                        findPreference<Preference>("spotify_playlist")?.isVisible = enabled
-                        findPreference<Preference>("spotify_autoplay")?.isVisible = enabled
-                        true
-                    }
-                }
+                findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isVisible = true
+                val showSpotifyOptions = findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked == true
+                findPreference<Preference>("spotify_login")?.isVisible = showSpotifyOptions
+                findPreference<Preference>("spotify_playlist")?.isVisible = showSpotifyOptions
+                findPreference<Preference>("spotify_autoplay")?.isVisible = showSpotifyOptions
             }
             MUSIC_SOURCE_LOCAL -> {
                 findPreference<Preference>("local_music_folder")?.isVisible = true
