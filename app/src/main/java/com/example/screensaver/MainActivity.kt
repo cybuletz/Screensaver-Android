@@ -48,6 +48,8 @@ import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.screensaver.data.SecureStorage
+import com.example.screensaver.music.RadioManager
+import com.example.screensaver.music.RadioPreferences
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.photos.PhotoManagerViewModel
@@ -100,6 +102,12 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var spotifyPreferences: SpotifyPreferences
+
+    @Inject
+    lateinit var radioPreferences: RadioPreferences
+
+    @Inject
+    lateinit var radioManager: RadioManager
 
     @Inject
     lateinit var brightnessManager: BrightnessManager
@@ -1199,8 +1207,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
-            spotifyManager.connect()
+        // Handle music sources auto-resume
+        when (PreferenceManager.getDefaultSharedPreferences(this).getString("music_source", "spotify")) {
+            "spotify" -> {
+                if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
+                    spotifyManager.connect()
+                }
+            }
+            "radio" -> {
+                if (radioPreferences.isEnabled()) {
+                    radioManager.tryAutoResume()
+                }
+            }
         }
 
         if (brightnessManager.isCustomBrightnessEnabled()) {

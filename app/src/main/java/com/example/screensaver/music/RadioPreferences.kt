@@ -36,6 +36,15 @@ class RadioPreferences @Inject constructor(
             .apply()
     }
 
+    fun setWasPlaying(wasPlaying: Boolean) {
+        preferences.edit()
+            .putBoolean("radio_was_playing", wasPlaying)
+            .apply()
+    }
+
+    fun wasPlaying(): Boolean =
+        preferences.getBoolean("radio_was_playing", false)
+
     fun getLastStation(): RadioManager.RadioStation {
         return secureStorage.getSecurely(PREF_LAST_STATION)?.let { json ->
             try {

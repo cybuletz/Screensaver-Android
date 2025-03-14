@@ -165,7 +165,9 @@ class RadioManager @Inject constructor(
     }
 
     fun disconnect() {
-        Timber.d("Disconnecting radio")
+        // Store playing state before disconnecting
+        preferences.setWasPlaying(mediaPlayer?.isPlaying == true)  // use preferences instead of setWasPlaying
+
         mediaPlayer?.apply {
             stop()
             reset()
@@ -173,6 +175,13 @@ class RadioManager @Inject constructor(
         _currentStation.value = null
         _connectionState.value = ConnectionState.Disconnected
         _playbackState.value = PlaybackState.Idle
+    }
+
+    fun tryAutoResume() {
+        if (preferences.isEnabled() && preferences.wasPlaying()) {
+            // Get last station and play it
+            playStation(preferences.getLastStation())
+        }
     }
 
     fun searchStations(query: String, callback: (List<RadioStation>) -> Unit) {

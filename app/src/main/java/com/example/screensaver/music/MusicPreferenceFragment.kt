@@ -115,16 +115,17 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         setPreferencesFromResource(R.xml.music_preferences, rootKey)
 
         findPreference<ListPreference>("music_source")?.apply {
-            currentMusicSource = value ?: MUSIC_SOURCE_SPOTIFY
-            Timber.d("Initialized music source to: $currentMusicSource")
-
             setOnPreferenceChangeListener { _, newValue ->
                 val newSource = newValue.toString()
 
-                // Disable previous source
+                // Disable previous source first and ensure it's fully disconnected
                 when (currentMusicSource) {
+                    MUSIC_SOURCE_RADIO -> {
+                        radioManager.disconnect()
+                        radioPreferences.setEnabled(false)
+                        findPreference<SwitchPreferenceCompat>("radio_enabled")?.isChecked = false
+                    }
                     MUSIC_SOURCE_SPOTIFY -> {
-                        // Disable Spotify if it was enabled
                         if (spotifyPreferences.isEnabled()) {
                             spotifyPreferences.setEnabled(false)
                             spotifyPreferences.setConnectionState(false)
@@ -132,24 +133,17 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                             findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isChecked = false
                         }
                     }
-                    MUSIC_SOURCE_LOCAL -> {
-                        // Disable local music if needed
-                    }
-                    MUSIC_SOURCE_RADIO -> {
-                        disableRadio()
-                    }
                 }
 
-                // Important: Update current source before updating preferences
+                // Update current source
                 currentMusicSource = newSource
 
-                // Update UI immediately
+                // Force immediate widget update
+                widgetManager.updateMusicWidgetBasedOnSource()
+
+                // Update UI
                 updateVisiblePreferences(newSource)
                 setupRadioPreferences()
-
-                view?.post {
-                    widgetManager.updateMusicWidgetBasedOnSource()
-                }
 
                 true
             }
