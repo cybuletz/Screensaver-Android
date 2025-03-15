@@ -229,6 +229,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
                                         playbackPosition = playerState.playbackPosition,
                                         playlistTitle = spotifyPreferences.getSelectedPlaylistTitle()
                                     )
+
+                                    // Add this line to verify shuffle state on track changes
+                                    verifyAndMaintainShuffleState()
                                 } else {
                                     Timber.w("Track is null. isPaused=${playerState.isPaused}, " +
                                             "position=${playerState.playbackPosition}")
@@ -401,6 +404,17 @@ import okhttp3.RequestBody.Companion.toRequestBody
                 Timber.e(e, "Error skipping to previous track")
                 _errorState.value = SpotifyError.PlaybackFailed(e)
             }
+        }
+
+        fun setShuffleMode(enabled: Boolean) {
+            Timber.d("Setting shuffle mode to: $enabled")
+            spotifyAppRemote?.playerApi?.setShuffle(enabled)
+                ?.setResultCallback {
+                    Timber.d("Successfully set shuffle mode to: $enabled")
+                }
+                ?.setErrorCallback { error ->
+                    Timber.e(error, "Failed to set shuffle mode")
+                }
         }
 
         private fun logPlaylistDetails(playlist: SpotifyPlaylist) {
@@ -605,23 +619,51 @@ import okhttp3.RequestBody.Companion.toRequestBody
                         ?.setResultCallback {
                             Timber.d("Set repeat mode to ALL")
 
-                            // Then set shuffle mode
+                            // Then set shuffle mode BEFORE starting playback
                             val shuffleEnabled = spotifyPreferences.isShuffleEnabled()
                             spotifyAppRemote?.playerApi?.setShuffle(shuffleEnabled)
                                 ?.setResultCallback {
                                     Timber.d("Set shuffle mode to: $shuffleEnabled")
 
-                                    // Finally play the content
-                                    Timber.d("Playing URI: $uri")
-                                    spotifyAppRemote?.playerApi?.play(uri)
-                                        ?.setResultCallback {
-                                            Timber.d("Successfully started playback of: $uri")
-                                            refreshPlayerState()
-                                        }
-                                        ?.setErrorCallback { error ->
-                                            Timber.e(error, "Failed to play content")
-                                            _errorState.value = SpotifyError.PlaybackFailed(error)
-                                        }
+                                    if (shuffleEnabled) {
+                                        // For shuffle, we need to:
+                                        // 1. Start playback
+                                        // 2. Skip to a random position to properly shuffle
+                                        // 3. Then skip back to start
+                                        spotifyAppRemote?.playerApi?.play(uri)
+                                            ?.setResultCallback {
+                                                Timber.d("Started initial playback, now forcing shuffle")
+
+                                                // Skip forward a few tracks to force queue shuffling
+                                                repeat(3) { skipCount ->
+                                                    spotifyAppRemote?.playerApi?.skipNext()
+                                                        ?.setResultCallback {
+                                                            Timber.d("Completed skip forward $skipCount")
+                                                            if (skipCount == 2) {
+                                                                // After last skip, go back to start
+                                                                spotifyAppRemote?.playerApi?.skipPrevious()
+                                                                    ?.setResultCallback {
+                                                                        spotifyAppRemote?.playerApi?.skipPrevious()
+                                                                            ?.setResultCallback {
+                                                                                spotifyAppRemote?.playerApi?.skipPrevious()
+                                                                                    ?.setResultCallback {
+                                                                                        Timber.d("Shuffle sequence complete")
+                                                                                        refreshPlayerState()
+                                                                                    }
+                                                                            }
+                                                                    }
+                                                            }
+                                                        }
+                                                }
+                                            }
+                                    } else {
+                                        // For non-shuffle, just play normally
+                                        spotifyAppRemote?.playerApi?.play(uri)
+                                            ?.setResultCallback {
+                                                Timber.d("Successfully started normal playback")
+                                                refreshPlayerState()
+                                            }
+                                    }
                                 }
                                 ?.setErrorCallback { error ->
                                     Timber.e(error, "Failed to set shuffle mode")
@@ -816,12 +858,39 @@ import okhttp3.RequestBody.Companion.toRequestBody
     """.trimIndent())
         }
 
+        private fun verifyAndMaintainShuffleState() {
+            spotifyAppRemote?.playerApi?.playerState
+                ?.setResultCallback { playerState ->
+                    val expectedShuffle = spotifyPreferences.isShuffleEnabled()
+                    val currentShuffle = playerState.playbackOptions.isShuffling
+
+                    Timber.d("Verifying shuffle state - Expected: $expectedShuffle, Current: $currentShuffle")
+
+                    if (currentShuffle != expectedShuffle) {
+                        Timber.d("Shuffle state mismatch, resetting to: $expectedShuffle")
+                        spotifyAppRemote?.playerApi?.setShuffle(expectedShuffle)
+                            ?.setResultCallback {
+                                // After setting shuffle, force a queue refresh by skipping
+                                if (expectedShuffle) {
+                                    spotifyAppRemote?.playerApi?.skipNext()
+                                        ?.setResultCallback {
+                                            spotifyAppRemote?.playerApi?.skipPrevious()
+                                        }
+                                }
+                            }
+                    }
+                }
+        }
+
         private fun refreshPlayerState() {
             Timber.d("Refreshing player state")
             if (spotifyAppRemote?.isConnected != true) {
                 Timber.w("Cannot refresh player state - Spotify not connected")
                 return
             }
+
+            // Add this line to verify shuffle state
+            verifyAndMaintainShuffleState()
 
             spotifyAppRemote?.playerApi?.playerState
                 ?.setResultCallback { state ->
@@ -837,6 +906,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
                             playlistTitle = spotifyPreferences.getSelectedPlaylistTitle()
                         )
                         Timber.d("Updated playback state to: ${_playbackState.value}")
+
+                        // Add this: Verify shuffle state after track changes
+                        verifyAndMaintainShuffleState()
                     } else {
                         if (spotifyAppRemote?.isConnected == true) {
                             Timber.w("Connected to Spotify but received null track")

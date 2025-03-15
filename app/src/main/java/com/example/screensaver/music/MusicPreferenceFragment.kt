@@ -31,10 +31,8 @@ import android.view.KeyEvent
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.view.inputmethod.EditorInfo
-import com.example.screensaver.ScreensaverApplication
 import com.example.screensaver.widgets.WidgetManager
 import android.widget.CheckBox
-import com.example.screensaver.music.SpotifyManager.SpotifyPlaylist
 
 
 @AndroidEntryPoint
@@ -345,6 +343,20 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             }
         }
 
+        findPreference<SwitchPreferenceCompat>("spotify_shuffle")?.apply {
+            isChecked = spotifyPreferences.isShuffleEnabled()
+            setOnPreferenceChangeListener { _, newValue ->
+                val shuffleEnabled = newValue as Boolean
+                spotifyPreferences.setShuffleEnabled(shuffleEnabled)
+
+                // Apply shuffle setting immediately if connected
+                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                    spotifyManager.setShuffleMode(shuffleEnabled)
+                }
+                true
+            }
+        }
+
         findPreference<SwitchPreferenceCompat>("spotify_autoplay")?.apply {
             isChecked = spotifyPreferences.isAutoplayEnabled()
             setOnPreferenceChangeListener { _, newValue ->
@@ -384,25 +396,16 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                 spotifyManager.getPlaylists(
                     callback = { playlists ->
                         loadingDialog.dismiss()
-                        Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})"}}")
-
-                        val dialogView = LayoutInflater.from(requireContext())
-                            .inflate(R.layout.dialog_playlist_with_shuffle, null)
-                        val shuffleCheckBox = dialogView.findViewById<CheckBox>(R.id.shuffle_checkbox)
-                        shuffleCheckBox.isChecked = spotifyPreferences.isShuffleEnabled()
+                        Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})" }}")
 
                         val dialog = MaterialAlertDialogBuilder(requireContext())
                             .setTitle("Select Playlist")
-                            .setView(dialogView)
                             .setItems(playlists.map { it.title }.toTypedArray()) { _, which ->
                                 val selectedPlaylist = playlists[which]
                                 Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
 
-                                // Save both playlist and shuffle preference
-                                spotifyPreferences.apply {
-                                    setSelectedPlaylistWithTitle(selectedPlaylist.uri, selectedPlaylist.title)
-                                    setShuffleEnabled(shuffleCheckBox.isChecked)
-                                }
+                                // Save playlist selection
+                                spotifyPreferences.setSelectedPlaylistWithTitle(selectedPlaylist.uri, selectedPlaylist.title)
                                 summary = selectedPlaylist.title
 
                                 // First pause current playback
