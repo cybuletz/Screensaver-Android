@@ -460,6 +460,11 @@ class WidgetManager @Inject constructor(
                 currentWidget.show()
             } else {
                 currentWidget.hide()
+                // Clean up when hiding
+                if (!isSourceEnabled) {
+                    currentWidget.cleanup()
+                    widgets.remove(WidgetType.MUSIC)
+                }
             }
         } else if (isSourceEnabled && lastKnownContainer != null) {
             // Only create new widget if a source is enabled
@@ -467,12 +472,12 @@ class WidgetManager @Inject constructor(
         }
 
         Log.d(TAG, """
-        Music widget update:
-        - Current source: $currentSource
-        - Source enabled: $isSourceEnabled
-        - Widget exists: ${currentWidget != null}
-        - Config enabled: ${newConfig.enabled}
-    """.trimIndent())
+            Music widget update:
+            - Current source: $currentSource
+            - Source enabled: $isSourceEnabled
+            - Widget exists: ${currentWidget != null}
+            - Config enabled: ${newConfig.enabled}
+        """.trimIndent())
     }
 
     fun updateMusicVisibility(visible: Boolean) {

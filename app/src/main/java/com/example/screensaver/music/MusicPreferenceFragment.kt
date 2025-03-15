@@ -342,8 +342,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         try {
                             val authIntent = spotifyAuthManager.getAuthIntent(requireActivity())
                             spotifyAuthLauncher.launch(authIntent)
-                            // Simply use the injected widgetManager
-                            widgetManager.updateMusicWidgetBasedOnSource()
+                            // Let the auth process handle the widget update
                             false
                         } catch (e: Exception) {
                             Toast.makeText(
@@ -355,9 +354,22 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         }
                     }
                 } else {
+                    // Properly handle disabling Spotify
                     spotifyPreferences.setEnabled(false)
                     spotifyPreferences.setConnectionState(false)
                     spotifyManager.disconnect()
+
+                    // Hide Spotify options
+                    findPreference<Preference>("spotify_login")?.isVisible = false
+                    findPreference<Preference>("spotify_playlist")?.isVisible = false
+                    findPreference<Preference>("spotify_autoplay")?.isVisible = false
+
+                    // Force widget update
+                    widgetManager.updateMusicWidgetBasedOnSource()
+
+                    // Force preference screen to redraw
+                    preferenceScreen.notifyDependencyChange(false)
+
                     true
                 }
             }
