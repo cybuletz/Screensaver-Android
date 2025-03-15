@@ -33,6 +33,8 @@ import android.widget.TextView
 import android.view.inputmethod.EditorInfo
 import com.example.screensaver.ScreensaverApplication
 import com.example.screensaver.widgets.WidgetManager
+import android.widget.CheckBox
+import com.example.screensaver.music.SpotifyManager.SpotifyPlaylist
 
 
 @AndroidEntryPoint
@@ -384,15 +386,28 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         loadingDialog.dismiss()
                         Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})"}}")
 
-                        MaterialAlertDialogBuilder(requireContext())
+                        val dialogView = LayoutInflater.from(requireContext())
+                            .inflate(R.layout.dialog_playlist_with_shuffle, null)
+                        val shuffleCheckBox = dialogView.findViewById<CheckBox>(R.id.shuffle_checkbox)
+                        shuffleCheckBox.isChecked = spotifyPreferences.isShuffleEnabled()
+
+                        val dialog = MaterialAlertDialogBuilder(requireContext())
                             .setTitle("Select Playlist")
+                            .setView(dialogView)
                             .setItems(playlists.map { it.title }.toTypedArray()) { _, which ->
                                 val selectedPlaylist = playlists[which]
                                 Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
 
-                                // Update these two lines:
-                                spotifyPreferences.setSelectedPlaylistWithTitle(selectedPlaylist.uri, selectedPlaylist.title)
+                                // Save both playlist and shuffle preference
+                                spotifyPreferences.apply {
+                                    setSelectedPlaylistWithTitle(selectedPlaylist.uri, selectedPlaylist.title)
+                                    setShuffleEnabled(shuffleCheckBox.isChecked)
+                                }
                                 summary = selectedPlaylist.title
+
+                                // First pause current playback, then play the new playlist
+                                spotifyManager.pause()
+                                spotifyManager.playPlaylist(selectedPlaylist.uri)
 
                                 Toast.makeText(
                                     requireContext(),
@@ -401,7 +416,9 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                                 ).show()
                             }
                             .setNegativeButton("Cancel", null)
-                            .show()
+                            .create()
+
+                        dialog.show()
                     },
                     errorCallback = { error ->
                         loadingDialog.dismiss()

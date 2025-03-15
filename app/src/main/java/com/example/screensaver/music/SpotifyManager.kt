@@ -408,6 +408,33 @@ import okhttp3.RequestBody.Companion.toRequestBody
                 return
             }
 
+            val recommendedPlaylists = listOf(
+                SpotifyPlaylist(
+                    title = "Liked Songs",
+                    uri = "spotify:playlist:liked",
+                    imageUri = null,
+                    isRecommended = true
+                ),
+                SpotifyPlaylist(
+                    title = "Recently Played",
+                    uri = "spotify:playlist:RecentlyPlayed",
+                    imageUri = null,
+                    isRecommended = true
+                ),
+                SpotifyPlaylist(
+                    title = "Discover Weekly",
+                    uri = "spotify:playlist:discover-weekly",
+                    imageUri = null,
+                    isRecommended = true
+                ),
+                SpotifyPlaylist(
+                    title = "Daily Mix 1",
+                    uri = "spotify:playlist:daily-mix-1",
+                    imageUri = null,
+                    isRecommended = true
+                )
+            )
+
             val client = OkHttpClient()
             val request = Request.Builder()
                 .url("https://api.spotify.com/v1/me/playlists?limit=50")
@@ -432,24 +459,28 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
                         val json = JSONObject(response.body?.string() ?: "")
                         val items = json.getJSONArray("items")
-                        val playlists = mutableListOf<SpotifyPlaylist>()
+                        val userPlaylists = mutableListOf<SpotifyPlaylist>()
 
                         for (i in 0 until items.length()) {
                             val item = items.getJSONObject(i)
                             val images = item.getJSONArray("images")
                             val imageUri = if (images.length() > 0) images.getJSONObject(0).getString("url") else null
 
-                            playlists.add(
+                            userPlaylists.add(
                                 SpotifyPlaylist(
                                     title = item.getString("name"),
                                     uri = "spotify:playlist:${item.getString("id")}",
-                                    imageUri = imageUri
+                                    imageUri = imageUri,
+                                    isRecommended = false
                                 )
                             )
                         }
 
+                        // Combine recommended and user playlists
+                        val allPlaylists = recommendedPlaylists + userPlaylists
+
                         Handler(Looper.getMainLooper()).post {
-                            callback(playlists)
+                            callback(allPlaylists)
                         }
                     } catch (e: Exception) {
                         Handler(Looper.getMainLooper()).post {
@@ -493,12 +524,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
             } ?: errorCallback(Exception("Spotify not connected"))
         }
 
-        data class Track(
-            val uri: String,
-            val name: String,
-            val artist: String
-        )
-
         fun playPlaylist(playlistUri: String) {
             Timber.d("Attempting to play playlist: $playlistUri")
 
@@ -511,49 +536,50 @@ import okhttp3.RequestBody.Companion.toRequestBody
             }
 
             try {
-                // First set repeat mode to ALL to keep playing the playlist
-                spotifyAppRemote?.playerApi?.setRepeat(Repeat.ALL)
+                // First pause any current playback
+                spotifyAppRemote?.playerApi?.pause()
                     ?.setResultCallback {
-                        Timber.d("Set repeat mode to ALL")
+                        Timber.d("Paused current playback before starting new playlist")
 
-                        // Disable shuffle after repeat mode is set
-                        spotifyAppRemote?.playerApi?.setShuffle(false)
+                        // Set repeat mode
+                        spotifyAppRemote?.playerApi?.setRepeat(Repeat.ALL)
                             ?.setResultCallback {
-                                Timber.d("Disabled shuffle mode")
+                                Timber.d("Set repeat mode to ALL")
 
-                                // Play the playlist after settings are applied
-                                spotifyAppRemote?.playerApi?.play(playlistUri)
+                                // Set shuffle based on preference
+                                val shuffleEnabled = spotifyPreferences.isShuffleEnabled()
+                                spotifyAppRemote?.playerApi?.setShuffle(shuffleEnabled)
                                     ?.setResultCallback {
-                                        Timber.d("Successfully started playlist playback")
+                                        Timber.d("Set shuffle mode to: $shuffleEnabled")
 
-                                        // Save playlist info
-                                        val playlistTitle = getPlaylistTitle(playlistUri)
-                                        spotifyPreferences.setSelectedPlaylistWithTitle(playlistUri, playlistTitle)
-                                        refreshPlayerState()
+                                        // Play the new playlist
+                                        spotifyAppRemote?.playerApi?.play(playlistUri)
+                                            ?.setResultCallback {
+                                                Timber.d("Successfully started playlist playback")
+                                                refreshPlayerState()
+                                            }
+                                            ?.setErrorCallback { error ->
+                                                Timber.e(error, "Failed to play playlist")
+                                                _errorState.value = SpotifyError.PlaybackFailed(error)
+                                            }
                                     }
                                     ?.setErrorCallback { error ->
-                                        Timber.e(error, "Failed to play playlist")
-                                        _errorState.value = SpotifyError.PlaybackFailed(error)
+                                        Timber.e(error, "Failed to set shuffle mode")
                                     }
                             }
                             ?.setErrorCallback { error ->
-                                Timber.e(error, "Failed to disable shuffle")
+                                Timber.e(error, "Failed to set repeat mode")
                             }
                     }
                     ?.setErrorCallback { error ->
-                        Timber.e(error, "Failed to set repeat mode")
+                        Timber.e(error, "Failed to pause before playing new playlist")
+                        // Try playing anyway
+                        spotifyAppRemote?.playerApi?.play(playlistUri)
                     }
 
             } catch (e: Exception) {
                 Timber.e(e, "Fatal error playing playlist")
                 _errorState.value = SpotifyError.PlaybackFailed(e)
-            }
-        }
-
-        private fun getPlaylistTitle(uri: String): String {
-            return spotifyPreferences.getSelectedPlaylistTitle() ?: when {
-                uri == RECENTLY_PLAYED_URI -> "Recently Played"
-                else -> "Unknown Playlist"
             }
         }
 
@@ -723,6 +749,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
         data class SpotifyPlaylist(
             val title: String,
             val uri: String,
-            val imageUri: String? = null
+            val imageUri: String? = null,
+            val isRecommended: Boolean = false
         )
     }
