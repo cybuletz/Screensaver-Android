@@ -60,6 +60,7 @@ android {
                 "META-INF/*.kotlin_module",
                 "META-INF/LGPL2.1"
             )
+            pickFirsts.add("mozilla/public-suffix-list.txt")
         }
     }
 
@@ -170,6 +171,7 @@ dependencies {
     //Spotify
     implementation("com.spotify.android:auth:2.1.1")
     implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
+    implementation("se.michaelthelin.spotify:spotify-web-api-java:8.0.0")
 
     // Google Services
     implementation("com.google.android.gms:play-services-base:18.2.0")

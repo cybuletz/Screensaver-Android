@@ -23,6 +23,7 @@ class SpotifyPreferences @Inject constructor(
         private const val PREF_LAST_VOLUME = "spotify_last_volume"
         private const val PREF_CONNECTION_STATE = "spotify_connection_state"
         private const val PREF_PLAYLIST_SUMMARY = "spotify_playlist_summary"
+        private const val PREF_SHUFFLE_ENABLED = "spotify_shuffle_enabled"
     }
 
     private val preferences: SharedPreferences by lazy {
@@ -59,21 +60,22 @@ class SpotifyPreferences @Inject constructor(
     fun getSelectedPlaylist(): String? =
         secureStorage.getSecurely(PREF_SELECTED_PLAYLIST)
 
-    fun setSelectedPlaylist(uri: String?) {
-        if (uri != null) {
-            secureStorage.saveSecurely(PREF_SELECTED_PLAYLIST, uri)
-        } else {
-            secureStorage.removeSecurely(PREF_SELECTED_PLAYLIST)
-        }
+    fun isShuffleEnabled(): Boolean =
+        preferences.getBoolean(PREF_SHUFFLE_ENABLED, false)
+
+    fun setShuffleEnabled(enabled: Boolean) {
+        preferences.edit()
+            .putBoolean(PREF_SHUFFLE_ENABLED, enabled)
+            .apply()
     }
 
-    fun getLastVolume(): Float =
-        preferences.getFloat(PREF_LAST_VOLUME, 0.5f)
+    fun setSelectedPlaylistWithTitle(uri: String, title: String) {
+        secureStorage.saveSecurely("spotify_selected_playlist", uri)
+        secureStorage.saveSecurely("spotify_selected_playlist_title", title)
+    }
 
-    fun setLastVolume(volume: Float) {
-        preferences.edit()
-            .putFloat(PREF_LAST_VOLUME, volume)
-            .apply()
+    fun getSelectedPlaylistTitle(): String? {
+        return secureStorage.getSecurely("spotify_selected_playlist_title")
     }
 
     fun getPlaylistSummary(): String? =

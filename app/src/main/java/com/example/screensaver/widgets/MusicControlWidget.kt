@@ -8,8 +8,12 @@ import android.widget.ImageButton
 import android.widget.ProgressBar
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
+import androidx.preference.PreferenceManager
 import com.example.screensaver.R
 import com.example.screensaver.music.SpotifyManager
+import com.example.screensaver.music.RadioManager
+import com.example.screensaver.music.RadioPreferences
+import com.example.screensaver.music.SpotifyPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,16 +26,20 @@ import kotlinx.coroutines.delay
 class MusicControlWidget(
     private val container: ViewGroup,
     var config: WidgetConfig.MusicConfig,
-    private val spotifyManager: SpotifyManager
+    private val spotifyManager: SpotifyManager,
+    private val spotifyPreferences: SpotifyPreferences,
+    private val radioManager: RadioManager,
+    private val radioPreferences: RadioPreferences
 ) : ScreenWidget {
     private var binding: MusicControlWidgetBinding? = null
     private var isVisible = false
     private val scope = CoroutineScope(Dispatchers.Main + Job())
-
     private var progressUpdateJob: Job? = null
 
     companion object {
         private const val TAG = "MusicControlWidget"
+        private const val MUSIC_SOURCE_SPOTIFY = "spotify"
+        private const val MUSIC_SOURCE_RADIO = "radio"
     }
 
     override fun init() {
@@ -46,27 +54,18 @@ class MusicControlWidget(
                 val nextButton = getRootView()?.findViewById<ImageButton>(R.id.next_button)
 
                 // Set up click listeners directly
-                playPauseButton?.setOnClickListener { view ->
+                playPauseButton?.setOnClickListener { _ ->
                     Log.e(TAG, "Play/Pause button direct click")
-                    when (spotifyManager.connectionState.value) {
-                        !is SpotifyManager.ConnectionState.Connected -> {
-                            Log.e(TAG, "Not connected - attempting to connect")
-                            spotifyManager.connect()
-                        }
-                        else -> {
-                            when (val state = spotifyManager.playbackState.value) {
-                                is SpotifyManager.PlaybackState.Playing -> {
-                                    if (state.isPlaying) spotifyManager.pause() else spotifyManager.resume()
-                                }
-                                is SpotifyManager.PlaybackState.Idle -> spotifyManager.resume()
-                            }
-                        }
+                    when (getMusicSource()) {
+                        MUSIC_SOURCE_SPOTIFY -> handleSpotifyPlayPause()
+                        MUSIC_SOURCE_RADIO -> handleRadioPlayPause()
                     }
                 }
 
                 previousButton?.setOnClickListener { view ->
                     Log.e(TAG, "Previous button direct click")
-                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                    if (getMusicSource() == MUSIC_SOURCE_SPOTIFY &&
+                        spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
                         view.isEnabled = false
                         spotifyManager.previousTrack()
                         view.postDelayed({ view.isEnabled = true }, 500)
@@ -75,7 +74,8 @@ class MusicControlWidget(
 
                 nextButton?.setOnClickListener { view ->
                     Log.e(TAG, "Next button direct click")
-                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                    if (getMusicSource() == MUSIC_SOURCE_SPOTIFY &&
+                        spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
                         view.isEnabled = false
                         spotifyManager.nextTrack()
                         view.postDelayed({ view.isEnabled = true }, 500)
@@ -93,27 +93,30 @@ class MusicControlWidget(
                 Play/Pause - enabled: ${playPauseButton?.isEnabled}, clickable: ${playPauseButton?.isClickable}
                 Previous - enabled: ${previousButton?.isEnabled}, clickable: ${previousButton?.isClickable}
                 Next - enabled: ${nextButton?.isEnabled}, clickable: ${nextButton?.isClickable}
-            """.trimIndent())
+                """.trimIndent())
             }
 
             updateConfiguration(config)
 
+            // Spotify state observers
             scope.launch {
                 spotifyManager.connectionState.collect { state ->
-                    Log.e(TAG, "Connection state update: $state")
-                    when (state) {
-                        is SpotifyManager.ConnectionState.Connected -> {
-                            Log.e(TAG, "Spotify connected, enabling controls")
-                            clearErrorState()
-                            updatePlaybackState(spotifyManager.playbackState.value)
-                        }
-                        is SpotifyManager.ConnectionState.Disconnected -> {
-                            Log.e(TAG, "Spotify disconnected, disabling controls")
-                            updateErrorState("Spotify disconnected")
-                        }
-                        is SpotifyManager.ConnectionState.Error -> {
-                            Log.e(TAG, "Spotify connection error: ${state.error}")
-                            updateErrorState("Connection error")
+                    if (getMusicSource() == MUSIC_SOURCE_SPOTIFY) {
+                        Log.e(TAG, "Spotify connection state update: $state")
+                        when (state) {
+                            is SpotifyManager.ConnectionState.Connected -> {
+                                Log.e(TAG, "Spotify connected, enabling controls")
+                                clearErrorState()
+                                updatePlaybackState(spotifyManager.playbackState.value)
+                            }
+                            is SpotifyManager.ConnectionState.Disconnected -> {
+                                Log.e(TAG, "Spotify disconnected, disabling controls")
+                                updateErrorState("Spotify disconnected")
+                            }
+                            is SpotifyManager.ConnectionState.Error -> {
+                                Log.e(TAG, "Spotify connection error: ${state.error}")
+                                updateErrorState("Connection error")
+                            }
                         }
                     }
                 }
@@ -121,12 +124,46 @@ class MusicControlWidget(
 
             scope.launch {
                 spotifyManager.playbackState.collect { state ->
-                    Log.e(TAG, "Playback state update received: $state")
-                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
-                        Log.e(TAG, "Updating widget with new playback state")
-                        updatePlaybackState(state)
-                    } else {
-                        Log.e(TAG, "Ignoring playback state update - not connected")
+                    if (getMusicSource() == MUSIC_SOURCE_SPOTIFY) {
+                        Log.e(TAG, "Spotify playback state update received: $state")
+                        if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                            Log.e(TAG, "Updating widget with new Spotify playback state")
+                            updatePlaybackState(state)
+                        } else {
+                            Log.e(TAG, "Ignoring Spotify playback state update - not connected")
+                        }
+                    }
+                }
+            }
+
+            // Radio state observers
+            scope.launch {
+                radioManager.connectionState.collect { state ->
+                    if (getMusicSource() == MUSIC_SOURCE_RADIO) {
+                        Log.e(TAG, "Radio connection state update: $state")
+                        when (state) {
+                            is RadioManager.ConnectionState.Connected -> {
+                                clearErrorState()
+                                updateRadioPlaybackState(radioManager.playbackState.value)
+                            }
+                            is RadioManager.ConnectionState.Disconnected -> {
+                                updateErrorState("Radio disconnected")
+                            }
+                            is RadioManager.ConnectionState.Error -> {
+                                updateErrorState("Radio error")
+                            }
+                        }
+                    }
+                }
+            }
+
+            scope.launch {
+                radioManager.playbackState.collect { state ->
+                    if (getMusicSource() == MUSIC_SOURCE_RADIO) {
+                        Log.e(TAG, "Radio playback state update received: $state")
+                        if (radioManager.connectionState.value is RadioManager.ConnectionState.Connected) {
+                            updateRadioPlaybackState(state)
+                        }
                     }
                 }
             }
@@ -141,106 +178,63 @@ class MusicControlWidget(
         }
     }
 
-    private fun setupControls() {
-        Log.e(TAG, "setupControls() called with binding = ${binding != null}")
-        binding?.apply {
-            getPlayPauseButton()?.also { button ->
-                Log.e(TAG, "Setting up play/pause button")
-                button.setOnClickListener {
-                    Log.e(TAG, "Play/Pause button clicked")
-                    Log.e(TAG, "Current Spotify connection state: ${spotifyManager.connectionState.value}")
-                    Log.e(TAG, "Current playback state: ${spotifyManager.playbackState.value}")
+    private fun getMusicSource(): String {
+        return PreferenceManager.getDefaultSharedPreferences(container.context)
+            .getString("music_source", MUSIC_SOURCE_SPOTIFY) ?: MUSIC_SOURCE_SPOTIFY
+    }
 
-                    when (val connectionState = spotifyManager.connectionState.value) {
-                        !is SpotifyManager.ConnectionState.Connected -> {
-                            Log.e(TAG, "Not connected - attempting to connect")
-                            spotifyManager.connect()
-                        }
-                        else -> {
-                            Log.e(TAG, "Connected - handling playback state")
-                            val playbackState = spotifyManager.playbackState.value
-                            Log.e(TAG, "Current playback state details: $playbackState")
+    private fun isMusicSourceEnabled(): Boolean {
+        val source = getMusicSource()
+        return when (source) {
+            MUSIC_SOURCE_SPOTIFY -> spotifyPreferences.isEnabled()
+            MUSIC_SOURCE_RADIO -> radioPreferences.isEnabled()
+            else -> false
+        }
+    }
 
-                            when (playbackState) {
-                                is SpotifyManager.PlaybackState.Playing -> {
-                                    if (playbackState.isPlaying) {
-                                        Log.e(TAG, "Currently playing - calling pause()")
-                                        spotifyManager.pause()
-                                    } else {
-                                        Log.e(TAG, "Currently paused - calling resume()")
-                                        spotifyManager.resume()
-                                    }
-                                }
-                                is SpotifyManager.PlaybackState.Idle -> {
-                                    Log.e(TAG, "Currently idle - calling resume()")
-                                    spotifyManager.resume()
-                                }
-                                else -> {
-                                    Log.e(TAG, "Unknown playback state: $playbackState")
-                                }
-                            }
-                        }
-                    }
-                }
+    private fun handleSpotifyPlayPause() {
+        when (spotifyManager.connectionState.value) {
+            !is SpotifyManager.ConnectionState.Connected -> {
+                Log.e(TAG, "Spotify not connected - attempting to connect")
+                spotifyManager.connect()
             }
-
-            getPreviousButton()?.also { button ->
-                Log.e(TAG, "Setting up previous button")
-                button.setOnClickListener {
-                    Log.e(TAG, "Previous button clicked")
-                    Log.e(TAG, "Current Spotify connection state: ${spotifyManager.connectionState.value}")
-                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
-                        Log.e(TAG, "Connected - calling previousTrack()")
-                        button.isEnabled = false
-                        spotifyManager.previousTrack()
-                        button.postDelayed({
-                            button.isEnabled = true
-                            Log.e(TAG, "Previous button re-enabled")
-                        }, 500)
-                    } else {
-                        Log.e(TAG, "Not connected - cannot play previous track")
+            else -> {
+                when (val state = spotifyManager.playbackState.value) {
+                    is SpotifyManager.PlaybackState.Playing -> {
+                        if (state.isPlaying) spotifyManager.pause() else spotifyManager.resume()
                     }
-                }
-            }
-
-            getNextButton()?.also { button ->
-                Log.e(TAG, "Setting up next button")
-                button.setOnClickListener {
-                    Log.e(TAG, "Next button clicked")
-                    Log.e(TAG, "Current Spotify connection state: ${spotifyManager.connectionState.value}")
-                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
-                        Log.e(TAG, "Connected - calling nextTrack()")
-                        button.isEnabled = false
-                        spotifyManager.nextTrack()
-                        button.postDelayed({
-                            button.isEnabled = true
-                            Log.e(TAG, "Next button re-enabled")
-                        }, 500)
-                    } else {
-                        Log.e(TAG, "Not connected - cannot play next track")
-                    }
+                    is SpotifyManager.PlaybackState.Idle -> spotifyManager.resume()
                 }
             }
         }
+    }
 
-        // Verify initial states
-        Log.e(TAG, "Initial Spotify connection state: ${spotifyManager.connectionState.value}")
-        Log.e(TAG, "Initial playback state: ${spotifyManager.playbackState.value}")
+    private fun handleRadioPlayPause() {
+        when (val state = radioManager.playbackState.value) {
+            is RadioManager.PlaybackState.Playing -> {
+                if (state.isPlaying) radioManager.pause() else radioManager.resume()
+            }
+            RadioManager.PlaybackState.Idle -> {
+                radioPreferences.getLastStation()?.let { station ->
+                    radioManager.playStation(station)
+                }
+            }
+        }
     }
 
     private fun updatePlaybackState(state: SpotifyManager.PlaybackState) {
-        Log.e(TAG, "Updating playback state: $state")
+        Log.e(TAG, "Updating Spotify playback state: $state")
 
         if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
             Log.e(TAG, "Not updating state - Spotify not connected")
-            stopProgressUpdates()  // Add this
+            stopProgressUpdates()
             return
         }
 
         binding?.apply {
             when (state) {
                 is SpotifyManager.PlaybackState.Playing -> {
-                    Log.e(TAG, "Setting up Playing state UI")
+                    Log.e(TAG, "Setting up Spotify Playing state UI")
                     getTrackNameView()?.apply {
                         text = state.trackName
                         isSelected = true
@@ -264,15 +258,16 @@ class MusicControlWidget(
                         isEnabled = true
                         isClickable = true
                         isFocusable = true
+                        visibility = View.VISIBLE
                     }
                     getNextButton()?.apply {
                         Log.e(TAG, "Configuring next button - isEnabled will be true")
                         isEnabled = true
                         isClickable = true
                         isFocusable = true
+                        visibility = View.VISIBLE
                     }
 
-                    // Update progress bar
                     getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
                         max = state.trackDuration.toInt()
                         progress = state.playbackPosition.toInt()
@@ -280,7 +275,6 @@ class MusicControlWidget(
                         Log.e(TAG, "Progress bar updated - duration: ${state.trackDuration}, position: ${state.playbackPosition}")
                     }
 
-                    // Add progress update handling
                     if (state.isPlaying) {
                         startProgressUpdates()
                     } else {
@@ -288,8 +282,8 @@ class MusicControlWidget(
                     }
                 }
                 SpotifyManager.PlaybackState.Idle -> {
-                    Log.e(TAG, "Setting up Idle state UI")
-                    stopProgressUpdates()  // Add this
+                    Log.e(TAG, "Setting up Spotify Idle state UI")
+                    stopProgressUpdates()
                     getTrackNameView()?.apply {
                         text = if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected)
                             "Select a track to play"
@@ -312,13 +306,14 @@ class MusicControlWidget(
                     getPreviousButton()?.apply {
                         isEnabled = false
                         isClickable = false
+                        visibility = View.VISIBLE
                     }
                     getNextButton()?.apply {
                         isEnabled = false
                         isClickable = false
+                        visibility = View.VISIBLE
                     }
 
-                    // Reset progress bar
                     getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
                         progress = 0
                         visibility = if (config.showProgress) View.VISIBLE else View.GONE
@@ -329,6 +324,57 @@ class MusicControlWidget(
         } ?: Log.e(TAG, "Binding is null during updatePlaybackState!")
     }
 
+    private fun updateRadioPlaybackState(state: RadioManager.PlaybackState) {
+        binding?.apply {
+            when (state) {
+                is RadioManager.PlaybackState.Playing -> {
+                    getTrackNameView()?.apply {
+                        text = state.stationName
+                        isSelected = true
+                    }
+                    getArtistNameView()?.apply {
+                        text = state.genre ?: ""
+                        isSelected = true
+                    }
+                    getPlayPauseButton()?.apply {
+                        setImageResource(
+                            if (state.isPlaying) R.drawable.ic_music_pause
+                            else R.drawable.ic_music_play
+                        )
+                        isEnabled = true
+                        isClickable = true
+                        isFocusable = true
+                    }
+                    // Hide navigation buttons for radio
+                    getPreviousButton()?.visibility = View.GONE
+                    getNextButton()?.visibility = View.GONE
+
+                    // Hide progress bar for radio
+                    getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.visibility = View.GONE
+                }
+                RadioManager.PlaybackState.Idle -> {
+                    getTrackNameView()?.apply {
+                        text = "Select a radio station"
+                        isSelected = false
+                    }
+                    getArtistNameView()?.apply {
+                        text = ""
+                        isSelected = false
+                    }
+                    getPlayPauseButton()?.apply {
+                        setImageResource(R.drawable.ic_music_play)
+                        isEnabled = true
+                        isClickable = true
+                        isFocusable = true
+                    }
+                    getPreviousButton()?.visibility = View.GONE
+                    getNextButton()?.visibility = View.GONE
+                    getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.visibility = View.GONE
+                }
+            }
+        }
+    }
+
     private fun updateButtonState(enabled: Boolean) {
         binding?.apply {
             getPlayPauseButton()?.apply {
@@ -336,12 +382,14 @@ class MusicControlWidget(
                 alpha = if (enabled) 1.0f else 0.7f
             }
             getPreviousButton()?.apply {
-                isEnabled = enabled
+                isEnabled = enabled && getMusicSource() == MUSIC_SOURCE_SPOTIFY
                 alpha = if (enabled) 1.0f else 0.7f
+                visibility = if (getMusicSource() == MUSIC_SOURCE_SPOTIFY) View.VISIBLE else View.GONE
             }
             getNextButton()?.apply {
-                isEnabled = enabled
+                isEnabled = enabled && getMusicSource() == MUSIC_SOURCE_SPOTIFY
                 alpha = if (enabled) 1.0f else 0.7f
+                visibility = if (getMusicSource() == MUSIC_SOURCE_SPOTIFY) View.VISIBLE else View.GONE
             }
         }
     }
@@ -351,17 +399,22 @@ class MusicControlWidget(
     }
 
     override fun show() {
-        isVisible = true
+        if (isVisible) {
+            Log.d(TAG, "Widget already visible, skipping show()")
+            return
+        }
+
         binding?.let { binding ->
             Log.d(TAG, "Showing music widget")
             val rootView = binding.getRootView()
             rootView?.apply {
-                // Only add if not already added
-                if (parent == null) {
-                    Log.d(TAG, "Adding music widget view to container")
-                    container.addView(this)
-                }
+                // Remove from parent if already attached
+                (parent as? ViewGroup)?.removeView(this)
 
+                // Add to container
+                container.addView(this)
+
+                // Configure view
                 post {
                     visibility = View.VISIBLE
                     background = ContextCompat.getDrawable(context, R.drawable.widget_background)
@@ -374,6 +427,7 @@ class MusicControlWidget(
                 }
             }
         }
+        isVisible = true
     }
 
     override fun hide() {
@@ -391,7 +445,12 @@ class MusicControlWidget(
     override fun cleanup() {
         try {
             Log.d(TAG, "Starting music widget cleanup")
-            stopProgressUpdates() // Add this line
+            stopProgressUpdates()
+            when (getMusicSource()) {
+                MUSIC_SOURCE_SPOTIFY -> spotifyManager.disconnect()
+                MUSIC_SOURCE_RADIO -> radioManager.disconnect()
+            }
+
             binding?.getRootView()?.let { view ->
                 try {
                     (view.parent as? ViewGroup)?.removeView(view)
@@ -421,22 +480,31 @@ class MusicControlWidget(
         this.config = config
 
         binding?.apply {
-            // Handle show music widget (enabled state)
-            if (config.enabled) show() else hide()
-
-            // Handle controls visibility
-            getRootView()?.findViewById<ViewGroup>(R.id.controls_container)?.apply {
-                visibility = if (config.showControls) View.VISIBLE else View.GONE
+            // Handle visibility immediately
+            if (config.enabled != oldConfig.enabled) {
+                if (config.enabled) show() else hide()
             }
 
-            // Handle progress visibility
-            getRootView()?.findViewById<View>(R.id.track_progress)?.apply {
-                visibility = if (config.showProgress) View.VISIBLE else View.GONE
-            }
+            getRootView()?.apply {
+                // Handle controls visibility
+                findViewById<ViewGroup>(R.id.controls_container)?.apply {
+                    visibility = if (config.showControls) View.VISIBLE else View.GONE
+                }
 
-            // Update position if changed
-            if (oldConfig.position != config.position) {
-                updatePosition(config.position)
+                // Handle progress visibility
+                findViewById<View>(R.id.track_progress)?.apply {
+                    visibility = if (config.showProgress && getMusicSource() == MUSIC_SOURCE_SPOTIFY)
+                        View.VISIBLE else View.GONE
+                }
+
+                // Update position if changed
+                if (oldConfig.position != config.position) {
+                    updatePosition(config.position)
+                }
+
+                // Force layout update
+                requestLayout()
+                invalidate()
             }
         }
     }

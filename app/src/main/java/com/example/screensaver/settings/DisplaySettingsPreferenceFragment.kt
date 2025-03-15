@@ -35,14 +35,27 @@ class DisplaySettingsPreferenceFragment : PreferenceFragmentCompat() {
             savePreferenceState(preferenceScreen, this)
         }
 
-        findPreference<SwitchPreferenceCompat>("keep_screen_on")?.setOnPreferenceChangeListener { _, newValue ->
-            val keepScreenOn = newValue as Boolean
+        findPreference<SwitchPreferenceCompat>("keep_screen_on")?.apply {
+            // Use safe call operator for nullable SharedPreferences
+            val keepScreenOn = preferenceManager.sharedPreferences?.getBoolean("keep_screen_on", true) ?: true
+            isChecked = keepScreenOn
+
+            // Apply the flag immediately based on the current preference value
             if (keepScreenOn) {
                 requireActivity().window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             } else {
                 requireActivity().window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
-            true
+
+            setOnPreferenceChangeListener { _, newValue ->
+                val newKeepScreenOn = newValue as Boolean
+                if (newKeepScreenOn) {
+                    requireActivity().window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    requireActivity().window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                true
+            }
         }
 
         findPreference<ListPreference>("screen_orientation")?.setOnPreferenceChangeListener { _, newValue ->

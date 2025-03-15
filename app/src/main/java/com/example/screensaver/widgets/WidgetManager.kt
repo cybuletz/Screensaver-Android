@@ -11,10 +11,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
 import android.view.ViewGroup
+import com.example.screensaver.music.RadioManager
+import com.example.screensaver.music.RadioPreferences
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
 import java.text.SimpleDateFormat
 import java.util.Locale
+import androidx.preference.PreferenceManager
+
 
 @Singleton
 class WidgetManager @Inject constructor(
@@ -27,6 +31,12 @@ class WidgetManager @Inject constructor(
 
     @Inject
     lateinit var spotifyPreferences: SpotifyPreferences
+
+    @Inject
+    lateinit var radioManager: RadioManager
+
+    @Inject
+    lateinit var radioPreferences: RadioPreferences
 
     private val widgets = mutableMapOf<WidgetType, ScreenWidget>()
     private val _widgetStates = MutableStateFlow<Map<WidgetType, WidgetData>>(emptyMap())
@@ -427,6 +437,36 @@ class WidgetManager @Inject constructor(
         }
     }
 
+    fun updateMusicWidgetBasedOnSource() {
+        val currentSource = PreferenceManager.getDefaultSharedPreferences(context)
+            .getString("music_source", "spotify") ?: "spotify"
+
+        val isSourceEnabled = when (currentSource) {
+            "spotify" -> spotifyPreferences.isEnabled()
+            "radio" -> radioPreferences.isEnabled()
+            else -> false
+        }
+
+        // If any source is enabled, make sure widget is visible
+        if (isSourceEnabled) {
+            // Update preferences to show music widget
+            preferences.edit { putBoolean("show_music", true) }
+
+            // Update widget config and visibility
+            val newConfig = loadMusicConfig().copy(enabled = true)
+
+            val currentWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
+            if (currentWidget != null) {
+                updateWidgetConfig(WidgetType.MUSIC, newConfig)
+                currentWidget.show()
+            } else {
+                lastKnownContainer?.let { container ->
+                    setupMusicWidget(container)
+                }
+            }
+        }
+    }
+
     fun updateMusicVisibility(visible: Boolean) {
         Log.d(TAG, "Updating music visibility: $visible")
         spotifyPreferences.setEnabled(visible)  // Use SpotifyPreferences instead
@@ -451,22 +491,35 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Loaded music config: $config")
 
         try {
-            // Save states of other widgets
-            val weatherWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
-            val weatherState = weatherWidget?.currentWeatherState
+            // Save container reference
+            lastKnownContainer = container
 
-            val musicWidget = MusicControlWidget(container, config, spotifyManager)
-            registerWidget(WidgetType.MUSIC, musicWidget)
+            // Clean up existing widget if present
+            (widgets[WidgetType.MUSIC] as? MusicControlWidget)?.cleanup()
+
+            // Create new widget
+            val musicWidget = MusicControlWidget(
+                container = container,
+                config = config,
+                spotifyManager = spotifyManager,
+                spotifyPreferences = spotifyPreferences,
+                radioManager = radioManager,
+                radioPreferences = radioPreferences
+            )
+
+            // Initialize before registering
             musicWidget.init()
 
-            // Show the widget if enabled
-            if (config.enabled) {
-                showWidget(WidgetType.MUSIC)
-            }
+            // Register after initialization
+            registerWidget(WidgetType.MUSIC, musicWidget)
 
-            // Restore weather widget state if needed
-            weatherState?.let { state ->
-                weatherWidget?.updateState(state)
+            // Force visibility update based on config
+            if (config.enabled) {
+                musicWidget.show()
+                updateWidgetState(WidgetType.MUSIC, WidgetState.Active)
+            } else {
+                musicWidget.hide()
+                updateWidgetState(WidgetType.MUSIC, WidgetState.Hidden)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up music widget", e)
