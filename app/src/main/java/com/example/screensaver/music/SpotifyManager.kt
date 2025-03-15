@@ -213,6 +213,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
                         refreshPlayerState()
 
                         // Set up player state subscription with detailed logging
+// Inside connectToSpotify() method, in the onConnected callback:
                         appRemote.playerApi.subscribeToPlayerState()
                             .setEventCallback { playerState ->
                                 Timber.d("Player state update: isPaused=${playerState.isPaused}, " +
@@ -221,16 +222,34 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
                                 val track = playerState.track
                                 if (track != null) {
-                                    _playbackState.value = PlaybackState.Playing(
-                                        isPlaying = !playerState.isPaused,
-                                        trackName = track.name,
-                                        artistName = track.artist.name,
-                                        trackDuration = track.duration,
-                                        playbackPosition = playerState.playbackPosition,
-                                        playlistTitle = spotifyPreferences.getSelectedPlaylistTitle()
-                                    )
+                                    // Get the cover art for the track
+                                    spotifyAppRemote?.imagesApi?.getImage(track.imageUri)
+                                        ?.setResultCallback { bitmap ->
+                                            _playbackState.value = PlaybackState.Playing(
+                                                isPlaying = !playerState.isPaused,
+                                                trackName = track.name,
+                                                artistName = track.artist.name,
+                                                trackDuration = track.duration,
+                                                playbackPosition = playerState.playbackPosition,
+                                                playlistTitle = spotifyPreferences.getSelectedPlaylistTitle(),
+                                                coverArt = bitmap
+                                            )
+                                        }
+                                        ?.setErrorCallback { error ->
+                                            Timber.e(error, "Failed to get track cover art")
+                                            // Update state without cover art if image fetch fails
+                                            _playbackState.value = PlaybackState.Playing(
+                                                isPlaying = !playerState.isPaused,
+                                                trackName = track.name,
+                                                artistName = track.artist.name,
+                                                trackDuration = track.duration,
+                                                playbackPosition = playerState.playbackPosition,
+                                                playlistTitle = spotifyPreferences.getSelectedPlaylistTitle(),
+                                                coverArt = null
+                                            )
+                                        }
 
-                                    // Add this line to verify shuffle state on track changes
+                                    // Verify shuffle state on track changes
                                     verifyAndMaintainShuffleState()
                                 } else {
                                     Timber.w("Track is null. isPaused=${playerState.isPaused}, " +
@@ -488,7 +507,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
                 return
             }
 
-            // First get the user ID for the Liked Songs playlist URI
             getCurrentUser(
                 callback = { user ->
                     if (user == null) {
@@ -496,71 +514,71 @@ import okhttp3.RequestBody.Companion.toRequestBody
                         return@getCurrentUser
                     }
 
-                    val defaultPlaylists = listOf(
-                        SpotifyPlaylist(
-                            title = "Liked Songs",
-                            uri = "spotify:user:${user.id}:saved:tracks",
-                            imageUri = null,
-                            isRecommended = true
-                        ),
-                        SpotifyPlaylist(
-                            title = "Recently Played",
-                            uri = RECENTLY_PLAYED_URI,
-                            imageUri = null,
-                            isRecommended = true
-                        )
+                    // Create Liked Songs playlist first
+                    val likedSongs = SpotifyPlaylist(
+                        title = "Liked Songs",
+                        uri = "spotify:user:${user.id}:saved:tracks",
+                        imageUri = null,
+                        isRecommended = false
                     )
 
-                    // Get recommended playlists from Spotify App Remote
-                    if (spotifyAppRemote?.isConnected == true) {
-                        spotifyAppRemote?.contentApi?.getRecommendedContentItems("default")
-                            ?.setResultCallback { items: ListItems ->
-                                try {
-                                    Timber.d("Received ${items.items.size} recommended items from Spotify API")
+                    val recentlyPlayed = SpotifyPlaylist(
+                        title = "Recently Played",
+                        uri = RECENTLY_PLAYED_URI,
+                        imageUri = null,
+                        isRecommended = false
+                    )
 
-                                    val recommendedPlaylists = items.items
-                                        .asSequence()
-                                        .filter { item ->
-                                            val isValid = item != null && !item.title.isNullOrEmpty()
-                                            Timber.d("Filtering item: ${item?.title} (valid: $isValid)")
-                                            isValid
-                                        }
-                                        .map { item ->
-                                            SpotifyPlaylist(
-                                                title = item.title,
-                                                uri = item.uri, // Keep original section URI
-                                                imageUri = item.imageUri?.raw,
-                                                isRecommended = true
-                                            ).also { playlist ->
-                                                logPlaylistDetails(playlist)
+                    // Get user playlists (personal playlists)
+                    getUserPlaylists(token) { userPlaylists ->
+                        // Get recommended playlists
+                        if (spotifyAppRemote?.isConnected == true) {
+                            spotifyAppRemote?.contentApi?.getRecommendedContentItems("default")
+                                ?.setResultCallback { items: ListItems ->
+                                    try {
+                                        val recommendedPlaylists = items.items
+                                            .asSequence()
+                                            .filter { item ->
+                                                val isValid = item != null && !item.title.isNullOrEmpty()
+                                                isValid
                                             }
-                                        }
-                                        .toList()
+                                            .map { item ->
+                                                SpotifyPlaylist(
+                                                    title = item.title,
+                                                    uri = item.uri,
+                                                    imageUri = item.imageUri?.toString(),
+                                                    isRecommended = true
+                                                )
+                                            }
+                                            .toList()
 
-                                    // Get user playlists
-                                    getUserPlaylists(token) { userPlaylists ->
-                                        // Combine all playlists
-                                        val allPlaylists = defaultPlaylists + recommendedPlaylists + userPlaylists
-                                        callback(allPlaylists)
+                                        // Order playlists: Liked Songs first, then personal playlists, then recommendations
+                                        val orderedPlaylists = listOf(likedSongs) +
+                                                listOf(recentlyPlayed) +
+                                                userPlaylists.sortedBy { it.title } +
+                                                recommendedPlaylists
+                                        callback(orderedPlaylists)
+                                    } catch (e: Exception) {
+                                        Timber.e(e, "Error processing recommended playlists")
+                                        // If recommendations fail, still return other playlists
+                                        val orderedPlaylists = listOf(likedSongs) +
+                                                listOf(recentlyPlayed) +
+                                                userPlaylists.sortedBy { it.title }
+                                        callback(orderedPlaylists)
                                     }
-                                } catch (e: Exception) {
-                                    Timber.e(e, "Error processing recommended playlists")
-                                    errorCallback(e)
                                 }
-                            }
-                            ?.setErrorCallback { error ->
-                                Timber.e(error, "Error fetching recommended playlists")
-                                // If recommended playlists fail, still try to get user playlists
-                                getUserPlaylists(token) { userPlaylists ->
-                                    val allPlaylists = defaultPlaylists + userPlaylists
-                                    callback(allPlaylists)
+                                ?.setErrorCallback { error ->
+                                    Timber.e(error, "Error fetching recommended playlists")
+                                    val orderedPlaylists = listOf(likedSongs) +
+                                            listOf(recentlyPlayed) +
+                                            userPlaylists.sortedBy { it.title }
+                                    callback(orderedPlaylists)
                                 }
-                            }
-                    } else {
-                        // If not connected to App Remote, just get user playlists
-                        getUserPlaylists(token) { userPlaylists ->
-                            val allPlaylists = defaultPlaylists + userPlaylists
-                            callback(allPlaylists)
+                        } else {
+                            val orderedPlaylists = listOf(likedSongs) +
+                                    listOf(recentlyPlayed) +
+                                    userPlaylists.sortedBy { it.title }
+                            callback(orderedPlaylists)
                         }
                     }
                 },
@@ -992,6 +1010,79 @@ import okhttp3.RequestBody.Companion.toRequestBody
             })
         }
 
+        fun getTrackCover(callback: (android.graphics.Bitmap?) -> Unit) {
+            spotifyAppRemote?.playerApi?.playerState
+                ?.setResultCallback { playerState ->
+                    val imageUri = playerState.track?.imageUri
+                    if (imageUri != null) {
+                        spotifyAppRemote?.imagesApi?.getImage(imageUri)
+                            ?.setResultCallback { bitmap ->
+                                callback(bitmap)
+                            }
+                            ?.setErrorCallback { throwable ->
+                                Timber.e(throwable, "Error getting track cover")
+                                callback(null)
+                            }
+                    } else {
+                        callback(null)
+                    }
+                }
+                ?.setErrorCallback { throwable ->
+                    Timber.e(throwable, "Error getting player state")
+                    callback(null)
+                }
+        }
+
+        fun getPlaylistCover(playlist: SpotifyPlaylist, callback: (android.graphics.Bitmap?) -> Unit) {
+            if (playlist.uri.startsWith("spotify:section:")) {
+                // For sections, we need to get the first child item's image
+                val listItem = ListItem(
+                    "",         // title
+                    "",         // subtitle
+                    null,       // imageUri
+                    playlist.uri, // uri
+                    "",         // category
+                    true,       // hasChildren
+                    true        // playable
+                )
+
+                spotifyAppRemote?.contentApi?.getChildrenOfItem(
+                    listItem,
+                    BROWSE_OPTIONS_ALL,
+                    0
+                )?.setResultCallback { result ->
+                    val firstItem = result.items.firstOrNull()
+                    if (firstItem?.imageUri != null) {
+                        spotifyAppRemote?.imagesApi?.getImage(firstItem.imageUri)
+                            ?.setResultCallback { bitmap ->
+                                callback(bitmap)
+                            }
+                            ?.setErrorCallback { throwable ->
+                                Timber.e(throwable, "Error getting section item cover")
+                                callback(null)
+                            }
+                    } else {
+                        callback(null)
+                    }
+                }?.setErrorCallback { error ->
+                    Timber.e(error, "Error getting section children")
+                    callback(null)
+                }
+            } else {
+                // Regular playlists use the existing method
+                playlist.imageUri?.let { uri ->
+                    spotifyAppRemote?.imagesApi?.getImage(com.spotify.protocol.types.ImageUri(uri))
+                        ?.setResultCallback { bitmap ->
+                            callback(bitmap)
+                        }
+                        ?.setErrorCallback { throwable ->
+                            Timber.e(throwable, "Error getting playlist cover")
+                            callback(null)
+                        }
+                } ?: callback(null)
+            }
+        }
+
         data class SpotifyUser(
             val id: String,
             val displayName: String?,
@@ -1019,7 +1110,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
                 val artistName: String = "",
                 val trackDuration: Long,
                 val playbackPosition: Long,
-                val playlistTitle: String? = null
+                val playlistTitle: String? = null,
+                val coverArt: android.graphics.Bitmap? = null
             ) : PlaybackState()
         }
 

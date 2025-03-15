@@ -32,7 +32,9 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.view.inputmethod.EditorInfo
 import com.example.screensaver.widgets.WidgetManager
-import android.widget.CheckBox
+import android.widget.ImageView
+import android.widget.BaseAdapter
+import android.view.ViewGroup
 
 
 @AndroidEntryPoint
@@ -398,9 +400,64 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         loadingDialog.dismiss()
                         Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})" }}")
 
+                        // Create a custom adapter for the dialog
+                        val adapter = object : BaseAdapter() {
+                            override fun getCount(): Int = playlists.size
+                            override fun getItem(position: Int): Any = playlists[position]
+                            override fun getItemId(position: Int): Long = position.toLong()
+
+                            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                                val view = convertView ?: LayoutInflater.from(parent.context)
+                                    .inflate(R.layout.item_playlist, parent, false)
+
+                                val playlist = playlists[position]
+                                val titleView = view.findViewById<TextView>(R.id.playlist_title)
+                                val coverView = view.findViewById<ImageView>(R.id.playlist_cover)
+
+                                titleView.text = playlist.title
+
+                                // Check specifically for Liked Songs
+                                if (playlist.uri.contains(":saved:tracks")) {
+                                    Timber.d("Found Liked Songs playlist: ${playlist.title} - Setting custom gradient icon")
+
+                                    // Clear the ImageView's drawable and any potential cache
+                                    coverView.setImageDrawable(null)
+                                    coverView.clearAnimation()
+
+                                    // Force garbage collection of any cached bitmaps
+                                    System.gc()
+
+                                    // Set our custom gradient icon with a post to ensure UI thread
+                                    view.post {
+                                        // Clear cache again just to be sure
+                                        coverView.setImageDrawable(null)
+                                        // Set the new drawable
+                                        coverView.setImageResource(R.drawable.ic_spotify_liked_songs)
+                                        // Force a layout refresh
+                                        coverView.invalidate()
+                                        view.invalidate()
+                                    }
+                                } else {
+                                    Timber.d("Regular playlist: ${playlist.title} - Loading cover image")
+                                    // For regular playlists, load cover as before
+                                    spotifyManager.getPlaylistCover(playlist) { bitmap ->
+                                        requireActivity().runOnUiThread {
+                                            if (bitmap != null) {
+                                                coverView.setImageBitmap(bitmap)
+                                            } else {
+                                                coverView.setImageResource(R.drawable.ic_spotify_logo)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                return view
+                            }
+                        }
+
                         val dialog = MaterialAlertDialogBuilder(requireContext())
                             .setTitle("Select Playlist")
-                            .setItems(playlists.map { it.title }.toTypedArray()) { _, which ->
+                            .setAdapter(adapter) { _, which ->
                                 val selectedPlaylist = playlists[which]
                                 Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
 

@@ -8,7 +8,7 @@
         android:title="@string/pref_show_music_title"
         android:summary="@string/pref_show_music_summary"
         android:icon="@drawable/ic_music_pref"
-        android:defaultValue="true"/>
+        android:defaultValue="false"/>
 
     <ListPreference
         android:key="music_position"

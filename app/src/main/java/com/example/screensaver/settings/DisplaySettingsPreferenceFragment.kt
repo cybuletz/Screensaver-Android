@@ -36,7 +36,12 @@ class DisplaySettingsPreferenceFragment : PreferenceFragmentCompat() {
         }
 
         findPreference<SwitchPreferenceCompat>("keep_screen_on")?.apply {
-            // Use safe call operator for nullable SharedPreferences
+            // Force the default value to true when the preference is first created
+            if (!preferenceManager.sharedPreferences?.contains("keep_screen_on")!!) {
+                preferenceManager.sharedPreferences?.edit()?.putBoolean("keep_screen_on", true)?.apply()
+            }
+
+            // Get the current value (will be true by default now)
             val keepScreenOn = preferenceManager.sharedPreferences?.getBoolean("keep_screen_on", true) ?: true
             isChecked = keepScreenOn
 
