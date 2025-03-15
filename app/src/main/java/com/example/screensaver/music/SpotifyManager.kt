@@ -68,6 +68,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
             private const val REDIRECT_URI = "screensaver-spotify://callback"
             private const val RECONNECT_DELAY = 5000L
             private const val RECENTLY_PLAYED_URI = "spotify:playlist:RecentlyPlayed"
+
+            private const val BROWSE_OPTIONS_ALL = 3
         }
 
         fun onScreensaverStarted() {
@@ -227,6 +229,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
                                         playbackPosition = playerState.playbackPosition,
                                         playlistTitle = spotifyPreferences.getSelectedPlaylistTitle()
                                     )
+
+                                    // Add this line to verify shuffle state on track changes
+                                    verifyAndMaintainShuffleState()
                                 } else {
                                     Timber.w("Track is null. isPaused=${playerState.isPaused}, " +
                                             "position=${playerState.playbackPosition}")
@@ -401,6 +406,81 @@ import okhttp3.RequestBody.Companion.toRequestBody
             }
         }
 
+        fun setShuffleMode(enabled: Boolean) {
+            Timber.d("Setting shuffle mode to: $enabled")
+            spotifyAppRemote?.playerApi?.setShuffle(enabled)
+                ?.setResultCallback {
+                    Timber.d("Successfully set shuffle mode to: $enabled")
+                }
+                ?.setErrorCallback { error ->
+                    Timber.e(error, "Failed to set shuffle mode")
+                }
+        }
+
+        private fun logPlaylistDetails(playlist: SpotifyPlaylist) {
+            Timber.d("""
+                Playlist Details:
+                Title: ${playlist.title}
+                URI: ${playlist.uri}
+                Image URI: ${playlist.imageUri}
+                Is Recommended: ${playlist.isRecommended}
+            """.trimIndent())
+        }
+
+        private fun getUserPlaylists(token: String, callback: (List<SpotifyPlaylist>) -> Unit) {
+            val client = OkHttpClient()
+            val playlistsRequest = Request.Builder()
+                .url("https://api.spotify.com/v1/me/playlists?limit=50")
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+
+            client.newCall(playlistsRequest).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    Handler(Looper.getMainLooper()).post {
+                        callback(emptyList()) // Return empty list on failure
+                    }
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        if (!response.isSuccessful) {
+                            Handler(Looper.getMainLooper()).post {
+                                callback(emptyList())
+                            }
+                            return
+                        }
+
+                        val json = JSONObject(response.body?.string() ?: "")
+                        val items = json.getJSONArray("items")
+                        val userPlaylists = mutableListOf<SpotifyPlaylist>()
+
+                        for (i in 0 until items.length()) {
+                            val item = items.getJSONObject(i)
+                            val images = item.getJSONArray("images")
+                            val imageUri = if (images.length() > 0) images.getJSONObject(0).getString("url") else null
+
+                            userPlaylists.add(
+                                SpotifyPlaylist(
+                                    title = item.getString("name"),
+                                    uri = "spotify:playlist:${item.getString("id")}",
+                                    imageUri = imageUri,
+                                    isRecommended = false
+                                )
+                            )
+                        }
+
+                        Handler(Looper.getMainLooper()).post {
+                            callback(userPlaylists)
+                        }
+                    } catch (e: Exception) {
+                        Handler(Looper.getMainLooper()).post {
+                            callback(emptyList())
+                        }
+                    }
+                }
+            })
+        }
+
         fun getPlaylists(callback: (List<SpotifyPlaylist>) -> Unit, errorCallback: (Throwable) -> Unit) {
             val token = tokenManager.getAccessToken()
             if (token == null) {
@@ -416,89 +496,73 @@ import okhttp3.RequestBody.Companion.toRequestBody
                         return@getCurrentUser
                     }
 
-                    val recommendedPlaylists = listOf(
+                    val defaultPlaylists = listOf(
                         SpotifyPlaylist(
                             title = "Liked Songs",
-                            // Use the correct URI format for Liked Songs
                             uri = "spotify:user:${user.id}:saved:tracks",
                             imageUri = null,
                             isRecommended = true
                         ),
                         SpotifyPlaylist(
                             title = "Recently Played",
-                            uri = "spotify:playlist:RecentlyPlayed",
-                            imageUri = null,
-                            isRecommended = true
-                        ),
-                        SpotifyPlaylist(
-                            title = "Discover Weekly",
-                            uri = "spotify:playlist:discover-weekly",
-                            imageUri = null,
-                            isRecommended = true
-                        ),
-                        SpotifyPlaylist(
-                            title = "Daily Mix 1",
-                            uri = "spotify:playlist:daily-mix-1",
+                            uri = RECENTLY_PLAYED_URI,
                             imageUri = null,
                             isRecommended = true
                         )
                     )
 
-                    // Get user playlists
-                    val client = OkHttpClient()
-                    val playlistsRequest = Request.Builder()
-                        .url("https://api.spotify.com/v1/me/playlists?limit=50")
-                        .addHeader("Authorization", "Bearer $token")
-                        .build()
+                    // Get recommended playlists from Spotify App Remote
+                    if (spotifyAppRemote?.isConnected == true) {
+                        spotifyAppRemote?.contentApi?.getRecommendedContentItems("default")
+                            ?.setResultCallback { items: ListItems ->
+                                try {
+                                    Timber.d("Received ${items.items.size} recommended items from Spotify API")
 
-                    client.newCall(playlistsRequest).enqueue(object : Callback {
-                        override fun onFailure(call: Call, e: IOException) {
-                            Handler(Looper.getMainLooper()).post {
-                                errorCallback(e)
-                            }
-                        }
+                                    val recommendedPlaylists = items.items
+                                        .asSequence()
+                                        .filter { item ->
+                                            val isValid = item != null && !item.title.isNullOrEmpty()
+                                            Timber.d("Filtering item: ${item?.title} (valid: $isValid)")
+                                            isValid
+                                        }
+                                        .map { item ->
+                                            SpotifyPlaylist(
+                                                title = item.title,
+                                                uri = item.uri, // Keep original section URI
+                                                imageUri = item.imageUri?.raw,
+                                                isRecommended = true
+                                            ).also { playlist ->
+                                                logPlaylistDetails(playlist)
+                                            }
+                                        }
+                                        .toList()
 
-                        override fun onResponse(call: Call, response: Response) {
-                            try {
-                                if (!response.isSuccessful) {
-                                    Handler(Looper.getMainLooper()).post {
-                                        errorCallback(IOException("Unexpected response ${response.code}"))
+                                    // Get user playlists
+                                    getUserPlaylists(token) { userPlaylists ->
+                                        // Combine all playlists
+                                        val allPlaylists = defaultPlaylists + recommendedPlaylists + userPlaylists
+                                        callback(allPlaylists)
                                     }
-                                    return
-                                }
-
-                                val json = JSONObject(response.body?.string() ?: "")
-                                val items = json.getJSONArray("items")
-                                val userPlaylists = mutableListOf<SpotifyPlaylist>()
-
-                                for (i in 0 until items.length()) {
-                                    val item = items.getJSONObject(i)
-                                    val images = item.getJSONArray("images")
-                                    val imageUri = if (images.length() > 0) images.getJSONObject(0).getString("url") else null
-
-                                    userPlaylists.add(
-                                        SpotifyPlaylist(
-                                            title = item.getString("name"),
-                                            uri = "spotify:playlist:${item.getString("id")}",
-                                            imageUri = imageUri,
-                                            isRecommended = false
-                                        )
-                                    )
-                                }
-
-                                // Combine recommended and user playlists
-                                val allPlaylists = recommendedPlaylists + userPlaylists
-
-                                Handler(Looper.getMainLooper()).post {
-                                    callback(allPlaylists)
-                                }
-                            } catch (e: Exception) {
-                                Handler(Looper.getMainLooper()).post {
+                                } catch (e: Exception) {
+                                    Timber.e(e, "Error processing recommended playlists")
                                     errorCallback(e)
                                 }
                             }
+                            ?.setErrorCallback { error ->
+                                Timber.e(error, "Error fetching recommended playlists")
+                                // If recommended playlists fail, still try to get user playlists
+                                getUserPlaylists(token) { userPlaylists ->
+                                    val allPlaylists = defaultPlaylists + userPlaylists
+                                    callback(allPlaylists)
+                                }
+                            }
+                    } else {
+                        // If not connected to App Remote, just get user playlists
+                        getUserPlaylists(token) { userPlaylists ->
+                            val allPlaylists = defaultPlaylists + userPlaylists
+                            callback(allPlaylists)
                         }
-                    })
+                    }
                 },
                 errorCallback = { error ->
                     errorCallback(error)
@@ -518,68 +582,226 @@ import okhttp3.RequestBody.Companion.toRequestBody
             }
 
             try {
-                // Special handling for Liked Songs
-                val finalUri = if (playlistUri.contains(":saved:tracks")) {
-                    // For Liked Songs, we need to use the special library URI
-                    "spotify:user:${playlistUri.split(":")[2]}:collection"
-                } else {
-                    playlistUri
+                when {
+                    // Handle Liked Songs
+                    playlistUri.contains(":saved:tracks") -> {
+                        val userId = playlistUri.split(":")[2]
+                        playItemWithSetup("spotify:user:$userId:collection")
+                    }
+                    // Handle Recently Played
+                    playlistUri == RECENTLY_PLAYED_URI -> {
+                        playItemWithSetup(playlistUri)
+                    }
+                    // Handle section URIs
+                    playlistUri.startsWith("spotify:section:") -> {
+                        handleSectionPlayback(playlistUri)
+                    }
+                    // Handle regular playlist URIs
+                    else -> {
+                        playItemWithSetup(playlistUri)
+                    }
                 }
-
-                spotifyAppRemote?.playerApi?.pause()
-                    ?.setResultCallback {
-                        Timber.d("Paused current playback before starting new playlist")
-
-                        spotifyAppRemote?.playerApi?.setRepeat(Repeat.ALL)
-                            ?.setResultCallback {
-                                Timber.d("Set repeat mode to ALL")
-
-                                val shuffleEnabled = spotifyPreferences.isShuffleEnabled()
-                                spotifyAppRemote?.playerApi?.setShuffle(shuffleEnabled)
-                                    ?.setResultCallback {
-                                        Timber.d("Set shuffle mode to: $shuffleEnabled")
-
-                                        spotifyAppRemote?.playerApi?.play(finalUri)
-                                            ?.setResultCallback {
-                                                Timber.d("Successfully started playlist playback")
-                                                refreshPlayerState()
-                                            }
-                                            ?.setErrorCallback { error ->
-                                                Timber.e(error, "Failed to play playlist")
-                                                _errorState.value = SpotifyError.PlaybackFailed(error)
-
-                                                // If playing liked songs fails, try alternative URI
-                                                if (playlistUri.contains(":saved:tracks")) {
-                                                    val alternativeUri = "spotify:user:${playlistUri.split(":")[2]}:liked"
-                                                    spotifyAppRemote?.playerApi?.play(alternativeUri)
-                                                        ?.setResultCallback {
-                                                            Timber.d("Successfully started playlist playback with alternative URI")
-                                                            refreshPlayerState()
-                                                        }
-                                                        ?.setErrorCallback { retryError ->
-                                                            Timber.e(retryError, "Failed to play playlist with alternative URI")
-                                                            _errorState.value = SpotifyError.PlaybackFailed(retryError)
-                                                        }
-                                                }
-                                            }
-                                    }
-                                    ?.setErrorCallback { error ->
-                                        Timber.e(error, "Failed to set shuffle mode")
-                                    }
-                            }
-                            ?.setErrorCallback { error ->
-                                Timber.e(error, "Failed to set repeat mode")
-                            }
-                    }
-                    ?.setErrorCallback { error ->
-                        Timber.e(error, "Failed to pause before playing new playlist")
-                        // Try playing anyway
-                        spotifyAppRemote?.playerApi?.play(finalUri)
-                    }
-
             } catch (e: Exception) {
                 Timber.e(e, "Fatal error playing playlist")
                 _errorState.value = SpotifyError.PlaybackFailed(e)
+            }
+        }
+
+        private fun playItemWithSetup(uri: String) {
+            Timber.d("Setting up playback for URI: $uri")
+
+            spotifyAppRemote?.playerApi?.pause()
+                ?.setResultCallback {
+                    Timber.d("Paused current playback before starting new content")
+
+                    // Set repeat mode first
+                    spotifyAppRemote?.playerApi?.setRepeat(Repeat.ALL)
+                        ?.setResultCallback {
+                            Timber.d("Set repeat mode to ALL")
+
+                            // Then set shuffle mode BEFORE starting playback
+                            val shuffleEnabled = spotifyPreferences.isShuffleEnabled()
+                            spotifyAppRemote?.playerApi?.setShuffle(shuffleEnabled)
+                                ?.setResultCallback {
+                                    Timber.d("Set shuffle mode to: $shuffleEnabled")
+
+                                    if (shuffleEnabled) {
+                                        // For shuffle, we need to:
+                                        // 1. Start playback
+                                        // 2. Skip to a random position to properly shuffle
+                                        // 3. Then skip back to start
+                                        spotifyAppRemote?.playerApi?.play(uri)
+                                            ?.setResultCallback {
+                                                Timber.d("Started initial playback, now forcing shuffle")
+
+                                                // Skip forward a few tracks to force queue shuffling
+                                                repeat(3) { skipCount ->
+                                                    spotifyAppRemote?.playerApi?.skipNext()
+                                                        ?.setResultCallback {
+                                                            Timber.d("Completed skip forward $skipCount")
+                                                            if (skipCount == 2) {
+                                                                // After last skip, go back to start
+                                                                spotifyAppRemote?.playerApi?.skipPrevious()
+                                                                    ?.setResultCallback {
+                                                                        spotifyAppRemote?.playerApi?.skipPrevious()
+                                                                            ?.setResultCallback {
+                                                                                spotifyAppRemote?.playerApi?.skipPrevious()
+                                                                                    ?.setResultCallback {
+                                                                                        Timber.d("Shuffle sequence complete")
+                                                                                        refreshPlayerState()
+                                                                                    }
+                                                                            }
+                                                                    }
+                                                            }
+                                                        }
+                                                }
+                                            }
+                                    } else {
+                                        // For non-shuffle, just play normally
+                                        spotifyAppRemote?.playerApi?.play(uri)
+                                            ?.setResultCallback {
+                                                Timber.d("Successfully started normal playback")
+                                                refreshPlayerState()
+                                            }
+                                    }
+                                }
+                                ?.setErrorCallback { error ->
+                                    Timber.e(error, "Failed to set shuffle mode")
+                                    // Try to play anyway
+                                    spotifyAppRemote?.playerApi?.play(uri)
+                                }
+                        }
+                        ?.setErrorCallback { error ->
+                            Timber.e(error, "Failed to set repeat mode")
+                            // Try to play anyway
+                            spotifyAppRemote?.playerApi?.play(uri)
+                        }
+                }
+                ?.setErrorCallback { error ->
+                    Timber.e(error, "Failed to pause before playing new content")
+                    // Try playing anyway
+                    spotifyAppRemote?.playerApi?.play(uri)
+                }
+        }
+
+        private fun handleSectionPlayback(sectionUri: String) {
+            Timber.d("Handling section playback: $sectionUri")
+
+            // First try to browse the section using the content API
+            spotifyAppRemote?.contentApi?.getRecommendedContentItems("default")
+                ?.setResultCallback { rootItems ->
+                    Timber.d("Got ${rootItems.items.size} root items")
+
+                    // Find the matching section
+                    val matchingSection = rootItems.items.find { item -> item.uri == sectionUri }
+                    if (matchingSection != null) {
+                        Timber.d("Found matching section: ${matchingSection.title}")
+
+                        // Get the section's content
+                        spotifyAppRemote?.contentApi?.getChildrenOfItem(
+                            matchingSection,
+                            BROWSE_OPTIONS_ALL, // Include all content types
+                            0
+                        )?.setResultCallback { contentItems ->
+                            if (contentItems.items.isNotEmpty()) {
+                                val firstItem = contentItems.items[0]
+                                if (firstItem.playable) {
+                                    Timber.d("Playing first playable item: ${firstItem.title}")
+                                    playItemWithSetup(firstItem.uri)
+                                } else {
+                                    // Try to browse deeper
+                                    spotifyAppRemote?.contentApi?.getChildrenOfItem(
+                                        firstItem,
+                                        BROWSE_OPTIONS_ALL,
+                                        0
+                                    )?.setResultCallback { subItems ->
+                                        val playableItem = subItems.items.firstOrNull { item -> item.playable }
+                                        if (playableItem != null) {
+                                            Timber.d("Playing first playable sub-item: ${playableItem.title}")
+                                            playItemWithSetup(playableItem.uri)
+                                        } else {
+                                            // If no playable items found, try the original section URI
+                                            Timber.d("No playable items found, trying section URI directly")
+                                            playItemWithSetup(sectionUri)
+                                        }
+                                    }?.setErrorCallback { error ->
+                                        Timber.e(error, "Error browsing sub-items")
+                                        // Fall back to section URI
+                                        playItemWithSetup(sectionUri)
+                                    }
+                                }
+                            } else {
+                                Timber.d("No items found, trying alternate approach")
+                                tryAlternatePlayback(sectionUri)
+                            }
+                        }?.setErrorCallback { error ->
+                            Timber.e(error, "Error getting section content")
+                            tryAlternatePlayback(sectionUri)
+                        }
+                    } else {
+                        // If section not found in recommended items, try alternate approach
+                        Timber.d("Section not found in recommended items")
+                        tryAlternatePlayback(sectionUri)
+                    }
+                }?.setErrorCallback { error ->
+                    Timber.e(error, "Error getting recommended items")
+                    tryAlternatePlayback(sectionUri)
+                }
+        }
+
+        private fun tryAlternatePlayback(sectionUri: String) {
+            Timber.d("Trying alternate playback for: $sectionUri")
+
+            // Try to get section content directly
+            spotifyAppRemote?.contentApi?.getChildrenOfItem(
+                ListItem(
+                    "",         // title
+                    "",         // subtitle
+                    null,       // imageUri
+                    sectionUri, // uri
+                    "",         // category
+                    true,       // hasChildren
+                    true        // playable
+                ),
+                BROWSE_OPTIONS_ALL,
+                0
+            )?.setResultCallback { result ->
+                if (result.items.isNotEmpty()) {
+                    val playableItem = result.items.firstOrNull { item -> item.playable }
+                    if (playableItem != null) {
+                        Timber.d("Found playable item in section")
+                        playItemWithSetup(playableItem.uri)
+                    } else {
+                        // Try first item's children
+                        val firstItem = result.items[0]
+                        spotifyAppRemote?.contentApi?.getChildrenOfItem(
+                            firstItem,
+                            BROWSE_OPTIONS_ALL,
+                            0
+                        )?.setResultCallback { children ->
+                            val firstPlayable = children.items.firstOrNull { item -> item.playable }
+                            if (firstPlayable != null) {
+                                Timber.d("Found playable item in deeper browse")
+                                playItemWithSetup(firstPlayable.uri)
+                            } else {
+                                // Try playing the first item directly
+                                Timber.d("No playable items found, trying first item")
+                                playItemWithSetup(firstItem.uri)
+                            }
+                        }?.setErrorCallback { error ->
+                            Timber.e(error, "Error getting children")
+                            // Try the original section as last resort
+                            playItemWithSetup(sectionUri)
+                        }
+                    }
+                } else {
+                    // If no items found, try direct playback
+                    Timber.d("No items found, trying direct playback")
+                    playItemWithSetup(sectionUri)
+                }
+            }?.setErrorCallback { error ->
+                Timber.e(error, "Error in alternate playback")
+                playItemWithSetup(sectionUri)
             }
         }
 
@@ -636,12 +858,39 @@ import okhttp3.RequestBody.Companion.toRequestBody
     """.trimIndent())
         }
 
+        private fun verifyAndMaintainShuffleState() {
+            spotifyAppRemote?.playerApi?.playerState
+                ?.setResultCallback { playerState ->
+                    val expectedShuffle = spotifyPreferences.isShuffleEnabled()
+                    val currentShuffle = playerState.playbackOptions.isShuffling
+
+                    Timber.d("Verifying shuffle state - Expected: $expectedShuffle, Current: $currentShuffle")
+
+                    if (currentShuffle != expectedShuffle) {
+                        Timber.d("Shuffle state mismatch, resetting to: $expectedShuffle")
+                        spotifyAppRemote?.playerApi?.setShuffle(expectedShuffle)
+                            ?.setResultCallback {
+                                // After setting shuffle, force a queue refresh by skipping
+                                if (expectedShuffle) {
+                                    spotifyAppRemote?.playerApi?.skipNext()
+                                        ?.setResultCallback {
+                                            spotifyAppRemote?.playerApi?.skipPrevious()
+                                        }
+                                }
+                            }
+                    }
+                }
+        }
+
         private fun refreshPlayerState() {
             Timber.d("Refreshing player state")
             if (spotifyAppRemote?.isConnected != true) {
                 Timber.w("Cannot refresh player state - Spotify not connected")
                 return
             }
+
+            // Add this line to verify shuffle state
+            verifyAndMaintainShuffleState()
 
             spotifyAppRemote?.playerApi?.playerState
                 ?.setResultCallback { state ->
@@ -657,6 +906,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
                             playlistTitle = spotifyPreferences.getSelectedPlaylistTitle()
                         )
                         Timber.d("Updated playback state to: ${_playbackState.value}")
+
+                        // Add this: Verify shuffle state after track changes
+                        verifyAndMaintainShuffleState()
                     } else {
                         if (spotifyAppRemote?.isConnected == true) {
                             Timber.w("Connected to Spotify but received null track")

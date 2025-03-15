@@ -35,6 +35,12 @@
         app:isPreferenceVisible="false"/>
 
     <SwitchPreferenceCompat
+        android:key="spotify_shuffle"
+        android:title="Shuffle Playback"
+        android:summary="Randomly shuffle tracks during playback"
+        android:dependency="spotify_enabled" />
+
+    <SwitchPreferenceCompat
         android:key="spotify_autoplay"
         android:title="@string/pref_spotify_autoplay_title"
         android:summary="@string/pref_spotify_autoplay_summary"
