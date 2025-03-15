@@ -408,87 +408,179 @@ import okhttp3.RequestBody.Companion.toRequestBody
                 return
             }
 
-            val recommendedPlaylists = listOf(
-                SpotifyPlaylist(
-                    title = "Liked Songs",
-                    uri = "spotify:playlist:liked",
-                    imageUri = null,
-                    isRecommended = true
-                ),
-                SpotifyPlaylist(
-                    title = "Recently Played",
-                    uri = "spotify:playlist:RecentlyPlayed",
-                    imageUri = null,
-                    isRecommended = true
-                ),
-                SpotifyPlaylist(
-                    title = "Discover Weekly",
-                    uri = "spotify:playlist:discover-weekly",
-                    imageUri = null,
-                    isRecommended = true
-                ),
-                SpotifyPlaylist(
-                    title = "Daily Mix 1",
-                    uri = "spotify:playlist:daily-mix-1",
-                    imageUri = null,
-                    isRecommended = true
-                )
-            )
-
-            val client = OkHttpClient()
-            val request = Request.Builder()
-                .url("https://api.spotify.com/v1/me/playlists?limit=50")
-                .addHeader("Authorization", "Bearer $token")
-                .build()
-
-            client.newCall(request).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    Handler(Looper.getMainLooper()).post {
-                        errorCallback(e)
+            // First get the user ID for the Liked Songs playlist URI
+            getCurrentUser(
+                callback = { user ->
+                    if (user == null) {
+                        errorCallback(IllegalStateException("Could not get user information"))
+                        return@getCurrentUser
                     }
-                }
 
-                override fun onResponse(call: Call, response: Response) {
-                    try {
-                        if (!response.isSuccessful) {
+                    val recommendedPlaylists = listOf(
+                        SpotifyPlaylist(
+                            title = "Liked Songs",
+                            // Use the correct URI format for Liked Songs
+                            uri = "spotify:user:${user.id}:saved:tracks",
+                            imageUri = null,
+                            isRecommended = true
+                        ),
+                        SpotifyPlaylist(
+                            title = "Recently Played",
+                            uri = "spotify:playlist:RecentlyPlayed",
+                            imageUri = null,
+                            isRecommended = true
+                        ),
+                        SpotifyPlaylist(
+                            title = "Discover Weekly",
+                            uri = "spotify:playlist:discover-weekly",
+                            imageUri = null,
+                            isRecommended = true
+                        ),
+                        SpotifyPlaylist(
+                            title = "Daily Mix 1",
+                            uri = "spotify:playlist:daily-mix-1",
+                            imageUri = null,
+                            isRecommended = true
+                        )
+                    )
+
+                    // Get user playlists
+                    val client = OkHttpClient()
+                    val playlistsRequest = Request.Builder()
+                        .url("https://api.spotify.com/v1/me/playlists?limit=50")
+                        .addHeader("Authorization", "Bearer $token")
+                        .build()
+
+                    client.newCall(playlistsRequest).enqueue(object : Callback {
+                        override fun onFailure(call: Call, e: IOException) {
                             Handler(Looper.getMainLooper()).post {
-                                errorCallback(IOException("Unexpected response ${response.code}"))
+                                errorCallback(e)
                             }
-                            return
                         }
 
-                        val json = JSONObject(response.body?.string() ?: "")
-                        val items = json.getJSONArray("items")
-                        val userPlaylists = mutableListOf<SpotifyPlaylist>()
+                        override fun onResponse(call: Call, response: Response) {
+                            try {
+                                if (!response.isSuccessful) {
+                                    Handler(Looper.getMainLooper()).post {
+                                        errorCallback(IOException("Unexpected response ${response.code}"))
+                                    }
+                                    return
+                                }
 
-                        for (i in 0 until items.length()) {
-                            val item = items.getJSONObject(i)
-                            val images = item.getJSONArray("images")
-                            val imageUri = if (images.length() > 0) images.getJSONObject(0).getString("url") else null
+                                val json = JSONObject(response.body?.string() ?: "")
+                                val items = json.getJSONArray("items")
+                                val userPlaylists = mutableListOf<SpotifyPlaylist>()
 
-                            userPlaylists.add(
-                                SpotifyPlaylist(
-                                    title = item.getString("name"),
-                                    uri = "spotify:playlist:${item.getString("id")}",
-                                    imageUri = imageUri,
-                                    isRecommended = false
-                                )
-                            )
+                                for (i in 0 until items.length()) {
+                                    val item = items.getJSONObject(i)
+                                    val images = item.getJSONArray("images")
+                                    val imageUri = if (images.length() > 0) images.getJSONObject(0).getString("url") else null
+
+                                    userPlaylists.add(
+                                        SpotifyPlaylist(
+                                            title = item.getString("name"),
+                                            uri = "spotify:playlist:${item.getString("id")}",
+                                            imageUri = imageUri,
+                                            isRecommended = false
+                                        )
+                                    )
+                                }
+
+                                // Combine recommended and user playlists
+                                val allPlaylists = recommendedPlaylists + userPlaylists
+
+                                Handler(Looper.getMainLooper()).post {
+                                    callback(allPlaylists)
+                                }
+                            } catch (e: Exception) {
+                                Handler(Looper.getMainLooper()).post {
+                                    errorCallback(e)
+                                }
+                            }
                         }
-
-                        // Combine recommended and user playlists
-                        val allPlaylists = recommendedPlaylists + userPlaylists
-
-                        Handler(Looper.getMainLooper()).post {
-                            callback(allPlaylists)
-                        }
-                    } catch (e: Exception) {
-                        Handler(Looper.getMainLooper()).post {
-                            errorCallback(e)
-                        }
-                    }
+                    })
+                },
+                errorCallback = { error ->
+                    errorCallback(error)
                 }
-            })
+            )
+        }
+
+        fun playPlaylist(playlistUri: String) {
+            Timber.d("Attempting to play playlist: $playlistUri")
+
+            if (spotifyAppRemote?.isConnected != true) {
+                val error = Exception("Spotify not connected")
+                Timber.e(error)
+                _errorState.value = SpotifyError.PlaybackFailed(error)
+                connect()
+                return
+            }
+
+            try {
+                // Special handling for Liked Songs
+                val finalUri = if (playlistUri.contains(":saved:tracks")) {
+                    // For Liked Songs, we need to use the special library URI
+                    "spotify:user:${playlistUri.split(":")[2]}:collection"
+                } else {
+                    playlistUri
+                }
+
+                spotifyAppRemote?.playerApi?.pause()
+                    ?.setResultCallback {
+                        Timber.d("Paused current playback before starting new playlist")
+
+                        spotifyAppRemote?.playerApi?.setRepeat(Repeat.ALL)
+                            ?.setResultCallback {
+                                Timber.d("Set repeat mode to ALL")
+
+                                val shuffleEnabled = spotifyPreferences.isShuffleEnabled()
+                                spotifyAppRemote?.playerApi?.setShuffle(shuffleEnabled)
+                                    ?.setResultCallback {
+                                        Timber.d("Set shuffle mode to: $shuffleEnabled")
+
+                                        spotifyAppRemote?.playerApi?.play(finalUri)
+                                            ?.setResultCallback {
+                                                Timber.d("Successfully started playlist playback")
+                                                refreshPlayerState()
+                                            }
+                                            ?.setErrorCallback { error ->
+                                                Timber.e(error, "Failed to play playlist")
+                                                _errorState.value = SpotifyError.PlaybackFailed(error)
+
+                                                // If playing liked songs fails, try alternative URI
+                                                if (playlistUri.contains(":saved:tracks")) {
+                                                    val alternativeUri = "spotify:user:${playlistUri.split(":")[2]}:liked"
+                                                    spotifyAppRemote?.playerApi?.play(alternativeUri)
+                                                        ?.setResultCallback {
+                                                            Timber.d("Successfully started playlist playback with alternative URI")
+                                                            refreshPlayerState()
+                                                        }
+                                                        ?.setErrorCallback { retryError ->
+                                                            Timber.e(retryError, "Failed to play playlist with alternative URI")
+                                                            _errorState.value = SpotifyError.PlaybackFailed(retryError)
+                                                        }
+                                                }
+                                            }
+                                    }
+                                    ?.setErrorCallback { error ->
+                                        Timber.e(error, "Failed to set shuffle mode")
+                                    }
+                            }
+                            ?.setErrorCallback { error ->
+                                Timber.e(error, "Failed to set repeat mode")
+                            }
+                    }
+                    ?.setErrorCallback { error ->
+                        Timber.e(error, "Failed to pause before playing new playlist")
+                        // Try playing anyway
+                        spotifyAppRemote?.playerApi?.play(finalUri)
+                    }
+
+            } catch (e: Exception) {
+                Timber.e(e, "Fatal error playing playlist")
+                _errorState.value = SpotifyError.PlaybackFailed(e)
+            }
         }
 
         fun getPlaylistInfo(uri: String, callback: (SpotifyPlaylist?) -> Unit, errorCallback: (Throwable) -> Unit) {
@@ -522,65 +614,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
             }?.setErrorCallback { error ->
                 errorCallback(error)
             } ?: errorCallback(Exception("Spotify not connected"))
-        }
-
-        fun playPlaylist(playlistUri: String) {
-            Timber.d("Attempting to play playlist: $playlistUri")
-
-            if (spotifyAppRemote?.isConnected != true) {
-                val error = Exception("Spotify not connected")
-                Timber.e(error)
-                _errorState.value = SpotifyError.PlaybackFailed(error)
-                connect()
-                return
-            }
-
-            try {
-                // First pause any current playback
-                spotifyAppRemote?.playerApi?.pause()
-                    ?.setResultCallback {
-                        Timber.d("Paused current playback before starting new playlist")
-
-                        // Set repeat mode
-                        spotifyAppRemote?.playerApi?.setRepeat(Repeat.ALL)
-                            ?.setResultCallback {
-                                Timber.d("Set repeat mode to ALL")
-
-                                // Set shuffle based on preference
-                                val shuffleEnabled = spotifyPreferences.isShuffleEnabled()
-                                spotifyAppRemote?.playerApi?.setShuffle(shuffleEnabled)
-                                    ?.setResultCallback {
-                                        Timber.d("Set shuffle mode to: $shuffleEnabled")
-
-                                        // Play the new playlist
-                                        spotifyAppRemote?.playerApi?.play(playlistUri)
-                                            ?.setResultCallback {
-                                                Timber.d("Successfully started playlist playback")
-                                                refreshPlayerState()
-                                            }
-                                            ?.setErrorCallback { error ->
-                                                Timber.e(error, "Failed to play playlist")
-                                                _errorState.value = SpotifyError.PlaybackFailed(error)
-                                            }
-                                    }
-                                    ?.setErrorCallback { error ->
-                                        Timber.e(error, "Failed to set shuffle mode")
-                                    }
-                            }
-                            ?.setErrorCallback { error ->
-                                Timber.e(error, "Failed to set repeat mode")
-                            }
-                    }
-                    ?.setErrorCallback { error ->
-                        Timber.e(error, "Failed to pause before playing new playlist")
-                        // Try playing anyway
-                        spotifyAppRemote?.playerApi?.play(playlistUri)
-                    }
-
-            } catch (e: Exception) {
-                Timber.e(e, "Fatal error playing playlist")
-                _errorState.value = SpotifyError.PlaybackFailed(e)
-            }
         }
 
         private fun logPlayerState(state: PlayerState) {
