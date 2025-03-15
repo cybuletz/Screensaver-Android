@@ -67,13 +67,13 @@ class SpotifyPreferences @Inject constructor(
         }
     }
 
-    fun getLastVolume(): Float =
-        preferences.getFloat(PREF_LAST_VOLUME, 0.5f)
+    fun setSelectedPlaylistWithTitle(uri: String, title: String) {
+        secureStorage.saveSecurely("spotify_selected_playlist", uri)
+        secureStorage.saveSecurely("spotify_selected_playlist_title", title)
+    }
 
-    fun setLastVolume(volume: Float) {
-        preferences.edit()
-            .putFloat(PREF_LAST_VOLUME, volume)
-            .apply()
+    fun getSelectedPlaylistTitle(): String? {
+        return secureStorage.getSecurely("spotify_selected_playlist_title")
     }
 
     fun getPlaylistSummary(): String? =

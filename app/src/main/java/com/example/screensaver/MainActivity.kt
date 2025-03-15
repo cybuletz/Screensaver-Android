@@ -680,10 +680,14 @@ class MainActivity : AppCompatActivity() {
         // Keep screen on if preference is enabled AND either:
         // 1. Photos are being displayed
         // 2. Spotify is playing music
+        // 3. Radio is playing
         val shouldKeepScreenOn = keepScreenOn && (
                 photoDisplayManager.isScreensaverActive() ||
                         (spotifyPreferences.isEnabled() &&
-                                spotifyManager.playbackState.value is SpotifyManager.PlaybackState.Playing)
+                                spotifyManager.playbackState.value is SpotifyManager.PlaybackState.Playing) ||
+                        (radioPreferences.isEnabled() &&
+                                radioManager.playbackState.value is RadioManager.PlaybackState.Playing &&
+                                (radioManager.playbackState.value as RadioManager.PlaybackState.Playing).isPlaying)
                 )
 
         window.addFlags(if (shouldKeepScreenOn)

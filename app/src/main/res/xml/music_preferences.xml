@@ -74,10 +74,4 @@
         android:title="Favorite Stations"
         android:summary="Manage your favorite radio stations"
         android:dependency="radio_enabled" />
-
-    <SwitchPreferenceCompat
-        android:key="radio_autoplay"
-        android:title="Auto-play Last Station"
-        android:summary="Automatically play last station when screensaver starts"
-        android:dependency="radio_enabled" />
 </PreferenceScreen>

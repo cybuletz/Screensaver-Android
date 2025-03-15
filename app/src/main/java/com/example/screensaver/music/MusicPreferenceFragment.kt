@@ -390,9 +390,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                                 val selectedPlaylist = playlists[which]
                                 Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
 
-                                spotifyPreferences.setSelectedPlaylist(selectedPlaylist.uri)
-                                spotifyPreferences.setPlaylistSummary(selectedPlaylist.title)
+                                // Update these two lines:
+                                spotifyPreferences.setSelectedPlaylistWithTitle(selectedPlaylist.uri, selectedPlaylist.title)
                                 summary = selectedPlaylist.title
+
                                 Toast.makeText(
                                     requireContext(),
                                     "Selected: ${selectedPlaylist.title}",

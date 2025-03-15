@@ -42,14 +42,6 @@ class RadioManager @Inject constructor(
     companion object {
         private const val TAG = "RadioManager"
         private const val BASE_URL = "https://de1.api.radio-browser.info/json"
-        val DEFAULT_STATION = RadioStation(
-            id = "defaultstation",
-            name = "Radio Paradise - Main Mix",
-            url = "http://stream.radioparadise.com/aac-128",
-            genre = "Eclectic",
-            country = "USA",
-            favicon = "https://www.radioparadise.com/favicon.ico"
-        )
     }
 
     // Internal data classes
@@ -79,13 +71,11 @@ class RadioManager @Inject constructor(
 
     init {
         setupMediaPlayer()
-        // Get the last station from preferences and play it if available
-        val lastStation = preferences.getLastStation()
-        if (lastStation != null) {
-            playStation(lastStation)
-        } else {
-            // If no last station, play default
-            playStation(DEFAULT_STATION)
+        // Only auto-play if radio is enabled and was playing
+        if (preferences.isEnabled() && preferences.wasPlaying()) {
+            preferences.getLastStation()?.let { lastStation ->
+                playStation(lastStation)
+            }
         }
     }
 
@@ -166,7 +156,15 @@ class RadioManager @Inject constructor(
 
     fun disconnect() {
         // Store playing state before disconnecting
-        preferences.setWasPlaying(mediaPlayer?.isPlaying == true)  // use preferences instead of setWasPlaying
+        val wasPlaying = mediaPlayer?.isPlaying == true
+        preferences.setWasPlaying(wasPlaying)
+
+        // Store current station if we were playing
+        if (wasPlaying) {
+            _currentStation.value?.let { station ->
+                preferences.setLastStation(station)
+            }
+        }
 
         mediaPlayer?.apply {
             stop()
@@ -179,8 +177,10 @@ class RadioManager @Inject constructor(
 
     fun tryAutoResume() {
         if (preferences.isEnabled() && preferences.wasPlaying()) {
-            // Get last station and play it
-            playStation(preferences.getLastStation())
+            preferences.getLastStation()?.let { lastStation ->
+                Log.d(TAG, "Auto-resuming last station: ${lastStation.name}")
+                playStation(lastStation)
+            } ?: Log.d(TAG, "No last station to resume")
         }
     }
 

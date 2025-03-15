@@ -45,7 +45,7 @@ class RadioPreferences @Inject constructor(
     fun wasPlaying(): Boolean =
         preferences.getBoolean("radio_was_playing", false)
 
-    fun getLastStation(): RadioManager.RadioStation {
+    fun getLastStation(): RadioManager.RadioStation? {
         return secureStorage.getSecurely(PREF_LAST_STATION)?.let { json ->
             try {
                 JSONObject(json).let { obj ->
@@ -59,9 +59,9 @@ class RadioPreferences @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
-                RadioManager.DEFAULT_STATION
+                null
             }
-        } ?: RadioManager.DEFAULT_STATION
+        }
     }
 
     fun setLastStation(station: RadioManager.RadioStation?) {
