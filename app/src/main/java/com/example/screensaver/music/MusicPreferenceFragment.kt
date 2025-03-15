@@ -405,8 +405,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                                 }
                                 summary = selectedPlaylist.title
 
-                                // First pause current playback, then play the new playlist
+                                // First pause current playback
                                 spotifyManager.pause()
+
+                                // Play the playlist directly - let SpotifyManager handle the section logic
                                 spotifyManager.playPlaylist(selectedPlaylist.uri)
 
                                 Toast.makeText(
