@@ -675,12 +675,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateKeepScreenOn() {
         val keepScreenOn = PreferenceManager.getDefaultSharedPreferences(this)
-            .getBoolean("keep_screen_on", false)
+            .getBoolean("keep_screen_on", true)  // Changed default to true here as well
 
-        // Keep screen on if preference is enabled AND either:
-        // 1. Photos are being displayed
-        // 2. Spotify is playing music
-        // 3. Radio is playing
         val shouldKeepScreenOn = keepScreenOn && (
                 photoDisplayManager.isScreensaverActive() ||
                         (spotifyPreferences.isEnabled() &&
@@ -690,11 +686,13 @@ class MainActivity : AppCompatActivity() {
                                 (radioManager.playbackState.value as RadioManager.PlaybackState.Playing).isPlaying)
                 )
 
-        window.addFlags(if (shouldKeepScreenOn)
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        else 0)
+        if (shouldKeepScreenOn) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
 
-        Log.d(TAG, "Screen keep-on updated: $shouldKeepScreenOn")
+        Log.d(TAG, "Screen keep-on updated: $shouldKeepScreenOn (preference: $keepScreenOn)")
     }
 
     private fun updateOrientation() {
@@ -1194,6 +1192,21 @@ class MainActivity : AppCompatActivity() {
         setupFullScreen()
         updateKeepScreenOn()
 
+        // Handle music sources auto-resume
+        when (PreferenceManager.getDefaultSharedPreferences(this).getString("music_source", "spotify")) {
+            "spotify" -> {
+                if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
+                    // Check token and connection state
+                    spotifyManager.checkAndRefreshTokenIfNeeded()
+                }
+            }
+            "radio" -> {
+                if (radioPreferences.isEnabled()) {
+                    radioManager.tryAutoResume()
+                }
+            }
+        }
+
         // Always check security on resume if enabled
         if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
             checkSecurityWithCallback {
@@ -1208,20 +1221,6 @@ class MainActivity : AppCompatActivity() {
             if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
                 navController.currentDestination?.id == R.id.mainFragment) {
                 photoDisplayManager.startPhotoDisplay()
-            }
-        }
-
-        // Handle music sources auto-resume
-        when (PreferenceManager.getDefaultSharedPreferences(this).getString("music_source", "spotify")) {
-            "spotify" -> {
-                if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
-                    spotifyManager.connect()
-                }
-            }
-            "radio" -> {
-                if (radioPreferences.isEnabled()) {
-                    radioManager.tryAutoResume()
-                }
             }
         }
 

@@ -6,9 +6,23 @@
     android:layout_height="wrap_content"
     android:minWidth="260dp"
     android:background="@drawable/widget_background"
-    android:padding="8dp"
+    android:padding="4dp"
     android:clickable="false"
-    android:focusable="false">
+    android:focusable="false"
+    android:clipChildren="true">
+
+    <!-- Album Artwork Icon -->
+    <ImageView
+        android:id="@+id/track_artwork_background"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        android:background="@drawable/artwork_background"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
     <TextView
         android:id="@+id/track_name"
@@ -16,6 +30,7 @@
         android:layout_height="wrap_content"
         android:textColor="@android:color/white"
         android:textSize="18sp"
+        android:textStyle="bold"
         android:singleLine="true"
         android:ellipsize="marquee"
         android:marqueeRepeatLimit="marquee_forever"
@@ -23,12 +38,13 @@
         android:focusableInTouchMode="true"
         android:scrollHorizontally="true"
         android:maxWidth="230dp"
-        android:gravity="center"
-        android:paddingHorizontal="8dp"
+        android:gravity="start"
+        android:layout_marginStart="12dp"
+        android:paddingEnd="8dp"
         android:contentDescription="@string/track_name_description"
         android:text="@string/no_track_playing"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/track_artwork_background"
+        app:layout_constraintStart_toEndOf="@id/track_artwork_background"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constrainedWidth="true" />
 
@@ -39,6 +55,7 @@
         android:textColor="@android:color/white"
         android:alpha="0.7"
         android:textSize="14sp"
+        android:textStyle="bold"
         android:singleLine="true"
         android:ellipsize="marquee"
         android:marqueeRepeatLimit="marquee_forever"
@@ -46,13 +63,14 @@
         android:focusableInTouchMode="true"
         android:scrollHorizontally="true"
         android:maxWidth="230dp"
-        android:gravity="center"
-        android:paddingHorizontal="8dp"
-        android:layout_marginTop="4dp"
+        android:gravity="start"
+        android:layout_marginStart="12dp"
+        android:paddingEnd="8dp"
+        android:layout_marginTop="2dp"
         android:contentDescription="@string/artist_name_description"
         android:text="@string/no_artist"
         app:layout_constraintTop_toBottomOf="@id/track_name"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintStart_toEndOf="@id/track_artwork_background"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constrainedWidth="true" />
 

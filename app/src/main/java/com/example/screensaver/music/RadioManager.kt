@@ -1,6 +1,8 @@
 package com.example.screensaver.music
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.util.Log
@@ -217,6 +219,36 @@ class RadioManager @Inject constructor(
                 launch(Dispatchers.Main) {
                     callback(emptyList())
                 }
+            }
+        }
+    }
+
+    fun loadStationLogo(station: RadioStation, callback: (Bitmap?) -> Unit) {
+        if (station.favicon.isNullOrEmpty()) {
+            callback(null)
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val request = Request.Builder()
+                    .url(station.favicon)
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        launch(Dispatchers.Main) { callback(null) }
+                        return@use
+                    }
+
+                    response.body?.bytes()?.let { bytes ->
+                        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        launch(Dispatchers.Main) { callback(bitmap) }
+                    } ?: launch(Dispatchers.Main) { callback(null) }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error loading station logo")
+                launch(Dispatchers.Main) { callback(null) }
             }
         }
     }

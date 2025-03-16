@@ -392,6 +392,7 @@ class WidgetManager @Inject constructor(
         val position = parseWidgetPosition(preferences.getString("music_position", "BOTTOM_CENTER"))
         val showControls = preferences.getBoolean("show_music_controls", true)
         val showProgress = preferences.getBoolean("show_music_progress", true)
+        val showArtwork = preferences.getBoolean("show_music_artwork", true)
         val autoplay = spotifyPreferences.isAutoplayEnabled()
 
         Log.d(TAG, """
@@ -400,6 +401,7 @@ class WidgetManager @Inject constructor(
         - position: $position
         - showControls: $showControls
         - showProgress: $showProgress
+        - showArtwork: $showArtwork
         - autoplay: $autoplay
     """.trimIndent())
 
@@ -408,6 +410,7 @@ class WidgetManager @Inject constructor(
             position = position,
             showControls = showControls,
             showProgress = showProgress,
+            showArtwork = showArtwork, // Add this line
             autoplay = autoplay
         )
     }
@@ -419,7 +422,9 @@ class WidgetManager @Inject constructor(
             "show_music" -> {
                 spotifyPreferences.setEnabled(value)
             }
-            "show_music_controls", "show_music_progress" -> {
+            "show_music_controls",
+            "show_music_progress",
+            "show_music_artwork" -> { // Add this case
                 preferences.edit { putBoolean(key, value) }
             }
         }
@@ -447,24 +452,37 @@ class WidgetManager @Inject constructor(
             else -> false
         }
 
-        // If any source is enabled, make sure widget is visible
-        if (isSourceEnabled) {
-            // Update preferences to show music widget
-            preferences.edit { putBoolean("show_music", true) }
+        // Update preferences to show/hide music widget based on source state
+        preferences.edit { putBoolean("show_music", isSourceEnabled) }
 
-            // Update widget config and visibility
-            val newConfig = loadMusicConfig().copy(enabled = true)
+        // Update widget config and visibility
+        val newConfig = loadMusicConfig().copy(enabled = isSourceEnabled)
 
-            val currentWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
-            if (currentWidget != null) {
-                updateWidgetConfig(WidgetType.MUSIC, newConfig)
+        val currentWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
+        if (currentWidget != null) {
+            updateWidgetConfig(WidgetType.MUSIC, newConfig)
+            if (isSourceEnabled) {
                 currentWidget.show()
             } else {
-                lastKnownContainer?.let { container ->
-                    setupMusicWidget(container)
+                currentWidget.hide()
+                // Clean up when hiding
+                if (!isSourceEnabled) {
+                    currentWidget.cleanup()
+                    widgets.remove(WidgetType.MUSIC)
                 }
             }
+        } else if (isSourceEnabled && lastKnownContainer != null) {
+            // Only create new widget if a source is enabled
+            setupMusicWidget(lastKnownContainer!!)
         }
+
+        Log.d(TAG, """
+            Music widget update:
+            - Current source: $currentSource
+            - Source enabled: $isSourceEnabled
+            - Widget exists: ${currentWidget != null}
+            - Config enabled: ${newConfig.enabled}
+        """.trimIndent())
     }
 
     fun updateMusicVisibility(visible: Boolean) {
@@ -582,3 +600,4 @@ class WidgetManager @Inject constructor(
     }
 
 }
+

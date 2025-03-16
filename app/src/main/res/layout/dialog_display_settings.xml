@@ -2,26 +2,26 @@
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:minWidth="400dp"
-    android:background="@drawable/dialog_background">
+    style="@style/MaterialDialog">
 
-    <TextView
-        android:id="@+id/dialog_title"
+    <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/pref_category_display"
-        style="@style/DialogTitleStyle"
-        android:background="@drawable/dialog_title_background"/>
+        android:background="@android:color/transparent"
+        app:elevation="0dp">
+
+        <TextView
+            android:id="@+id/dialog_title"
+            android:text="@string/pref_category_display"
+            style="@style/MaterialDialog.Title"/>
+
+    </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:clipToPadding="false"
-        android:paddingBottom="70dp"
-        android:layout_marginTop="?actionBarSize"
-        android:contentDescription="@string/display_settings_scroll_area"
+        android:paddingBottom="88dp"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <FrameLayout
@@ -35,30 +35,32 @@
 
     </androidx.core.widget.NestedScrollView>
 
-    <LinearLayout
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="16dp"
         android:layout_gravity="bottom"
-        android:gravity="end">
+        app:cardElevation="8dp"
+        app:cardBackgroundColor="?attr/colorSurface">
 
-        <Button
-            android:id="@+id/cancel_button"
-            style="@style/PhotoSourceDialogButton.Cancel"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
-            android:text="@android:string/cancel" />
+            android:orientation="horizontal"
+            android:padding="16dp"
+            android:gravity="end">
 
-        <Button
-            android:id="@+id/ok_button"
-            style="@style/PhotoSourceDialogButton.Confirm"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="@android:string/ok" />
+            <Button
+                android:id="@+id/cancel_button"
+                style="@style/MaterialDialog.Button"
+                android:layout_marginEnd="8dp"
+                android:text="@android:string/cancel"/>
 
-    </LinearLayout>
+            <Button
+                android:id="@+id/ok_button"
+                style="@style/MaterialDialog.Button.Primary"
+                android:text="@android:string/ok"/>
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

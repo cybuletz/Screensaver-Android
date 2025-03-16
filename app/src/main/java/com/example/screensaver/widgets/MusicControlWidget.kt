@@ -22,6 +22,12 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.BitmapShader
+import android.graphics.Shader
 
 class MusicControlWidget(
     private val container: ViewGroup,
@@ -35,6 +41,8 @@ class MusicControlWidget(
     private var isVisible = false
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private var progressUpdateJob: Job? = null
+
+    private var currentTrackUri: String? = null
 
     companion object {
         private const val TAG = "MusicControlWidget"
@@ -228,12 +236,39 @@ class MusicControlWidget(
         if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
             Log.e(TAG, "Not updating state - Spotify not connected")
             stopProgressUpdates()
+            binding?.getTrackArtworkBackground()?.visibility = View.GONE
             return
         }
 
         binding?.apply {
             when (state) {
                 is SpotifyManager.PlaybackState.Playing -> {
+                    if (state.trackUri != currentTrackUri) {
+                        currentTrackUri = state.trackUri
+                        state.trackUri?.let { uri ->
+                            // Only load and show artwork if enabled
+                            if (config.showArtwork) {
+                                spotifyManager.getTrackArtwork(uri) { bitmap ->
+                                    if (bitmap != null) {
+                                        getTrackArtworkBackground()?.apply {
+                                            post {
+                                                setImageBitmap(bitmap)
+                                                alpha = 0f
+                                                visibility = View.VISIBLE
+                                                animate()
+                                                    .alpha(1.0f)
+                                                    .setDuration(300)
+                                                    .start()
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                getTrackArtworkBackground()?.visibility = View.GONE
+                            }
+                        }
+                    }
+
                     Log.e(TAG, "Setting up Spotify Playing state UI")
                     getTrackNameView()?.apply {
                         text = state.trackName
@@ -282,6 +317,18 @@ class MusicControlWidget(
                     }
                 }
                 SpotifyManager.PlaybackState.Idle -> {
+                    getTrackArtworkBackground()?.apply {
+                        animate()
+                            .alpha(0f)
+                            .setDuration(300)
+                            .withEndAction {
+                                visibility = View.GONE
+                                setImageBitmap(null)
+                            }
+                            .start()
+                    }
+                    currentTrackUri = null
+
                     Log.e(TAG, "Setting up Spotify Idle state UI")
                     stopProgressUpdates()
                     getTrackNameView()?.apply {
@@ -328,6 +375,35 @@ class MusicControlWidget(
         binding?.apply {
             when (state) {
                 is RadioManager.PlaybackState.Playing -> {
+                    // Handle station logo/artwork
+                    if (config.showArtwork) {
+                        radioManager.currentStation.value?.let { station ->
+                            if (!station.favicon.isNullOrEmpty()) {
+                                radioManager.loadStationLogo(station) { bitmap ->
+                                    if (bitmap != null) {
+                                        getTrackArtworkBackground()?.apply {
+                                            post {
+                                                setImageBitmap(bitmap)
+                                                alpha = 0f
+                                                visibility = View.VISIBLE
+                                                animate()
+                                                    .alpha(1.0f)
+                                                    .setDuration(300)
+                                                    .start()
+                                            }
+                                        }
+                                    } else {
+                                        getTrackArtworkBackground()?.visibility = View.GONE
+                                    }
+                                }
+                            } else {
+                                getTrackArtworkBackground()?.visibility = View.GONE
+                            }
+                        }
+                    } else {
+                        getTrackArtworkBackground()?.visibility = View.GONE
+                    }
+
                     getTrackNameView()?.apply {
                         text = state.stationName
                         isSelected = true
@@ -353,6 +429,18 @@ class MusicControlWidget(
                     getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.visibility = View.GONE
                 }
                 RadioManager.PlaybackState.Idle -> {
+                    // Clear artwork
+                    getTrackArtworkBackground()?.apply {
+                        animate()
+                            .alpha(0f)
+                            .setDuration(300)
+                            .withEndAction {
+                                visibility = View.GONE
+                                setImageBitmap(null)
+                            }
+                            .start()
+                    }
+
                     getTrackNameView()?.apply {
                         text = "Select a radio station"
                         isSelected = false
@@ -446,6 +534,15 @@ class MusicControlWidget(
         try {
             Log.d(TAG, "Starting music widget cleanup")
             stopProgressUpdates()
+
+            // Clear artwork and its state
+            binding?.getTrackArtworkBackground()?.apply {
+                animate().cancel()
+                setImageBitmap(null)
+                visibility = View.GONE
+            }
+            currentTrackUri = null
+
             when (getMusicSource()) {
                 MUSIC_SOURCE_SPOTIFY -> spotifyManager.disconnect()
                 MUSIC_SOURCE_RADIO -> radioManager.disconnect()
@@ -486,6 +583,17 @@ class MusicControlWidget(
             }
 
             getRootView()?.apply {
+                // Handle artwork visibility based on both music source and showArtwork setting
+                getTrackArtworkBackground()?.apply {
+                    visibility = if (getMusicSource() == MUSIC_SOURCE_SPOTIFY &&
+                        currentTrackUri != null &&
+                        config.showArtwork) {
+                        View.VISIBLE
+                    } else {
+                        View.GONE
+                    }
+                }
+
                 // Handle controls visibility
                 findViewById<ViewGroup>(R.id.controls_container)?.apply {
                     visibility = if (config.showControls) View.VISIBLE else View.GONE

@@ -29,15 +29,6 @@
     <color name="background">#FFFFFF</color>
     <color name="background_dark">#121212</color>
 
-    <!-- Material You Settings Card Colors -->
-    <color name="settings_card_background_light">@color/material_dynamic_neutral95</color>
-    <color name="settings_card_background_dark">@color/material_dynamic_neutral20</color>
-    <color name="settings_card_ripple">@color/material_dynamic_primary95</color>
-
-    <!-- Fallback colors if dynamic colors are not available -->
-    <color name="settings_card_background_light_fallback">#F5F5F5</color>
-    <color name="settings_card_background_dark_fallback">#2D2D2D</color>
-    <color name="settings_card_ripple_fallback">#E0E0E0</color>
 
     <!-- Optional additional colors for the PhotoManager -->
     <color name="surface">#FFFFFF</color>
@@ -54,5 +45,15 @@
     <color name="md_theme_onPrimary">#FFFFFF</color>
     <color name="md_theme_primaryContainer">#1976D2</color>
     <color name="md_theme_onPrimaryContainer">#FFFFFF</color>
+
+    <!-- Material You Settings Card Colors -->
+    <color name="settings_card_background_light">@color/material_dynamic_neutral95</color>
+    <color name="settings_card_background_dark">@color/material_dynamic_neutral20</color>
+    <color name="settings_card_ripple">@color/material_dynamic_primary95</color>
+
+    <!-- Fallback colors if dynamic colors are not available -->
+    <color name="settings_card_background_light_fallback">#F5F5F5</color>
+    <color name="settings_card_background_dark_fallback">#2D2D2D</color>
+    <color name="settings_card_ripple_fallback">#E0E0E0</color>
 
 </resources>

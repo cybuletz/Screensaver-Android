@@ -5,4 +5,11 @@
         <attr name="autoStart" format="boolean" />
         <attr name="photoInterval" format="integer" />
     </declare-styleable>
+
+    <declare-styleable name="MaterialSettingsPreference">
+        <attr name="preferenceEntries" format="reference" />
+        <attr name="preferenceValues" format="reference" />
+        <attr name="switchPreference" format="boolean" />
+        <attr name="preferenceDefaultValue" format="boolean" />
+    </declare-styleable>
 </resources>

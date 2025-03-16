@@ -16,7 +16,7 @@
         android:key="spotify_enabled"
         android:title="@string/pref_spotify_enabled_title"
         android:summary="@string/pref_spotify_enabled_summary"
-        android:icon="@drawable/ic_spotify"
+        android:icon="@drawable/ic_spotify_logo"
         app:isPreferenceVisible="false"/>
 
 
@@ -38,7 +38,8 @@
         android:key="spotify_shuffle"
         android:title="Shuffle Playback"
         android:summary="Randomly shuffle tracks during playback"
-        android:dependency="spotify_enabled" />
+        android:dependency="spotify_enabled"
+        app:isPreferenceVisible="true"/>
 
     <SwitchPreferenceCompat
         android:key="spotify_autoplay"
