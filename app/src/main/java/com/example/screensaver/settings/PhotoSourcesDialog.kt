@@ -1,15 +1,12 @@
 package com.example.screensaver.settings
 
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.Window
-import android.widget.Button
 import androidx.fragment.app.DialogFragment
 import com.example.screensaver.R
+import com.google.android.material.button.MaterialButton
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -22,13 +19,13 @@ class PhotoSourcesDialog : DialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setStyle(STYLE_NORMAL, R.style.PhotoSourcesDialog)
+        setStyle(STYLE_NO_FRAME, R.style.MaterialDialog) // Updated style
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        // Updated window background handling
         dialog?.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            requestFeature(Window.FEATURE_NO_TITLE)
+            setBackgroundDrawableResource(android.R.color.transparent)
         }
         return inflater.inflate(R.layout.dialog_photo_sources, container, false)
     }
@@ -42,12 +39,12 @@ class PhotoSourcesDialog : DialogFragment() {
             .replace(R.id.photo_sources_container, photoSourcesFragment!!)
             .commit()
 
-        view.findViewById<Button>(R.id.cancel_button).setOnClickListener {
+        view.findViewById<MaterialButton>(R.id.cancel_button).setOnClickListener {
             photoSourcesFragment?.cancelChanges()
             dismiss()
         }
 
-        view.findViewById<Button>(R.id.ok_button).setOnClickListener {
+        view.findViewById<MaterialButton>(R.id.ok_button).setOnClickListener {
             photoSourcesFragment?.applyChanges()
             dismiss()
         }

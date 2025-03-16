@@ -35,10 +35,14 @@ class WidgetPreferenceDialog : DialogFragment() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         widgetType = WidgetType.valueOf(requireArguments().getString(ARG_WIDGET_TYPE)!!)
-        setStyle(STYLE_NO_FRAME, R.style.PhotoSourcesDialog)
+        setStyle(STYLE_NO_FRAME, R.style.MaterialDialog) // Updated style
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        // Add transparent background from MusicSourcesDialog
+        dialog?.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+        }
         return inflater.inflate(R.layout.dialog_widget_preferences, container, false)
     }
 
@@ -63,7 +67,7 @@ class WidgetPreferenceDialog : DialogFragment() {
                     putString("widget_type", WidgetType.WEATHER.name)
                 }
             }
-            WidgetType.MUSIC -> WidgetPreferenceFragment().apply { // Add this case
+            WidgetType.MUSIC -> WidgetPreferenceFragment().apply {
                 arguments = Bundle().apply {
                     putString("widget_type", WidgetType.MUSIC.name)
                 }

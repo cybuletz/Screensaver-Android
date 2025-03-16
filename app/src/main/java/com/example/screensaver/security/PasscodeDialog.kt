@@ -88,12 +88,9 @@ class PasscodeDialog : DialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Prevent screenshot
-        dialog?.window?.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        )
+        setStyle(STYLE_NO_FRAME, R.style.MaterialDialog)
     }
+
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val view = LayoutInflater.from(requireContext())
@@ -106,6 +103,9 @@ class PasscodeDialog : DialogFragment() {
             .setView(view)
             .setCancelable(true)
             .create()
+            .apply {
+                window?.setBackgroundDrawableResource(android.R.color.transparent)
+            }
     }
 
     private fun setupViews(view: View) {

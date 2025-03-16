@@ -173,4 +173,11 @@
         <item name="iconSize">24dp</item>
         <item name="android:minHeight">64dp</item>
     </style>
+
+    <style name="MaterialDialog.Alert" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="materialAlertDialogTitleTextStyle">@style/MaterialDialog.Title</item>
+        <item name="materialAlertDialogBodyTextStyle">@style/MaterialAlertDialog.MaterialComponents.Body.Text</item>
+        <item name="buttonBarPositiveButtonStyle">@style/MaterialDialog.Button.Primary</item>
+        <item name="buttonBarNegativeButtonStyle">@style/MaterialDialog.Button.Cancel</item>
+    </style>
 </resources>

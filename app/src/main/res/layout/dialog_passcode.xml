@@ -4,35 +4,36 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="24dp"
-    android:background="@drawable/dialog_background">
+    android:paddingHorizontal="24dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="24dp"
+    style="@style/MaterialDialog">
 
     <TextView
         android:id="@+id/titleText"
-        android:layout_width="wrap_content"
+        style="@style/MaterialDialog.Title"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/enter_passcode"
-        android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"/>
 
     <TextView
         android:id="@+id/messageText"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+        android:textAppearance="?attr/textAppearanceBody2"
         android:textColor="?attr/colorOnSurfaceVariant"
         app:layout_constraintTop_toBottomOf="@id/titleText"
         app:layout_constraintStart_toStartOf="parent"/>
 
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/passcodeInputLayout"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
         app:endIconMode="password_toggle"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
         app:layout_constraintTop_toBottomOf="@id/messageText">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -46,12 +47,12 @@
 
     <TextView
         android:id="@+id/errorText"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:textColor="?attr/colorError"
+        android:textAppearance="?attr/textAppearanceCaption"
         android:visibility="gone"
-        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
         app:layout_constraintTop_toBottomOf="@id/passcodeInputLayout"
         app:layout_constraintStart_toStartOf="parent"/>
 
@@ -61,17 +62,17 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
-        android:text="@string/confirm"
+        android:text="@android:string/ok"
         app:layout_constraintTop_toBottomOf="@id/errorText"
         app:layout_constraintEnd_toEndOf="parent"/>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/cancelButton"
-        style="@style/MaterialDialog.Button"
+        style="@style/MaterialDialog.Button.Cancel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="8dp"
-        android:text="@string/cancel"
+        android:text="@android:string/cancel"
         app:layout_constraintTop_toTopOf="@id/confirmButton"
         app:layout_constraintEnd_toStartOf="@id/confirmButton"/>
 
