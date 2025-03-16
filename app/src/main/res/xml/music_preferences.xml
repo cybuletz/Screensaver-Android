@@ -9,7 +9,8 @@
         android:summary="%s"
         android:entries="@array/music_source_entries"
         android:entryValues="@array/music_source_values"
-        android:defaultValue="spotify"/>
+        android:defaultValue="spotify"
+        style="@style/DialogPreferenceItem"/>
 
     <!-- Spotify Settings -->
     <SwitchPreferenceCompat
@@ -17,29 +18,32 @@
         android:title="@string/pref_spotify_enabled_title"
         android:summary="@string/pref_spotify_enabled_summary"
         android:icon="@drawable/ic_spotify_logo"
-        app:isPreferenceVisible="false"/>
-
+        app:isPreferenceVisible="false"
+        style="@style/DialogPreferenceItem"/>
 
     <Preference
         android:key="spotify_login"
         android:title="@string/pref_spotify_account_title"
         android:summary="@string/pref_spotify_account_summary"
         android:icon="@drawable/ic_music_note"
-        app:isPreferenceVisible="false"/>
+        app:isPreferenceVisible="false"
+        style="@style/DialogPreferenceItem"/>
 
     <Preference
         android:key="spotify_playlist"
         android:title="@string/pref_spotify_playlist_title"
         android:summary="@string/pref_spotify_playlist_summary"
         android:icon="@drawable/ic_playlist"
-        app:isPreferenceVisible="false"/>
+        app:isPreferenceVisible="false"
+        style="@style/DialogPreferenceItem"/>
 
     <SwitchPreferenceCompat
         android:key="spotify_shuffle"
         android:title="Shuffle Playback"
         android:summary="Randomly shuffle tracks during playback"
         android:dependency="spotify_enabled"
-        app:isPreferenceVisible="true"/>
+        app:isPreferenceVisible="true"
+        style="@style/DialogPreferenceItem"/>
 
     <SwitchPreferenceCompat
         android:key="spotify_autoplay"
@@ -47,7 +51,8 @@
         android:summary="@string/pref_spotify_autoplay_summary"
         android:icon="@drawable/ic_play_circle"
         android:defaultValue="false"
-        app:isPreferenceVisible="false"/>
+        app:isPreferenceVisible="false"
+        style="@style/DialogPreferenceItem"/>
 
     <!-- Local Music Settings -->
     <Preference
@@ -55,30 +60,36 @@
         android:title="@string/pref_local_music_folder_title"
         android:summary="@string/pref_local_music_folder_summary"
         android:icon="@drawable/ic_folder_music"
-        app:isPreferenceVisible="false"/>
+        app:isPreferenceVisible="false"
+        style="@style/DialogPreferenceItem"/>
 
     <!-- Radio Section -->
     <SwitchPreferenceCompat
         android:key="radio_enabled"
         android:title="Enable Radio"
         android:summary="Enable radio playback"
-        android:defaultValue="false" />
+        android:defaultValue="false"
+        style="@style/DialogPreferenceItem"/>
 
     <Preference
         android:key="radio_station_search"
         android:title="Search Radio Stations"
         android:summary="Search and select radio stations"
-        android:dependency="radio_enabled" />
+        android:dependency="radio_enabled"
+        style="@style/DialogPreferenceItem"/>
 
     <Preference
         android:key="radio_recent"
         android:title="Recent Stations"
         android:summary="Recently played Stations"
-        android:dependency="radio_enabled" />
+        android:dependency="radio_enabled"
+        style="@style/DialogPreferenceItem"/>
 
     <Preference
         android:key="radio_favorites"
         android:title="Favorite Stations"
         android:summary="Manage your favorite radio stations"
-        android:dependency="radio_enabled" />
+        android:dependency="radio_enabled"
+        style="@style/DialogPreferenceItem"/>
+
 </PreferenceScreen>

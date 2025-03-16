@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Settings Card Styles -->
     <style name="SettingsCardStyle" parent="Widget.MaterialComponents.CardView">
@@ -32,10 +33,13 @@
     </style>
 
     <!-- Material Dialog Styles -->
-    <style name="MaterialDialog">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:minWidth">400dp</item>
+    <style name="MaterialDialog" parent="ThemeOverlay.Material3.Dialog">
+        <item name="android:windowMinWidthMajor">95%</item>
+        <item name="android:windowMinWidthMinor">95%</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowAnimationStyle">@style/DialogAnimation</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.5</item>
         <item name="android:background">@drawable/dialog_background</item>
     </style>
 
@@ -44,21 +48,34 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:paddingStart">24dp</item>
         <item name="android:paddingEnd">24dp</item>
-        <item name="android:paddingTop">20dp</item>
+        <item name="android:paddingTop">24dp</item>
         <item name="android:paddingBottom">16dp</item>
-        <item name="android:textAppearance">@style/TextAppearance.Material3.TitleLarge</item>
+        <item name="android:textAppearance">@style/TextAppearance.Material3.HeadlineMedium</item>
+        <item name="android:textSize">20sp</item>
         <item name="android:textColor">?attr/colorOnSurface</item>
     </style>
 
     <style name="MaterialDialog.Button" parent="Widget.Material3.Button.TextButton">
-        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_weight">1</item>
+        <item name="android:minWidth">120dp</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:paddingStart">24dp</item>
+        <item name="android:paddingEnd">24dp</item>
         <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
-    <style name="MaterialDialog.Button.Primary" parent="Widget.Material3.Button">
+    <style name="MaterialDialog.Button.Primary">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minWidth">120dp</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textAllCaps">false</item>
         <item name="android:textColor">?attr/colorOnPrimary</item>
+        <item name="backgroundTint">?attr/colorPrimary</item>
     </style>
 
     <!-- Photo Source Dialog Preference style -->
@@ -90,6 +107,9 @@
         <item name="iconSpaceReserved">true</item>
         <item name="android:iconSpaceReserved">true</item>
         <item name="iconSize">24dp</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:paddingTop">16dp</item>
+        <item name="android:paddingBottom">16dp</item>
     </style>
 
     <style name="DialogTitleStyle" parent="TextAppearance.Material3.HeadlineMedium">
@@ -125,6 +145,21 @@
     <style name="DialogAnimation">
         <item name="android:windowEnterAnimation">@anim/slide_up</item>
         <item name="android:windowExitAnimation">@anim/slide_down</item>
+    </style>
+
+    <!-- Dialog preference items style -->
+    <style name="DialogPreferenceItem" parent="PreferenceStyle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:paddingTop">16dp</item>
+        <item name="android:paddingBottom">16dp</item>
+        <item name="android:paddingStart">24dp</item>
+        <item name="android:paddingEnd">24dp</item>
+        <item name="iconSpaceReserved">true</item>
+        <item name="android:iconSpaceReserved">true</item>
+        <item name="iconSize">24dp</item>
+        <item name="android:minHeight">64dp</item>
     </style>
 
 </resources>

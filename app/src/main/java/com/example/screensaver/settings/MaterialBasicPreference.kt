@@ -24,8 +24,6 @@ class MaterialBasicPreference : Preference {
 
     private fun init(context: Context) {
         layoutResource = R.layout.settings_preference_card
-        isSelectable = true
-        isPersistent = false
     }
 
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
@@ -37,16 +35,19 @@ class MaterialBasicPreference : Preference {
         val chevronView = holder.findViewById(R.id.preference_chevron) as? ImageView
         val switchView = holder.findViewById(R.id.preference_switch) as? View
 
+        // Set up title
         titleView?.apply {
             text = title
             visibility = if (title.isNullOrEmpty()) View.GONE else View.VISIBLE
         }
 
+        // Set up summary
         summaryView?.apply {
             text = summary
             visibility = if (summary.isNullOrEmpty()) View.GONE else View.VISIBLE
         }
 
+        // Set up icon
         iconView?.apply {
             icon?.let {
                 setImageDrawable(it)
@@ -56,18 +57,8 @@ class MaterialBasicPreference : Preference {
             }
         }
 
+        // Show chevron and hide switch for basic preference
         chevronView?.visibility = View.VISIBLE
         switchView?.visibility = View.GONE
-
-        holder.itemView.apply {
-            isClickable = true
-            isFocusable = true
-
-            setOnClickListener {
-                Log.d("MaterialBasicPreference", "Preference clicked: $key")
-                // Simply call callChangeListener which will trigger onPreferenceTreeClick
-                callChangeListener(this@MaterialBasicPreference)
-            }
-        }
     }
 }

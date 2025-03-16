@@ -6,6 +6,7 @@
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="@dimen/settings_card_margin"
     android:layout_marginVertical="4dp"
+    android:foreground="?android:attr/selectableItemBackground"
     app:cardCornerRadius="@dimen/settings_card_corner_radius"
     app:cardElevation="@dimen/settings_card_elevation">
 
