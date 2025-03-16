@@ -20,21 +20,26 @@ class DisplaySettingsDialog : DialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setStyle(STYLE_NO_FRAME, R.style.PhotoSourcesDialog)
+        setStyle(STYLE_NO_FRAME, R.style.MaterialDialog) // Copy from MusicSourcesDialog
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val view = inflater.inflate(R.layout.dialog_display_settings, container, false)
 
-        // Set width to wrap content with minimum width
-        dialog?.window?.setLayout(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
+        // Add transparent background from MusicSourcesDialog
+        dialog?.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            // Keep your original size management
+            setLayout(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
 
         return view
     }
 
+    // Rest of your code remains EXACTLY the same
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
