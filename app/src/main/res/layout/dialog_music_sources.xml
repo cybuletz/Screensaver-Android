@@ -2,52 +2,76 @@
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    style="@style/MaterialDialog">
+    style="@style/MaterialDialog"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minWidth="600dp">
 
-    <com.google.android.material.appbar.AppBarLayout
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@android:color/transparent"
-        app:elevation="0dp">
+        android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/dialog_title"
-            android:text="@string/music_sources_title"
-            style="@style/MaterialDialog.Title"/>
-    </com.google.android.material.appbar.AppBarLayout>
+        <com.google.android.material.appbar.AppBarLayout
+            android:id="@+id/appbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            app:elevation="0dp">
 
-    <FrameLayout
-        android:id="@+id/music_preferences_container"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:minHeight="200dp"
-        android:paddingTop="8dp"
-        android:paddingHorizontal="24dp"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior"/>
+            <TextView
+                android:id="@+id/dialog_title"
+                style="@style/MaterialDialog.Title"
+                android:text="@string/music_sources_title"/>
+        </com.google.android.material.appbar.AppBarLayout>
+
+        <androidx.core.widget.NestedScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fillViewport="true"
+            android:fadeScrollbars="false"
+            android:scrollbars="vertical"
+            android:contentDescription="@string/music_sources_scroll_area">
+
+            <FrameLayout
+                android:id="@+id/music_preferences_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="24dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="80dp"/>
+
+        </androidx.core.widget.NestedScrollView>
+    </LinearLayout>
 
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        app:cardElevation="8dp"
-        app:cardBackgroundColor="?attr/colorSurface">
+        app:cardBackgroundColor="@android:color/transparent"
+        app:cardElevation="0dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="end|center_vertical"
             android:orientation="horizontal"
-            android:padding="16dp"
-            android:gravity="end">
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="3dp">
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/cancel_button"
-                style="@style/MaterialDialog.Button"
-                android:layout_marginEnd="8dp"
+                style="@style/MaterialDialog.Button.Cancel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="16dp"
                 android:text="@android:string/cancel"/>
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/ok_button"
                 style="@style/MaterialDialog.Button.Primary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="@android:string/ok"/>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>

@@ -68,6 +68,9 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
     private var currentMusicSource: String = MUSIC_SOURCE_SPOTIFY
 
+    private var onPreferenceChangeCallback: (() -> Unit)? = null
+
+
     private val spotifyAuthLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -113,6 +116,16 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             }
         }
         updateSpotifyLoginSummary()
+    }
+
+
+    fun setOnPreferenceChangeCallback(callback: () -> Unit) {
+        onPreferenceChangeCallback = callback
+    }
+
+    override fun onPreferenceTreeClick(preference: Preference): Boolean {
+        onPreferenceChangeCallback?.invoke()
+        return super.onPreferenceTreeClick(preference)
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -195,8 +208,31 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                 // Force preference screen to redraw
                 preferenceScreen.notifyDependencyChange(false)
 
+                // Notify about layout changes for dialog resizing
+                onPreferenceChangeCallback?.invoke()
+
                 true
             }
+        }
+
+        // Setup Spotify enable/disable listener
+        findPreference<SwitchPreferenceCompat>("spotify_enabled")?.setOnPreferenceChangeListener { _, newValue ->
+            val enabled = newValue as Boolean
+            findPreference<Preference>("spotify_login")?.isVisible = enabled
+            findPreference<Preference>("spotify_playlist")?.isVisible = enabled
+            findPreference<Preference>("spotify_autoplay")?.isVisible = enabled
+            onPreferenceChangeCallback?.invoke()
+            true
+        }
+
+        // Setup Radio enable/disable listener
+        findPreference<SwitchPreferenceCompat>("radio_enabled")?.setOnPreferenceChangeListener { _, newValue ->
+            val enabled = newValue as Boolean
+            findPreference<Preference>("radio_station_search")?.isVisible = enabled
+            findPreference<Preference>("radio_favorites")?.isVisible = enabled
+            findPreference<Preference>("radio_recent")?.isVisible = enabled
+            onPreferenceChangeCallback?.invoke()
+            true
         }
 
         // Initialize preferences based on current source

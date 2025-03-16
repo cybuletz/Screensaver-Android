@@ -41,7 +41,7 @@
 
             <Button
                 android:id="@+id/cancel_button"
-                style="@style/MaterialDialog.Button"
+                style="@style/MaterialDialog.Button.Cancel"
                 android:layout_marginEnd="8dp"
                 android:text="@string/cancel"/>
 
