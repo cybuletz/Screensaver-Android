@@ -30,7 +30,8 @@
             android:layout_height="wrap_content"
             android:fillViewport="true"
             android:fadeScrollbars="false"
-            android:scrollbars="vertical">
+            android:scrollbars="vertical"
+            android:contentDescription="@string/music_sources_scroll_area">
 
             <FrameLayout
                 android:id="@+id/music_preferences_container"
@@ -60,13 +61,17 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/cancel_button"
-                style="@style/MaterialDialog.Button"
+                style="@style/MaterialDialog.Button.Cancel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:layout_marginEnd="16dp"
                 android:text="@android:string/cancel"/>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/ok_button"
                 style="@style/MaterialDialog.Button.Primary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="@android:string/ok"/>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>

@@ -69,15 +69,18 @@
         <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
-    <style name="MaterialDialog.Button.Primary">
+    <style name="MaterialDialog.Button.Primary" parent="Widget.Material3.Button">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:minWidth">120dp</item>
         <item name="android:minHeight">56dp</item>
         <item name="android:textSize">16sp</item>
+        <item name="android:paddingStart">24dp</item>
+        <item name="android:paddingEnd">24dp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textColor">?attr/colorOnPrimary</item>
         <item name="backgroundTint">?attr/colorPrimary</item>
+        <item name="cornerRadius">24dp</item>
     </style>
 
     <!-- Photo Source Dialog Preference style -->
@@ -89,8 +92,8 @@
         <item name="android:windowAnimationStyle">@style/DialogAnimation</item>
         <item name="android:backgroundDimEnabled">true</item>
         <item name="android:backgroundDimAmount">0.5</item>
-        <item name="buttonBarNegativeButtonStyle">@style/PhotoSourceDialogButton.Cancel</item>
-        <item name="buttonBarPositiveButtonStyle">@style/PhotoSourceDialogButton.Confirm</item>
+        <item name="buttonBarNegativeButtonStyle">@style/MaterialDialog.Button.Cancel</item>
+        <item name="buttonBarPositiveButtonStyle">@style/MaterialDialog.Button.Primary</item>
     </style>
 
     <style name="PreferenceStyle">
@@ -123,15 +126,20 @@
         <item name="android:textColor">?attr/colorOnPrimary</item>
     </style>
 
-    <style name="PhotoSourceDialogButton.Cancel" parent="Widget.MaterialComponents.Button.OutlinedButton">
+    <style name="MaterialDialog.Button.Cancel" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minWidth">120dp</item>
+        <item name="android:minHeight">56dp</item>
         <item name="android:textSize">16sp</item>
-        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:paddingStart">24dp</item>
+        <item name="android:paddingEnd">24dp</item>
         <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
         <item name="rippleColor">@color/gray</item>
         <item name="strokeColor">@color/gray</item>
         <item name="strokeWidth">1dp</item>
         <item name="cornerRadius">24dp</item>
-        <item name="android:minHeight">48dp</item>
     </style>
 
     <style name="PhotoSourceDialogButton.Confirm" parent="Widget.MaterialComponents.Button">
