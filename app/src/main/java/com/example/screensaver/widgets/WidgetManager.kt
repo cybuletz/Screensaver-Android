@@ -392,6 +392,7 @@ class WidgetManager @Inject constructor(
         val position = parseWidgetPosition(preferences.getString("music_position", "BOTTOM_CENTER"))
         val showControls = preferences.getBoolean("show_music_controls", true)
         val showProgress = preferences.getBoolean("show_music_progress", true)
+        val showArtwork = preferences.getBoolean("show_music_artwork", true)
         val autoplay = spotifyPreferences.isAutoplayEnabled()
 
         Log.d(TAG, """
@@ -400,6 +401,7 @@ class WidgetManager @Inject constructor(
         - position: $position
         - showControls: $showControls
         - showProgress: $showProgress
+        - showArtwork: $showArtwork
         - autoplay: $autoplay
     """.trimIndent())
 
@@ -408,6 +410,7 @@ class WidgetManager @Inject constructor(
             position = position,
             showControls = showControls,
             showProgress = showProgress,
+            showArtwork = showArtwork, // Add this line
             autoplay = autoplay
         )
     }
@@ -419,7 +422,9 @@ class WidgetManager @Inject constructor(
             "show_music" -> {
                 spotifyPreferences.setEnabled(value)
             }
-            "show_music_controls", "show_music_progress" -> {
+            "show_music_controls",
+            "show_music_progress",
+            "show_music_artwork" -> { // Add this case
                 preferences.edit { putBoolean(key, value) }
             }
         }
@@ -595,3 +600,4 @@ class WidgetManager @Inject constructor(
     }
 
 }
+

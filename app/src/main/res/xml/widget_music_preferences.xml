@@ -32,4 +32,11 @@
         android:summary="@string/pref_show_music_progress_summary"
         android:icon="@drawable/ic_progress_pref"
         android:defaultValue="true"/>
+
+    <SwitchPreferenceCompat
+        android:key="show_music_artwork"
+        android:title="@string/pref_show_music_artwork_title"
+        android:summary="@string/pref_show_music_artwork_summary"
+        android:icon="@drawable/ic_artwork_pref"
+        android:defaultValue="true"/>
 </PreferenceScreen>

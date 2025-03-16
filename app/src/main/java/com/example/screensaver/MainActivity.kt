@@ -1192,6 +1192,21 @@ class MainActivity : AppCompatActivity() {
         setupFullScreen()
         updateKeepScreenOn()
 
+        // Handle music sources auto-resume
+        when (PreferenceManager.getDefaultSharedPreferences(this).getString("music_source", "spotify")) {
+            "spotify" -> {
+                if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
+                    // Check token and connection state
+                    spotifyManager.checkAndRefreshTokenIfNeeded()
+                }
+            }
+            "radio" -> {
+                if (radioPreferences.isEnabled()) {
+                    radioManager.tryAutoResume()
+                }
+            }
+        }
+
         // Always check security on resume if enabled
         if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
             checkSecurityWithCallback {
@@ -1206,20 +1221,6 @@ class MainActivity : AppCompatActivity() {
             if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
                 navController.currentDestination?.id == R.id.mainFragment) {
                 photoDisplayManager.startPhotoDisplay()
-            }
-        }
-
-        // Handle music sources auto-resume
-        when (PreferenceManager.getDefaultSharedPreferences(this).getString("music_source", "spotify")) {
-            "spotify" -> {
-                if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
-                    spotifyManager.connect()
-                }
-            }
-            "radio" -> {
-                if (radioPreferences.isEnabled()) {
-                    radioManager.tryAutoResume()
-                }
             }
         }
 

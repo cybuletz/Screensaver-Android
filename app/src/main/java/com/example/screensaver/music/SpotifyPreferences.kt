@@ -88,4 +88,7 @@ class SpotifyPreferences @Inject constructor(
             secureStorage.removeSecurely(PREF_PLAYLIST_SUMMARY)
         }
     }
+
+    fun isArtworkEnabled(): Boolean =
+        preferences.getBoolean("show_music_artwork", true)
 }

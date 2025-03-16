@@ -5,6 +5,7 @@ import android.content.ContentValues.TAG
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -39,8 +40,16 @@ import timber.log.Timber
 import java.io.IOException
 import com.example.screensaver.BuildConfig
 import com.example.screensaver.data.SecureStorage
+import com.spotify.protocol.types.ImageUri
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import android.graphics.BitmapShader
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Shader
+import android.graphics.Path
 
     @Singleton
     class SpotifyManager @Inject constructor(
@@ -213,7 +222,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
                         refreshPlayerState()
 
                         // Set up player state subscription with detailed logging
-// Inside connectToSpotify() method, in the onConnected callback:
                         appRemote.playerApi.subscribeToPlayerState()
                             .setEventCallback { playerState ->
                                 Timber.d("Player state update: isPaused=${playerState.isPaused}, " +
@@ -232,7 +240,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
                                                 trackDuration = track.duration,
                                                 playbackPosition = playerState.playbackPosition,
                                                 playlistTitle = spotifyPreferences.getSelectedPlaylistTitle(),
-                                                coverArt = bitmap
+                                                coverArt = bitmap,
+                                                trackUri = track.uri  // Add the track URI here
                                             )
                                         }
                                         ?.setErrorCallback { error ->
@@ -245,7 +254,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
                                                 trackDuration = track.duration,
                                                 playbackPosition = playerState.playbackPosition,
                                                 playlistTitle = spotifyPreferences.getSelectedPlaylistTitle(),
-                                                coverArt = null
+                                                coverArt = null,
+                                                trackUri = track.uri  // Add the track URI here
                                             )
                                         }
 
@@ -960,14 +970,58 @@ import okhttp3.RequestBody.Companion.toRequestBody
             }
         }
 
-        fun getCurrentUser(callback: (SpotifyUser?) -> Unit, errorCallback: (Throwable) -> Unit) {
+        fun checkAndRefreshTokenIfNeeded() {
             val token = tokenManager.getAccessToken()
             if (token == null) {
-                errorCallback(IllegalStateException("No access token available"))
+                _errorState.value = SpotifyError.AuthenticationRequired
+                spotifyPreferences.setEnabled(false)
                 return
             }
 
-            // Use OkHttp or your preferred HTTP client
+            // Get current connection state
+            when (connectionState.value) {
+                is ConnectionState.Error -> {
+                    // If there was an error, try to reconnect
+                    connect()
+                }
+                is ConnectionState.Disconnected -> {
+                    // If disconnected, try to connect
+                    connect()
+                }
+                is ConnectionState.Connected -> {
+                    // Already connected, verify connection is valid
+                    spotifyAppRemote?.playerApi?.playerState
+                        ?.setResultCallback { state ->
+                            if (state == null) {
+                                Timber.d("Connection appears invalid, reconnecting...")
+                                disconnect()
+                                connect()
+                            }
+                        }
+                        ?.setErrorCallback { error ->
+                            if (error is UserNotAuthorizedException || error is NotLoggedInException) {
+                                _errorState.value = SpotifyError.AuthenticationRequired
+                                spotifyPreferences.setEnabled(false)
+                                tokenManager.clearToken()
+                            } else {
+                                Timber.d("Connection error, reconnecting...")
+                                disconnect()
+                                connect()
+                            }
+                        }
+                }
+            }
+        }
+
+        fun getCurrentUser(callback: (SpotifyUser?) -> Unit, errorCallback: (Throwable) -> Unit) {
+            val token = tokenManager.getAccessToken()
+            if (token == null) {
+                Handler(Looper.getMainLooper()).post {
+                    errorCallback(IllegalStateException("No access token available"))
+                }
+                return
+            }
+
             val client = OkHttpClient()
             val request = Request.Builder()
                 .url("https://api.spotify.com/v1/me")
@@ -976,12 +1030,16 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
             client.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    errorCallback(e)
+                    Handler(Looper.getMainLooper()).post {
+                        errorCallback(e)
+                    }
                 }
 
                 override fun onResponse(call: Call, response: Response) {
                     if (!response.isSuccessful) {
-                        errorCallback(IOException("Unexpected response ${response.code}"))
+                        Handler(Looper.getMainLooper()).post {
+                            errorCallback(IOException("Unexpected response ${response.code}"))
+                        }
                         return
                     }
 
@@ -1002,22 +1060,50 @@ import okhttp3.RequestBody.Companion.toRequestBody
                                 }
                             }
                         )
-                        callback(user)
+                        Handler(Looper.getMainLooper()).post {
+                            callback(user)
+                        }
                     } catch (e: Exception) {
-                        errorCallback(e)
+                        Handler(Looper.getMainLooper()).post {
+                            errorCallback(e)
+                        }
                     }
                 }
             })
         }
 
-        fun getTrackCover(callback: (android.graphics.Bitmap?) -> Unit) {
+        private fun createRoundedBitmap(bitmap: Bitmap): Bitmap {
+            val output = Bitmap.createBitmap(
+                bitmap.width,
+                bitmap.height,
+                Bitmap.Config.ARGB_8888
+            )
+
+            val canvas = Canvas(output)
+            val paint = Paint().apply {
+                isAntiAlias = true
+                shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            }
+
+            // Use fixed corner radius in pixels
+            val cornerRadius = 50f
+
+            val rect = RectF(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat())
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+
+            return output
+        }
+
+        fun getTrackArtwork(trackUri: String, callback: (Bitmap?) -> Unit) {
             spotifyAppRemote?.playerApi?.playerState
                 ?.setResultCallback { playerState ->
                     val imageUri = playerState.track?.imageUri
                     if (imageUri != null) {
                         spotifyAppRemote?.imagesApi?.getImage(imageUri)
                             ?.setResultCallback { bitmap ->
-                                callback(bitmap)
+                                // Use the class method here
+                                val roundedBitmap = bitmap?.let { createRoundedBitmap(it) }
+                                callback(roundedBitmap)
                             }
                             ?.setErrorCallback { throwable ->
                                 Timber.e(throwable, "Error getting track cover")
@@ -1111,7 +1197,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
                 val trackDuration: Long,
                 val playbackPosition: Long,
                 val playlistTitle: String? = null,
-                val coverArt: android.graphics.Bitmap? = null
+                val coverArt: android.graphics.Bitmap? = null,
+                val trackUri: String? = null
             ) : PlaybackState()
         }
 

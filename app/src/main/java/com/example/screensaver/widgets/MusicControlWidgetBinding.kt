@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
 import com.example.screensaver.R
@@ -20,6 +21,8 @@ class MusicControlWidgetBinding(
     private var nextButton: ImageButton? = null
     private var controlsContainer: ViewGroup? = null
 
+    private var trackArtworkBackground: ImageView? = null
+
     companion object {
         private const val TAG = "MusicControlWidgetBinding"
     }
@@ -31,6 +34,8 @@ class MusicControlWidgetBinding(
                 rootView = LayoutInflater.from(container.context)
                     .inflate(R.layout.widget_music_controls, container, false)
                 Log.e(TAG, "Layout inflated")
+
+                trackArtworkBackground = rootView?.findViewById(R.id.track_artwork_background)
 
                 trackNameView = rootView?.findViewById<TextView>(R.id.track_name)?.also {
                     Log.e(TAG, "Found track_name view")
@@ -71,6 +76,8 @@ class MusicControlWidgetBinding(
         }
     }
 
+    fun getTrackArtworkBackground(): ImageView? = trackArtworkBackground
+
     fun getTrackNameView(): TextView? = trackNameView.also {
         Log.e(TAG, "getTrackNameView called, returning ${it != null}")
     }
@@ -103,5 +110,6 @@ class MusicControlWidgetBinding(
         playPauseButton = null
         previousButton = null
         nextButton = null
+        trackArtworkBackground = null
     }
 }

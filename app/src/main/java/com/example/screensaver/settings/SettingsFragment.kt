@@ -538,4 +538,5 @@ class SettingsFragment : PreferenceFragmentCompat() {
         widgetPreferenceFragment = null
         super.onDestroyView()
     }
+
 }

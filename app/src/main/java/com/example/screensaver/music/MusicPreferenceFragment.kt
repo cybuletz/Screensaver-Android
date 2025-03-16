@@ -35,6 +35,8 @@ import com.example.screensaver.widgets.WidgetManager
 import android.widget.ImageView
 import android.widget.BaseAdapter
 import android.view.ViewGroup
+import kotlinx.coroutines.Dispatchers
+import java.io.IOException
 
 
 @AndroidEntryPoint
@@ -429,20 +431,24 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         findPreference<Preference>("spotify_playlist")?.apply {
             setOnPreferenceClickListener {
                 if (!spotifyPreferences.isEnabled()) {
-                    Toast.makeText(
-                        requireContext(),
-                        "Please enable and connect to Spotify first",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    activity?.runOnUiThread {
+                        Toast.makeText(
+                            requireContext(),
+                            "Please enable and connect to Spotify first",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                     return@setOnPreferenceClickListener true
                 }
 
                 if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
-                    Toast.makeText(
-                        requireContext(),
-                        "Connecting to Spotify...",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    activity?.runOnUiThread {
+                        Toast.makeText(
+                            requireContext(),
+                            "Connecting to Spotify...",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                     spotifyManager.retry()
                     return@setOnPreferenceClickListener true
                 }
@@ -456,99 +462,102 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
                 spotifyManager.getPlaylists(
                     callback = { playlists ->
-                        loadingDialog.dismiss()
-                        Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})" }}")
+                        activity?.runOnUiThread {
+                            loadingDialog.dismiss()
+                            Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})" }}")
 
-                        // Create a custom adapter for the dialog
-                        val adapter = object : BaseAdapter() {
-                            override fun getCount(): Int = playlists.size
-                            override fun getItem(position: Int): Any = playlists[position]
-                            override fun getItemId(position: Int): Long = position.toLong()
+                            // Create a custom adapter for the dialog
+                            val adapter = object : BaseAdapter() {
+                                override fun getCount(): Int = playlists.size
+                                override fun getItem(position: Int): Any = playlists[position]
+                                override fun getItemId(position: Int): Long = position.toLong()
 
-                            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                                val view = convertView ?: LayoutInflater.from(parent.context)
-                                    .inflate(R.layout.item_playlist, parent, false)
+                                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                                    val view = convertView ?: LayoutInflater.from(parent.context)
+                                        .inflate(R.layout.item_playlist, parent, false)
 
-                                val playlist = playlists[position]
-                                val titleView = view.findViewById<TextView>(R.id.playlist_title)
-                                val coverView = view.findViewById<ImageView>(R.id.playlist_cover)
+                                    val playlist = playlists[position]
+                                    val titleView = view.findViewById<TextView>(R.id.playlist_title)
+                                    val coverView = view.findViewById<ImageView>(R.id.playlist_cover)
 
-                                titleView.text = playlist.title
+                                    titleView.text = playlist.title
 
-                                // Check specifically for Liked Songs
-                                if (playlist.uri.contains(":saved:tracks")) {
-                                    Timber.d("Found Liked Songs playlist: ${playlist.title} - Setting custom gradient icon")
-
-                                    // Clear the ImageView's drawable and any potential cache
-                                    coverView.setImageDrawable(null)
-                                    coverView.clearAnimation()
-
-                                    // Force garbage collection of any cached bitmaps
-                                    System.gc()
-
-                                    // Set our custom gradient icon with a post to ensure UI thread
-                                    view.post {
-                                        // Clear cache again just to be sure
-                                        coverView.setImageDrawable(null)
-                                        // Set the new drawable
-                                        coverView.setImageResource(R.drawable.ic_spotify_liked_songs)
-                                        // Force a layout refresh
-                                        coverView.invalidate()
-                                        view.invalidate()
-                                    }
-                                } else {
-                                    Timber.d("Regular playlist: ${playlist.title} - Loading cover image")
-                                    // For regular playlists, load cover as before
-                                    spotifyManager.getPlaylistCover(playlist) { bitmap ->
-                                        requireActivity().runOnUiThread {
-                                            if (bitmap != null) {
-                                                coverView.setImageBitmap(bitmap)
-                                            } else {
-                                                coverView.setImageResource(R.drawable.ic_spotify_logo)
+                                    // Check specifically for Liked Songs
+                                    if (playlist.uri.contains(":saved:tracks")) {
+                                        Timber.d("Found Liked Songs playlist: ${playlist.title} - Setting custom gradient icon")
+                                        activity?.runOnUiThread {
+                                            coverView.setImageResource(R.drawable.ic_spotify_liked_songs)
+                                        }
+                                    } else {
+                                        Timber.d("Regular playlist: ${playlist.title} - Loading cover image")
+                                        spotifyManager.getPlaylistCover(playlist) { bitmap ->
+                                            activity?.runOnUiThread {
+                                                if (bitmap != null) {
+                                                    coverView.setImageBitmap(bitmap)
+                                                } else {
+                                                    coverView.setImageResource(R.drawable.ic_spotify_logo)
+                                                }
                                             }
                                         }
                                     }
+
+                                    return view
                                 }
-
-                                return view
                             }
+
+                            val dialog = MaterialAlertDialogBuilder(requireContext())
+                                .setTitle("Select Playlist")
+                                .setAdapter(adapter) { _, which ->
+                                    val selectedPlaylist = playlists[which]
+                                    Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
+
+                                    // Save playlist selection
+                                    spotifyPreferences.setSelectedPlaylistWithTitle(selectedPlaylist.uri, selectedPlaylist.title)
+                                    summary = selectedPlaylist.title
+
+                                    // First pause current playback
+                                    spotifyManager.pause()
+
+                                    // Play the playlist directly - let SpotifyManager handle the section logic
+                                    spotifyManager.playPlaylist(selectedPlaylist.uri)
+
+                                    activity?.runOnUiThread {
+                                        Toast.makeText(
+                                            requireContext(),
+                                            "Selected: ${selectedPlaylist.title}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .create()
+
+                            dialog.show()
                         }
-
-                        val dialog = MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("Select Playlist")
-                            .setAdapter(adapter) { _, which ->
-                                val selectedPlaylist = playlists[which]
-                                Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
-
-                                // Save playlist selection
-                                spotifyPreferences.setSelectedPlaylistWithTitle(selectedPlaylist.uri, selectedPlaylist.title)
-                                summary = selectedPlaylist.title
-
-                                // First pause current playback
-                                spotifyManager.pause()
-
-                                // Play the playlist directly - let SpotifyManager handle the section logic
-                                spotifyManager.playPlaylist(selectedPlaylist.uri)
-
-                                Toast.makeText(
-                                    requireContext(),
-                                    "Selected: ${selectedPlaylist.title}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .create()
-
-                        dialog.show()
                     },
                     errorCallback = { error ->
-                        loadingDialog.dismiss()
-                        Timber.e(error, "Failed to load playlists")
-                        Toast.makeText(
-                            requireContext(),
-                            "Error loading playlists: ${error.message}",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        activity?.runOnUiThread {
+                            loadingDialog.dismiss()
+                            Timber.e(error, "Failed to load playlists")
+
+                            val errorMessage = when {
+                                error is IOException && error.message?.contains("401") == true -> {
+                                    // Token expired, try to refresh
+                                    spotifyManager.checkAndRefreshTokenIfNeeded()
+                                    "Your Spotify session has expired. Please reconnect to Spotify."
+                                }
+                                error is IOException ->
+                                    "Connection error. Please check your internet connection."
+                                else ->
+                                    "Error loading playlists: ${error.message}"
+                            }
+
+                            Toast.makeText(
+                                requireContext(),
+                                errorMessage,
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
                 )
                 true
@@ -560,7 +569,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             } ?: run {
                 // If no summary is saved, try to get playlist info from Spotify
                 spotifyPreferences.getSelectedPlaylist()?.let { uri ->
-                    lifecycleScope.launch {
+                    lifecycleScope.launch(Dispatchers.Main) {
                         spotifyManager.getPlaylistInfo(
                             uri = uri,
                             callback = { playlist ->
@@ -568,8 +577,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                                 spotifyPreferences.setPlaylistSummary(summary)  // Save the summary
                                 findPreference<Preference>("spotify_playlist")?.setSummary(summary)
                             },
-                            errorCallback = {
-                                findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                            errorCallback = { error ->
+                                activity?.runOnUiThread {
+                                    findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                                }
                             }
                         )
                     }
@@ -758,10 +769,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         val loadingIndicator = dialogView.findViewById<ProgressBar>(R.id.loading_indicator)
         val noResultsText = dialogView.findViewById<TextView>(R.id.no_results_text)
 
-        // Create adapter reference that can be captured by lambda
         lateinit var stationsAdapter: RadioStationAdapter
 
         stationsAdapter = RadioStationAdapter(
+            radioManager = radioManager, // Add RadioManager instance
             onStationClick = { station ->
                 radioManager.playStation(station)
                 radioPreferences.setLastStation(station)
@@ -789,8 +800,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
         searchInput.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH ||
-                (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)) {
-
+                (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+            ) {
                 val query = searchInput.text?.toString() ?: ""
                 if (query.length >= 3) {
                     loadingIndicator.visibility = View.VISIBLE
@@ -826,6 +837,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         lateinit var recentAdapter: RadioStationAdapter
 
         recentAdapter = RadioStationAdapter(
+            radioManager = radioManager, // Add RadioManager instance
             onStationClick = { station ->
                 radioManager.playStation(station)
                 radioPreferences.setLastStation(station)
@@ -879,6 +891,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         lateinit var favoritesAdapter: RadioStationAdapter
 
         favoritesAdapter = RadioStationAdapter(
+            radioManager = radioManager, // Add RadioManager instance
             onStationClick = { station ->
                 radioManager.playStation(station)
                 radioPreferences.setLastStation(station)
@@ -918,5 +931,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
     fun cancelChanges() {
         Timber.d("Canceling music source changes")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        spotifyManager.checkAndRefreshTokenIfNeeded()
     }
 }

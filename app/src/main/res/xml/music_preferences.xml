@@ -39,7 +39,7 @@
         android:title="Shuffle Playback"
         android:summary="Randomly shuffle tracks during playback"
         android:dependency="spotify_enabled"
-        app:isPreferenceVisible="false"/>
+        app:isPreferenceVisible="true"/>
 
     <SwitchPreferenceCompat
         android:key="spotify_autoplay"
