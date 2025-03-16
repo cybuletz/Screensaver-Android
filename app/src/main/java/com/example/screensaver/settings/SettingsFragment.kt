@@ -62,6 +62,7 @@ import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.utils.BrightnessManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import timber.log.Timber
+import com.google.android.material.color.MaterialColors
 
 
 @AndroidEntryPoint
@@ -191,12 +192,23 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+            // Add Material You surface color
+            setBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface))
         }
 
-        // Add the preferences view
+        // Add the preferences view with Material You styling
+        view.apply {
+            setBackgroundColor(androidx.core.content.ContextCompat.getColor(context, android.R.color.transparent))
+            setPadding(
+                resources.getDimensionPixelSize(R.dimen.settings_card_margin),
+                resources.getDimensionPixelSize(R.dimen.settings_card_margin),
+                resources.getDimensionPixelSize(R.dimen.settings_card_margin),
+                resources.getDimensionPixelSize(R.dimen.settings_card_margin)
+            )
+        }
         coordinator.addView(view)
 
-        // Add the FAB
+        // Add the FAB with Material You styling
         val fab = ExtendedFloatingActionButton(requireContext()).apply {
             id = View.generateViewId()
             text = getString(R.string.save_settings)
@@ -208,6 +220,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
                 bottomMargin = resources.getDimensionPixelSize(R.dimen.fab_margin)
             }
+            elevation = resources.getDimension(R.dimen.settings_card_elevation)
             setOnClickListener {
                 saveSettings()
                 findNavController().navigateUp()
@@ -232,15 +245,20 @@ class SettingsFragment : PreferenceFragmentCompat() {
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         Log.d(TAG, "Setting up preferences")
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            // Load preferences in background
-            withContext(Dispatchers.IO) {
-                setPreferencesFromResource(R.xml.preferences, rootKey)
-            }
+        // Load preferences immediately on main thread
+        setPreferencesFromResource(R.xml.preferences, rootKey)
+        preferenceScreen.isIconSpaceReserved = true
 
-            // Setup UI on main thread
-            withContext(Dispatchers.Main) {
-                try {
+        // Then launch coroutine for background operations
+        lifecycleScope.launch {
+            try {
+                // Background operations
+                withContext(Dispatchers.IO) {
+                    // Any heavy loading operations can go here
+                }
+
+                // UI operations on main thread
+                withContext(Dispatchers.Main) {
                     // First restore state
                     restoreSettingsState()
 
@@ -248,56 +266,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     setupPhotoDisplayManager()
                     setupChargingPreference()
 
-                    // Setup all preference click listeners
-                    findPreference<Preference>("photo_sources_dialog")?.setOnPreferenceClickListener {
-                        PhotoSourcesDialog.newInstance().show(childFragmentManager, "photo_sources")
-                        true
-                    }
-
-                    findPreference<Preference>("clock_widget_settings")?.setOnPreferenceClickListener {
-                        showWidgetDialog(WidgetType.CLOCK)
-                        true
-                    }
-
-                    findPreference<Preference>("weather_widget_settings")?.setOnPreferenceClickListener {
-                        showWidgetDialog(WidgetType.WEATHER)
-                        true
-                    }
-
-                    findPreference<Preference>("music_widget_settings")?.setOnPreferenceClickListener {
-                        showWidgetDialog(WidgetType.MUSIC)
-                        true
-                    }
-
-                    findPreference<Preference>("security_preferences")?.setOnPreferenceClickListener {
-                        SecurityPreferenceDialog.newInstance()
-                            .show(childFragmentManager, "security_settings")
-                        true
-                    }
-
-                    findPreference<Preference>("manage_photos")?.setOnPreferenceClickListener {
-                        startActivity(Intent(requireContext(), PhotoManagerActivity::class.java))
-                        true
-                    }
-
-                    findPreference<Preference>("display_settings")?.setOnPreferenceClickListener {
-                        DisplaySettingsDialog.newInstance()
-                            .show(childFragmentManager, "display_settings")
-                        true
-                    }
-
-                    findPreference<Preference>("common_settings")?.setOnPreferenceClickListener {
-                        PhotoShowSettingsDialog.newInstance()
-                            .show(childFragmentManager, "common_settings")
-                        true
-                    }
-
-                    findPreference<Preference>("spotify_preferences")?.setOnPreferenceClickListener {
-                        MusicSourcesDialog.newInstance()
-                            .show(childFragmentManager, "music_sources")
-                        true
-                    }
-
+                    // Setup non-click preferences
                     findPreference<ListPreference>("cache_size")?.setOnPreferenceChangeListener { _, newValue ->
                         val size = (newValue as String).toInt()
                         photoCache.setMaxCachedPhotos(size)
@@ -311,10 +280,77 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     observeAppDataState()
                     observeWidgetState()
 
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error setting up preferences", e)
+            }
+        }
+    }
+
+    override fun onPreferenceTreeClick(preference: Preference): Boolean {
+        Log.d("SettingsFragment", "onPreferenceTreeClick: ${preference.key}")
+
+        return when (preference.key) {
+            "display_settings" -> {
+                try {
+                    Log.d("SettingsFragment", "Showing DisplaySettingsDialog")
+                    val dialog = DisplaySettingsDialog.newInstance()
+                    dialog.show(childFragmentManager, "display_settings")
+                    true
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error setting up preferences", e)
+                    Log.e("SettingsFragment", "Error showing display settings dialog", e)
+                    false
                 }
             }
+            "common_settings" -> {
+                try {
+                    Log.d("SettingsFragment", "Showing PhotoShowSettingsDialog")
+                    val dialog = PhotoShowSettingsDialog.newInstance()
+                    dialog.show(childFragmentManager, "common_settings")
+                    true
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Error showing common settings dialog", e)
+                    false
+                }
+            }
+            "manage_photos" -> {
+                try {
+                    Log.d("SettingsFragment", "Starting PhotoManagerActivity")
+                    startActivity(Intent(requireContext(), PhotoManagerActivity::class.java))
+                    true
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Error starting PhotoManagerActivity", e)
+                    false
+                }
+            }
+            "spotify_preferences" -> {
+                try {
+                    MusicSourcesDialog.newInstance()
+                        .show(childFragmentManager, "music_sources")
+                    true
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Error showing music sources dialog", e)
+                    false
+                }
+            }
+            "clock_widget_settings" -> {
+                showWidgetDialog(WidgetType.CLOCK)
+                true
+            }
+            "weather_widget_settings" -> {
+                showWidgetDialog(WidgetType.WEATHER)
+                true
+            }
+            "music_widget_settings" -> {
+                showWidgetDialog(WidgetType.MUSIC)
+                true
+            }
+            "security_preferences" -> {
+                SecurityPreferenceDialog.newInstance()
+                    .show(childFragmentManager, "security_settings")
+                true
+            }
+            else -> super.onPreferenceTreeClick(preference)
         }
     }
 

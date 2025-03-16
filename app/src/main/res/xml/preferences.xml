@@ -3,164 +3,119 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <PreferenceCategory
-        android:title="@string/pref_category_photo_sources"
-        android:key="photo_sources"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false">
+    <com.example.screensaver.settings.MaterialBasicPreference
+        style="@style/SettingsCardStyle"
+        android:icon="@drawable/manage_photos"
+        android:key="manage_photos"
+        android:summary="@string/pref_photo_manager_summary"
+        android:title="@string/manage_photos" />
 
-        <Preference
-            android:key="manage_photos"
-            android:title="@string/manage_photos"
-            android:summary="@string/pref_photo_manager_summary"
-            android:icon="@drawable/ic_photo_library" />
-    </PreferenceCategory>
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="spotify_preferences"
+        android:title="@string/pref_music_sources_title"
+        android:summary="@string/pref_music_sources_summary"
+        android:icon="@drawable/music_sources"
+        style="@style/SettingsCardStyle"/>
 
-    <PreferenceCategory
-        android:title="@string/pref_category_music"
-        android:key="music_settings"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false">
-
-        <Preference
-            android:key="spotify_preferences"
-            android:title="@string/pref_music_sources_title"
-            android:summary="@string/pref_music_sources_summary"
-            android:icon="@drawable/ic_music_note" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="common_settings"
         android:title="@string/pref_category_common"
-        android:key="common_photo_settings"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false">
+        android:summary="@string/pref_common_summary"
+        android:icon="@drawable/ic_common_settings"
+        style="@style/SettingsCardStyle"/>
 
-        <Preference
-            android:key="common_settings"
-            android:title="@string/pref_category_common"
-            android:summary="@string/pref_common_summary"
-            android:icon="@drawable/ic_common_settings" />
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="clock_widget_settings"
+        android:title="@string/pref_category_clock_widget"
+        android:summary="@string/pref_clock_widget_enabled_summary"
+        style="@style/SettingsCardStyle"/>
 
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="weather_widget_settings"
+        android:title="@string/pref_category_weather_widget"
+        android:summary="@string/pref_show_weather_summary"
+        style="@style/SettingsCardStyle"/>
 
-    </PreferenceCategory>
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="music_widget_settings"
+        android:title="@string/pref_music_widget"
+        android:summary="@string/pref_show_music_summary"
+        style="@style/SettingsCardStyle"/>
 
-    <PreferenceCategory
-        android:title="@string/pref_category_widgets"
-        android:key="widget_settings"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false">
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="security_preferences"
+        android:title="@string/pref_security_settings_title"
+        android:summary="@string/pref_security_settings_summary"
+        android:icon="@drawable/ic_security"
+        style="@style/SettingsCardStyle"/>
 
-        <Preference
-            android:key="clock_widget_settings"
-            android:title="@string/pref_category_clock_widget"
-            android:summary="@string/pref_clock_widget_enabled_summary" />
-
-        <Preference
-            android:key="weather_widget_settings"
-            android:title="@string/pref_category_weather_widget"
-            android:summary="@string/pref_show_weather_summary" />
-
-        <Preference
-            android:key="music_widget_settings"
-            android:title="@string/pref_music_widget"
-            android:summary="@string/pref_show_music_summary" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory
-        android:title="@string/pref_category_security"
-        android:key="security_settings"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false">
-
-        <Preference
-            android:key="security_preferences"
-            android:title="@string/pref_security_settings_title"
-            android:summary="@string/pref_security_settings_summary"
-            app:icon="@drawable/ic_security"/>
-
-    </PreferenceCategory>
-
-    <PreferenceCategory
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="display_settings"
         android:title="@string/pref_category_display"
-        android:key="display_settings_category"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false">
+        android:summary="@string/pref_display_summary"
+        android:icon="@drawable/ic_display"
+        style="@style/SettingsCardStyle"/>
 
-        <Preference
-            android:key="display_settings"
-            android:title="@string/pref_category_display"
-            android:summary="@string/pref_display_summary"
-            android:icon="@drawable/ic_display" />
-    </PreferenceCategory>
+    <com.example.screensaver.settings.MaterialSwitchPreference
+        android:key="schedule_enabled"
+        android:title="@string/pref_schedule_enabled_title"
+        android:summary="@string/pref_schedule_enabled_summary"
+        android:defaultValue="false"
+        style="@style/SettingsCardStyle"/>
 
-    <PreferenceCategory
-        android:title="@string/pref_category_schedule"
-        android:key="schedule_settings"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false">
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="start_time"
+        android:title="@string/pref_start_time_title"
+        app:dependency="schedule_enabled"
+        style="@style/SettingsCardStyle"/>
 
-        <SwitchPreferenceCompat
-            android:key="schedule_enabled"
-            android:title="@string/pref_schedule_enabled_title"
-            android:summary="@string/pref_schedule_enabled_summary"
-            android:defaultValue="false"/>
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="end_time"
+        android:title="@string/pref_end_time_title"
+        app:dependency="schedule_enabled"
+        style="@style/SettingsCardStyle"/>
 
-        <Preference
-            android:key="start_time"
-            android:title="@string/pref_start_time_title"
-            app:dependency="schedule_enabled"/>
+    <com.example.screensaver.settings.MaterialListPreference
+        android:key="active_days"
+        android:title="@string/pref_active_days_title"
+        android:summary="@string/pref_active_days_summary"
+        android:entries="@array/days_of_week"
+        android:entryValues="@array/days_of_week_values"
+        app:dependency="schedule_enabled"
+        style="@style/SettingsCardStyle"/>
 
-        <Preference
-            android:key="end_time"
-            android:title="@string/pref_end_time_title"
-            app:dependency="schedule_enabled"/>
+    <com.example.screensaver.settings.MaterialSwitchPreference
+        android:key="start_on_charge"
+        android:title="@string/start_on_charge_title"
+        android:summary="@string/start_on_charge_summary"
+        android:icon="@drawable/ic_battery_charging"
+        android:defaultValue="false"
+        style="@style/SettingsCardStyle"/>
 
-        <MultiSelectListPreference
-            android:key="active_days"
-            android:title="@string/pref_active_days_title"
-            android:summary="@string/pref_active_days_summary"
-            android:entries="@array/days_of_week"
-            android:entryValues="@array/days_of_week_values"
-            app:dependency="schedule_enabled"/>
+    <com.example.screensaver.settings.MaterialListPreference
+        android:key="cache_size"
+        android:title="@string/pref_cache_size_title"
+        android:summary="@string/pref_cache_size_summary"
+        android:entries="@array/cache_size_entries"
+        android:entryValues="@array/cache_size_values"
+        android:defaultValue="10"
+        style="@style/SettingsCardStyle"/>
 
-        <SwitchPreferenceCompat
-            android:defaultValue="false"
-            android:key="start_on_charge"
-            android:title="@string/start_on_charge_title"
-            android:summary="@string/start_on_charge_summary"
-            android:icon="@drawable/ic_battery_charging" />
-    </PreferenceCategory>
+    <com.example.screensaver.settings.MaterialSwitchPreference
+        android:key="debug_logging"
+        android:title="@string/pref_debug_logging_title"
+        android:summary="@string/pref_debug_logging_summary"
+        android:defaultValue="false"
+        style="@style/SettingsCardStyle"/>
 
-    <PreferenceCategory
-        android:title="@string/pref_category_debug"
-        android:key="debug_settings"
-        style="@style/PreferenceCategoryStyle"
-        app:iconSpaceReserved="false">
-
-        <ListPreference
-            android:key="cache_size"
-            android:title="@string/pref_cache_size_title"
-            android:summary="@string/pref_cache_size_summary"
-            android:entries="@array/cache_size_entries"
-            android:entryValues="@array/cache_size_values"
-            android:defaultValue="10"/>
-
-        <SwitchPreferenceCompat
-            android:key="debug_logging"
-            android:title="@string/pref_debug_logging_title"
-            android:summary="@string/pref_debug_logging_summary"
-            android:defaultValue="false" />
-
-        <Preference
-            android:key="view_logs"
-            android:title="@string/pref_view_logs_title"
-            android:summary="@string/pref_view_logs_summary" />
-    </PreferenceCategory>
+    <com.example.screensaver.settings.MaterialBasicPreference
+        android:key="view_logs"
+        android:title="@string/pref_view_logs_title"
+        android:summary="@string/pref_view_logs_summary"
+        style="@style/SettingsCardStyle"/>
 
     <Preference
         android:layout="@layout/preference_bottom_spacing"
-        android:key="bottom_spacing" />
+        android:key="bottom_spacing"/>
 
 </PreferenceScreen>

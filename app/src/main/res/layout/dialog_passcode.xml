@@ -4,35 +4,35 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="16dp">
+    android:padding="24dp"
+    android:background="@drawable/dialog_background">
 
     <TextView
         android:id="@+id/titleText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/enter_passcode"
-        android:textSize="20sp"
-        android:textStyle="bold"
+        android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        app:layout_constraintStart_toStartOf="parent"/>
 
     <TextView
         android:id="@+id/messageText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:textColor="?android:textColorSecondary"
+        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+        android:textColor="?attr/colorOnSurfaceVariant"
         app:layout_constraintTop_toBottomOf="@id/titleText"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        app:layout_constraintStart_toStartOf="parent"/>
 
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/passcodeInputLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        app:passwordToggleEnabled="true"
+        android:layout_marginTop="24dp"
+        app:endIconMode="password_toggle"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
         app:layout_constraintTop_toBottomOf="@id/messageText">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -42,7 +42,6 @@
             android:inputType="numberPassword"
             android:maxLength="4"
             android:hint="@string/passcode_hint"/>
-
     </com.google.android.material.textfield.TextInputLayout>
 
     <TextView
@@ -50,24 +49,25 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:textColor="@android:color/holo_red_light"
+        android:textColor="?attr/colorError"
         android:visibility="gone"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
         app:layout_constraintTop_toBottomOf="@id/passcodeInputLayout"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        app:layout_constraintStart_toStartOf="parent"/>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/confirmButton"
+        style="@style/MaterialDialog.Button.Primary"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="24dp"
         android:text="@string/confirm"
         app:layout_constraintTop_toBottomOf="@id/errorText"
         app:layout_constraintEnd_toEndOf="parent"/>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/cancelButton"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
+        style="@style/MaterialDialog.Button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="8dp"

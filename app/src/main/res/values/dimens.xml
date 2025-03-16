@@ -5,4 +5,11 @@
     <dimen name="fab_margin">24dp</dimen>
     <dimen name="widget_margin">16dp</dimen>
     <dimen name="dialog_padding">16dp</dimen>
+
+    <!-- Settings Card Dimensions -->
+    <dimen name="settings_card_padding">4dp</dimen>
+    <dimen name="settings_card_margin">8dp</dimen>
+    <dimen name="settings_card_corner_radius">12dp</dimen>
+    <dimen name="settings_card_elevation">1dp</dimen>
+    <dimen name="settings_card_margin_vertical">4dp</dimen>
 </resources>
