@@ -4,22 +4,25 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.fragment.app.DialogFragment
 import com.example.screensaver.R
 import com.google.android.material.button.MaterialButton
 import dagger.hilt.android.AndroidEntryPoint
 
-@AndroidEntryPoint
 class MusicSourcesDialog : DialogFragment() {
-    companion object {
-        fun newInstance() = MusicSourcesDialog()
-    }
 
     private var musicPreferenceFragment: MusicPreferenceFragment? = null
 
+    companion object {
+        fun newInstance(): MusicSourcesDialog {
+            return MusicSourcesDialog()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setStyle(STYLE_NO_FRAME, R.style.PhotoSourcesDialog)
+        setStyle(STYLE_NO_FRAME, R.style.MaterialDialog)
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -29,7 +32,16 @@ class MusicSourcesDialog : DialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        musicPreferenceFragment = MusicPreferenceFragment()
+        musicPreferenceFragment = MusicPreferenceFragment().apply {
+            setOnPreferenceChangeCallback {
+                // Force dialog size recalculation when preferences change
+                dialog?.window?.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT
+                )
+            }
+        }
+
         childFragmentManager
             .beginTransaction()
             .replace(R.id.music_preferences_container, musicPreferenceFragment!!)
@@ -43,6 +55,16 @@ class MusicSourcesDialog : DialogFragment() {
         view.findViewById<MaterialButton>(R.id.ok_button).setOnClickListener {
             musicPreferenceFragment?.applyChanges()
             dismiss()
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        dialog?.window?.apply {
+            setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT
+            )
         }
     }
 
