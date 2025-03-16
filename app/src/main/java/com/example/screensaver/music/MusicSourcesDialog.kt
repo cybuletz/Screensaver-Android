@@ -26,6 +26,10 @@ class MusicSourcesDialog : DialogFragment() {
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        // Add this block to set transparent window background
+        dialog?.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+        }
         return inflater.inflate(R.layout.dialog_music_sources, container, false)
     }
 
@@ -61,8 +65,19 @@ class MusicSourcesDialog : DialogFragment() {
     override fun onStart() {
         super.onStart()
         dialog?.window?.apply {
+            // Set the background drawable first
+            setBackgroundDrawableResource(android.R.color.transparent)
+
+            // Get screen width
+            val displayMetrics = resources.displayMetrics
+            val screenWidth = displayMetrics.widthPixels
+
+            // Calculate dialog width (e.g., 90% of screen width)
+            val dialogWidth = (screenWidth * 0.95).toInt()  // You can adjust 0.90 to your preferred ratio
+
+            // Set the layout params with the calculated width
             setLayout(
-                WindowManager.LayoutParams.MATCH_PARENT,
+                dialogWidth,
                 WindowManager.LayoutParams.WRAP_CONTENT
             )
         }

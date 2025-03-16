@@ -41,6 +41,8 @@
         <item name="android:backgroundDimEnabled">true</item>
         <item name="android:backgroundDimAmount">0.5</item>
         <item name="android:background">@drawable/dialog_background</item>
+        <item name="cornerRadius">16dp</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
     </style>
 
     <style name="MaterialDialog.Title">
@@ -156,10 +158,11 @@
         <item name="android:paddingBottom">16dp</item>
         <item name="android:paddingStart">24dp</item>
         <item name="android:paddingEnd">24dp</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:layout_marginBottom">8dp</item>
         <item name="iconSpaceReserved">true</item>
         <item name="android:iconSpaceReserved">true</item>
         <item name="iconSize">24dp</item>
         <item name="android:minHeight">64dp</item>
     </style>
-
 </resources>
