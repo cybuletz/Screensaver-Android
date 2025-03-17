@@ -32,9 +32,12 @@ import com.example.screensaver.data.PhotoCache
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
@@ -186,13 +189,30 @@ class SettingsFragment : PreferenceFragmentCompat() {
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val view = super.onCreateView(inflater, container, savedInstanceState)
 
-        // Create a CoordinatorLayout to wrap the preferences and FAB
+        // Create a LinearLayout to hold the title and preferences
+        val contentLayout = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // Create the title TextView
+        val titleText = TextView(requireContext()).apply {
+            text = getString(R.string.settings_title)
+            textSize = 32f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface))
+            setPadding(80, 84, 24, 20)
+        }
+
+        // Create a CoordinatorLayout to wrap everything
         val coordinator = CoordinatorLayout(requireContext()).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            // Add Material You surface color
             setBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface))
         }
 
@@ -206,9 +226,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 resources.getDimensionPixelSize(R.dimen.settings_card_margin)
             )
         }
-        coordinator.addView(view)
 
-        // Add the FAB with Material You styling
+        // Add views to layout
+        contentLayout.addView(titleText)
+        contentLayout.addView(view)
+        coordinator.addView(contentLayout)
+
+        // Add the FAB
         val fab = ExtendedFloatingActionButton(requireContext()).apply {
             id = View.generateViewId()
             text = getString(R.string.save_settings)

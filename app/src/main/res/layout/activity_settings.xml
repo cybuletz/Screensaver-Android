@@ -20,6 +20,16 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/settings_title"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:padding="16dp"
+        android:textColor="?attr/colorOnSurface"
+        android:background="?attr/colorSurface"
+        android:elevation="1dp"/>
 
     <FrameLayout
         android:id="@+id/settings_container"

@@ -21,13 +21,14 @@
         android:key="common_settings"
         android:title="@string/pref_category_common"
         android:summary="@string/pref_common_summary"
-        android:icon="@drawable/ic_common_settings"
+        android:icon="@drawable/photoshow_settings"
         style="@style/SettingsCardStyle"/>
 
     <com.example.screensaver.settings.MaterialBasicPreference
         android:key="clock_widget_settings"
         android:title="@string/pref_category_clock_widget"
         android:summary="@string/pref_clock_widget_enabled_summary"
+        android:icon="@drawable/widgets"
         style="@style/SettingsCardStyle"/>
 
     <com.example.screensaver.settings.MaterialBasicPreference
@@ -46,7 +47,7 @@
         android:key="security_preferences"
         android:title="@string/pref_security_settings_title"
         android:summary="@string/pref_security_settings_summary"
-        android:icon="@drawable/ic_security"
+        android:icon="@drawable/security_settings"
         style="@style/SettingsCardStyle"/>
 
     <com.example.screensaver.settings.MaterialBasicPreference
@@ -54,64 +55,6 @@
         android:title="@string/pref_category_display"
         android:summary="@string/pref_display_summary"
         android:icon="@drawable/ic_display"
-        style="@style/SettingsCardStyle"/>
-
-    <com.example.screensaver.settings.MaterialSwitchPreference
-        android:key="schedule_enabled"
-        android:title="@string/pref_schedule_enabled_title"
-        android:summary="@string/pref_schedule_enabled_summary"
-        android:defaultValue="false"
-        style="@style/SettingsCardStyle"/>
-
-    <com.example.screensaver.settings.MaterialBasicPreference
-        android:key="start_time"
-        android:title="@string/pref_start_time_title"
-        app:dependency="schedule_enabled"
-        style="@style/SettingsCardStyle"/>
-
-    <com.example.screensaver.settings.MaterialBasicPreference
-        android:key="end_time"
-        android:title="@string/pref_end_time_title"
-        app:dependency="schedule_enabled"
-        style="@style/SettingsCardStyle"/>
-
-    <com.example.screensaver.settings.MaterialListPreference
-        android:key="active_days"
-        android:title="@string/pref_active_days_title"
-        android:summary="@string/pref_active_days_summary"
-        android:entries="@array/days_of_week"
-        android:entryValues="@array/days_of_week_values"
-        app:dependency="schedule_enabled"
-        style="@style/SettingsCardStyle"/>
-
-    <com.example.screensaver.settings.MaterialSwitchPreference
-        android:key="start_on_charge"
-        android:title="@string/start_on_charge_title"
-        android:summary="@string/start_on_charge_summary"
-        android:icon="@drawable/ic_battery_charging"
-        android:defaultValue="false"
-        style="@style/SettingsCardStyle"/>
-
-    <com.example.screensaver.settings.MaterialListPreference
-        android:key="cache_size"
-        android:title="@string/pref_cache_size_title"
-        android:summary="@string/pref_cache_size_summary"
-        android:entries="@array/cache_size_entries"
-        android:entryValues="@array/cache_size_values"
-        android:defaultValue="10"
-        style="@style/SettingsCardStyle"/>
-
-    <com.example.screensaver.settings.MaterialSwitchPreference
-        android:key="debug_logging"
-        android:title="@string/pref_debug_logging_title"
-        android:summary="@string/pref_debug_logging_summary"
-        android:defaultValue="false"
-        style="@style/SettingsCardStyle"/>
-
-    <com.example.screensaver.settings.MaterialBasicPreference
-        android:key="view_logs"
-        android:title="@string/pref_view_logs_title"
-        android:summary="@string/pref_view_logs_summary"
         style="@style/SettingsCardStyle"/>
 
     <Preference
