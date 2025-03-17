@@ -22,14 +22,11 @@
         <item name="colorOnSurfaceVariant">#757575</item>
         <item name="android:windowBackground">@color/background</item>
 
-        <!-- CardView fixes for API 26 -->
+        <!-- Additional API 26 specific fixes -->
         <item name="elevationOverlayEnabled">false</item>
         <item name="materialCardViewStyle">@style/Widget.MaterialComponents.CardView</item>
         <item name="cardViewStyle">@style/Widget.MaterialComponents.CardView</item>
         <item name="cardBackgroundColor">?attr/colorSurface</item>
-
-        <!-- Android 8.1+ specific -->
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:navigationBarColor">@color/background</item>
     </style>
 </resources>

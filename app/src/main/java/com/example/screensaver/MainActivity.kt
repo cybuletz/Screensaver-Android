@@ -44,6 +44,7 @@ import com.example.screensaver.widgets.WidgetType
 import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
+import android.webkit.WebView
 import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle

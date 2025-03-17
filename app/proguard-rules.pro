@@ -102,7 +102,6 @@
 
 # Keep specific fragments
 -keep class com.example.screensaver.MainFragment { *; }
--keep class com.example.screensaver.WebViewFragment { *; }
 -keep class com.example.screensaver.fragments.** { *; }
 
 # Google Services and Libraries

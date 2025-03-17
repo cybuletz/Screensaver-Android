@@ -406,4 +406,16 @@ class AppPreferences @Inject constructor(
     fun setScreenOrientation(orientation: ScreenOrientation) {
         prefs.edit().putString(PreferenceKeys.SCREEN_ORIENTATION, orientation.name).apply()
     }
+
+    fun addRecentlyAccessedUri(uri: String) {
+        val uris = getRecentlyAccessedUris().toMutableSet()
+        uris.add(uri)
+        prefs.edit()
+            .putStringSet("recently_accessed_uris", uris)
+            .apply()
+    }
+
+    fun getRecentlyAccessedUris(): Set<String> {
+        return prefs.getStringSet("recently_accessed_uris", emptySet()) ?: emptySet()
+    }
 }
