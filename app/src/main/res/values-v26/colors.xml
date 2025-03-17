@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="gradient_start">#2888FA</color>
+    <color name="gradient_end">#1976D2</color>
+    <color name="preference_background">#FAFAFA</color>
+    <!-- Replace dynamic color with static value -->
+    <color name="preference_category_text">#1976D2</color>
+    <color name="preference_item_background">#FFFFFF</color>
+    <color name="preference_divider">#1F000000</color>
+    <color name="link_color">#2196F3</color>
+    <color name="blue_dark">#1976D2</color>
+    <color name="blue_light">#2888FA</color>
+
+    <color name="primary">#1976D2</color>
+    <color name="primary_dark">#1565C0</color>
+    <color name="secondary">#FFC107</color>
+    <color name="secondary_dark">#FFA000</color>
+    <color name="selection_overlay">#660066CC</color>
+    <color name="photo_placeholder">#E0E0E0</color>
+    <color name="error_color">#B00020</color>
+    <color name="success_color">#4CAF50</color>
+    <color name="accent">#00BCD4</color>
+    <color name="background">#FFFFFF</color>
+    <color name="background_dark">#121212</color>
+
+    <!-- Replace Material You dynamic colors with static values -->
+    <color name="material_dynamic_primary95">#EEF5FF</color>
+    <color name="material_dynamic_primary40">#1976D2</color>
+    <color name="material_dynamic_neutral20">#2D2D2D</color>
+
+    <!-- Material You Settings Card Colors with static values -->
+    <color name="settings_card_background_light">#EEF5FF</color>
+    <color name="settings_card_background_dark">#2D2D2D</color>
+    <color name="settings_card_ripple">#E0E0E0</color>
+
+    <!-- Fallback colors (keep as is since they're already static) -->
+    <color name="settings_card_background_light_fallback">#F5F5F5</color>
+    <color name="settings_card_background_dark_fallback">#2D2D2D</color>
+    <color name="settings_card_ripple_fallback">#E0E0E0</color>
+
+    <!-- PhotoManager colors -->
+    <color name="surface">#FFFFFF</color>
+    <color name="on_surface">#000000</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_secondary">#FFFFFF</color>
+    <color name="gray">#FF888888</color>
+
+    <color name="blue_button_background">#1976D2</color>
+    <color name="blue_button_text">#1976D2</color>
+    <color name="blue_button_stroke">#1976D2</color>
+
+    <color name="md_theme_primary">#1976D2</color>
+    <color name="md_theme_onPrimary">#FFFFFF</color>
+    <color name="md_theme_primaryContainer">#1976D2</color>
+    <color name="md_theme_onPrimaryContainer">#FFFFFF</color>
+
+    <!-- Additional v26 specific colors for MaterialCardView -->
+    <color name="card_background_light">#FFFFFF</color>
+    <color name="card_background_dark">#2D2D2D</color>
+    <color name="card_stroke_light">#E0E0E0</color>
+    <color name="card_stroke_dark">#424242</color>
+</resources>

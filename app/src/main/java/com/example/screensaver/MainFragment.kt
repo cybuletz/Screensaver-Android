@@ -1,15 +1,11 @@
 package com.example.screensaver
 
-import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -22,15 +18,11 @@ import com.google.android.material.snackbar.Snackbar
 import androidx.preference.PreferenceManager
 import com.example.screensaver.ui.PhotoDisplayManager
 import kotlinx.coroutines.flow.collectLatest
-import android.os.Build
-import android.webkit.WebSettings
-import android.webkit.WebView
 
 @AndroidEntryPoint
 class MainFragment : Fragment() {
     private var _binding: FragmentMainBinding? = null
     private val binding get() = _binding!!
-    private var isWebViewInitialized = false
 
     @Inject
     lateinit var photoSourceState: PhotoSourceState
@@ -45,10 +37,7 @@ class MainFragment : Fragment() {
 
     companion object {
         private const val TAG = "MainFragment"
-        private const val DEFAULT_URL = "file:///android_asset/index.html"
-        private const val ERROR_PAGE = "file:///android_asset/error.html"
         private const val MIN_PREVIEW_INTERVAL = 5000L // 5 seconds between previews
-
         private const val KEY_PHOTO_DISPLAY_ACTIVE = "photo_display_active"
         private const val KEY_PREVIEW_ENABLED = "preview_enabled"
     }
@@ -71,7 +60,6 @@ class MainFragment : Fragment() {
             setupViews()
             observePhotoManager()
         } else {
-            setupWebView(savedInstanceState)
             setupViews()
         }
 
@@ -134,7 +122,6 @@ class MainFragment : Fragment() {
 
         if (shouldRestartDisplay) {
             binding.screensaverContainer.visibility = View.VISIBLE
-            binding.webView.visibility = View.GONE
             photoDisplayManager.startPhotoDisplay()
         }
     }
@@ -180,11 +167,7 @@ class MainFragment : Fragment() {
     private fun startPreviewMode() {
         if (!isPhotoDisplayActive && photoSourceState.isScreensaverReady()) {
             isPhotoDisplayActive = true
-            binding.apply {
-                webView.stopLoading()
-                webView.visibility = View.GONE
-                screensaverContainer.visibility = View.VISIBLE
-            }
+            binding.screensaverContainer.visibility = View.VISIBLE
             photoDisplayManager.startPhotoDisplay()
             photoSourceState.recordPreviewStarted()
         }
@@ -192,11 +175,7 @@ class MainFragment : Fragment() {
 
     private fun startPhotoDisplay() {
         Log.d(TAG, "Starting photo display")
-        binding.apply {
-            webView.stopLoading()
-            webView.visibility = View.GONE
-            screensaverContainer.visibility = View.VISIBLE
-        }
+        binding.screensaverContainer.visibility = View.VISIBLE
         photoDisplayManager.startPhotoDisplay()
         isPhotoDisplayActive = true
     }
@@ -213,141 +192,12 @@ class MainFragment : Fragment() {
         Log.d(TAG, "Initializing display mode. Photos ready: $isReady")
 
         if (isReady) {
-            binding.webView.apply {
-                stopLoading()
-                clearHistory()
-                visibility = View.GONE
-            }
             binding.screensaverContainer.visibility = View.VISIBLE
             binding.screensaverReadyCard.visibility = View.VISIBLE
             startPhotoDisplay()
         } else {
-            binding.webView.visibility = View.VISIBLE
             binding.screensaverContainer.visibility = View.GONE
             binding.screensaverReadyCard.visibility = View.GONE
-        }
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun setupWebView(savedInstanceState: Bundle?) {
-        configureWebViewSettings()
-        setupWebViewClient()
-        setupJavaScriptInterface()
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                if (savedInstanceState != null) {
-                    binding.webView.restoreState(savedInstanceState)
-                } else {
-                    binding.webView.loadUrl(DEFAULT_URL)
-                }
-                isWebViewInitialized = true
-            } catch (e: Exception) {
-                Log.e(TAG, "Error initializing WebView", e)
-                handleWebViewError()
-            }
-        }
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun configureWebViewSettings() {
-        binding.webView.settings.apply {
-            // Basic access settings
-            allowFileAccess = true
-            allowContentAccess = false
-            javaScriptEnabled = true
-
-            // Storage and cache settings
-            domStorageEnabled = true
-            cacheMode = WebSettings.LOAD_DEFAULT
-
-            // Zoom control settings
-            setSupportZoom(false)
-            builtInZoomControls = false
-            displayZoomControls = false
-
-            // Content handling settings
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            }
-
-            // Security settings - using suppressions for deprecated APIs
-            @Suppress("DEPRECATION")
-            allowFileAccessFromFileURLs = false
-            @Suppress("DEPRECATION")
-            allowUniversalAccessFromFileURLs = false
-
-            // Media settings
-            mediaPlaybackRequiresUserGesture = true
-
-            // Display settings
-            useWideViewPort = true
-            loadWithOverviewMode = true
-
-            // Database and form settings
-            databaseEnabled = false
-            @Suppress("DEPRECATION")
-            saveFormData = false
-            @Suppress("DEPRECATION")
-            savePassword = false
-        }
-
-        // Additional security settings for newer API levels
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            binding.webView.setRendererPriorityPolicy(
-                WebView.RENDERER_PRIORITY_BOUND,
-                true
-            )
-        }
-    }
-
-    private fun setupWebViewClient() {
-        binding.webView.webViewClient = object : WebViewClient() {
-            override fun onReceivedError(
-                view: WebView?,
-                request: WebResourceRequest?,
-                error: WebResourceError?
-            ) {
-                super.onReceivedError(view, request, error)
-                Log.e(TAG, "WebView error: ${error?.description}")
-                view?.loadUrl(ERROR_PAGE)
-                showError("Error loading page: ${error?.description}")
-            }
-
-            override fun shouldOverrideUrlLoading(
-                view: WebView?,
-                request: WebResourceRequest?
-            ): Boolean {
-                request?.url?.let { uri ->
-                    if (uri.scheme in listOf("http", "https")) {
-                        startActivity(Intent(Intent.ACTION_VIEW, uri))
-                        return true
-                    }
-                }
-                return false
-            }
-        }
-    }
-
-    private fun setupJavaScriptInterface() {
-        try {
-            binding.webView.addJavascriptInterface(
-                SmartTimerClient(requireContext()),
-                "SmartTimerClient"
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting up JavaScript interface", e)
-            showError("Failed to initialize app features")
-        }
-    }
-
-    private fun handleWebViewError() {
-        try {
-            binding.webView.loadUrl(ERROR_PAGE)
-            showError("Error loading page")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error handling WebView error", e)
-            showError("Application error")
         }
     }
 
@@ -373,23 +223,13 @@ class MainFragment : Fragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.apply {
-            putBoolean(KEY_PHOTO_DISPLAY_ACTIVE, isPhotoDisplayActive)
-            _binding?.let {
-                binding.webView.saveState(outState)
-            }
-        }
+        outState.putBoolean(KEY_PHOTO_DISPLAY_ACTIVE, isPhotoDisplayActive)
     }
 
     override fun onResume() {
         super.onResume()
-        if (photoSourceState.isScreensaverReady()) {
-            binding.webView.visibility = View.GONE
-            if (isPhotoDisplayActive) {
-                startPhotoDisplay()
-            }
-        } else {
-            binding.webView.onResume()
+        if (isPhotoDisplayActive) {
+            startPhotoDisplay()
         }
         updatePreviewButtonState()
     }
@@ -397,9 +237,6 @@ class MainFragment : Fragment() {
     override fun onPause() {
         if (isPhotoDisplayActive) {
             stopPhotoDisplay()
-        }
-        if (!photoSourceState.isScreensaverReady()) {
-            binding.webView.onPause()
         }
         super.onPause()
     }
