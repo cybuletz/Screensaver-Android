@@ -166,7 +166,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 
     // Material Design
-    implementation("com.google.android.material:material:1.9.0")
+    implementation("com.google.android.material:material:1.5.0")
 
     //Spotify
     implementation("com.spotify.android:auth:2.1.1")
