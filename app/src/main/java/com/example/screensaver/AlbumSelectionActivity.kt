@@ -35,6 +35,8 @@ import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import android.provider.MediaStore
 import android.net.Uri
+import android.os.Build
+import android.provider.DocumentsContract
 import com.example.screensaver.PhotoRepository.PhotoAddMode
 import com.example.screensaver.photos.PhotoManagerActivity
 import com.example.screensaver.photos.PhotoManagerViewModel
@@ -74,7 +76,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
         const val SOURCE_GOOGLE_PHOTOS = "google_photos"
         const val SOURCE_LOCAL_PHOTOS = "local_photos"
         private const val PICK_IMAGES_REQUEST_CODE = 100
+        private const val PHOTOS_PERMISSION_REQUEST = 101
     }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -341,127 +345,188 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
+    private fun initializeGooglePhotos() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startPhotoPicker()
+            return
+        }
 
-        if (requestCode == PICK_IMAGES_REQUEST_CODE && resultCode == RESULT_OK) {
-            lifecycleScope.launch {
-                try {
-                    viewModel.setLoading(true)
-                    updateLoadingText(getString(R.string.processing_photos))
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addCategory(Intent.CATEGORY_OPENABLE)
+            // Don't restrict to local only to allow cloud content
+            putExtra(Intent.EXTRA_LOCAL_ONLY, false)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
 
-                    val selectedMediaItems = mutableListOf<MediaItem>()
+            // Try to force Google Photos by setting the package
+            `package` = "com.google.android.apps.photos"
 
-                    // Handle multiple selection
-                    data?.clipData?.let { clipData ->
-                        for (i in 0 until clipData.itemCount) {
-                            clipData.getItemAt(i).uri?.let { uri ->
-                                try {
-                                    contentResolver.takePersistableUriPermission(
-                                        uri,
-                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                    )
-                                    // Convert URI to MediaItem with metadata
-                                    val mediaItem = createMediaItemFromUri(uri)
-                                    selectedMediaItems.add(mediaItem)
+            // Try to set initial URI to Google Photos
+            putExtra(DocumentsContract.EXTRA_INITIAL_URI,
+                Uri.parse("content://com.google.android.apps.photos.contentprovider"))
+        }
 
-                                    // Update loading progress
-                                    updateLoadingText(getString(R.string.processing_photo_progress,
-                                        i + 1,
-                                        clipData.itemCount))
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error processing photo at index $i", e)
-                                }
-                            }
-                        }
-                    } ?: data?.data?.let { uri -> // Handle single selection
-                        try {
-                            contentResolver.takePersistableUriPermission(
-                                uri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            )
-                            // Convert single URI to MediaItem
-                            val mediaItem = createMediaItemFromUri(uri)
-                            selectedMediaItems.add(mediaItem)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error processing single photo", e)
-                        }
-                    }
+        try {
+            startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
+        } catch (e: Exception) {
+            Log.d(TAG, "Direct launch failed, using chooser: ${e.message}")
 
-                    if (selectedMediaItems.isNotEmpty()) {
-                        withContext(Dispatchers.IO) {
-                            photoManager.cleanup() // Clean up old state
-                            // Add the new MediaItems with their metadata
-                            photoRepository.addPhotos(
-                                photos = selectedMediaItems,
-                                mode = PhotoAddMode.APPEND  // Explicitly use APPEND mode
-                            )
-                            // Clear album selections since we're using picked photos
-                            preferences.clearSelectedAlbums()
-                        }
+            // If direct launch fails, fall back to chooser
+            val chooserIntent = Intent.createChooser(intent, getString(R.string.select_pictures))
+            startActivityForResult(chooserIntent, PICK_IMAGES_REQUEST_CODE)
+        }
+    }
 
-                        // Return to MainActivity
-                        val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
-                            putExtra("albums_saved", true)
-                            putExtra("photo_count", selectedMediaItems.size)
-                            putExtra("timestamp", System.currentTimeMillis())
-                            putExtra("force_reload", true)
-                        }
-                        startActivity(mainIntent)
-                        finish()
-                    } else {
-                        handleError(getString(R.string.no_photos_selected))
-                    }
-                } catch (e: Exception) {
-                    handleError(getString(R.string.photo_processing_error, e.message))
-                } finally {
-                    viewModel.setLoading(false)
-                }
+    private fun requestPhotosPermission() {
+        try {
+            // Use the correct Google Photos intent for accessing cloud content
+            val googlePhotosIntent = Intent("com.google.android.apps.photos.api.ACCESS_PHOTOS").apply {
+                `package` = "com.google.android.apps.photos"
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
             }
+
+            try {
+                startActivityForResult(googlePhotosIntent, PHOTOS_PERMISSION_REQUEST)
+            } catch (e: Exception) {
+                Log.d(TAG, "Direct permission intent failed, trying alternative")
+                // Alternative: Try to launch Google Photos settings directly
+                val settingsIntent = Intent().apply {
+                    action = "android.intent.action.VIEW"
+                    `package` = "com.google.android.apps.photos"
+                    data = Uri.parse("content://com.google.android.apps.photos.contentprovider")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivityForResult(settingsIntent, PHOTOS_PERMISSION_REQUEST)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to request Google Photos permission: ${e.message}")
+            // If all permission requests fail, try picker anyway
+            startPhotoPicker()
         }
     }
 
     private fun startPhotoPicker() {
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100) // Adjust max as needed
+            val intent = when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+                    Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                        putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
+                    }
                 }
-                startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
-            } else {
-                // If device doesn't support the photo picker, fall back to Google Photos API
-                initializeGooglePhotos()
+                else -> {
+                    Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        type = "image/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        putExtra(Intent.EXTRA_LOCAL_ONLY, false)
+                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                    }
+                }
             }
+
+            // Show a guide toast to help users
+            Toast.makeText(
+                this,
+                "Tap 'More' then select 'Google Photos' to access cloud photos",
+                Toast.LENGTH_LONG
+            ).show()
+
+            startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
         } catch (e: Exception) {
             Log.e(TAG, "Error launching photo picker: ${e.message}")
-            // Fall back to Google Photos API
-            initializeGooglePhotos()
+            handleError(getString(R.string.photo_picker_error))
         }
     }
 
-    private fun initializeGooglePhotos() {
-        // First try the system photo picker on Android 13+
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            startPhotoPicker()
-            return
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        when (requestCode) {
+            PHOTOS_PERMISSION_REQUEST -> {
+                // After Google Photos permission result, launch picker
+                startPhotoPicker()
+            }
+            PICK_IMAGES_REQUEST_CODE -> {
+                if (resultCode == RESULT_OK) {
+                    lifecycleScope.launch {
+                        try {
+                            viewModel.setLoading(true)
+                            updateLoadingText(getString(R.string.processing_photos))
+
+                            val selectedMediaItems = mutableListOf<MediaItem>()
+
+                            // Process multiple or single selection
+                            data?.let { intent ->
+                                intent.clipData?.let { clipData ->
+                                    // Handle multiple selection
+                                    for (i in 0 until clipData.itemCount) {
+                                        clipData.getItemAt(i).uri?.let { uri ->
+                                            processUri(uri, selectedMediaItems, i, clipData.itemCount)
+                                        }
+                                    }
+                                } ?: intent.data?.let { uri ->
+                                    // Handle single selection
+                                    processUri(uri, selectedMediaItems)
+                                }
+                            }
+
+                            if (selectedMediaItems.isNotEmpty()) {
+                                saveSelectedPhotos(selectedMediaItems)
+                            } else {
+                                handleError(getString(R.string.no_photos_selected))
+                            }
+                        } catch (e: Exception) {
+                            handleError(getString(R.string.photo_processing_error, e.message))
+                        } finally {
+                            viewModel.setLoading(false)
+                        }
+                    }
+                }
+            }
+            else -> super.onActivityResult(requestCode, resultCode, data)
+        }
+    }
+
+    // Helper method for processing URIs
+    private suspend fun processUri(uri: Uri, mediaItems: MutableList<MediaItem>, index: Int = 0, total: Int = 1) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            val mediaItem = createMediaItemFromUri(uri)
+            mediaItems.add(mediaItem)
+
+            if (total > 1) {
+                updateLoadingText(getString(R.string.processing_photo_progress, index + 1, total))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing photo at index $index", e)
+        }
+    }
+
+    // Helper method for saving selected photos
+    private suspend fun saveSelectedPhotos(selectedMediaItems: List<MediaItem>) {
+        withContext(Dispatchers.IO) {
+            photoManager.cleanup()
+            photoRepository.addPhotos(
+                photos = selectedMediaItems,
+                mode = PhotoAddMode.APPEND
+            )
+            preferences.clearSelectedAlbums()
         }
 
-        // Otherwise use existing Google Photos implementation
-        activityScope.launch {
-            try {
-                viewModel.setLoading(true)
-                if (photoManager.initialize()) {
-                    loadAlbums()
-                } else {
-                    handleError(getString(R.string.google_photos_init_failed))
-                }
-            } catch (e: Exception) {
-                handleError(getString(R.string.google_photos_init_error, e.message))
-            } finally {
-                viewModel.setLoading(false)
-            }
+        val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra("albums_saved", true)
+            putExtra("photo_count", selectedMediaItems.size)
+            putExtra("timestamp", System.currentTimeMillis())
+            putExtra("force_reload", true)
         }
+        startActivity(mainIntent)
+        finish()
     }
 
     private fun handleError(message: String) {
