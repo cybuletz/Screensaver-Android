@@ -42,11 +42,19 @@
     <!-- Queries for Google Photos and Authentication -->
     <queries>
         <package android:name="com.google.android.apps.photos" />
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.PICK" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <provider android:authorities="com.google.android.apps.photos.contentprovider" />
         <package android:name="com.spotify.music" />
         <intent>
             <action android:name="com.google.android.gms.auth.service.START" />
         </intent>
-        <provider android:authorities="com.google.android.apps.photos.contentprovider" />
     </queries>
 
     <application

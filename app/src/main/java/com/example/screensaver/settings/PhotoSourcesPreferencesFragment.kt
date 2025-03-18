@@ -2,6 +2,7 @@ package com.example.screensaver.settings
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -44,8 +45,11 @@ import android.content.Context
 import android.net.Uri
 import com.example.screensaver.photos.PhotoManagerActivity
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.MediaStore
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.fragment.app.DialogFragment
+import java.io.File
 
 @AndroidEntryPoint
 class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
@@ -80,6 +84,24 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         private const val PERMISSION_REQUEST_CODE = 100
         private const val SOURCE_LOCAL_PHOTOS = "local"
         private const val SOURCE_GOOGLE_PHOTOS = "google_photos"
+    }
+
+    private val pickMultipleMedia = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
+        if (uris.isNotEmpty()) {
+            // Simulate an Intent result to reuse existing logic
+            val clipData = ClipData.newRawUri(null, uris[0])
+            for (i in 1 until uris.size) {
+                clipData.addItem(ClipData.Item(uris[i]))
+            }
+
+            val resultIntent = Intent().apply {
+                this.clipData = clipData
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+
+            // Process the result using existing logic
+            onActivityResult(GOOGLE_PHOTOS_REQUEST_CODE, Activity.RESULT_OK, resultIntent)
+        }
     }
 
     private val signInLauncher = registerForActivityResult(
@@ -424,46 +446,66 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun showSignInPrompt() {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.sign_in_required)
-            .setMessage(R.string.google_photos_sign_in_required)
-            .setPositiveButton(R.string.sign_in) { _, _ ->
-                // Instead of performClick, directly initiate Google Sign-in
-                initiateGoogleSignIn()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
     private fun launchGoogleAlbumSelection() {
         Log.d(TAG, "Launching Google Album Selection")
-        if (GoogleSignIn.getLastSignedInAccount(requireContext()) == null ||
-            secureStorage.getGoogleCredentials() == null) {
-            Log.e(TAG, "No Google sign-in or credentials, showing sign-in prompt")
-            showSignInPrompt()
-            return
-        }
 
-        // Use the new photo picker for Android 13+ (API 33+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-            }
-            startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
-        } else {
-            // For older versions, use ACTION_OPEN_DOCUMENT
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = "image/*"
                 putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 addCategory(Intent.CATEGORY_OPENABLE)
-                putExtra(Intent.EXTRA_LOCAL_ONLY, false)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+
+                // Force Google Photos
+                `package` = "com.google.android.apps.photos"
+
+                // Add special extras for Android 11
+                putExtra("android.provider.extra.INITIAL_URI",
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                putExtra("android.provider.extra.SHOW_ADVANCED", true)
+                putExtra("android.provider.extra.SHOW_ALL_FILES", true)
+
+                // For Android 11, we need these specific flags
+                addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                            Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                )
             }
+
+            try {
+                // Try launching Google Photos directly first
+                startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
+            } catch (e: Exception) {
+                Log.e(TAG, "Direct launch failed, trying with chooser", e)
+                try {
+                    // If direct launch fails, try with chooser
+                    val chooserIntent = Intent.createChooser(intent, getString(R.string.select_pictures))
+                    startActivityForResult(chooserIntent, GOOGLE_PHOTOS_REQUEST_CODE)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Chooser failed, falling back to legacy picker", e)
+                    launchLegacyPicker()
+                }
+            }
+        } else {
+            launchLegacyPicker()
+        }
+    }
+
+    private fun launchLegacyPicker() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addCategory(Intent.CATEGORY_OPENABLE)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        try {
             startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
+        } catch (e: Exception) {
+            Log.e(TAG, "Legacy picker failed, using chooser", e)
+            val chooserIntent = Intent.createChooser(intent, getString(R.string.select_pictures))
+            startActivityForResult(chooserIntent, GOOGLE_PHOTOS_REQUEST_CODE)
         }
     }
 
@@ -545,123 +587,74 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        Log.d(TAG, "onActivityResult: requestCode=$requestCode, resultCode=$resultCode, parent=${parentFragment?.javaClass?.simpleName}")
         super.onActivityResult(requestCode, resultCode, data)
 
-        when (requestCode) {
-            GOOGLE_PHOTOS_REQUEST_CODE -> {
-                if (resultCode == Activity.RESULT_OK) {
-                    Log.d(TAG, "Handling successful Google Photos result")
-                    lifecycleScope.launch {
-                        try {
-                            // Get selected URIs
-                            val selectedUris = mutableListOf<Uri>()
-                            data?.let { intent ->
-                                when {
-                                    intent.clipData != null -> {
-                                        val clipData = intent.clipData!!
-                                        for (i in 0 until clipData.itemCount) {
-                                            selectedUris.add(clipData.getItemAt(i).uri)
+        if (requestCode == GOOGLE_PHOTOS_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
+            lifecycleScope.launch {
+                try {
+                    val selectedUris = mutableListOf<Uri>()
+
+                    when {
+                        data?.clipData != null -> {
+                            val clipData = data.clipData!!
+                            for (i in 0 until clipData.itemCount) {
+                                clipData.getItemAt(i).uri?.let { uri ->
+                                    // For Android 11, don't try to take persistable permissions for Google Photos URIs
+                                    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
+                                        uri.toString().contains("com.google.android.apps.photos")) {
+                                        // Just store the URI
+                                        selectedUris.add(uri)
+                                        // Store in current photo sources
+                                        val currentSources = getCurrentPhotoSources().toMutableSet()
+                                        currentSources.add(SOURCE_GOOGLE_PHOTOS)
+                                        pendingChanges["photo_sources"] = currentSources
+                                    } else {
+                                        try {
+                                            requireContext().contentResolver.takePersistableUriPermission(
+                                                uri,
+                                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                            )
+                                            selectedUris.add(uri)
+                                        } catch (e: SecurityException) {
+                                            Log.e(TAG, "Failed to take permission for URI: $uri", e)
+                                            // Still add the URI even if we couldn't get persistable permission
+                                            selectedUris.add(uri)
                                         }
-                                    }
-                                    intent.data != null -> {
-                                        selectedUris.add(intent.data!!)
-                                    }
-                                    else -> {
-                                        // Handle case where neither clipData nor data is present
-                                        Log.w(TAG, "No data received from intent")
                                     }
                                 }
                             }
-
-                            if (selectedUris.isEmpty()) {
-                                Log.w(TAG, "No URIs selected")
-                                return@launch
-                            }
-
-                            // Take persistable permissions for each URI
-                            selectedUris.forEach { uri ->
+                        }
+                        data?.data != null -> {
+                            val uri = data.data!!
+                            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
+                                uri.toString().contains("com.google.android.apps.photos")) {
+                                selectedUris.add(uri)
+                                // Store in current photo sources
+                                val currentSources = getCurrentPhotoSources().toMutableSet()
+                                currentSources.add(SOURCE_GOOGLE_PHOTOS)
+                                pendingChanges["photo_sources"] = currentSources
+                            } else {
                                 try {
                                     requireContext().contentResolver.takePersistableUriPermission(
                                         uri,
                                         Intent.FLAG_GRANT_READ_URI_PERMISSION
                                     )
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error taking permission for URI: $uri", e)
+                                    selectedUris.add(uri)
+                                } catch (e: SecurityException) {
+                                    Log.e(TAG, "Failed to take permission for URI: $uri", e)
+                                    selectedUris.add(uri)
                                 }
                             }
-
-                            // Create MediaItems
-                            val mediaItems = selectedUris.map { uri ->
-                                MediaItem(
-                                    id = uri.toString(),
-                                    albumId = "google_picked",
-                                    baseUrl = uri.toString(),
-                                    mimeType = "image/*",
-                                    width = 0,
-                                    height = 0,
-                                    description = null,
-                                    createdAt = System.currentTimeMillis(),
-                                    loadState = MediaItem.LoadState.IDLE
-                                )
-                            }
-
-                            // Add to repository
-                            photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
-
-                            // Update sources and UI
-                            val currentSources = getCurrentPhotoSources().toMutableSet()
-                            currentSources.add(SOURCE_GOOGLE_PHOTOS)
-                            pendingChanges["photo_sources"] = currentSources
-                            pendingChanges["google_photos_enabled"] = true
-
-                            withContext(Dispatchers.Main) {
-                                findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = true
-                                updateGooglePhotosState(true)
-                            }
-
-                            // Apply changes
-                            applyChanges()
-                            notifyPhotosAdded()
-
-                            // Handle navigation
-                            if (parentFragment is DialogFragment) {
-                                Log.d(TAG, "In dialog, letting dialog handle navigation")
-                            } else {
-                                Log.d(TAG, "Not in dialog, handling navigation here")
-                                activity?.apply {
-                                    setResult(Activity.RESULT_OK)
-                                    finish()
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error handling Google Photos result", e)
-                            showError(getString(R.string.save_error))
                         }
                     }
-                } else {
-                    Log.w(TAG, "Google Photos selection cancelled")
-                    findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = false
-                    updateGooglePhotosState(false)
-                }
-            }
 
-            REQUEST_SELECT_PHOTOS -> {
-                if (resultCode == Activity.RESULT_OK) {
-                    Log.d(TAG, "Local photos selection result received")
-                    data?.getStringArrayListExtra("selected_photos")?.let { selectedPhotos ->
-                        Log.d(TAG, "Processing ${selectedPhotos.size} selected local photos")
-
-                        PreferenceManager.getDefaultSharedPreferences(requireContext())
-                            .edit()
-                            .putStringSet("selected_local_photos", selectedPhotos.toSet())
-                            .apply()
-
-                        val mediaItems = selectedPhotos.map { uri ->
+                    if (selectedUris.isNotEmpty()) {
+                        // Create MediaItems and add to repository
+                        val mediaItems = selectedUris.map { uri ->
                             MediaItem(
-                                id = uri,
-                                albumId = "local_picked",
-                                baseUrl = uri,
+                                id = uri.toString(),
+                                albumId = "google_picked",
+                                baseUrl = uri.toString(),
                                 mimeType = "image/*",
                                 width = 0,
                                 height = 0,
@@ -671,26 +664,45 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                             )
                         }
 
-                        Log.d(TAG, "Adding ${mediaItems.size} local photos to repository")
+                        // Add to repository
                         photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
 
-                        // Update sources
+                        // Update sources and state
                         val currentSources = getCurrentPhotoSources().toMutableSet()
-                        currentSources.add(SOURCE_LOCAL_PHOTOS)
+                        currentSources.add(SOURCE_GOOGLE_PHOTOS)
                         pendingChanges["photo_sources"] = currentSources
+                        pendingChanges["google_photos_enabled"] = true
 
-                        Log.d(TAG, "Updating UI and applying changes")
-                        findPreference<Preference>("select_local_photos")?.summary =
-                            getString(R.string.photos_selected, selectedPhotos.size)
-
-                        // Apply changes and notify activity
-                        applyChanges()
-                        notifyPhotosAdded()
-                    } ?: run {
-                        Log.w(TAG, "No selected_photos in local photos result")
+                        withContext(Dispatchers.Main) {
+                            findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = true
+                            updateGooglePhotosState(true)
+                            applyChanges()
+                            notifyPhotosAdded()
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing selected photos", e)
+                    showError(getString(R.string.photo_processing_error))
                 }
             }
+        }
+    }
+
+    private suspend fun copyUriContent(uri: Uri): Uri? = withContext(Dispatchers.IO) {
+        try {
+            val fileName = "photo_${System.currentTimeMillis()}.jpg"
+            val outputFile = File(requireContext().getExternalFilesDir(null), fileName)
+
+            requireContext().contentResolver.openInputStream(uri)?.use { input ->
+                outputFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            Uri.fromFile(outputFile)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to copy content: $uri", e)
+            null
         }
     }
 

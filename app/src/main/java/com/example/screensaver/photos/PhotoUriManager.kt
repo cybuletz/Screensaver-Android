@@ -69,10 +69,6 @@ class PhotoUriManager @Inject constructor(
         return intent
     }
 
-    /**
-     * Take persistable permissions for a URI with appropriate error handling
-     * @return true if permissions were successfully taken, false otherwise
-     */
     fun takePersistablePermission(uri: Uri, flags: Int = PERMISSION_FLAGS_READ_WRITE): Boolean {
         try {
             val resolver = context.contentResolver
@@ -105,9 +101,6 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-    /**
-     * Verify if we still have valid permission to access a URI
-     */
     fun hasValidPermission(uri: Uri): Boolean {
         try {
             val resolver = context.contentResolver
@@ -127,9 +120,6 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-    /**
-     * Check the type of a URI to determine its source and handling requirements
-     */
     fun getUriType(uri: Uri): String {
         return when {
             uri.toString().contains("com.android.providers.media.photopicker") -> {
@@ -148,18 +138,12 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-    /**
-     * Check if a URI is from Google Photos
-     */
     fun isGooglePhotosUri(uri: Uri): Boolean {
         val uriString = uri.toString()
         return uriString.contains("com.google.android.apps.photos") ||
                 uriString.contains("googleusercontent.com")
     }
 
-    /**
-     * Validate a collection of URIs and filter out ones that are no longer accessible
-     */
     suspend fun validateUris(uris: List<String>): List<String> = withContext(Dispatchers.IO) {
         uris.filter { uriString ->
             try {
@@ -189,9 +173,6 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-    /**
-     * Check if a URI is physically accessible by trying to query its metadata
-     */
     private fun isUriAccessible(uri: Uri): Boolean {
         return try {
             context.contentResolver.query(uri, arrayOf("_id"), null, null, null)?.use { cursor ->
@@ -203,10 +184,6 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-    /**
-     * Process a collection of newly selected URIs
-     * @return List of URIs that were successfully processed and should be saved
-     */
     suspend fun processSelectedUris(uris: List<Uri>): List<UriData> = withContext(Dispatchers.IO) {
         uris.mapNotNull { uri ->
             try {
@@ -227,9 +204,6 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-    /**
-     * Get the appropriate photo picker intent based on Android version and auth status
-     */
     fun getPhotoPickerIntent(allowMultiple: Boolean = true): Intent {
         return when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
@@ -270,9 +244,6 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-    /**
-     * Process URI with auth check
-     */
     suspend fun processUri(uri: Uri): UriData? = withContext(Dispatchers.IO) {
         try {
             // For Google Photos URIs, ensure we have valid auth
@@ -302,12 +273,6 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-
-    /**
-     * Take persistable permissions for a URI with proper error handling
-     * @param uri The URI to take permissions for
-     * @return true if permissions were successfully taken
-     */
     fun takePersistablePermission(uri: Uri): Boolean {
         return try {
             context.contentResolver.takePersistableUriPermission(
@@ -326,11 +291,6 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-    /**
-     * Validate if a URI is still accessible
-     * @param uri The URI to validate
-     * @return true if the URI is accessible
-     */
     fun validateUri(uri: Uri): Boolean {
         return try {
             when (getUriType(uri)) {
@@ -359,10 +319,6 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-
-    /**
-     * Data class to store metadata about URIs
-     */
     data class UriData(
         val uri: String,
         val type: String,

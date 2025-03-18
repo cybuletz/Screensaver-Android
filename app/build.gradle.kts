@@ -131,6 +131,10 @@ dependencies {
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    implementation("androidx.activity:activity:1.8.2")
+    implementation("androidx.activity:activity-compose:1.8.2")
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
+
 
     // AutoValue
     kapt("com.google.auto.value:auto-value:1.9")
