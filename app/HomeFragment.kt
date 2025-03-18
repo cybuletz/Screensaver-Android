@@ -11,7 +11,6 @@ import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.example.screensaver.databinding.FragmentHomeBinding
-import com.example.screensaver.shared.GooglePhotosManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -20,9 +19,6 @@ import javax.inject.Inject
 class HomeFragment : Fragment() {
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
-
-    @Inject
-    lateinit var photoManager: GooglePhotosManager
 
     private val viewModel: PhotoViewModel by viewModels()
 

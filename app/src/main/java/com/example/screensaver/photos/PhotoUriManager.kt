@@ -8,6 +8,7 @@ import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import com.example.screensaver.auth.GoogleAuthManager
 import com.example.screensaver.utils.AppPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +24,8 @@ import javax.inject.Singleton
 @Singleton
 class PhotoUriManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val preferences: AppPreferences
+    private val preferences: AppPreferences,
+    private val googleAuthManager: GoogleAuthManager
 ) {
     companion object {
         private const val TAG = "PhotoUriManager"
@@ -226,38 +228,38 @@ class PhotoUriManager @Inject constructor(
     }
 
     /**
-     * Get the appropriate photo picker intent based on Android version (11-14)
-     * @param allowMultiple Whether to allow multiple photo selection
-     * @return Intent configured for the appropriate photo picker
+     * Get the appropriate photo picker intent based on Android version and auth status
      */
     fun getPhotoPickerIntent(allowMultiple: Boolean = true): Intent {
         return when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
                 // Android 13+ (API 33+): Use system photo picker
                 Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                    type = "image/*"
                     putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, if (allowMultiple) 100 else 1)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                    )
                 }
             }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && googleAuthManager.hasValidTokens() -> {
+                // Android 11-12 with Google auth: Try Google Photos first
+                getGooglePhotosIntent(allowMultiple)
+            }
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                // Android 11-12 (API 30-32): Use ACTION_OPEN_DOCUMENT
+                // Android 11-12 without Google auth: Use ACTION_OPEN_DOCUMENT
                 Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     type = "image/*"
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
                     addCategory(Intent.CATEGORY_OPENABLE)
-                    putExtra(Intent.EXTRA_LOCAL_ONLY, false)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-
-                    // Add preferred initial URI
-                    putExtra(DocumentsContract.EXTRA_INITIAL_URI,
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                    addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                    )
                 }
             }
             else -> {
-                // Fallback for other versions
+                // Fallback for older versions
                 Intent(Intent.ACTION_GET_CONTENT).apply {
                     type = "image/*"
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
@@ -269,25 +271,26 @@ class PhotoUriManager @Inject constructor(
     }
 
     /**
-     * Process selected URIs and ensure proper permissions
-     * @param uri The URI to process
-     * @return UriData object with metadata if successful, null if failed
+     * Process URI with auth check
      */
     suspend fun processUri(uri: Uri): UriData? = withContext(Dispatchers.IO) {
         try {
-            // Take persistable permission immediately
-            val hasPermission = takePersistablePermission(uri)
+            // For Google Photos URIs, ensure we have valid auth
+            if (isGooglePhotosUri(uri) && !googleAuthManager.hasValidTokens()) {
+                if (!googleAuthManager.refreshTokens()) {
+                    return@withContext null
+                }
+            }
 
-            // Create metadata
+            val hasPermission = takePersistablePermission(uri)
             val timestamp = System.currentTimeMillis()
             val uriType = getUriType(uri)
 
-            // Store in preferences for backup
             if (hasPermission) {
                 preferences.addRecentlyAccessedUri(uri.toString())
             }
 
-            return@withContext UriData(
+            UriData(
                 uri = uri.toString(),
                 type = uriType,
                 hasPersistedPermission = hasPermission,
@@ -298,6 +301,7 @@ class PhotoUriManager @Inject constructor(
             null
         }
     }
+
 
     /**
      * Take persistable permissions for a URI with proper error handling

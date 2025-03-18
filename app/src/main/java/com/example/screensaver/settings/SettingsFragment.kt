@@ -9,7 +9,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.preference.*
 import com.example.screensaver.R
-import com.example.screensaver.shared.GooglePhotosManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.Scope
 import dagger.hilt.android.AndroidEntryPoint
@@ -70,8 +69,6 @@ import com.google.android.material.color.MaterialColors
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {
-    @Inject
-    lateinit var googlePhotosManager: GooglePhotosManager
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager

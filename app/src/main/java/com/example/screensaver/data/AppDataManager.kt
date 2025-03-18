@@ -12,7 +12,6 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.example.screensaver.utils.AppPreferences
-import com.example.screensaver.shared.GooglePhotosManager
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +28,6 @@ class AppDataManager @Inject constructor(
     private val gson: Gson,
     private val appPreferences: AppPreferences,
     private val secureStorage: SecureStorage,
-    private val googlePhotosManager: GooglePhotosManager,
     private val photoCache: PhotoCache,
     private val coroutineScope: CoroutineScope
 ) {
@@ -104,9 +102,6 @@ class AppDataManager @Inject constructor(
     suspend fun performFullReset() {
         try {
             withContext(Dispatchers.IO + NonCancellable) {
-                // Clear Google Photos state
-                googlePhotosManager.cleanup()
-
                 // Clear secure storage
                 secureStorage.clearGoogleCredentials()
 
@@ -226,7 +221,6 @@ class AppDataManager @Inject constructor(
      */
     fun signOut() {
         try {
-            googlePhotosManager.cleanup()
             secureStorage.clearGoogleCredentials()
             appPreferences.clearSelectedAlbums()
         } catch (e: Exception) {

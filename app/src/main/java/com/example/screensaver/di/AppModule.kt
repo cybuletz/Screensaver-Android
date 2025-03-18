@@ -4,7 +4,6 @@ import android.content.Context
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestManager
 import com.example.screensaver.analytics.PhotoAnalytics
-import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.AppPreferences
 import com.example.screensaver.utils.NotificationHelper
 import com.example.screensaver.PhotoSourceState
@@ -20,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.example.screensaver.PhotoRepository
+import com.example.screensaver.auth.GoogleAuthManager
 import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.recovery.StateRecoveryManager
@@ -70,13 +70,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideGooglePhotosManager(
+    fun provideGoogleAuthManager(
         @ApplicationContext context: Context,
-        preferences: AppPreferences,
         secureStorage: SecureStorage
-    ): GooglePhotosManager {
-        return GooglePhotosManager(context, preferences, secureStorage)
-    }
+    ): GoogleAuthManager = GoogleAuthManager(context, secureStorage)
 
     @Provides
     @Singleton
@@ -180,18 +177,19 @@ object AppModule {
     @Singleton
     fun providePhotoUriManager(
         @ApplicationContext context: Context,
-        preferences: AppPreferences
+        preferences: AppPreferences,
+        googleAuthManager: GoogleAuthManager
     ): PhotoUriManager {
-        return PhotoUriManager(context, preferences)
+        return PhotoUriManager(context, preferences, googleAuthManager)
     }
 
     @Provides
     @Singleton
     fun providePhotoRepository(
         @ApplicationContext context: Context,
-        googlePhotosManager: GooglePhotosManager,
+        googleAuthManager: GoogleAuthManager,
         photoUriManager: PhotoUriManager
     ): PhotoRepository {
-        return PhotoRepository(context, googlePhotosManager, photoUriManager)
+        return PhotoRepository(context, googleAuthManager, photoUriManager)
     }
 }

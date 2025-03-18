@@ -13,7 +13,6 @@ import com.example.screensaver.adapters.AlbumAdapter
 import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
 import com.example.screensaver.models.Album
 import com.example.screensaver.models.MediaItem
-import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.PhotoLoadingManager
 import com.example.screensaver.utils.AppPreferences
 import dagger.hilt.android.AndroidEntryPoint
@@ -39,6 +38,7 @@ import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import com.example.screensaver.PhotoRepository.PhotoAddMode
+import com.example.screensaver.auth.GoogleAuthManager
 import com.example.screensaver.photos.PhotoManagerActivity
 import com.example.screensaver.photos.PhotoManagerViewModel
 import com.example.screensaver.photos.PhotoUriManager
@@ -54,9 +54,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
     private val activityScope = CoroutineScope(Dispatchers.Main + loadingJob)
 
     @Inject
-    lateinit var photoManager: GooglePhotosManager
-
-    @Inject
     lateinit var photoLoadingManager: PhotoLoadingManager
 
     @Inject
@@ -67,7 +64,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     @Inject
     lateinit var photoUriManager: PhotoUriManager
-
 
     private val viewModel: AlbumSelectionViewModel by viewModels()
     private val photoManagerViewModel: PhotoManagerViewModel by viewModels()
@@ -519,9 +515,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
     private suspend fun saveProcessedItems(selectedMediaItems: List<MediaItem>) {
         withContext(Dispatchers.IO) {
             try {
-                // Clean up old state
-                photoManager.cleanup()
-
                 // Add new items to repository
                 photoRepository.addPhotos(
                     photos = selectedMediaItems,

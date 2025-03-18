@@ -22,7 +22,6 @@ import com.example.screensaver.localphotos.LocalPhotoSelectionActivity
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.PhotoRepository
 import com.example.screensaver.PhotoRepository.PhotoAddMode
-import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.AppPreferences
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -42,8 +41,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import android.content.Context
+import android.net.Uri
 import com.example.screensaver.photos.PhotoManagerActivity
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.fragment.app.DialogFragment
 
 @AndroidEntryPoint
@@ -56,9 +57,6 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var appDataManager: AppDataManager
-
-    @Inject
-    lateinit var googlePhotosManager: GooglePhotosManager
 
     @Inject
     lateinit var secureStorage: SecureStorage
@@ -447,24 +445,25 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
             return
         }
 
-        lifecycleScope.launch {
-            try {
-                Log.d(TAG, "Initializing Google Photos Manager")
-                if (!googlePhotosManager.initialize()) {
-                    Log.e(TAG, "Failed to initialize Google Photos Manager")
-                    showError(getString(R.string.google_photos_init_failed))
-                } else {
-                    Log.d(TAG, "Starting AlbumSelectionActivity")
-                    // Pass the parent activity class name to know where to return
-                    val intent = Intent(requireContext(), AlbumSelectionActivity::class.java).apply {
-                        putExtra("parent_activity", requireActivity().javaClass.name)
-                    }
-                    startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to initialize Google Photos", e)
-                showError(getString(R.string.google_photos_init_failed))
+        // Use the new photo picker for Android 13+ (API 33+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
             }
+            startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
+        } else {
+            // For older versions, use ACTION_OPEN_DOCUMENT
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                addCategory(Intent.CATEGORY_OPENABLE)
+                putExtra(Intent.EXTRA_LOCAL_ONLY, false)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
+            startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
         }
     }
 
@@ -555,21 +554,67 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                     Log.d(TAG, "Handling successful Google Photos result")
                     lifecycleScope.launch {
                         try {
-                            // Update sources
+                            // Get selected URIs
+                            val selectedUris = mutableListOf<Uri>()
+                            data?.let { intent ->
+                                when {
+                                    intent.clipData != null -> {
+                                        val clipData = intent.clipData!!
+                                        for (i in 0 until clipData.itemCount) {
+                                            selectedUris.add(clipData.getItemAt(i).uri)
+                                        }
+                                    }
+                                    intent.data != null -> {
+                                        selectedUris.add(intent.data!!)
+                                    }
+                                    else -> {
+                                        // Handle case where neither clipData nor data is present
+                                        Log.w(TAG, "No data received from intent")
+                                    }
+                                }
+                            }
+
+                            if (selectedUris.isEmpty()) {
+                                Log.w(TAG, "No URIs selected")
+                                return@launch
+                            }
+
+                            // Take persistable permissions for each URI
+                            selectedUris.forEach { uri ->
+                                try {
+                                    requireContext().contentResolver.takePersistableUriPermission(
+                                        uri,
+                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                    )
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error taking permission for URI: $uri", e)
+                                }
+                            }
+
+                            // Create MediaItems
+                            val mediaItems = selectedUris.map { uri ->
+                                MediaItem(
+                                    id = uri.toString(),
+                                    albumId = "google_picked",
+                                    baseUrl = uri.toString(),
+                                    mimeType = "image/*",
+                                    width = 0,
+                                    height = 0,
+                                    description = null,
+                                    createdAt = System.currentTimeMillis(),
+                                    loadState = MediaItem.LoadState.IDLE
+                                )
+                            }
+
+                            // Add to repository
+                            photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
+
+                            // Update sources and UI
                             val currentSources = getCurrentPhotoSources().toMutableSet()
                             currentSources.add(SOURCE_GOOGLE_PHOTOS)
-
-                            // Save to preferences first
-                            PreferenceManager.getDefaultSharedPreferences(requireContext())
-                                .edit()
-                                .putStringSet("photo_source_selection", currentSources)
-                                .apply()
-
-                            // Update pending changes
                             pendingChanges["photo_sources"] = currentSources
                             pendingChanges["google_photos_enabled"] = true
 
-                            // Update UI
                             withContext(Dispatchers.Main) {
                                 findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = true
                                 updateGooglePhotosState(true)
@@ -579,7 +624,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                             applyChanges()
                             notifyPhotosAdded()
 
-                            // Check if we're in a dialog
+                            // Handle navigation
                             if (parentFragment is DialogFragment) {
                                 Log.d(TAG, "In dialog, letting dialog handle navigation")
                             } else {
@@ -600,6 +645,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                     updateGooglePhotosState(false)
                 }
             }
+
             REQUEST_SELECT_PHOTOS -> {
                 if (resultCode == Activity.RESULT_OK) {
                     Log.d(TAG, "Local photos selection result received")

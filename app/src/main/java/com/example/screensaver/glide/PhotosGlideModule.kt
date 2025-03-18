@@ -19,8 +19,6 @@ import com.bumptech.glide.load.model.MultiModelLoaderFactory
 import com.bumptech.glide.module.AppGlideModule
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.photos.PhotoUriManager
-import com.example.screensaver.shared.GooglePhotosManager
-import com.example.screensaver.shared.HasGooglePhotosManager
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -38,6 +36,7 @@ import com.bumptech.glide.load.engine.bitmap_recycle.ArrayPool
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.Priority
 import com.bumptech.glide.signature.ObjectKey
+import com.example.screensaver.auth.GoogleAuthManager
 import org.json.JSONObject
 
 @GlideModule
@@ -52,6 +51,7 @@ class PhotosGlideModule : AppGlideModule() {
     @InstallIn(SingletonComponent::class)
     interface GlideModuleEntryPoint {
         fun photoUriManager(): PhotoUriManager
+        fun googleAuthManager(): GoogleAuthManager
     }
 
     override fun registerComponents(context: Context, glide: Glide, registry: Registry) {
@@ -61,21 +61,23 @@ class PhotosGlideModule : AppGlideModule() {
         )
 
         val photoUriManager = entryPoint.photoUriManager()
+        val googleAuthManager = entryPoint.googleAuthManager()
 
-        // Create OkHttpClient with timeout settings
+        // Create OkHttpClient with auth interceptor
         val client = OkHttpClient.Builder()
             .connectTimeout(CONNECTION_TIMEOUT, TimeUnit.SECONDS)
             .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS)
+            .addInterceptor(GoogleAuthInterceptor(googleAuthManager))
             .build()
 
-        // Register our custom URI loader factory
+        // Register URI loader
         registry.prepend(
             Uri::class.java,
             InputStream::class.java,
             UriLoaderFactory(context, photoUriManager, client)
         )
 
-        // Keep the standard OkHttpUrlLoader for other URLs
+        // Standard URL loader
         registry.replace(
             GlideUrl::class.java,
             InputStream::class.java,
@@ -88,26 +90,24 @@ class PhotosGlideModule : AppGlideModule() {
     /**
      * Custom interceptor for handling Google Photos authentication
      */
-    private class GooglePhotosAuthInterceptor(
-        private val secureStorage: SecureStorage,
-        private val googlePhotosManager: GooglePhotosManager
+    private class GoogleAuthInterceptor(
+        private val googleAuthManager: GoogleAuthManager
     ) : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
-            val originalRequest = chain.request()
-            val url = originalRequest.url.toString()
+            val request = chain.request()
+            val url = request.url.toString()
 
-            // Only handle Google Photos URLs
+            // Only handle Google URLs
             if (url.contains("googleusercontent.com")) {
                 try {
-                    // Ensure token is fresh before proceeding
                     runBlocking {
-                        if (!googlePhotosManager.hasValidTokens()) {
-                            googlePhotosManager.refreshTokens()
+                        if (!googleAuthManager.hasValidTokens()) {
+                            googleAuthManager.refreshTokens()
                         }
                     }
 
-                    val credentials = secureStorage.getGoogleCredentials()
-                    val newRequest = originalRequest.newBuilder()
+                    val credentials = googleAuthManager.getCurrentCredentials()
+                    val newRequest = request.newBuilder()
                         .addHeader("Authorization", "Bearer ${credentials?.accessToken}")
                         .build()
 
@@ -117,10 +117,10 @@ class PhotosGlideModule : AppGlideModule() {
                     if (response.code == 403) {
                         response.close()
                         runBlocking {
-                            googlePhotosManager.refreshTokens()
+                            googleAuthManager.refreshTokens()
                         }
-                        val freshCredentials = secureStorage.getGoogleCredentials()
-                        val retryRequest = originalRequest.newBuilder()
+                        val freshCredentials = googleAuthManager.getCurrentCredentials()
+                        val retryRequest = request.newBuilder()
                             .addHeader("Authorization", "Bearer ${freshCredentials?.accessToken}")
                             .build()
                         response = chain.proceed(retryRequest)
@@ -128,13 +128,12 @@ class PhotosGlideModule : AppGlideModule() {
 
                     return response
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error handling Google Photos auth", e)
-                    throw e
+                    Log.e(TAG, "Error handling Google auth", e)
+                    return chain.proceed(request)
                 }
             }
 
-            // For all other URLs, proceed normally
-            return chain.proceed(originalRequest)
+            return chain.proceed(request)
         }
     }
 
