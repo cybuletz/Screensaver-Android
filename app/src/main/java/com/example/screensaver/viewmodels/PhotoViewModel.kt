@@ -5,7 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import com.example.screensaver.shared.GooglePhotosManager
+import com.example.screensaver.PhotoRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -28,8 +28,8 @@ import com.example.screensaver.utils.AppPreferences
 @HiltViewModel
 class PhotoViewModel @Inject constructor(
     application: Application,
-    private val photosManager: GooglePhotosManager,
-    private val preferences: AppPreferences
+    private val preferences: AppPreferences,
+    private val photoRepository: PhotoRepository
 ) : AndroidViewModel(application), RetryActionListener, OnPhotoLoadListener {
 
     private val _currentPhoto = MutableLiveData<MediaItem>()
@@ -200,15 +200,11 @@ class PhotoViewModel @Inject constructor(
                 _loadingState.value = LoadingState.LOADING
                 _selectedAlbums.value = albums
 
-                if (photosManager.initialize()) {
-                    loadMediaItems()
-                    if (!isPreviewMode) {
-                        startPhotoChanging()
-                    }
-                    _loadingState.value = LoadingState.SUCCESS
-                } else {
-                    handleError("Failed to initialize photo manager", null)
+                loadMediaItems()
+                if (!isPreviewMode) {
+                    startPhotoChanging()
                 }
+                _loadingState.value = LoadingState.SUCCESS
             } catch (e: Exception) {
                 handleError("Failed to initialize photos: ${e.message}", e)
             } finally {
@@ -222,14 +218,17 @@ class PhotoViewModel @Inject constructor(
             _isLoading.value = true
             mediaItems.clear()
 
-            // Load photos once and then filter for all albums
-            val allPhotos = photosManager.loadPhotos() ?: return
+            // Get photos from repository
+            val allPhotos = photoRepository.getAllPhotos()
             val selectedAlbumIds = _selectedAlbums.value.map { it.id }.toSet()
 
+            // Filter photos by selected albums
             mediaItems.addAll(allPhotos.filter { it.albumId in selectedAlbumIds })
 
             if (mediaItems.isNotEmpty()) {
-                mediaItems.shuffle()
+                if (preferences.getRandomOrder()) {
+                    mediaItems.shuffle()
+                }
                 _hasError.value = false
             } else {
                 handleError("No photos found in selected albums", null)
@@ -276,8 +275,10 @@ class PhotoViewModel @Inject constructor(
                     // Preload next photo
                     val nextIndex = (currentIndex + 1) % mediaItems.size
                     _nextPhoto.value = mediaItems[nextIndex]
+                    _hasError.value = false
+                } else {
+                    handleError("No photos available", null)
                 }
-                _hasError.value = false
             } catch (e: Exception) {
                 handleError("Failed to show next photo", e)
             }

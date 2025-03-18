@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import com.example.screensaver.auth.GoogleAuthManager
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.models.AlbumInfo
 import com.example.screensaver.photos.VirtualAlbum
@@ -17,7 +18,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import org.json.JSONArray
 import org.json.JSONObject
-import com.example.screensaver.shared.GooglePhotosManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,7 +29,7 @@ import kotlinx.coroutines.*
 @Singleton
 class PhotoRepository @Inject constructor(
     private val context: Context,
-    private val googlePhotosManager: GooglePhotosManager,
+    private val googleAuthManager: GoogleAuthManager,
     private val photoUriManager: PhotoUriManager
 ) {
     private val mediaItems = mutableListOf<MediaItem>()
@@ -45,7 +45,7 @@ class PhotoRepository @Inject constructor(
     private var repoScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     suspend fun refreshTokens(): Boolean {
-        return googlePhotosManager.refreshTokens()
+        return googleAuthManager.refreshTokens()
     }
 
     companion object {

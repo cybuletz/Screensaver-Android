@@ -26,7 +26,6 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import com.example.screensaver.ui.SettingsButtonController
 import com.example.screensaver.utils.AppPreferences
-import com.example.screensaver.shared.GooglePhotosManager
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.os.BatteryManager
@@ -68,9 +67,6 @@ class MainActivity : AppCompatActivity() {
     private val navController get() = _navController!!
     private lateinit var settingsButtonController: SettingsButtonController
     private val photoManagerViewModel: PhotoManagerViewModel by viewModels()
-
-    @Inject
-    lateinit var photoManager: GooglePhotosManager
 
     @Inject
     lateinit var photoRepository: PhotoRepository
@@ -447,44 +443,18 @@ class MainActivity : AppCompatActivity() {
             try {
                 val selectedAlbums = preferences.getSelectedAlbumIds()
                 if (selectedAlbums.isNotEmpty()) {
-                    Log.d(TAG, "Found ${selectedAlbums.size} saved albums, loading photos...")
+                    Log.d(TAG, "Found ${selectedAlbums.size} saved albums")
 
-                    withContext(Dispatchers.IO) {
-                        try {
-                            if (photoManager.initialize()) {
-                                val photos = try {
-                                    photoManager.loadPhotos()
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error loading photos", e)
-                                    null
-                                }
-
-                                if (photos != null && photos.isNotEmpty()) {
-                                    withContext(Dispatchers.Main) {
-                                        try {
-                                            // Store photos in PhotoRepository
-                                            photoRepository.clearPhotos()
-                                            photoRepository.addPhotos(photos)
-
-                                            // Start display if we're on the main fragment
-                                            if (!isDestroyed) {
-                                                photoDisplayManager.startPhotoDisplay()
-                                            } else {
-                                                Log.d(TAG, "Activity is destroyed, skipping photo display")
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "Error updating UI with photos", e)
-                                        }
-                                    }
-                                } else {
-                                    Log.e(TAG, "No photos found in selected albums")
-                                }
-                            } else {
-                                Log.e(TAG, "Failed to initialize GooglePhotosManager")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error in photo initialization", e)
+                    // Load photos from PhotoRepository instead
+                    val photos = photoRepository.getAllPhotos()
+                    if (photos.isNotEmpty()) {
+                        if (!isDestroyed) {
+                            photoDisplayManager.startPhotoDisplay()
+                        } else {
+                            Log.d(TAG, "Activity is destroyed, skipping photo display")
                         }
+                    } else {
+                        Log.e(TAG, "No photos found in repository")
                     }
                 } else {
                     Log.d(TAG, "No albums selected")
@@ -812,8 +782,8 @@ class MainActivity : AppCompatActivity() {
 
                         // Get photo URIs from selected albums
                         val photos = if (selectedAlbums.isEmpty()) {
-                            // No virtual albums selected, use all photos from PhotoManager
-                            photoManager.loadPhotos()?.map { Uri.parse(it.baseUrl) } ?: emptyList()
+                            // No virtual albums selected, use all photos from repository
+                            photoRepository.getAllPhotos().map { Uri.parse(it.baseUrl) }
                         } else {
                             // Use photos from selected virtual albums
                             selectedAlbums.flatMap { album ->
@@ -942,15 +912,11 @@ class MainActivity : AppCompatActivity() {
 
                         if (forceReload) {
                             withContext(Dispatchers.IO) {
-                                if (photoManager.initialize()) {
-                                    val photos = photoManager.loadPhotos()
-                                    if (photos != null) {
-                                        photoRepository.clearPhotos()
-                                        photoRepository.addPhotos(photos)
-
-                                        withContext(Dispatchers.Main) {
-                                            photoDisplayManager.startPhotoDisplay()
-                                        }
+                                // Use PhotoRepository instead
+                                val photos = photoRepository.getAllPhotos()
+                                if (photos.isNotEmpty()) {
+                                    withContext(Dispatchers.Main) {
+                                        photoDisplayManager.startPhotoDisplay()
                                     }
                                 }
                             }
@@ -1231,14 +1197,14 @@ class MainActivity : AppCompatActivity() {
         if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
             checkSecurityWithCallback {
                 // Only continue after successful authentication
-                if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
+                if (!isDestroyed && photoRepository.getAllPhotos().isNotEmpty() &&
                     navController.currentDestination?.id == R.id.mainFragment) {
                     photoDisplayManager.startPhotoDisplay()
                 }
             }
         } else {
             // No security needed, continue normally
-            if (!isDestroyed && photoManager.getPhotoCount() > 0 &&
+            if (!isDestroyed && photoRepository.getAllPhotos().isNotEmpty() &&
                 navController.currentDestination?.id == R.id.mainFragment) {
                 photoDisplayManager.startPhotoDisplay()
             }
@@ -1299,17 +1265,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         try {
             isDestroyed = true
-
-            lifecycleScope.launch {
-                withContext(Dispatchers.IO) {
-                    try {
-                        // Change googlePhotosManager to photoManager
-                        photoManager.cleanup()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error cleaning up GooglePhotosManager", e)
-                    }
-                }
-            }
 
             viewLifecycleOwner?.lifecycleScope?.launch(Dispatchers.Main) {
                 withContext(NonCancellable) {

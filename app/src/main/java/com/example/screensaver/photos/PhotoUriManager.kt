@@ -8,6 +8,7 @@ import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import com.example.screensaver.auth.GoogleAuthManager
 import com.example.screensaver.utils.AppPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +24,8 @@ import javax.inject.Singleton
 @Singleton
 class PhotoUriManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val preferences: AppPreferences
+    private val preferences: AppPreferences,
+    private val googleAuthManager: GoogleAuthManager
 ) {
     companion object {
         private const val TAG = "PhotoUriManager"
@@ -39,49 +41,6 @@ class PhotoUriManager @Inject constructor(
         // Permission flags
         const val PERMISSION_FLAGS_READ = Intent.FLAG_GRANT_READ_URI_PERMISSION
         const val PERMISSION_FLAGS_READ_WRITE = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-    }
-
-    /**
-     * Get the appropriate intent for picking photos based on the device's Android version
-     */
-    fun getPhotoPickerIntent(allowMultiple: Boolean = true): Intent {
-        return when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                // Android 13+ (API 33+): Use the system photo picker
-                Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, if (allowMultiple) 100 else 1)
-                }
-            }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                // Android 11-12 (API 30-32): Use GET_CONTENT intent with photo picker provider
-                Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    putExtra(Intent.EXTRA_LOCAL_ONLY, false)
-
-                    // Request permissions needed for persistence
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-
-                    // Try to use Google Photos directly
-                    putExtra(DocumentsContract.EXTRA_INITIAL_URI,
-                        Uri.parse("content://com.google.android.apps.photos.contentprovider"))
-                }
-            }
-            else -> {
-                // Pre-Android 11 (API < 30): Use ACTION_GET_CONTENT with fallback options
-                Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
-                    addCategory(Intent.CATEGORY_OPENABLE)
-
-                    // Request all possible permissions
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                }
-            }
-        }
     }
 
     /**
@@ -267,6 +226,139 @@ class PhotoUriManager @Inject constructor(
             }
         }
     }
+
+    /**
+     * Get the appropriate photo picker intent based on Android version and auth status
+     */
+    fun getPhotoPickerIntent(allowMultiple: Boolean = true): Intent {
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                // Android 13+ (API 33+): Use system photo picker
+                Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, if (allowMultiple) 100 else 1)
+                    addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                    )
+                }
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && googleAuthManager.hasValidTokens() -> {
+                // Android 11-12 with Google auth: Try Google Photos first
+                getGooglePhotosIntent(allowMultiple)
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                // Android 11-12 without Google auth: Use ACTION_OPEN_DOCUMENT
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                    )
+                }
+            }
+            else -> {
+                // Fallback for older versions
+                Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
+        }
+    }
+
+    /**
+     * Process URI with auth check
+     */
+    suspend fun processUri(uri: Uri): UriData? = withContext(Dispatchers.IO) {
+        try {
+            // For Google Photos URIs, ensure we have valid auth
+            if (isGooglePhotosUri(uri) && !googleAuthManager.hasValidTokens()) {
+                if (!googleAuthManager.refreshTokens()) {
+                    return@withContext null
+                }
+            }
+
+            val hasPermission = takePersistablePermission(uri)
+            val timestamp = System.currentTimeMillis()
+            val uriType = getUriType(uri)
+
+            if (hasPermission) {
+                preferences.addRecentlyAccessedUri(uri.toString())
+            }
+
+            UriData(
+                uri = uri.toString(),
+                type = uriType,
+                hasPersistedPermission = hasPermission,
+                timestamp = timestamp
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing URI: $uri", e)
+            null
+        }
+    }
+
+
+    /**
+     * Take persistable permissions for a URI with proper error handling
+     * @param uri The URI to take permissions for
+     * @return true if permissions were successfully taken
+     */
+    fun takePersistablePermission(uri: Uri): Boolean {
+        return try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            true
+        } catch (e: SecurityException) {
+            // If we can't take persistable permission, try to keep temporary
+            Log.w(TAG, "Could not take persistable permission: ${e.message}")
+            preferences.addRecentlyAccessedUri(uri.toString())
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error taking permission: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Validate if a URI is still accessible
+     * @param uri The URI to validate
+     * @return true if the URI is accessible
+     */
+    fun validateUri(uri: Uri): Boolean {
+        return try {
+            when (getUriType(uri)) {
+                URI_TYPE_PHOTO_PICKER -> {
+                    // For photo picker URIs, check if we have persisted permission
+                    context.contentResolver.persistedUriPermissions.any {
+                        it.uri == uri && it.isReadPermission
+                    }
+                }
+                URI_TYPE_CONTENT -> {
+                    // For content URIs, try to query metadata
+                    context.contentResolver.query(uri,
+                        arrayOf(MediaStore.Images.Media._ID),
+                        null, null, null)?.use { cursor ->
+                        cursor.count > 0
+                    } ?: false
+                }
+                else -> {
+                    // For all other URIs, check if recently accessed
+                    preferences.getRecentlyAccessedUris().contains(uri.toString())
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error validating URI: $uri", e)
+            false
+        }
+    }
+
 
     /**
      * Data class to store metadata about URIs

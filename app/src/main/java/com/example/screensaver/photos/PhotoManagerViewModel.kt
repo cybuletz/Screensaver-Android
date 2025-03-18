@@ -10,7 +10,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.PhotoRepository
 import com.example.screensaver.models.MediaItem
-import com.example.screensaver.shared.GooglePhotosManager
 import com.example.screensaver.utils.AppPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -30,7 +29,6 @@ import com.example.screensaver.photos.VirtualAlbum
 @HiltViewModel
 class PhotoManagerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val googlePhotosManager: GooglePhotosManager,
     private val preferences: AppPreferences,
     private val secureStorage: SecureStorage,
     private val photoRepository: PhotoRepository

@@ -14,9 +14,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
-import com.example.screensaver.shared.GooglePhotosManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -41,7 +38,6 @@ object DataModule {
         gson: Gson,
         appPreferences: AppPreferences,
         secureStorage: SecureStorage,
-        googlePhotosManager: GooglePhotosManager,
         photoCache: PhotoCache,
         coroutineScope: CoroutineScope
     ): AppDataManager {
@@ -50,7 +46,6 @@ object DataModule {
             gson,
             appPreferences,
             secureStorage,
-            googlePhotosManager,
             photoCache,
             coroutineScope
         )
