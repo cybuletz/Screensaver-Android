@@ -54,6 +54,7 @@ import com.example.screensaver.music.RadioPreferences
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.photos.PhotoManagerViewModel
+import com.example.screensaver.photos.PhotoUriManager
 import com.example.screensaver.utils.BrightnessManager
 import com.example.screensaver.utils.PreferenceKeys
 import com.example.screensaver.utils.ScreenOrientation
@@ -112,6 +113,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var brightnessManager: BrightnessManager
+
+    @Inject
+    lateinit var photoUriManager: PhotoUriManager
 
     private var isDestroyed = false
 
@@ -798,10 +802,15 @@ class MainActivity : AppCompatActivity() {
                 // Initialize PhotoDisplayManager
                 photoDisplayManager.initialize(views, lifecycleScope)
 
+                // First validate stored photos to ensure we have valid permissions
+                photoRepository.validateStoredPhotos()
+
                 // Observe virtual albums from PhotoManagerViewModel
                 lifecycleScope.launch {
                     photoManagerViewModel.virtualAlbums.collect { albums ->
                         val selectedAlbums = albums.filter { it.isSelected }
+
+                        // Get photo URIs from selected albums
                         val photos = if (selectedAlbums.isEmpty()) {
                             // No virtual albums selected, use all photos from PhotoManager
                             photoManager.loadPhotos()?.map { Uri.parse(it.baseUrl) } ?: emptyList()
@@ -811,7 +820,17 @@ class MainActivity : AppCompatActivity() {
                                 album.photoUris.map { Uri.parse(it) }
                             }
                         }
-                        photoDisplayManager.updatePhotoSources(photos)
+
+                        // Before updating display, validate URIs
+                        val validPhotos = photos.filter { uri ->
+                            photoUriManager.hasValidPermission(uri)
+                        }
+
+                        if (validPhotos.size < photos.size) {
+                            Log.w(TAG, "Found ${photos.size - validPhotos.size} invalid URIs, they will be skipped")
+                        }
+
+                        photoDisplayManager.updatePhotoSources(validPhotos)
                     }
                 }
             } catch (e: Exception) {

@@ -3,12 +3,14 @@ package com.example.screensaver
 import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.models.AlbumInfo
 import com.example.screensaver.photos.VirtualAlbum
 import com.example.screensaver.photos.PhotoManagerViewModel.Companion
+import com.example.screensaver.photos.PhotoUriManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -16,12 +18,20 @@ import javax.inject.Singleton
 import org.json.JSONArray
 import org.json.JSONObject
 import com.example.screensaver.shared.GooglePhotosManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
+import java.io.File
+import kotlinx.coroutines.*
 
 @Singleton
 class PhotoRepository @Inject constructor(
     private val context: Context,
-    private val googlePhotosManager: GooglePhotosManager
-    ) {
+    private val googlePhotosManager: GooglePhotosManager,
+    private val photoUriManager: PhotoUriManager
+) {
     private val mediaItems = mutableListOf<MediaItem>()
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
     val loadingState: StateFlow<LoadingState> = _loadingState
@@ -31,6 +41,8 @@ class PhotoRepository @Inject constructor(
 
     private val virtualAlbums = mutableListOf<VirtualAlbum>()
     private val KEY_VIRTUAL_ALBUMS = "virtual_albums"
+
+    private var repoScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     suspend fun refreshTokens(): Boolean {
         return googlePhotosManager.refreshTokens()
@@ -198,6 +210,49 @@ class PhotoRepository @Inject constructor(
         return photos
     }
 
+    suspend fun migrateGooglePhotosUri(uri: Uri): Uri? {
+        return withContext(Dispatchers.IO) {
+            try {
+                // First check if we already have a migrated version
+                val existingFile = getMigratedFile(uri)
+                if (existingFile?.exists() == true) {
+                    Log.d(TAG, "Found existing migrated file for: $uri")
+                    return@withContext Uri.fromFile(existingFile)
+                }
+
+                // If not, try to migrate it
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    val fileName = "migrated_${System.currentTimeMillis()}_${uri.lastPathSegment}"
+                    val file = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), fileName)
+
+                    file.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+
+                    Log.d(TAG, "Successfully migrated Google Photos URI to: ${file.absolutePath}")
+                    return@withContext Uri.fromFile(file)
+                }
+
+                Log.e(TAG, "Failed to open input stream for URI: $uri")
+                null
+            } catch (e: SecurityException) {
+                Log.e(TAG, "Security exception migrating URI: $uri", e)
+                null
+            } catch (e: Exception) {
+                Log.e(TAG, "Error migrating URI: $uri", e)
+                null
+            }
+        }
+    }
+
+    private fun getMigratedFile(uri: Uri): File? {
+        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        val files = baseDir?.listFiles { file ->
+            file.name.startsWith("migrated_") && file.name.endsWith(uri.lastPathSegment ?: "")
+        }
+        return files?.firstOrNull()
+    }
+
     fun getAllPhotos(): List<MediaItem> {
         return mediaItems.toList()
     }
@@ -247,38 +302,36 @@ class PhotoRepository @Inject constructor(
     }
 
     fun validateStoredPhotos() {
-        try {
-            val currentPhotos = loadPhotos() ?: emptyList()
+        repoScope.launch {
+            try {
+                val currentPhotos = loadPhotos() ?: emptyList()
+                Log.d(TAG, "Validating ${currentPhotos.size} stored photos")
 
-            // Check each photo URI and remove invalid ones
-            val validPhotos = currentPhotos.filter { photo ->
-                try {
-                    val uri = Uri.parse(photo.baseUrl)
-                    if (uri.toString().startsWith("content://media/picker/")) {
-                        // For picker URIs, check if we have permission
-                        context.contentResolver.persistedUriPermissions.any {
-                            it.uri == uri && it.isReadPermission
-                        }
-                    } else {
-                        // Not a picker URI, consider valid
-                        true
+                // Validate URIs with the PhotoUriManager
+                val validPhotoUris = photoUriManager.validateUris(currentPhotos.map { it.baseUrl })
+
+                // Check if any URIs are invalid
+                if (validPhotoUris.size < currentPhotos.size) {
+                    Log.d(TAG, "Found ${currentPhotos.size - validPhotoUris.size} invalid URIs")
+
+                    // Filter to keep only valid photos
+                    val validPhotos = currentPhotos.filter { photo ->
+                        validPhotoUris.contains(photo.baseUrl)
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error validating photo URI: ${photo.baseUrl}", e)
-                    false
-                }
-            }
 
-            // Update storage if needed
-            if (validPhotos.size < currentPhotos.size) {
-                Log.d(TAG, "Removing ${currentPhotos.size - validPhotos.size} invalid URIs")
-                clearPhotos()
-                if (validPhotos.isNotEmpty()) {
-                    addPhotos(validPhotos)
+                    // Update storage if needed
+                    clearPhotos()
+                    if (validPhotos.isNotEmpty()) {
+                        addPhotos(validPhotos)
+                    }
+
+                    Log.d(TAG, "Updated repository with ${validPhotos.size} valid photos")
+                } else {
+                    Log.d(TAG, "All stored photos are valid")
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error validating photos", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error validating photos", e)
         }
     }
 
@@ -486,6 +539,10 @@ class PhotoRepository @Inject constructor(
     }
 
     fun cleanup() {
+        // Cancel any ongoing coroutine operations
+        repoScope.cancel()
+
+        // Existing cleanup logic
         val previousCount = mediaItems.size
         mediaItems.clear()
         virtualAlbums.clear()
@@ -495,6 +552,9 @@ class PhotoRepository @Inject constructor(
             .putBoolean(KEY_HAS_PHOTOS, false)
             .apply()
         Log.d(TAG, "Explicitly cleared all photos and virtual albums (previous count: $previousCount)")
+
+        // Create a new scope for future operations
+        repoScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     }
 
     fun addPhotos(photos: List<MediaItem>, mode: PhotoAddMode = PhotoAddMode.MERGE) {

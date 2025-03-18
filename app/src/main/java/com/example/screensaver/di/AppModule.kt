@@ -27,6 +27,7 @@ import com.example.screensaver.recovery.StateRestoration
 import com.example.screensaver.data.PhotoCache
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
+import com.example.screensaver.photos.PhotoUriManager
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.SecurityPreferences
@@ -173,5 +174,24 @@ object AppModule {
         secureStorage: SecureStorage
     ): AppAuthManager {
         return AppAuthManager(context, securityPreferences, biometricHelper, secureStorage)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoUriManager(
+        @ApplicationContext context: Context,
+        preferences: AppPreferences
+    ): PhotoUriManager {
+        return PhotoUriManager(context, preferences)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoRepository(
+        @ApplicationContext context: Context,
+        googlePhotosManager: GooglePhotosManager,
+        photoUriManager: PhotoUriManager
+    ): PhotoRepository {
+        return PhotoRepository(context, googlePhotosManager, photoUriManager)
     }
 }
