@@ -28,10 +28,18 @@ class PhotoListFragment : Fragment() {
     @Inject
     lateinit var glide: RequestManager
 
+    @Inject
+    lateinit var photoUriManager: PhotoUriManager
+
     private val photoAdapter by lazy {
         PhotoGridAdapter(
             glide = glide,
-            onPhotoClick = { photo -> viewModel.togglePhotoSelection(photo.id) }
+            photoUriManager = photoUriManager,
+            onPhotoClick = { photo -> viewModel.togglePhotoSelection(photo.id) },
+            onPhotoLoadError = { photo, error ->
+                // Handle load errors (optional)
+                viewModel.markPhotoLoadError(photo.id, error)
+            }
         )
     }
 

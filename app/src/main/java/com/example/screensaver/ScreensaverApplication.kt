@@ -24,14 +24,17 @@ import com.example.screensaver.data.AppDataManager
 import androidx.preference.PreferenceManager
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
+import com.example.screensaver.shared.GooglePhotosManager
 import java.io.File
 import kotlinx.coroutines.NonCancellable
+import com.example.screensaver.shared.HasGooglePhotosManager
+
 
 /**
  * Custom Application class for initialization and global state management
  */
 @HiltAndroidApp
-class ScreensaverApplication : Application() {
+class ScreensaverApplication : Application(), HasGooglePhotosManager {
 
     @Inject
     lateinit var preferences: AppPreferences
@@ -48,8 +51,15 @@ class ScreensaverApplication : Application() {
     @Inject
     lateinit var spotifyPreferences: SpotifyPreferences
 
+    @Inject
+    lateinit var googlePhotosManager: GooglePhotosManager
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var firebaseAnalytics: FirebaseAnalytics
+
+    override fun provideGooglePhotosManager(): GooglePhotosManager {
+        return googlePhotosManager
+    }
 
     companion object {
         private const val VERSION_NAME = BuildConfig.VERSION_NAME

@@ -52,7 +52,8 @@ class PhotoManagerViewModel @Inject constructor(
         val sourceType: PhotoSourceType,
         val albumId: String,
         val dateAdded: Long,
-        val isSelected: Boolean = false
+        val isSelected: Boolean = false,
+        val hasLoadError: Boolean = false
     )
 
     enum class PhotoSourceType {
@@ -136,6 +137,34 @@ class PhotoManagerViewModel @Inject constructor(
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading virtual albums", e)
+            }
+        }
+    }
+
+    fun markPhotoLoadError(photoId: String, error: Exception?) {
+        viewModelScope.launch {
+            try {
+                // Update the photos list with the error state
+                val currentPhotos = _photos.value
+                val updatedPhotos = currentPhotos.map { photo ->
+                    if (photo.id == photoId) {
+                        photo.copy(hasLoadError = true)
+                    } else {
+                        photo
+                    }
+                }
+
+                // Only update if needed
+                if (updatedPhotos != currentPhotos) {
+                    _photos.value = updatedPhotos
+                }
+
+                // Log the error
+                error?.let {
+                    Log.e(TAG, "Photo load error for $photoId: ${it.message}", it)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in markPhotoLoadError", e)
             }
         }
     }

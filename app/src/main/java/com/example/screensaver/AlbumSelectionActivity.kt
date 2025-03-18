@@ -41,6 +41,8 @@ import android.provider.OpenableColumns
 import com.example.screensaver.PhotoRepository.PhotoAddMode
 import com.example.screensaver.photos.PhotoManagerActivity
 import com.example.screensaver.photos.PhotoManagerViewModel
+import com.example.screensaver.photos.PhotoUriManager
+import java.io.IOException
 
 
 @AndroidEntryPoint
@@ -62,6 +64,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     @Inject
     lateinit var preferences: AppPreferences
+
+    @Inject
+    lateinit var photoUriManager: PhotoUriManager
 
 
     private val viewModel: AlbumSelectionViewModel by viewModels()
@@ -91,11 +96,11 @@ class AlbumSelectionActivity : AppCompatActivity() {
         glideRequestManager = Glide.with(this)
             .setDefaultRequestOptions(
                 RequestOptions()
-                    .diskCacheStrategy(DiskCacheStrategy.ALL) // Cache both original & resized images
-                    .skipMemoryCache(false) // Use memory cache
-                    .centerCrop() // Consistent cropping
-                    .dontAnimate() // Prevent animation issues
-                    .timeout(10000) // 10 second timeout
+                    .diskCacheStrategy(DiskCacheStrategy.ALL)
+                    .skipMemoryCache(false)
+                    .centerCrop()
+                    .dontAnimate()
+                    .timeout(10000)
                     .placeholder(R.drawable.placeholder_album)
                     .error(R.drawable.placeholder_album_error)
             )
@@ -299,6 +304,61 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
+    private suspend fun createMediaItemFromUri(uri: Uri, uriData: PhotoUriManager.UriData): MediaItem {
+        return withContext(Dispatchers.IO) {
+            val projection = arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DISPLAY_NAME,
+                MediaStore.Images.Media.DATE_ADDED,
+                MediaStore.Images.Media.MIME_TYPE,
+                MediaStore.Images.Media.WIDTH,
+                MediaStore.Images.Media.HEIGHT
+            )
+
+            try {
+                contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                    cursor.moveToFirst()
+
+                    val nameColumn = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
+                    val dateColumn = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
+                    val mimeColumn = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
+                    val widthColumn = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
+                    val heightColumn = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
+
+                    // Create MediaItem with all available metadata
+                    MediaItem(
+                        id = uri.toString(),
+                        albumId = "picked_photos",
+                        baseUrl = uri.toString(),
+                        mimeType = cursor.getString(mimeColumn) ?: "image/*",
+                        width = cursor.getInt(widthColumn),
+                        height = cursor.getInt(heightColumn),
+                        description = cursor.getString(nameColumn),
+                        createdAt = cursor.getLong(dateColumn) * 1000,
+                        loadState = MediaItem.LoadState.IDLE
+                    )
+                } ?: createFallbackMediaItem(uri, uriData)
+            } catch (e: Exception) {
+                Log.w(TAG, "Error querying media details, creating fallback item", e)
+                createFallbackMediaItem(uri, uriData)
+            }
+        }
+    }
+
+    private fun createFallbackMediaItem(uri: Uri, uriData: PhotoUriManager.UriData): MediaItem {
+        return MediaItem(
+            id = uri.toString(),
+            albumId = "picked_photos",
+            baseUrl = uri.toString(),
+            mimeType = "image/*",
+            width = 0,
+            height = 0,
+            description = uri.lastPathSegment,
+            createdAt = uriData.timestamp,
+            loadState = MediaItem.LoadState.IDLE
+        )
+    }
+
     private suspend fun createMediaItemFromUri(uri: Uri): MediaItem {
         return withContext(Dispatchers.IO) {
             val projection = arrayOf(
@@ -354,77 +414,94 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     updateLoadingText(getString(R.string.processing_photos))
 
                     val selectedMediaItems = mutableListOf<MediaItem>()
+                    val processedUris = mutableListOf<Uri>()
 
-                    // Handle multiple selection
-                    data?.clipData?.let { clipData ->
-                        for (i in 0 until clipData.itemCount) {
-                            clipData.getItemAt(i).uri?.let { uri ->
-                                try {
-                                    // Try to take persistable permission with both READ and WRITE
-                                    contentResolver.takePersistableUriPermission(
-                                        uri,
-                                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                                    )
-                                } catch (e: SecurityException) {
-                                    Log.w(TAG, "Could not take persistable permission for $uri, continuing with temporary permission")
+                    // Part 1: Extract URIs from the result intent
+                    when {
+                        // Handle multiple selection via clipData
+                        data?.clipData != null -> {
+                            val clipData = data.clipData!!
+                            for (i in 0 until clipData.itemCount) {
+                                clipData.getItemAt(i).uri?.let { uri ->
+                                    processedUris.add(uri)
+                                    updateLoadingText(getString(R.string.processing_photo_progress, i + 1, clipData.itemCount))
                                 }
-
-                                // Store the URI for future reference
-                                preferences.addRecentlyAccessedUri(uri.toString())
-
-                                // Create MediaItem even if we only have temporary permission
-                                val mediaItem = createMediaItemFromUri(uri)
-                                selectedMediaItems.add(mediaItem)
-
-                                // Update loading progress
-                                updateLoadingText(getString(R.string.processing_photo_progress,
-                                    i + 1,
-                                    clipData.itemCount))
                             }
                         }
-                    } ?: data?.data?.let { uri -> // Handle single selection
-                        try {
-                            // Try to take persistable permission with both READ and WRITE
-                            contentResolver.takePersistableUriPermission(
-                                uri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                            )
-                        } catch (e: SecurityException) {
-                            Log.w(TAG, "Could not take persistable permission for $uri, continuing with temporary permission")
+                        // Handle single selection
+                        data?.data != null -> {
+                            processedUris.add(data.data!!)
                         }
-
-                        // Store the URI for future reference
-                        preferences.addRecentlyAccessedUri(uri.toString())
-
-                        // Create MediaItem even if we only have temporary permission
-                        val mediaItem = createMediaItemFromUri(uri)
-                        selectedMediaItems.add(mediaItem)
+                        // No data received
+                        else -> {
+                            throw IOException("No image data received from picker")
+                        }
                     }
+                    // Part 2: Process each URI with our PhotoUriManager
+                    if (processedUris.isNotEmpty()) {
+                        updateLoadingText(getString(R.string.securing_permissions))
 
-                    if (selectedMediaItems.isNotEmpty()) {
+                        // Process all URIs and get the metadata
+                        val uriDataList = photoUriManager.processSelectedUris(processedUris)
+
+                        // For each URI data, create a MediaItem
                         withContext(Dispatchers.IO) {
-                            photoManager.cleanup() // Clean up old state
-                            // Add the new MediaItems with their metadata
-                            photoRepository.addPhotos(
-                                photos = selectedMediaItems,
-                                mode = PhotoAddMode.APPEND
-                            )
-                            // Clear album selections since we're using picked photos
-                            preferences.clearSelectedAlbums()
-                        }
+                            uriDataList.forEachIndexed { index, uriData ->
+                                try {
+                                    val uri = Uri.parse(uriData.uri)
 
-                        // Return to MainActivity
-                        val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
-                            putExtra("albums_saved", true)
-                            putExtra("photo_count", selectedMediaItems.size)
-                            putExtra("timestamp", System.currentTimeMillis())
-                            putExtra("force_reload", true)
+                                    // Create MediaItem
+                                    val mediaItem = createMediaItemFromUri(uri, uriData)
+                                    selectedMediaItems.add(mediaItem)
+
+                                    // Update loading UI
+                                    withContext(Dispatchers.Main) {
+                                        updateLoadingText(getString(
+                                            R.string.processing_photo_progress,
+                                            index + 1,
+                                            uriDataList.size
+                                        ))
+                                    }
+
+                                    // Log permission status
+                                    Log.d(TAG, "Processed URI: $uri, Persisted: ${uriData.hasPersistedPermission}")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error processing URI: ${uriData.uri}", e)
+                                }
+                            }
                         }
-                        startActivity(mainIntent)
-                        finish()
+                        // Part 3: Save the processed media items
+                        if (selectedMediaItems.isNotEmpty()) {
+                            withContext(Dispatchers.IO) {
+                                photoManager.cleanup() // Clean up old state
+
+                                // Add the new MediaItems with their metadata
+                                photoRepository.addPhotos(
+                                    photos = selectedMediaItems,
+                                    mode = PhotoRepository.PhotoAddMode.APPEND
+                                )
+
+                                // Clear album selections since we're using picked photos
+                                preferences.clearSelectedAlbums()
+
+                                // Save the URIs to preferences as well for backup
+                                val uriStrings = selectedMediaItems.map { it.baseUrl }.toSet()
+                                preferences.updateLocalSelectedPhotos(uriStrings)
+                            }
+
+                            // Return to MainActivity with status
+                            val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
+                                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+                                putExtra("albums_saved", true)
+                                putExtra("photo_count", selectedMediaItems.size)
+                                putExtra("timestamp", System.currentTimeMillis())
+                                putExtra("force_reload", true)
+                            }
+                            startActivity(mainIntent)
+                            finish()
+                        } else {
+                            handleError(getString(R.string.no_photos_selected))
+                        }
                     } else {
                         handleError(getString(R.string.no_photos_selected))
                     }
@@ -457,36 +534,33 @@ class AlbumSelectionActivity : AppCompatActivity() {
     }
 
     private fun initializeGooglePhotos() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startPhotoPicker()
-            return
-        }
-
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-            type = "image/*"
-            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            addCategory(Intent.CATEGORY_OPENABLE)
-            putExtra(Intent.EXTRA_LOCAL_ONLY, false)
-
-            // Request ALL possible permissions
-            addFlags(
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
-            )
-
-            `package` = "com.google.android.apps.photos"
-            putExtra(DocumentsContract.EXTRA_INITIAL_URI,
-                Uri.parse("content://com.google.android.apps.photos.contentprovider"))
-        }
-
         try {
-            startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
-        } catch (e: Exception) {
-            Log.d(TAG, "Direct launch failed, using chooser: ${e.message}")
-            val chooserIntent = Intent.createChooser(intent, getString(R.string.select_pictures))
+            // Get the appropriate photo picker intent from PhotoUriManager
+            val photoPickerIntent = photoUriManager.getPhotoPickerIntent(true)
+
+            // For Android 13+ (API 33+), we can launch the picker directly
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                startActivityForResult(photoPickerIntent, PICK_IMAGES_REQUEST_CODE)
+                return
+            }
+
+            // For Android 11-12, try to use Google Photos directly first
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val googlePhotosIntent = photoUriManager.getGooglePhotosIntent(true)
+                    startActivityForResult(googlePhotosIntent, PICK_IMAGES_REQUEST_CODE)
+                    return
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to launch Google Photos directly, falling back to chooser", e)
+                }
+            }
+
+            // For all other cases, use a chooser
+            val chooserIntent = Intent.createChooser(photoPickerIntent, getString(R.string.select_pictures))
             startActivityForResult(chooserIntent, PICK_IMAGES_REQUEST_CODE)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching photo picker", e)
+            handleError(getString(R.string.photo_picker_error))
         }
     }
 
