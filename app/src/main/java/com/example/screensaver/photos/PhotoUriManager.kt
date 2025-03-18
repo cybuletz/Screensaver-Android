@@ -42,49 +42,6 @@ class PhotoUriManager @Inject constructor(
     }
 
     /**
-     * Get the appropriate intent for picking photos based on the device's Android version
-     */
-    fun getPhotoPickerIntent(allowMultiple: Boolean = true): Intent {
-        return when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                // Android 13+ (API 33+): Use the system photo picker
-                Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, if (allowMultiple) 100 else 1)
-                }
-            }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                // Android 11-12 (API 30-32): Use GET_CONTENT intent with photo picker provider
-                Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    putExtra(Intent.EXTRA_LOCAL_ONLY, false)
-
-                    // Request permissions needed for persistence
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-
-                    // Try to use Google Photos directly
-                    putExtra(DocumentsContract.EXTRA_INITIAL_URI,
-                        Uri.parse("content://com.google.android.apps.photos.contentprovider"))
-                }
-            }
-            else -> {
-                // Pre-Android 11 (API < 30): Use ACTION_GET_CONTENT with fallback options
-                Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
-                    addCategory(Intent.CATEGORY_OPENABLE)
-
-                    // Request all possible permissions
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                }
-            }
-        }
-    }
-
-    /**
      * Get a specialized intent specifically for Google Photos
      */
     fun getGooglePhotosIntent(allowMultiple: Boolean = true): Intent {
@@ -267,6 +224,137 @@ class PhotoUriManager @Inject constructor(
             }
         }
     }
+
+    /**
+     * Get the appropriate photo picker intent based on Android version (11-14)
+     * @param allowMultiple Whether to allow multiple photo selection
+     * @return Intent configured for the appropriate photo picker
+     */
+    fun getPhotoPickerIntent(allowMultiple: Boolean = true): Intent {
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                // Android 13+ (API 33+): Use system photo picker
+                Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                    type = "image/*"
+                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, if (allowMultiple) 100 else 1)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                }
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                // Android 11-12 (API 30-32): Use ACTION_OPEN_DOCUMENT
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    putExtra(Intent.EXTRA_LOCAL_ONLY, false)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+
+                    // Add preferred initial URI
+                    putExtra(DocumentsContract.EXTRA_INITIAL_URI,
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                }
+            }
+            else -> {
+                // Fallback for other versions
+                Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
+        }
+    }
+
+    /**
+     * Process selected URIs and ensure proper permissions
+     * @param uri The URI to process
+     * @return UriData object with metadata if successful, null if failed
+     */
+    suspend fun processUri(uri: Uri): UriData? = withContext(Dispatchers.IO) {
+        try {
+            // Take persistable permission immediately
+            val hasPermission = takePersistablePermission(uri)
+
+            // Create metadata
+            val timestamp = System.currentTimeMillis()
+            val uriType = getUriType(uri)
+
+            // Store in preferences for backup
+            if (hasPermission) {
+                preferences.addRecentlyAccessedUri(uri.toString())
+            }
+
+            return@withContext UriData(
+                uri = uri.toString(),
+                type = uriType,
+                hasPersistedPermission = hasPermission,
+                timestamp = timestamp
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing URI: $uri", e)
+            null
+        }
+    }
+
+    /**
+     * Take persistable permissions for a URI with proper error handling
+     * @param uri The URI to take permissions for
+     * @return true if permissions were successfully taken
+     */
+    fun takePersistablePermission(uri: Uri): Boolean {
+        return try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            true
+        } catch (e: SecurityException) {
+            // If we can't take persistable permission, try to keep temporary
+            Log.w(TAG, "Could not take persistable permission: ${e.message}")
+            preferences.addRecentlyAccessedUri(uri.toString())
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error taking permission: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Validate if a URI is still accessible
+     * @param uri The URI to validate
+     * @return true if the URI is accessible
+     */
+    fun validateUri(uri: Uri): Boolean {
+        return try {
+            when (getUriType(uri)) {
+                URI_TYPE_PHOTO_PICKER -> {
+                    // For photo picker URIs, check if we have persisted permission
+                    context.contentResolver.persistedUriPermissions.any {
+                        it.uri == uri && it.isReadPermission
+                    }
+                }
+                URI_TYPE_CONTENT -> {
+                    // For content URIs, try to query metadata
+                    context.contentResolver.query(uri,
+                        arrayOf(MediaStore.Images.Media._ID),
+                        null, null, null)?.use { cursor ->
+                        cursor.count > 0
+                    } ?: false
+                }
+                else -> {
+                    // For all other URIs, check if recently accessed
+                    preferences.getRecentlyAccessedUris().contains(uri.toString())
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error validating URI: $uri", e)
+            false
+        }
+    }
+
 
     /**
      * Data class to store metadata about URIs

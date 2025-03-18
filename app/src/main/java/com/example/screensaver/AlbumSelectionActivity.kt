@@ -70,17 +70,12 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
 
     private val viewModel: AlbumSelectionViewModel by viewModels()
-    private var photoSource = SOURCE_GOOGLE_PHOTOS
     private val photoManagerViewModel: PhotoManagerViewModel by viewModels()
 
 
 
     companion object {
         private const val TAG = "AlbumSelectionActivity"
-        private const val PRECACHE_COUNT = 5
-        const val EXTRA_PHOTO_SOURCE = "photo_source"
-        const val SOURCE_GOOGLE_PHOTOS = "google_photos"
-        const val SOURCE_LOCAL_PHOTOS = "local_photos"
         private const val PICK_IMAGES_REQUEST_CODE = 100
     }
 
@@ -88,9 +83,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityAlbumSelectionBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
-        // Get photo source from intent
-        photoSource = intent.getStringExtra(EXTRA_PHOTO_SOURCE) ?: SOURCE_GOOGLE_PHOTOS
 
         // Initialize Glide RequestManager with optimized settings
         glideRequestManager = Glide.with(this)
@@ -109,11 +101,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
         observeViewModel()
 
         // Initialize based on source
-        if (photoSource == SOURCE_GOOGLE_PHOTOS) {
-            initializeGooglePhotos()
-        } else {
-            initializeLocalPhotos()
-        }
+        initializePhotoSelection()
     }
 
     private fun setupViews() {
@@ -270,7 +258,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
     private fun setupRetryButton() {
         binding.retryButton.setOnClickListener {
             it.visibility = View.GONE
-            initializeGooglePhotos()
+            initializePhotoSelection()
         }
     }
 
@@ -404,6 +392,59 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
+    private fun startPhotoPicker() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100) // Adjust max as needed
+                }
+                startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
+            } else {
+                // If device doesn't support the photo picker, fall back to Google Photos API
+                initializePhotoSelection()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching photo picker: ${e.message}")
+            // Fall back to Google Photos API
+            initializePhotoSelection()
+        }
+    }
+
+    private fun initializePhotoSelection() {
+        try {
+            when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                    // Android 13+ - Use PhotoPicker API
+                    val intent = MediaStore.ACTION_PICK_IMAGES.let { action ->
+                        Intent(action).apply {
+                            putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                        }
+                    }
+                    startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
+                }
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                    // Android 11-12 - Use ACTION_OPEN_DOCUMENT
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        type = "image/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    }
+                    startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
+                }
+                else -> {
+                    startLegacyPicker()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing photo selection", e)
+            handleError(getString(R.string.photo_picker_error))
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
@@ -416,98 +457,58 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     val selectedMediaItems = mutableListOf<MediaItem>()
                     val processedUris = mutableListOf<Uri>()
 
-                    // Part 1: Extract URIs from the result intent
+                    // Extract URIs with proper error handling
                     when {
-                        // Handle multiple selection via clipData
                         data?.clipData != null -> {
                             val clipData = data.clipData!!
                             for (i in 0 until clipData.itemCount) {
                                 clipData.getItemAt(i).uri?.let { uri ->
-                                    processedUris.add(uri)
-                                    updateLoadingText(getString(R.string.processing_photo_progress, i + 1, clipData.itemCount))
+                                    if (photoUriManager.takePersistablePermission(uri)) {
+                                        processedUris.add(uri)
+                                    }
+                                    updateLoadingText(getString(R.string.processing_photo_progress,
+                                        i + 1, clipData.itemCount))
                                 }
                             }
                         }
-                        // Handle single selection
                         data?.data != null -> {
-                            processedUris.add(data.data!!)
-                        }
-                        // No data received
-                        else -> {
-                            throw IOException("No image data received from picker")
+                            val uri = data.data!!
+                            if (photoUriManager.takePersistablePermission(uri)) {
+                                processedUris.add(uri)
+                            }
                         }
                     }
-                    // Part 2: Process each URI with our PhotoUriManager
+
                     if (processedUris.isNotEmpty()) {
-                        updateLoadingText(getString(R.string.securing_permissions))
-
-                        // Process all URIs and get the metadata
-                        val uriDataList = photoUriManager.processSelectedUris(processedUris)
-
-                        // For each URI data, create a MediaItem
+                        // Process URIs and create MediaItems
                         withContext(Dispatchers.IO) {
-                            uriDataList.forEachIndexed { index, uriData ->
+                            processedUris.forEachIndexed { index, uri ->
                                 try {
-                                    val uri = Uri.parse(uriData.uri)
-
-                                    // Create MediaItem
-                                    val mediaItem = createMediaItemFromUri(uri, uriData)
+                                    val mediaItem = createMediaItemFromUri(uri)
                                     selectedMediaItems.add(mediaItem)
 
-                                    // Update loading UI
                                     withContext(Dispatchers.Main) {
                                         updateLoadingText(getString(
                                             R.string.processing_photo_progress,
                                             index + 1,
-                                            uriDataList.size
+                                            processedUris.size
                                         ))
                                     }
-
-                                    // Log permission status
-                                    Log.d(TAG, "Processed URI: $uri, Persisted: ${uriData.hasPersistedPermission}")
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "Error processing URI: ${uriData.uri}", e)
+                                    Log.e(TAG, "Error processing URI: $uri", e)
                                 }
                             }
                         }
-                        // Part 3: Save the processed media items
+
+                        // Save processed items
                         if (selectedMediaItems.isNotEmpty()) {
-                            withContext(Dispatchers.IO) {
-                                photoManager.cleanup() // Clean up old state
-
-                                // Add the new MediaItems with their metadata
-                                photoRepository.addPhotos(
-                                    photos = selectedMediaItems,
-                                    mode = PhotoRepository.PhotoAddMode.APPEND
-                                )
-
-                                // Clear album selections since we're using picked photos
-                                preferences.clearSelectedAlbums()
-
-                                // Save the URIs to preferences as well for backup
-                                val uriStrings = selectedMediaItems.map { it.baseUrl }.toSet()
-                                preferences.updateLocalSelectedPhotos(uriStrings)
-                            }
-
-                            // Return to MainActivity with status
-                            val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
-                                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
-                                putExtra("albums_saved", true)
-                                putExtra("photo_count", selectedMediaItems.size)
-                                putExtra("timestamp", System.currentTimeMillis())
-                                putExtra("force_reload", true)
-                            }
-                            startActivity(mainIntent)
-                            finish()
+                            saveProcessedItems(selectedMediaItems)
                         } else {
                             handleError(getString(R.string.no_photos_selected))
                         }
-                    } else {
-                        handleError(getString(R.string.no_photos_selected))
                     }
                 } catch (e: Exception) {
                     handleError(getString(R.string.photo_processing_error, e.message))
-                    Log.e(TAG, "Error processing photos", e)
                 } finally {
                     viewModel.setLoading(false)
                 }
@@ -515,52 +516,42 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
-    private fun startPhotoPicker() {
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100) // Adjust max as needed
+    private suspend fun saveProcessedItems(selectedMediaItems: List<MediaItem>) {
+        withContext(Dispatchers.IO) {
+            try {
+                // Clean up old state
+                photoManager.cleanup()
+
+                // Add new items to repository
+                photoRepository.addPhotos(
+                    photos = selectedMediaItems,
+                    mode = PhotoRepository.PhotoAddMode.APPEND
+                )
+
+                // Update preferences
+                preferences.clearSelectedAlbums()
+                preferences.updateLocalSelectedPhotos(
+                    selectedMediaItems.map { it.baseUrl }.toSet()
+                )
+
+                // Return to MainActivity
+                withContext(Dispatchers.Main) {
+                    val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+                        putExtra("albums_saved", true)
+                        putExtra("photo_count", selectedMediaItems.size)
+                        putExtra("timestamp", System.currentTimeMillis())
+                        putExtra("force_reload", true)
+                    }
+                    startActivity(mainIntent)
+                    finish()
                 }
-                startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
-            } else {
-                // If device doesn't support the photo picker, fall back to Google Photos API
-                initializeGooglePhotos()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error launching photo picker: ${e.message}")
-            // Fall back to Google Photos API
-            initializeGooglePhotos()
-        }
-    }
-
-    private fun initializeGooglePhotos() {
-        try {
-            // Get the appropriate photo picker intent from PhotoUriManager
-            val photoPickerIntent = photoUriManager.getPhotoPickerIntent(true)
-
-            // For Android 13+ (API 33+), we can launch the picker directly
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                startActivityForResult(photoPickerIntent, PICK_IMAGES_REQUEST_CODE)
-                return
-            }
-
-            // For Android 11-12, try to use Google Photos directly first
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                try {
-                    val googlePhotosIntent = photoUriManager.getGooglePhotosIntent(true)
-                    startActivityForResult(googlePhotosIntent, PICK_IMAGES_REQUEST_CODE)
-                    return
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to launch Google Photos directly, falling back to chooser", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving processed items", e)
+                withContext(Dispatchers.Main) {
+                    handleError(getString(R.string.save_error))
                 }
             }
-
-            // For all other cases, use a chooser
-            val chooserIntent = Intent.createChooser(photoPickerIntent, getString(R.string.select_pictures))
-            startActivityForResult(chooserIntent, PICK_IMAGES_REQUEST_CODE)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error launching photo picker", e)
-            handleError(getString(R.string.photo_picker_error))
         }
     }
 
@@ -632,6 +623,26 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
+    private fun startLegacyPicker() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addCategory(Intent.CATEGORY_OPENABLE)
+            putExtra(Intent.EXTRA_LOCAL_ONLY, false)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+
+        try {
+            startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching legacy picker", e)
+            // Fall back to chooser
+            val chooserIntent = Intent.createChooser(intent, getString(R.string.select_pictures))
+            startActivityForResult(chooserIntent, PICK_IMAGES_REQUEST_CODE)
+        }
+    }
+
     private fun handleError(message: String) {
         lifecycleScope.launch(Dispatchers.Main) {
             Toast.makeText(this@AlbumSelectionActivity, message, Toast.LENGTH_SHORT).show()
@@ -646,61 +657,6 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 message,
                 Toast.LENGTH_SHORT
             ).show()
-        }
-    }
-
-    private suspend fun loadAlbums() {
-        try {
-            viewModel.setLoading(true)
-
-            withContext(Dispatchers.IO) {
-                withTimeout(10000) {
-                    val startTime = System.currentTimeMillis()
-                    val albums = photoManager.getAlbums()
-                    val selectedAlbumIds = preferences.getSelectedAlbumIds()
-
-                    val albumModels = albums.map { googleAlbum ->
-                        Album(
-                            id = googleAlbum.id,
-                            title = googleAlbum.title,
-                            coverPhotoUrl = googleAlbum.coverPhotoUrl.orEmpty(),
-                            mediaItemsCount = googleAlbum.mediaItemsCount.toInt(),
-                            isSelected = selectedAlbumIds.contains(googleAlbum.id)
-                        ).also { album ->
-                            // Only preload if coverPhotoUrl is not empty
-                            googleAlbum.coverPhotoUrl?.takeIf { it.isNotEmpty() }?.let { url ->
-                                photoLoadingManager.preloadPhoto(
-                                    MediaItem(
-                                        id = album.id,
-                                        albumId = "album_covers",
-                                        baseUrl = url,
-                                        mimeType = "image/jpeg",
-                                        width = 512,
-                                        height = 512
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        if (albumModels.isEmpty()) {
-                            handleError(getString(R.string.no_albums_found))
-                        } else {
-                            albumAdapter.submitList(albumModels)
-                        }
-                    }
-
-                    val duration = System.currentTimeMillis() - startTime
-                    Log.d(TAG, "Total album loading time: ${duration}ms")
-                }
-            }
-        } catch (e: TimeoutCancellationException) {
-            handleError(getString(R.string.albums_load_timeout))
-        } catch (e: Exception) {
-            handleError(getString(R.string.albums_load_error, e.message))
-        } finally {
-            viewModel.setLoading(false)
         }
     }
 
@@ -793,77 +749,30 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun saveGooglePhotos() {
-        Log.d(TAG, "Starting saveGooglePhotos()")
-        updateLoadingText("Loading photos from Google Photos...")
-
-        val photos = withContext(Dispatchers.IO) {
-            try {
-                Log.d(TAG, "Loading photos from photoManager")
-                photoManager.loadPhotos()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading Google Photos", e)
-                null
-            }
-        }
-
-        if (photos == null || photos.isEmpty()) {
-            Log.e(TAG, "No photos loaded")
-            showToast(getString(R.string.no_photos_found))
-            setResult(Activity.RESULT_CANCELED)
-            finish()
-            return
-        }
-
-        try {
-            withContext(Dispatchers.IO) {
-                photoRepository.addPhotos(
-                    photos = photos,
-                    mode = PhotoAddMode.APPEND
-                )
-            }
-            Log.d(TAG, "Photos saved successfully")
-            setResult(Activity.RESULT_OK)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error saving photos", e)
-            setResult(Activity.RESULT_CANCELED)
-        } finally {
-            finish()
-        }
-    }
-
     private fun saveSelectedAlbums() {
         lifecycleScope.launch {
             try {
                 viewModel.setLoading(true)
-                updateLoadingText("Saving selected albums...")
+                updateLoadingText(getString(R.string.saving_selected_albums))
 
-                // 1. Get currently selected albums from this view
+                // Get selected albums
                 val newSelectedAlbums = albumAdapter.currentList
                     .filter { it.isSelected }
                     .map { it.id }
                     .toSet()
 
-                // 2. Get existing selected albums and merge with new selections
-                val existingSelectedAlbums = preferences.getSelectedAlbumIds()
-                val mergedSelections = existingSelectedAlbums + newSelectedAlbums
+                // Save selections
+                preferences.setSelectedAlbumIds(newSelectedAlbums)
 
-                // 3. Save merged album IDs
-                preferences.setSelectedAlbumIds(mergedSelections)
+                // Save local photos
+                saveLocalPhotos(newSelectedAlbums)
 
-                // 4. Load and save photos based on source
-                if (photoSource == SOURCE_LOCAL_PHOTOS) {
-                    saveLocalPhotos(mergedSelections)
-                } else {
-                    saveGooglePhotos()
-                }
-
-                // 5. Return to calling activity
-                if (intent.getStringExtra("parent_activity") == "com.example.screensaver.photos.PhotoManagerActivity") {
+                // Return to appropriate activity
+                if (intent.getStringExtra("parent_activity") ==
+                    "com.example.screensaver.photos.PhotoManagerActivity") {
                     setResult(Activity.RESULT_OK)
                     finish()
                 } else {
-                    // Existing main activity navigation code
                     val mainIntent = Intent(this@AlbumSelectionActivity, MainActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
                         putExtra("albums_saved", true)
@@ -873,9 +782,8 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     startActivity(mainIntent)
                     finish()
                 }
-
             } catch (e: Exception) {
-                Log.e(TAG, "Error during album selection save", e)
+                Log.e(TAG, "Error saving albums", e)
                 showToast(getString(R.string.save_error))
             } finally {
                 viewModel.setLoading(false)
@@ -923,15 +831,13 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         Log.d(TAG, "Activity onDestroy")
-        // Clear all image loads first
         glideRequestManager.clear(binding.albumRecyclerView)
         binding.albumRecyclerView.adapter = null
 
         lifecycleScope.launch {
             try {
                 withContext(NonCancellable) {
-                    photoManager.cleanup()
-                    // Only clear memory if the activity is actually being destroyed
+                    // Only clear memory if actually destroying
                     if (isFinishing) {
                         Log.d(TAG, "Clearing Glide memory cache")
                         Glide.get(applicationContext).clearMemory()

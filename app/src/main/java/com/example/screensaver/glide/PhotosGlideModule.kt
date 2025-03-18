@@ -51,8 +51,6 @@ class PhotosGlideModule : AppGlideModule() {
     @EntryPoint
     @InstallIn(SingletonComponent::class)
     interface GlideModuleEntryPoint {
-        fun secureStorage(): SecureStorage
-        fun googlePhotosManager(): GooglePhotosManager
         fun photoUriManager(): PhotoUriManager
     }
 
@@ -62,15 +60,12 @@ class PhotosGlideModule : AppGlideModule() {
             GlideModuleEntryPoint::class.java
         )
 
-        val secureStorage = entryPoint.secureStorage()
-        val googlePhotosManager = entryPoint.googlePhotosManager()
         val photoUriManager = entryPoint.photoUriManager()
 
-        // Create OkHttpClient with specialized interceptor for Google Photos URIs
+        // Create OkHttpClient with timeout settings
         val client = OkHttpClient.Builder()
             .connectTimeout(CONNECTION_TIMEOUT, TimeUnit.SECONDS)
             .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS)
-            .addInterceptor(GooglePhotosAuthInterceptor(secureStorage, googlePhotosManager))
             .build()
 
         // Register our custom URI loader factory
@@ -80,7 +75,7 @@ class PhotosGlideModule : AppGlideModule() {
             UriLoaderFactory(context, photoUriManager, client)
         )
 
-        // Also keep the standard OkHttpUrlLoader for GlideUrls
+        // Keep the standard OkHttpUrlLoader for other URLs
         registry.replace(
             GlideUrl::class.java,
             InputStream::class.java,
@@ -155,9 +150,7 @@ class PhotosGlideModule : AppGlideModule() {
             return UriLoader(context, photoUriManager, client)
         }
 
-        override fun teardown() {
-            // Nothing to clean up
-        }
+        override fun teardown() {}
     }
 
     /**
@@ -169,9 +162,8 @@ class PhotosGlideModule : AppGlideModule() {
         private val client: OkHttpClient
     ) : ModelLoader<Uri, InputStream> {
         override fun buildLoadData(uri: Uri, width: Int, height: Int, options: Options): ModelLoader.LoadData<InputStream>? {
-            // Create a proper GlideKey for the LoadData constructor
             val signature = ObjectKey(uri.toString())
-            return ModelLoader.LoadData(signature, UriDataFetcher(context, uri, photoUriManager, client))
+            return ModelLoader.LoadData(signature, UriDataFetcher(context, uri, photoUriManager))
         }
 
         override fun handles(uri: Uri): Boolean = true
@@ -186,8 +178,7 @@ class PhotosGlideModule : AppGlideModule() {
     private class UriDataFetcher(
         private val context: Context,
         private val uri: Uri,
-        private val photoUriManager: PhotoUriManager,
-        private val client: OkHttpClient
+        private val photoUriManager: PhotoUriManager
     ) : DataFetcher<InputStream> {
         private var stream: InputStream? = null
         private var cancelled = false
@@ -196,175 +187,35 @@ class PhotosGlideModule : AppGlideModule() {
             try {
                 Log.d(TAG, "Loading image from URI: $uri")
 
-                // Check if we have valid permissions - this will catch basic permission issues
+                // First validate URI permission
                 if (!photoUriManager.hasValidPermission(uri)) {
-                    throw SecurityException("No permission to access $uri")
+                    // Try to recover permission
+                    if (!photoUriManager.takePersistablePermission(uri)) {
+                        throw SecurityException("No permission to access $uri")
+                    }
                 }
 
-                // Determine the appropriate loading method based on URI type and Android version
-                when {
-                    // Case 1: Google Photos URIs
-                    uri.toString().contains("com.google.android.apps.photos") -> {
-                        handleGooglePhotosUri(callback)
+                // Load based on URI type
+                when (photoUriManager.getUriType(uri)) {
+                    PhotoUriManager.URI_TYPE_PHOTO_PICKER -> {
+                        handlePhotoPickerUri(callback)
                     }
-
-                    // Case 2: Android 13+ Photo Picker URIs
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                            uri.toString().contains("com.android.providers.media.photopicker") -> {
-                        handleMediaPickerUri(callback)
-                    }
-
-                    // Case 3: All other content URIs
-                    else -> {
+                    PhotoUriManager.URI_TYPE_CONTENT -> {
                         handleContentUri(callback)
                     }
+                    else -> {
+                        handleStandardUri(callback)
+                    }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading URI: $uri", e)
                 if (!cancelled) {
+                    Log.e(TAG, "Error loading URI: $uri", e)
                     callback.onLoadFailed(e)
                 }
             }
         }
 
-        /**
-         * Handle Google Photos URIs - these need special OAuth handling on Android 11+
-         */
-        private fun handleGooglePhotosUri(callback: DataFetcher.DataCallback<in InputStream>) {
-            try {
-                val uriString = uri.toString()
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // On Android 11+, Google Photos URIs require special handling
-
-                    // First try the standard content resolver approach
-                    try {
-                        val inputStream = context.contentResolver.openInputStream(uri)
-                        if (inputStream != null) {
-                            stream = inputStream
-                            if (!cancelled) {
-                                callback.onDataReady(stream)
-                            }
-                            return
-                        }
-                    } catch (e: SecurityException) {
-                        Log.w(TAG, "Security exception trying direct access, falling back to OAuth", e)
-                        // Continue to OAuth approach below
-                    }
-
-                    // If direct access fails, we need to use OAuth with Google Photos API
-                    // This requires the GooglePhotosManager to handle authentication
-                    val googlePhotosManager = getGooglePhotosManager(context)
-
-                    // Get the auth token using the entryPoint directly instead of getAuthToken
-                    val authToken = runBlocking {
-                        val entryPoint = EntryPointAccessors.fromApplication(
-                            context.applicationContext,
-                            GlideModuleEntryPoint::class.java
-                        )
-                        val secureStorage = entryPoint.secureStorage()
-                        secureStorage.getGoogleCredentials()?.accessToken
-                    } ?: run {
-                        throw SecurityException("No auth token available for Google Photos")
-                    }
-
-                    // Extract the mediaId from the URI if possible
-                    val mediaId = extractMediaIdFromUri(uriString)
-
-                    val baseUrl = "https://photoslibrary.googleapis.com/v1/mediaItems/$mediaId"
-                    val request = Request.Builder()
-                        .url(baseUrl)
-                        .addHeader("Authorization", "Bearer $authToken")
-                        .build()
-
-                    // Execute the network request
-                    client.newCall(request).execute().use { response ->
-                        if (response.isSuccessful) {
-                            val mediaData = JSONObject(response.body?.string() ?: "{}")
-                            val downloadUrl = mediaData.optString("baseUrl")
-
-                            if (downloadUrl.isNotEmpty()) {
-                                // Now fetch the actual image data
-                                val imageRequest = Request.Builder()
-                                    .url("$downloadUrl=w${DOWNLOAD_SIZE}-h${DOWNLOAD_SIZE}")
-                                    .build()
-
-                                client.newCall(imageRequest).execute().use { imageResponse ->
-                                    if (imageResponse.isSuccessful) {
-                                        stream = imageResponse.body?.byteStream()
-                                        if (!cancelled) {
-                                            callback.onDataReady(stream)
-                                        }
-                                        return
-                                    } else {
-                                        throw IOException("Failed to load image: ${imageResponse.code}")
-                                    }
-                                }
-                            } else {
-                                throw IOException("No download URL in Google Photos response")
-                            }
-                        } else {
-                            throw IOException("Failed to get media item: ${response.code}")
-                        }
-                    }
-                } else {
-                    // On older Android versions, try direct content resolver access
-                    handleContentUri(callback)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling Google Photos URI", e)
-                if (!cancelled) {
-                    callback.onLoadFailed(e)
-                }
-            }
-        }
-
-        /**
-         * Handle media picker URIs from Android 13+
-         */
-        private fun handleMediaPickerUri(callback: DataFetcher.DataCallback<in InputStream>) {
-            try {
-                // For Android 13+, we need to use the photo picker specific permission handling
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    // First try with FLAG_GRANT_READ_URI_PERMISSION
-                    try {
-                        // Try to take persistable permissions if possible
-                        context.contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Could not take persistable permission for $uri", e)
-                        // Continue anyway
-                    }
-
-                    // Now try to open the stream
-                    val inputStream = context.contentResolver.openInputStream(uri)
-                    if (inputStream != null) {
-                        stream = inputStream
-                        if (!cancelled) {
-                            callback.onDataReady(stream)
-                        }
-                        return
-                    } else {
-                        throw IOException("Could not open input stream for $uri")
-                    }
-                } else {
-                    // Should not reach here - just fall back to standard content handling
-                    handleContentUri(callback)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling media picker URI", e)
-                if (!cancelled) {
-                    callback.onLoadFailed(e)
-                }
-            }
-        }
-
-        /**
-         * Handle standard content URIs
-         */
-        private fun handleContentUri(callback: DataFetcher.DataCallback<in InputStream>) {
+        private fun handlePhotoPickerUri(callback: DataFetcher.DataCallback<in InputStream>) {
             try {
                 val inputStream = context.contentResolver.openInputStream(uri)
                 if (inputStream != null) {
@@ -376,6 +227,35 @@ class PhotosGlideModule : AppGlideModule() {
                     throw IOException("Could not open input stream for $uri")
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "Error handling photo picker URI", e)
+                if (!cancelled) {
+                    callback.onLoadFailed(e)
+                }
+            }
+        }
+
+        private fun handleContentUri(callback: DataFetcher.DataCallback<in InputStream>) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                if (inputStream != null) {
+                    stream = inputStream
+                    if (!cancelled) {
+                        callback.onDataReady(stream)
+                    }
+                } else {
+                    throw IOException("Could not open input stream for $uri")
+                }
+            } catch (e: SecurityException) {
+                // Try to recover permission
+                if (photoUriManager.takePersistablePermission(uri)) {
+                    // Retry with new permission
+                    handleContentUri(callback)
+                } else {
+                    if (!cancelled) {
+                        callback.onLoadFailed(e)
+                    }
+                }
+            } catch (e: Exception) {
                 Log.e(TAG, "Error handling content URI", e)
                 if (!cancelled) {
                     callback.onLoadFailed(e)
@@ -383,46 +263,30 @@ class PhotosGlideModule : AppGlideModule() {
             }
         }
 
-        /**
-         * Extract media ID from Google Photos URI
-         */
-        private fun extractMediaIdFromUri(uriString: String): String {
-            // Example format: content://com.google.android.apps.photos.contentprovider/.../mediakey:local%3A12345/...
-            val mediaKeyPattern = "mediakey[^/]+/([^/]+)".toRegex()
-            val match = mediaKeyPattern.find(uriString)
-            return match?.groupValues?.getOrNull(1) ?:
-            throw IllegalArgumentException("Could not extract media ID from URI: $uriString")
-        }
-
-        /**
-         * Get a GooglePhotosManager instance for OAuth handling
-         */
-        private fun getGooglePhotosManager(context: Context): GooglePhotosManager? {
-            // First try EntryPoint approach
+        private fun handleStandardUri(callback: DataFetcher.DataCallback<in InputStream>) {
             try {
-                val entryPoint = EntryPointAccessors.fromApplication(
-                    context.applicationContext,
-                    GlideModuleEntryPoint::class.java
-                )
-                return entryPoint.googlePhotosManager()
+                val inputStream = context.contentResolver.openInputStream(uri)
+                if (inputStream != null) {
+                    stream = inputStream
+                    if (!cancelled) {
+                        callback.onDataReady(stream)
+                    }
+                } else {
+                    throw IOException("Could not open input stream for $uri")
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error getting GooglePhotosManager from EntryPoint", e)
-
-                // Fall back to interface approach
-                val application = context.applicationContext
-                if (application is HasGooglePhotosManager) {
-                    return application.provideGooglePhotosManager()
+                Log.e(TAG, "Error handling standard URI", e)
+                if (!cancelled) {
+                    callback.onLoadFailed(e)
                 }
             }
-
-            return null
         }
 
         override fun cleanup() {
             try {
                 stream?.close()
             } catch (e: IOException) {
-                // Ignore
+                Log.e(TAG, "Error cleaning up stream", e)
             }
         }
 
@@ -430,16 +294,8 @@ class PhotosGlideModule : AppGlideModule() {
             cancelled = true
         }
 
-        override fun getDataClass(): Class<InputStream> {
-            return InputStream::class.java
-        }
+        override fun getDataClass(): Class<InputStream> = InputStream::class.java
 
-        override fun getDataSource(): DataSource {
-            return DataSource.REMOTE
-        }
-
-        companion object {
-            private const val DOWNLOAD_SIZE = 2048
-        }
+        override fun getDataSource(): DataSource = DataSource.LOCAL
     }
 }
