@@ -43,9 +43,6 @@ class PhotoUriManager @Inject constructor(
         const val PERMISSION_FLAGS_READ_WRITE = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
     }
 
-    /**
-     * Get a specialized intent specifically for Google Photos
-     */
     fun getGooglePhotosIntent(allowMultiple: Boolean = true): Intent {
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "image/*"
@@ -67,38 +64,6 @@ class PhotoUriManager @Inject constructor(
         }
 
         return intent
-    }
-
-    fun takePersistablePermission(uri: Uri, flags: Int = PERMISSION_FLAGS_READ_WRITE): Boolean {
-        try {
-            val resolver = context.contentResolver
-
-            // Check if URI requires special handling
-            if (isGooglePhotosUri(uri)) {
-                // For Google Photos URIs on Android 11+, we need specific handling
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // Try to take persistable permission with specific flags
-                    resolver.takePersistableUriPermission(uri, PERMISSION_FLAGS_READ)
-                }
-
-                // Record this URI for future access
-                preferences.addRecentlyAccessedUri(uri.toString())
-                return true
-            } else {
-                // Standard URIs - try to take persistable permission
-                resolver.takePersistableUriPermission(uri, flags)
-                return true
-            }
-        } catch (e: SecurityException) {
-            Log.w(TAG, "Could not take persistable permission for $uri: ${e.message}")
-
-            // Even if we can't take persistable permission, record access for later
-            preferences.addRecentlyAccessedUri(uri.toString())
-            return false
-        } catch (e: Exception) {
-            Log.e(TAG, "Error taking persistable permission", e)
-            return false
-        }
     }
 
     fun hasValidPermission(uri: Uri): Boolean {
