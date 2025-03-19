@@ -52,14 +52,8 @@ class PhotoGridAdapter @Inject constructor(
         fun bind(photo: ManagedPhotoType) {
             Log.d(TAG, "Binding photo: ${photo.id}, URI: ${photo.uri}")
 
-            // Clear any previous loading state
-            binding.photoImage.setImageDrawable(null)
-            binding.photoImage.background = null
-
             // Hide error indicator initially
             binding.errorIndicator.visibility = View.GONE
-
-            // Show placeholder immediately
             binding.photoImage.setImageResource(R.drawable.ic_photo_placeholder)
 
             try {
@@ -71,14 +65,13 @@ class PhotoGridAdapter @Inject constructor(
 
                 Log.d(TAG, "Loading photo URI: $uri, hasPermission: $hasPermission, isGooglePhotos: $isGooglePhotosUri")
 
-                glide.clear(binding.photoImage)
-
+                // Don't clear previous image immediately to prevent flashing
                 glide.load(uri)
+                    .thumbnail(0.1f)  // Add thumbnail loading
                     .placeholder(R.drawable.ic_photo_placeholder)
                     .error(R.drawable.ic_error)
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .format(DecodeFormat.PREFER_RGB_565)
-                    .dontAnimate() // Prevent animation issues
                     .override(PREVIEW_SIZE)
                     .transform(
                         CenterCrop(),
@@ -92,13 +85,8 @@ class PhotoGridAdapter @Inject constructor(
                             isFirstResource: Boolean
                         ): Boolean {
                             Log.e(TAG, "Failed to load image: ${photo.uri}", e)
-
-                            // Show error indicator
                             binding.errorIndicator.visibility = View.VISIBLE
-
-                            // Notify about error
                             onPhotoLoadError?.invoke(photo, e)
-
                             return false
                         }
 
@@ -109,32 +97,17 @@ class PhotoGridAdapter @Inject constructor(
                             dataSource: DataSource,
                             isFirstResource: Boolean
                         ): Boolean {
-                            Log.d(TAG, "Successfully loaded image: ${photo.uri}")
-
-                            // Ensure the image is visible and error is hidden
-                            binding.photoImage.visibility = View.VISIBLE
                             binding.errorIndicator.visibility = View.GONE
-
                             return false
                         }
                     })
                     .into(binding.photoImage)
 
             } catch (e: Exception) {
-                Log.e(TAG, "Error setting up image load", e)
-                binding.photoImage.setImageResource(R.drawable.ic_error)
+                Log.e(TAG, "Error loading photo: ${photo.uri}", e)
                 binding.errorIndicator.visibility = View.VISIBLE
                 onPhotoLoadError?.invoke(photo, e)
             }
-
-            binding.sourceIcon.setImageResource(when {
-                photo.uri.startsWith("https://photos.google.com") -> R.drawable.ic_google_photos
-                photo.uri.startsWith("content://") -> R.drawable.ic_local_photo
-                else -> R.drawable.ic_virtual_album
-            })
-
-            binding.selectionOverlay.isVisible = photo.isSelected
-            binding.selectionCheckbox.isChecked = photo.isSelected
         }
     }
 

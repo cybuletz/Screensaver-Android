@@ -264,9 +264,9 @@ class PhotoRepository @Inject constructor(
 
             val selectedAlbums = virtualAlbums.filter { it.isSelected }
             Log.d(TAG, """Loading photos from virtual albums:
-            • Total albums: ${virtualAlbums.size}
-            • Selected albums: ${selectedAlbums.size}
-            • Selection states: ${virtualAlbums.map { "${it.id}: ${it.isSelected}" }}""".trimIndent())
+        • Total albums: ${virtualAlbums.size}
+        • Selected albums: ${selectedAlbums.size}
+        • Selection states: ${virtualAlbums.map { "${it.id}: ${it.isSelected}" }}""".trimIndent())
 
             if (selectedAlbums.isEmpty()) {
                 Log.d(TAG, "No virtual albums selected, returning null")
@@ -276,18 +276,32 @@ class PhotoRepository @Inject constructor(
 
             val displayPhotos = mutableSetOf<MediaItem>()
             selectedAlbums.forEach { album ->
-                album.photoUris.forEach { uri ->
-                    displayPhotos.add(MediaItem(
-                        id = "${album.id}_${uri.hashCode()}",
-                        albumId = album.id,
-                        baseUrl = uri,
-                        mimeType = "image/*",
-                        width = 0,
-                        height = 0,
-                        description = "From album: ${album.name}",
-                        createdAt = album.dateCreated,
-                        loadState = MediaItem.LoadState.IDLE
-                    ))
+                album.photoUris.forEach { uriString ->
+                    try {
+                        val uri = Uri.parse(uriString)
+
+                        // Add permission check using PhotoUriManager
+                        if (!photoUriManager.hasValidPermission(uri)) {
+                            if (!photoUriManager.takePersistablePermission(uri)) {
+                                Log.w(TAG, "Could not take permission for URI: $uri")
+                                return@forEach
+                            }
+                        }
+
+                        displayPhotos.add(MediaItem(
+                            id = "${album.id}_${uriString.hashCode()}",
+                            albumId = album.id,
+                            baseUrl = uriString,
+                            mimeType = "image/*",
+                            width = 0,
+                            height = 0,
+                            description = "From album: ${album.name}",
+                            createdAt = album.dateCreated,
+                            loadState = MediaItem.LoadState.IDLE
+                        ))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing URI: $uriString", e)
+                    }
                 }
             }
 
