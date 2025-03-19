@@ -165,16 +165,21 @@ class PhotosGlideModule : AppGlideModule() {
         override fun handles(uri: Uri): Boolean = true
     }
 
-    private class UriDataFetcher(
+    private class UriDataFetcher(  // Changed from inner class to private class
         private val context: Context,
         private val uri: Uri
     ) : DataFetcher<InputStream> {
+
+        companion object {
+            private const val TAG = "UriDataFetcher"
+        }
 
         override fun loadData(priority: Priority, callback: DataFetcher.DataCallback<in InputStream>) {
             try {
                 // First try to get persistable permission if needed
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                    uri.toString().contains("com.google.android.apps.photos")) {
+                    uri.toString().contains("com.google.android.apps.photos")
+                ) {
                     // For Google Photos URIs on Android 11+, use a different approach
                     loadGooglePhotosUri(callback)
                     return
