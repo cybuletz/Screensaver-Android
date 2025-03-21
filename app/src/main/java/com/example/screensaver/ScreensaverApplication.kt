@@ -1,9 +1,15 @@
 package com.example.screensaver
 
+import android.app.Activity
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.StrictMode
+import android.provider.MediaStore
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -27,10 +33,6 @@ import com.example.screensaver.music.SpotifyPreferences
 import java.io.File
 import kotlinx.coroutines.NonCancellable
 
-
-/**
- * Custom Application class for initialization and global state management
- */
 @HiltAndroidApp
 class ScreensaverApplication : Application() {
 
@@ -60,18 +62,136 @@ class ScreensaverApplication : Application() {
         private const val CACHE_CLEANUP_INTERVAL_HOURS = 24L
         private const val PHOTO_REFRESH_INTERVAL_HOURS = 6L
         private const val PREVIEW_MODE_TAG = "preview_mode"
+        private const val PREF_NEEDS_FIRST_RESTART = "needs_first_restart"
+        private const val PREF_GOOGLE_PHOTOS_INITIALIZED = "google_photos_initialized"
     }
+
+    private var activityCounter = 0
 
     override fun onCreate() {
         super.onCreate()
-        checkFirstInstall()
-        initializeApp()
+
+        // Check for first run before any other initialization
+        if (shouldInitializeGooglePhotos()) {
+            Timber.d("First run detected initializing Google Photos")
+            initializeGooglePhotosAndRestart()
+        } else {
+            initializeApp()
+            registerActivityLifecycleCallbacks(appLifecycleCallbacks)
+        }
+    }
+
+    private fun shouldInitializeGooglePhotos(): Boolean {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val lastInstalledVersion = prefs.getInt("last_installed_version", -1)
+        val googlePhotosInitialized = prefs.getBoolean(PREF_GOOGLE_PHOTOS_INITIALIZED, false)
+
+        return lastInstalledVersion == -1 || isAppDataCleared() || !googlePhotosInitialized
+    }
+
+    private fun initializeGooglePhotosAndRestart() {
+        try {
+            Timber.d("Starting Google Photos initialization")
+
+            // Force release and reinitialize Google Photos connection
+            contentResolver.call(
+                android.provider.MediaStore.AUTHORITY_URI,
+                "external_reset",
+                null,
+                null
+            )
+
+            // Small delay to allow system to process
+            Thread.sleep(100) // Using Thread.sleep since we're before any coroutines setup
+
+            // Mark as initialized and update version
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            prefs.edit()
+                .putBoolean(PREF_GOOGLE_PHOTOS_INITIALIZED, true)
+                .putInt("last_installed_version", VERSION_CODE)
+                .apply()
+
+            Timber.d("Google Photos initialized, triggering immediate restart")
+
+            // Immediate restart
+            val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            }
+
+            startActivity(intent)
+            android.os.Process.killProcess(android.os.Process.myPid())
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to initialize Google Photos")
+            FirebaseCrashlytics.getInstance().recordException(e)
+            // Continue with normal initialization as fallback
+            initializeApp()
+            registerActivityLifecycleCallbacks(appLifecycleCallbacks)
+        }
+    }
+
+    private fun checkFirstInstall() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val lastInstalledVersion = prefs.getInt("last_installed_version", -1)
+
+        if (lastInstalledVersion == -1 || isAppDataCleared()) {
+            Timber.d("First install detected")
+            prefs.edit()
+                .putInt("last_installed_version", VERSION_CODE)
+                .apply()
+        }
+    }
+
+    private val appLifecycleCallbacks = object : ActivityLifecycleCallbacks {
+        override fun onActivityStarted(activity: Activity) {
+            activityCounter++
+        }
+
+        override fun onActivityStopped(activity: Activity) {
+            activityCounter--
+            if (activityCounter == 0) {
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this@ScreensaverApplication)
+
+                // Only check once per background transition
+                if (prefs.contains(PREF_NEEDS_FIRST_RESTART)) {
+                    Timber.d("First background detected, checking if restart needed")
+                    val needsRestart = prefs.getBoolean(PREF_NEEDS_FIRST_RESTART, false)
+                    if (needsRestart) {
+                        Timber.d("Performing first-time restart")
+                        // Remove the flag before restarting
+                        prefs.edit().remove(PREF_NEEDS_FIRST_RESTART).apply()
+                        handleGracefulRestart()
+                    }
+                }
+            }
+        }
+
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+        override fun onActivityResumed(activity: Activity) {}
+        override fun onActivityPaused(activity: Activity) {}
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+        override fun onActivityDestroyed(activity: Activity) {}
+    }
+
+    private fun handleGracefulRestart() {
+        applicationScope.launch(Dispatchers.IO + NonCancellable) {
+            try {
+                val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+                android.os.Process.killProcess(android.os.Process.myPid())
+            } catch (e: Exception) {
+                Timber.e(e, "Error during restart")
+            }
+        }
     }
 
     private fun initializeApp() {
-        if (BuildConfig.DEBUG) {
-            initializeDebugMode()
-        }
+
+        // Add checkFirstInstall() early in the initialization sequence
+        checkFirstInstall()
 
         initializeFirebase()
         initializeTheme()
@@ -80,27 +200,6 @@ class ScreensaverApplication : Application() {
         initializeAppData()
         initializeSpotify()
         logApplicationStart()
-    }
-
-    private fun checkFirstInstall() {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val lastInstalledVersion = prefs.getInt("last_installed_version", -1)
-        val currentVersion = BuildConfig.VERSION_CODE
-
-        if (lastInstalledVersion == -1 || isAppDataCleared()) {
-            // This is a fresh install or app data was cleared
-            applicationScope.launch {
-                try {
-                    appDataManager.performFullReset()
-                    prefs.edit()
-                        .putInt("last_installed_version", currentVersion)
-                        .putLong("first_install_time", System.currentTimeMillis())
-                        .apply()
-                } catch (e: Exception) {
-                    Timber.e(e, "Error during first install cleanup")
-                }
-            }
-        }
     }
 
     private fun isAppDataCleared(): Boolean {
