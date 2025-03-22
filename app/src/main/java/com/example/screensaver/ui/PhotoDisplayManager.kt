@@ -40,7 +40,12 @@ import com.example.screensaver.MainActivity
 import com.example.screensaver.glide.GlideApp
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
+import com.example.screensaver.photos.PhotoPermissionManager
 import com.example.screensaver.photos.PhotoUriManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 
 @Singleton
@@ -50,8 +55,11 @@ class PhotoDisplayManager @Inject constructor(
     private val context: Context,
     private val spotifyManager: SpotifyManager,
     private val spotifyPreferences: SpotifyPreferences,
-    private val photoUriManager: PhotoUriManager
+    private val photoUriManager: PhotoUriManager,
+    private val photoPermissionManager: PhotoPermissionManager
 ) {
+
+
     private val managerJob = SupervisorJob()
     private val managerScope = CoroutineScope(Dispatchers.Main + managerJob)
 
@@ -60,6 +68,8 @@ class PhotoDisplayManager @Inject constructor(
     private val _cacheStatusMessage = MutableStateFlow<String?>(null)
 
     private val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+
+    private var isRecovering = false
 
     private val random = Random.Default
 
@@ -276,12 +286,23 @@ class PhotoDisplayManager @Inject constructor(
             try {
                 val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
                 val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: return@launch
-                Log.d(TAG, "Loading photo $nextIndex: $nextUrl")
-                val startTime = System.currentTimeMillis()
+
+                // First validate permissions if needed
+                if (!fromCache && !isRecovering) {
+                    try {
+                        val validationResult = photoPermissionManager.validatePhotos(lifecycleScope!!)
+                        if (!validationResult) {
+                            handlePermissionError(nextUrl)  // Now nextUrl is available
+                            return@launch
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error validating photos, continuing without validation", e)
+                        // Continue without validation rather than failing
+                    }
+                }
 
                 views?.let { views ->
                     isTransitioning = true
-
                     try {
                         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
                         val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
@@ -293,17 +314,72 @@ class PhotoDisplayManager @Inject constructor(
                                 .load(nextUrl)
                                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                                 .error(R.drawable.default_photo)
-                                .listener(createGlideListener(views, nextIndex, startTime, transitionEffect))
+                                .listener(createGlideListener(views, nextIndex, System.currentTimeMillis(), transitionEffect))
                                 .into(views.overlayView)
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error in loadAndDisplayPhoto", e)
+                        Log.e(TAG, "Error loading photo", e)
                         isTransitioning = false
+                        if (e is SecurityException && e.message?.contains("Permission Denial") == true) {
+                            handlePermissionError(nextUrl)
+                        } else {
+                            showErrorMessage(context.getString(R.string.error_loading_photo))
+                        }
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error calculating next photo", e)
+                Log.e(TAG, "Error in loadAndDisplayPhoto", e)
                 isTransitioning = false
+                showErrorMessage(context.getString(R.string.error_loading_photo))
+            }
+        }
+    }
+
+    private fun handlePermissionError(uri: String) {
+        if (isRecovering) return
+        isRecovering = true
+
+        lifecycleScope?.launch {
+            try {
+                views?.apply {
+                    loadingIndicator?.visibility = View.VISIBLE
+                    loadingMessage?.text = context.getString(R.string.recovering_photo_access)
+                }
+
+                // First try to refresh the tokens
+                val tokenRefreshed = photoManager.refreshTokens()
+                if (tokenRefreshed) {
+                    Log.d(TAG, "Successfully refreshed auth token, checking photo access")
+
+                    // Verify we can access this specific photo
+                    val canAccess = photoUriManager.hasValidPermission(Uri.parse(uri))
+                    if (!canAccess) {
+                        Log.d(TAG, "Could not recover access to photo, removing it")
+                        photoManager.removePhoto(uri)
+                    }
+                } else {
+                    Log.d(TAG, "Token refresh failed, removing inaccessible photo")
+                    photoManager.removePhoto(uri)
+                }
+
+                isRecovering = false
+                views?.loadingIndicator?.visibility = View.GONE
+
+                // Only continue if we have photos left
+                if (photoManager.getPhotoCount() > 0) {
+                    loadAndDisplayPhoto(true)
+                } else {
+                    showErrorMessage(context.getString(R.string.error_photo_access_lost))
+                    stopPhotoDisplay()
+                    showDefaultPhoto()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling permission recovery", e)
+                isRecovering = false
+                views?.loadingIndicator?.visibility = View.GONE
+                showErrorMessage(context.getString(R.string.error_photo_access_lost))
+                stopPhotoDisplay()
             }
         }
     }
@@ -365,17 +441,27 @@ class PhotoDisplayManager @Inject constructor(
         wasDisplayingPhotos = true
         displayJob = currentScope.launch {
             try {
-                // Start with first photo immediately
-                loadAndDisplayPhoto(false)
-
-                // Then continue with regular interval
+                var errorCount = 0
                 while (isActive) {
-                    delay(getIntervalMillis()) // Always get fresh value
-                    loadAndDisplayPhoto()
+                    try {
+                        loadAndDisplayPhoto(false)
+                        errorCount = 0  // Reset error count on success
+                        delay(getIntervalMillis())
+                    } catch (e: Exception) {
+                        errorCount++
+                        Log.e(TAG, "Error in photo display loop (attempt $errorCount)", e)
+                        if (errorCount >= 3) {  // Stop after 3 consecutive errors
+                            Log.e(TAG, "Too many errors, stopping photo display")
+                            showDefaultPhoto()
+                            break
+                        }
+                        delay(1000)  // Wait a bit before retrying
+                    }
                 }
             } catch (e: Exception) {
                 if (e !is CancellationException) {
-                    Log.e(TAG, "Error in photo display loop", e)
+                    Log.e(TAG, "Fatal error in photo display loop", e)
+                    showDefaultPhoto()
                 }
             }
         }
@@ -416,29 +502,14 @@ class PhotoDisplayManager @Inject constructor(
             Log.e(TAG, "Failed to load photo: $model", e)
             isTransitioning = false
 
-            // If we get a 403, try refreshing the token and retrying
-            if (e?.rootCauses?.any { it is HttpException && it.statusCode == 403 } == true) {
-                lifecycleScope?.launch {
-                    try {
-                        if (photoManager.refreshTokens()) {
-                            // Add a small delay before retrying
-                            delay(500)
-                            // Clear Glide's memory cache for this URL to force a new request
-                            model?.toString()?.let { url ->
-                                Glide.get(context).clearMemory()
-                                GlideApp.with(context).clear(views.overlayView)
-                            }
-                            // Retry the load after token refresh
-                            loadAndDisplayPhoto(true)
-                        } else {
-                            Log.e(TAG, "Failed to refresh tokens")
-                            showErrorMessage("Failed to refresh authentication")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error during token refresh", e)
-                        showErrorMessage("Authentication error")
-                    }
-                }
+            // Check for permission denial or 403
+            if (e?.rootCauses?.any {
+                    it is SecurityException && it.message?.contains("Permission Denial") == true ||
+                            it is HttpException && it.statusCode == 403
+                } == true) {
+                model?.toString()?.let { uri -> handlePermissionError(uri) }
+            } else {
+                showErrorMessage(context.getString(R.string.error_loading_photo))
             }
 
             return false
