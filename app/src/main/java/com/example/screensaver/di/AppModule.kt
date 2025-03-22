@@ -97,14 +97,16 @@ object AppModule {
         photoCache: PhotoCache,
         @ApplicationContext context: Context,
         spotifyManager: SpotifyManager,
-        spotifyPreferences: SpotifyPreferences
+        spotifyPreferences: SpotifyPreferences,
+        photoUriManager: PhotoUriManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
             photoCache = photoCache,
             context = context,
             spotifyManager = spotifyManager,
-            spotifyPreferences = spotifyPreferences
+            spotifyPreferences = spotifyPreferences,
+            photoUriManager = photoUriManager
         )
     }
 

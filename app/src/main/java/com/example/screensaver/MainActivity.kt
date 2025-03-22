@@ -791,13 +791,20 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
 
-                        // Before updating display, validate URIs
+                        // Before updating display, validate URIs using the enhanced PhotoUriManager methods
                         val validPhotos = photos.filter { uri ->
-                            photoUriManager.hasValidPermission(uri)
+                            photoUriManager.hasValidPermission(uri) || photoUriManager.validateUri(uri)
                         }
 
                         if (validPhotos.size < photos.size) {
                             Log.w(TAG, "Found ${photos.size - validPhotos.size} invalid URIs, they will be skipped")
+
+                            // For Android 11, attempt to refresh permissions
+                            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                                lifecycleScope.launch {
+                                    photoUriManager.refreshAllPermissions()
+                                }
+                            }
                         }
 
                         photoDisplayManager.updatePhotoSources(validPhotos)
@@ -1178,6 +1185,14 @@ class MainActivity : AppCompatActivity() {
         setupFullScreen()
         updateKeepScreenOn()
 
+        // Add Android 11 URI permission refresh
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+            lifecycleScope.launch {
+                Log.d(TAG, "Android 11 detected - refreshing URI permissions on resume")
+                photoUriManager.refreshAllPermissions()
+            }
+        }
+
         // Handle music sources auto-resume
         when (PreferenceManager.getDefaultSharedPreferences(this).getString("music_source", "spotify")) {
             "spotify" -> {
@@ -1193,20 +1208,66 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Add URI validation for main fragment
+        if (navController.currentDestination?.id == R.id.mainFragment) {
+            lifecycleScope.launch {
+                try {
+                    val uriList = photoRepository.getAllPhotos().map { Uri.parse(it.baseUrl) }
+                    val validUris = uriList.filter { photoUriManager.validateUri(it) }
+
+                    if (validUris.size < uriList.size) {
+                        Log.w(TAG, "Found ${uriList.size - validUris.size} invalid URIs during resume")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error validating URIs on resume", e)
+                }
+            }
+        }
+
         // Always check security on resume if enabled
         if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
             checkSecurityWithCallback {
                 // Only continue after successful authentication
                 if (!isDestroyed && photoRepository.getAllPhotos().isNotEmpty() &&
                     navController.currentDestination?.id == R.id.mainFragment) {
-                    photoDisplayManager.startPhotoDisplay()
+
+                    // Add validation before starting photo display
+                    lifecycleScope.launch {
+                        try {
+                            val uriList = photoRepository.getAllPhotos().map { Uri.parse(it.baseUrl) }
+                            val validUris = uriList.filter { photoUriManager.validateUri(it) }
+
+                            if (validUris.isNotEmpty()) {
+                                photoDisplayManager.updatePhotoSources(validUris)
+                                photoDisplayManager.startPhotoDisplay()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error updating photo sources after authentication", e)
+                            photoDisplayManager.startPhotoDisplay()
+                        }
+                    }
                 }
             }
         } else {
             // No security needed, continue normally
             if (!isDestroyed && photoRepository.getAllPhotos().isNotEmpty() &&
                 navController.currentDestination?.id == R.id.mainFragment) {
-                photoDisplayManager.startPhotoDisplay()
+
+                // Add validation before starting photo display
+                lifecycleScope.launch {
+                    try {
+                        val uriList = photoRepository.getAllPhotos().map { Uri.parse(it.baseUrl) }
+                        val validUris = uriList.filter { photoUriManager.validateUri(it) }
+
+                        if (validUris.isNotEmpty()) {
+                            photoDisplayManager.updatePhotoSources(validUris)
+                        }
+                        photoDisplayManager.startPhotoDisplay()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error updating photo sources on resume", e)
+                        photoDisplayManager.startPhotoDisplay()
+                    }
+                }
             }
         }
 

@@ -74,7 +74,7 @@ class PhotosGlideModule : AppGlideModule() {
         registry.prepend(
             Uri::class.java,
             InputStream::class.java,
-            UriLoaderFactory(context, photoUriManager, client)
+            UriLoaderFactory(context, photoUriManager, googleAuthManager)
         )
 
         // Standard URL loader
@@ -143,154 +143,163 @@ class PhotosGlideModule : AppGlideModule() {
     private class UriLoaderFactory(
         private val context: Context,
         private val photoUriManager: PhotoUriManager,
-        private val client: OkHttpClient
+        private val googleAuthManager: GoogleAuthManager
     ) : ModelLoaderFactory<Uri, InputStream> {
         override fun build(multiFactory: MultiModelLoaderFactory): ModelLoader<Uri, InputStream> {
-            return UriLoader(context, photoUriManager, client)
+            return UriLoader(context, photoUriManager, googleAuthManager)
         }
 
         override fun teardown() {}
     }
 
-    /**
-     * Custom loader for handling different URI types
-     */
     private class UriLoader(
         private val context: Context,
         private val photoUriManager: PhotoUriManager,
-        private val client: OkHttpClient
+        private val googleAuthManager: GoogleAuthManager
     ) : ModelLoader<Uri, InputStream> {
         override fun buildLoadData(uri: Uri, width: Int, height: Int, options: Options): ModelLoader.LoadData<InputStream>? {
             val signature = ObjectKey(uri.toString())
-            return ModelLoader.LoadData(signature, UriDataFetcher(context, uri, photoUriManager))
+            return ModelLoader.LoadData(signature, UriDataFetcher(context, uri, photoUriManager, googleAuthManager))
         }
 
         override fun handles(uri: Uri): Boolean = true
     }
 
-    /**
-     * Custom DataFetcher for handling different URI types
-     */
-    /**
-     * Custom DataFetcher for handling different URI types across Android versions
-     */
     private class UriDataFetcher(
         private val context: Context,
         private val uri: Uri,
-        private val photoUriManager: PhotoUriManager
+        private val photoUriManager: PhotoUriManager,
+        private val googleAuthManager: GoogleAuthManager
     ) : DataFetcher<InputStream> {
-        private var stream: InputStream? = null
-        private var cancelled = false
+
+        companion object {
+            private const val TAG = "UriDataFetcher"
+        }
 
         override fun loadData(priority: Priority, callback: DataFetcher.DataCallback<in InputStream>) {
             try {
-                Log.d(TAG, "Loading image from URI: $uri")
-
-                // First validate URI permission
-                if (!photoUriManager.hasValidPermission(uri)) {
-                    // Try to recover permission
-                    if (!photoUriManager.takePersistablePermission(uri)) {
-                        throw SecurityException("No permission to access $uri")
-                    }
+                // First try to get persistable permission if needed
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                    photoUriManager.isGooglePhotosUri(uri)
+                ) {
+                    // For Google Photos URIs on Android 11+, use a different approach
+                    loadGooglePhotosUri(callback)
+                    return
                 }
 
-                // Load based on URI type
-                when (photoUriManager.getUriType(uri)) {
-                    PhotoUriManager.URI_TYPE_PHOTO_PICKER -> {
-                        handlePhotoPickerUri(callback)
+                // For other URIs, try normal access
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    if (inputStream != null) {
+                        callback.onDataReady(inputStream)
+                    } else {
+                        callback.onLoadFailed(IOException("Could not open input stream for URI: $uri"))
                     }
-                    PhotoUriManager.URI_TYPE_CONTENT -> {
-                        handleContentUri(callback)
-                    }
-                    else -> {
-                        handleStandardUri(callback)
-                    }
+                } catch (e: SecurityException) {
+                    // If security exception, try alternative access
+                    handleAlternativeAccess(callback)
                 }
             } catch (e: Exception) {
-                if (!cancelled) {
-                    Log.e(TAG, "Error loading URI: $uri", e)
-                    callback.onLoadFailed(e)
-                }
+                Log.e(TAG, "Error loading URI: $uri", e)
+                callback.onLoadFailed(e)
             }
         }
 
-        private fun handlePhotoPickerUri(callback: DataFetcher.DataCallback<in InputStream>) {
+        private fun loadGooglePhotosUri(callback: DataFetcher.DataCallback<in InputStream>) {
             try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                if (inputStream != null) {
-                    stream = inputStream
-                    if (!cancelled) {
-                        callback.onDataReady(stream)
+                // Ensure we have valid Google auth tokens for Google Photos URIs
+                if (photoUriManager.isGooglePhotosUri(uri) && !googleAuthManager.hasValidTokens()) {
+                    runBlocking {
+                        if (!googleAuthManager.refreshTokens()) {
+                            throw IOException("Failed to refresh Google auth tokens")
+                        }
                     }
-                } else {
-                    throw IOException("Could not open input stream for $uri")
                 }
+
+                // First try to take persistable permission
+                photoUriManager.takePersistablePermission(uri)
+
+                // Special handling for Android 11
+                if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                    try {
+                        // For Google Photos URIs on Android 11, try to open with temporary permissions
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            setDataAndType(uri, "image/*")
+                        }
+
+                        // Grant temporary permission to ourselves
+                        context.grantUriPermission(
+                            context.packageName,
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+
+                        // Try to open the stream with fresh permissions
+                        context.contentResolver.openInputStream(uri)?.let { stream ->
+                            callback.onDataReady(stream)
+                            return
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Android 11 special handling failed, trying standard approach", e)
+                    }
+                }
+
+                // Try standard approach
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    if (inputStream != null) {
+                        callback.onDataReady(inputStream)
+                        return
+                    }
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "Standard approach failed with security exception", e)
+                }
+
+                // If we got here, both approaches failed
+                throw IOException("Could not open input stream for Google Photos URI: $uri")
             } catch (e: Exception) {
-                Log.e(TAG, "Error handling photo picker URI", e)
-                if (!cancelled) {
-                    callback.onLoadFailed(e)
-                }
+                Log.e(TAG, "Failed to load Google Photos URI: $uri", e)
+                callback.onLoadFailed(e)
             }
         }
 
-        private fun handleContentUri(callback: DataFetcher.DataCallback<in InputStream>) {
+        private fun handleAlternativeAccess(callback: DataFetcher.DataCallback<in InputStream>) {
             try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                if (inputStream != null) {
-                    stream = inputStream
-                    if (!cancelled) {
-                        callback.onDataReady(stream)
-                    }
-                } else {
-                    throw IOException("Could not open input stream for $uri")
-                }
-            } catch (e: SecurityException) {
-                // Try to recover permission
-                if (photoUriManager.takePersistablePermission(uri)) {
-                    // Retry with new permission
-                    handleContentUri(callback)
-                } else {
-                    if (!cancelled) {
-                        callback.onLoadFailed(e)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling content URI", e)
-                if (!cancelled) {
-                    callback.onLoadFailed(e)
-                }
-            }
-        }
+                // Try to take persistable permission first
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "Could not take persistable permission for $uri", e)
 
-        private fun handleStandardUri(callback: DataFetcher.DataCallback<in InputStream>) {
-            try {
+                    // For Android 11, record the URI even if we couldn't take permission
+                    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                        photoUriManager.takePersistablePermission(uri)
+                    }
+                }
+
+                // Try to open the stream again
                 val inputStream = context.contentResolver.openInputStream(uri)
                 if (inputStream != null) {
-                    stream = inputStream
-                    if (!cancelled) {
-                        callback.onDataReady(stream)
-                    }
+                    callback.onDataReady(inputStream)
                 } else {
-                    throw IOException("Could not open input stream for $uri")
+                    callback.onLoadFailed(IOException("Could not open input stream for URI: $uri"))
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error handling standard URI", e)
-                if (!cancelled) {
-                    callback.onLoadFailed(e)
-                }
+                Log.e(TAG, "Alternative access failed for URI: $uri", e)
+                callback.onLoadFailed(e)
             }
         }
 
         override fun cleanup() {
-            try {
-                stream?.close()
-            } catch (e: IOException) {
-                Log.e(TAG, "Error cleaning up stream", e)
-            }
+            // Nothing to clean up
         }
 
         override fun cancel() {
-            cancelled = true
+            // Cannot cancel
         }
 
         override fun getDataClass(): Class<InputStream> = InputStream::class.java

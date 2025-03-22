@@ -2,6 +2,7 @@ package com.example.screensaver.photos
 
 import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -69,17 +70,38 @@ class PhotoGridAdapter @Inject constructor(
                 val hasPermission = photoUriManager.hasValidPermission(uri)
                 val isGooglePhotosUri = photoUriManager.isGooglePhotosUri(uri)
 
+                // For Android 11, ensure permissions for Google Photos URIs
+                if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && isGooglePhotosUri && !hasPermission) {
+                    photoUriManager.takePersistablePermission(uri)
+                }
+
                 Log.d(TAG, "Loading photo URI: $uri, hasPermission: $hasPermission, isGooglePhotos: $isGooglePhotosUri")
 
                 glide.clear(binding.photoImage)
 
-                glide.load(uri)
-                    .placeholder(R.drawable.ic_photo_placeholder)
-                    .error(R.drawable.ic_error)
-                    .diskCacheStrategy(DiskCacheStrategy.ALL)
-                    .format(DecodeFormat.PREFER_RGB_565)
-                    .dontAnimate() // Prevent animation issues
-                    .override(PREVIEW_SIZE)
+                // Configure Glide request based on URI type and Android version
+                val glideRequest = if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && isGooglePhotosUri) {
+                    // Android 11-specific approach for Google Photos
+                    glide.load(uri)
+                        .placeholder(R.drawable.ic_photo_placeholder)
+                        .error(R.drawable.ic_error)
+                        .diskCacheStrategy(DiskCacheStrategy.ALL) // Cache everything possible
+                        .format(DecodeFormat.PREFER_RGB_565)      // More efficient memory usage
+                        .dontAnimate()                            // Prevent animation issues
+                        .override(PREVIEW_SIZE)
+                } else {
+                    // Standard approach for other URIs and Android versions
+                    glide.load(uri)
+                        .placeholder(R.drawable.ic_photo_placeholder)
+                        .error(R.drawable.ic_error)
+                        .diskCacheStrategy(DiskCacheStrategy.ALL)
+                        .format(DecodeFormat.PREFER_RGB_565)
+                        .dontAnimate()
+                        .override(PREVIEW_SIZE)
+                }
+
+                // Complete the request with transformations and listener
+                glideRequest
                     .transform(
                         CenterCrop(),
                         RoundedCorners(8)
@@ -95,6 +117,11 @@ class PhotoGridAdapter @Inject constructor(
 
                             // Show error indicator
                             binding.errorIndicator.visibility = View.VISIBLE
+
+                            // For Android 11 Google Photos, try one more time with permission refresh
+                            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && isGooglePhotosUri) {
+                                photoUriManager.takePersistablePermission(uri)
+                            }
 
                             // Notify about error
                             onPhotoLoadError?.invoke(photo, e)

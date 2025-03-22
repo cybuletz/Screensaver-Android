@@ -46,6 +46,7 @@ import com.example.screensaver.photos.PhotoManagerActivity
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.fragment.app.DialogFragment
+import com.example.screensaver.photos.PhotoUriManager
 
 @AndroidEntryPoint
 class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
@@ -66,6 +67,9 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var appPreferences: AppPreferences
+
+    @Inject
+    lateinit var photoUriManager: PhotoUriManager
 
     private var googleSignInClient: GoogleSignInClient? = null
     private var pendingChanges = mutableMapOf<String, Any>()
@@ -439,30 +443,21 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     private fun launchGoogleAlbumSelection() {
         Log.d(TAG, "Launching Google Album Selection")
         if (GoogleSignIn.getLastSignedInAccount(requireContext()) == null ||
-            secureStorage.getGoogleCredentials() == null) {
+            secureStorage.getGoogleCredentials() == null
+        ) {
             Log.e(TAG, "No Google sign-in or credentials, showing sign-in prompt")
             showSignInPrompt()
             return
         }
 
-        // Use the new photo picker for Android 13+ (API 33+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-            }
+        // Use version-specific photo picker with Google Photos
+        val intent = photoUriManager.getGooglePhotosIntent(true)
+
+        // For Android 11, we need to use the legacy approach
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
             startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
         } else {
-            // For older versions, use ACTION_OPEN_DOCUMENT
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                type = "image/*"
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                addCategory(Intent.CATEGORY_OPENABLE)
-                putExtra(Intent.EXTRA_LOCAL_ONLY, false)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-            }
+            // For Android 12+, we can also use the legacy API for consistency
             startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
         }
     }
@@ -579,16 +574,12 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                                 return@launch
                             }
 
-                            // Take persistable permissions for each URI
+                            // Take persistable permissions for each URI using our enhanced manager
                             selectedUris.forEach { uri ->
-                                try {
-                                    requireContext().contentResolver.takePersistableUriPermission(
-                                        uri,
-                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                    )
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error taking permission for URI: $uri", e)
-                                }
+                                photoUriManager.takePersistablePermission(
+                                    uri,
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                )
                             }
 
                             // Create MediaItems

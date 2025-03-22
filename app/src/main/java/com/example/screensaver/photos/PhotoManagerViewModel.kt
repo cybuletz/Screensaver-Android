@@ -1,8 +1,9 @@
 package com.example.screensaver.photos
 
-import android.content.Context
 import android.content.ContentUris
+import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -31,7 +32,8 @@ class PhotoManagerViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val preferences: AppPreferences,
     private val secureStorage: SecureStorage,
-    private val photoRepository: PhotoRepository
+    private val photoRepository: PhotoRepository,
+    private val photoUriManager: PhotoUriManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<PhotoManagerState>(PhotoManagerState.Idle)
@@ -130,11 +132,60 @@ class PhotoManagerViewModel @Inject constructor(
                 // Sync back to repository
                 photoRepository.syncVirtualAlbums(_virtualAlbums.value)
 
+                // Validate stored photos for URI permission issues
+                validateStoredPhotos()
+
                 // Now load initial state
                 loadInitialState()
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading virtual albums", e)
+            }
+        }
+    }
+
+    /**
+     * Validates all stored photos, ensuring URI permissions are still valid.
+     * This is particularly important for Android 11 (R) where permissions can be lost.
+     */
+    private fun validateStoredPhotos() {
+        viewModelScope.launch {
+            try {
+                // Get all existing URIs from the repository and virtual albums
+                val allPhotos = photoRepository.getAllPhotos().map { it.baseUrl }
+                val allAlbumPhotos = _virtualAlbums.value.flatMap { it.photoUris }
+                val allUris = (allPhotos + allAlbumPhotos).distinct()
+
+                Log.d(TAG, "Validating ${allUris.size} photos")
+
+                // Validate with the PhotoUriManager
+                val validUris = photoUriManager.validateUris(allUris)
+
+                if (validUris.size < allUris.size) {
+                    Log.w(TAG, "Found ${allUris.size - validUris.size} invalid photo URIs that need handling")
+
+                    // For Android 11, try to refresh permissions
+                    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                        val invalidUris = allUris.filterNot { validUris.contains(it) }
+
+                        for (uri in invalidUris) {
+                            try {
+                                val parsedUri = Uri.parse(uri)
+                                if (photoUriManager.isGooglePhotosUri(parsedUri)) {
+                                    if (photoUriManager.takePersistablePermission(parsedUri)) {
+                                        Log.d(TAG, "Successfully refreshed permission for URI: $uri")
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to refresh permission for URI: $uri", e)
+                            }
+                        }
+                    }
+                } else {
+                    Log.d(TAG, "All photo URIs are valid")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error validating stored photos", e)
             }
         }
     }
@@ -158,8 +209,24 @@ class PhotoManagerViewModel @Inject constructor(
                 }
 
                 // Log the error
-                error?.let {
-                    Log.e(TAG, "Photo load error for $photoId: ${it.message}", it)
+                if (error != null) {
+                    Log.e(TAG, "Photo load error for $photoId: ${error.message}", error)
+
+                    // For Android 11, try to refresh permission if it's a Google Photos URI
+                    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                        val photo = currentPhotos.find { it.id == photoId }
+                        if (photo != null) {
+                            try {
+                                val uri = Uri.parse(photo.uri)
+                                if (photoUriManager.isGooglePhotosUri(uri)) {
+                                    Log.d(TAG, "Attempting to refresh permission for Google Photos URI")
+                                    photoUriManager.takePersistablePermission(uri)
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to refresh permission", e)
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in markPhotoLoadError", e)
@@ -277,6 +344,18 @@ class PhotoManagerViewModel @Inject constructor(
                             )
                             photoRepository.addPhotos(listOf(mediaItem), PhotoRepository.PhotoAddMode.MERGE)
                             Log.d(TAG, "Added missing photo to PhotoRepository: $uriString")
+
+                            // For Android 11, ensure permission is taken for Google Photos URIs
+                            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                                try {
+                                    val uri = Uri.parse(uriString)
+                                    if (photoUriManager.isGooglePhotosUri(uri)) {
+                                        photoUriManager.takePersistablePermission(uri)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Failed to take permission for URI: $uriString", e)
+                                }
+                            }
                         }
                     }
                 }
@@ -328,6 +407,24 @@ class PhotoManagerViewModel @Inject constructor(
             preferences.getPickedUris().forEach { uriString ->
                 try {
                     Uri.parse(uriString)?.let { uri ->
+                        // Special handling for Android 11 Google Photos URIs
+                        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R && photoUriManager.isGooglePhotosUri(uri)) {
+                            photoUriManager.takePersistablePermission(uri)
+
+                            // For these URIs, add with default timestamp since we can't query them
+                            photos.add(
+                                ManagedPhoto(
+                                    id = uri.toString(),
+                                    uri = uri.toString(),
+                                    sourceType = PhotoSourceType.GOOGLE_PHOTOS,
+                                    albumId = "google_photos",
+                                    dateAdded = System.currentTimeMillis()
+                                )
+                            )
+                            return@forEach
+                        }
+
+                        // Standard approach for other URIs
                         context.contentResolver.query(
                             uri,
                             arrayOf(
@@ -368,6 +465,27 @@ class PhotoManagerViewModel @Inject constructor(
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading picked photo: $uriString", e)
+                    // For Android 11, try to recover if it's a permission issue with Google Photos URI
+                    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                        try {
+                            val uri = Uri.parse(uriString)
+                            if (photoUriManager.isGooglePhotosUri(uri)) {
+                                photoUriManager.takePersistablePermission(uri)
+                                photos.add(
+                                    ManagedPhoto(
+                                        id = uri.toString(),
+                                        uri = uri.toString(),
+                                        sourceType = PhotoSourceType.GOOGLE_PHOTOS,
+                                        albumId = "google_photos",
+                                        dateAdded = System.currentTimeMillis()
+                                    )
+                                )
+                                Log.d(TAG, "Recovered Google Photos URI with permission refresh: $uriString")
+                            }
+                        } catch (retryEx: Exception) {
+                            Log.e(TAG, "Recovery attempt failed for URI: $uriString", retryEx)
+                        }
+                    }
                 }
             }
 
@@ -745,6 +863,36 @@ class PhotoManagerViewModel @Inject constructor(
             }
 
             Log.d(TAG, "Album selection toggled: $albumId, new state: $newState")
+        }
+    }
+
+    fun addPhotos(photos: List<MediaItem>) {
+        viewModelScope.launch {
+            try {
+                // Ensure permissions for all URIs, especially important for Android 11
+                if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                    photos.forEach { photo ->
+                        try {
+                            val uri = Uri.parse(photo.baseUrl)
+                            if (photoUriManager.isGooglePhotosUri(uri)) {
+                                photoUriManager.takePersistablePermission(uri)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error taking permission for URI: ${photo.baseUrl}", e)
+                        }
+                    }
+                }
+
+                // Add to repository
+                photoRepository.addPhotos(photos)
+
+                // Reload state to update UI
+                reloadState()
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error adding photos", e)
+                _state.value = PhotoManagerState.Error("Failed to add photos: ${e.message}")
+            }
         }
     }
 

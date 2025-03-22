@@ -1,7 +1,10 @@
 package com.example.screensaver.photos
 
+import android.app.Activity
 import android.content.DialogInterface
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -9,6 +12,8 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
@@ -50,6 +55,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import com.example.screensaver.models.MediaItem
 
 
 @AndroidEntryPoint
@@ -68,13 +74,22 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
     @Inject
     lateinit var appPreferences: AppPreferences
 
+    @Inject
+    lateinit var photoUriManager: PhotoUriManager
+
     private var isFirstTimeSetup = true
     private var isShowingDialog = false
     private var hasSkippedThisSession = false
 
+    // Define ActivityResultLauncher for photo picking - new API for Android 12+
+    private lateinit var photoPickerLauncher: ActivityResultLauncher<Intent>
+    private lateinit var googlePhotosLauncher: ActivityResultLauncher<Intent>
+
     companion object {
         private const val TAG = "PhotoManagerActivity"
         private const val MENU_DEBUG = Menu.FIRST + 1
+        private const val PHOTO_PICKER_REQUEST_CODE = 2001
+        private const val GOOGLE_PHOTOS_REQUEST_CODE = 2002
     }
 
     fun resetDialogShownFlag() {
@@ -87,7 +102,8 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         binding = ActivityPhotoManagerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-
+        // Register ActivityResultLaunchers for photo picking
+        registerPhotoPickerLaunchers()
 
         setupToolbar()
         setupObservers()
@@ -99,6 +115,141 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         viewModel.reloadState()
 
         setupPhotoObserver()
+    }
+
+    private fun registerPhotoPickerLaunchers() {
+        photoPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                result.data?.let { data ->
+                    handlePhotoPickerResult(data)
+                }
+            }
+        }
+
+        googlePhotosLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                result.data?.let { data ->
+                    handleGooglePhotosResult(data)
+                }
+            }
+        }
+    }
+
+    private fun handlePhotoPickerResult(data: Intent) {
+        lifecycleScope.launch {
+            try {
+                // Get selected URIs
+                val selectedUris = mutableListOf<Uri>()
+
+                when {
+                    data.clipData != null -> {
+                        val clipData = data.clipData!!
+                        for (i in 0 until clipData.itemCount) {
+                            selectedUris.add(clipData.getItemAt(i).uri)
+                        }
+                    }
+                    data.data != null -> {
+                        selectedUris.add(data.data!!)
+                    }
+                }
+
+                if (selectedUris.isEmpty()) {
+                    Log.w(TAG, "No URIs selected")
+                    return@launch
+                }
+
+                // Take persistable permissions for Android version compatibility
+                selectedUris.forEach { uri ->
+                    photoUriManager.takePersistablePermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                // Process the selected URIs and convert to MediaItems
+                val mediaItems = selectedUris.map { uri ->
+                    MediaItem(
+                        id = uri.toString(),
+                        albumId = "photo_picker",
+                        baseUrl = uri.toString(),
+                        mimeType = "image/*",
+                        width = 0,
+                        height = 0,
+                        description = null,
+                        createdAt = System.currentTimeMillis(),
+                        loadState = MediaItem.LoadState.IDLE
+                    )
+                }
+
+                // Add to repository
+                viewModel.addPhotos(mediaItems)
+
+                // Notify photos were added
+                onPhotosAdded(false)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling photo picker result", e)
+                Snackbar.make(binding.root, "Error loading photos", Snackbar.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun handleGooglePhotosResult(data: Intent) {
+        lifecycleScope.launch {
+            try {
+                // Get selected URIs
+                val selectedUris = mutableListOf<Uri>()
+
+                when {
+                    data.clipData != null -> {
+                        val clipData = data.clipData!!
+                        for (i in 0 until clipData.itemCount) {
+                            selectedUris.add(clipData.getItemAt(i).uri)
+                        }
+                    }
+                    data.data != null -> {
+                        selectedUris.add(data.data!!)
+                    }
+                }
+
+                if (selectedUris.isEmpty()) {
+                    Log.w(TAG, "No URIs selected")
+                    return@launch
+                }
+
+                // Special handling for Google Photos URIs based on Android version
+                selectedUris.forEach { uri ->
+                    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                        // Android 11 requires special handling for Google Photos
+                        photoUriManager.takePersistablePermission(uri)
+                        appPreferences.addRecentlyAccessedUri(uri.toString())
+                    } else {
+                        // Standard approach for other Android versions
+                        photoUriManager.takePersistablePermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                }
+
+                // Process the selected URIs and convert to MediaItems
+                val mediaItems = selectedUris.map { uri ->
+                    MediaItem(
+                        id = uri.toString(),
+                        albumId = "google_photos",
+                        baseUrl = uri.toString(),
+                        mimeType = "image/*",
+                        width = 0,
+                        height = 0,
+                        description = null,
+                        createdAt = System.currentTimeMillis(),
+                        loadState = MediaItem.LoadState.IDLE
+                    )
+                }
+
+                // Add to repository
+                viewModel.addPhotos(mediaItems)
+
+                // Notify photos were added
+                onPhotosAdded(false)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling Google Photos result", e)
+                Snackbar.make(binding.root, "Error loading photos from Google", Snackbar.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun setupObservers() {
@@ -147,6 +298,54 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
                 }
 
                 lastPhotoCount = currentCount
+            }
+        }
+    }
+
+    // Method to launch the photo picker with version-specific handling
+    fun launchPhotoPicker() {
+        try {
+            val intent = photoUriManager.getPhotoPickerIntent(true)
+
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                // For Android 11, use legacy approach
+                startActivityForResult(intent, PHOTO_PICKER_REQUEST_CODE)
+            } else {
+                // For Android 12+, use the new ActivityResultLauncher
+                photoPickerLauncher.launch(intent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching photo picker", e)
+            Snackbar.make(binding.root, "Error launching photo picker", Snackbar.LENGTH_LONG).show()
+        }
+    }
+
+    // Method to launch Google Photos picker with version-specific handling
+    fun launchGooglePhotosPicker() {
+        try {
+            val intent = photoUriManager.getGooglePhotosIntent(true)
+
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                // For Android 11, use legacy approach
+                startActivityForResult(intent, GOOGLE_PHOTOS_REQUEST_CODE)
+            } else {
+                // For Android 12+, use the new ActivityResultLauncher
+                googlePhotosLauncher.launch(intent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching Google Photos picker", e)
+            Snackbar.make(binding.root, "Error launching Google Photos picker", Snackbar.LENGTH_LONG).show()
+        }
+    }
+
+    // Handle legacy onActivityResult for Android 11
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (resultCode == Activity.RESULT_OK && data != null) {
+            when (requestCode) {
+                PHOTO_PICKER_REQUEST_CODE -> handlePhotoPickerResult(data)
+                GOOGLE_PHOTOS_REQUEST_CODE -> handleGooglePhotosResult(data)
             }
         }
     }

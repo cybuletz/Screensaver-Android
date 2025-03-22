@@ -36,9 +36,11 @@ import android.animation.Animator
 import android.animation.ObjectAnimator
 import android.graphics.drawable.BitmapDrawable
 import com.bumptech.glide.load.HttpException
+import com.example.screensaver.MainActivity
 import com.example.screensaver.glide.GlideApp
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
+import com.example.screensaver.photos.PhotoUriManager
 
 
 @Singleton
@@ -47,7 +49,8 @@ class PhotoDisplayManager @Inject constructor(
     private val photoCache: PhotoCache,
     private val context: Context,
     private val spotifyManager: SpotifyManager,
-    private val spotifyPreferences: SpotifyPreferences
+    private val spotifyPreferences: SpotifyPreferences,
+    private val photoUriManager: PhotoUriManager
 ) {
     private val managerJob = SupervisorJob()
     private val managerScope = CoroutineScope(Dispatchers.Main + managerJob)
@@ -867,7 +870,7 @@ class PhotoDisplayManager @Inject constructor(
             try {
                 val photos = mutableListOf<Uri>()
 
-                // Get photos from PhotoManager, but only from selected virtual albums
+                // Get photos from PhotoManager
                 val repoPhotos = photoManager.loadPhotos()
                 if (repoPhotos == null) {
                     Log.d(TAG, "No photos available (no albums selected), showing default photo")
@@ -877,15 +880,20 @@ class PhotoDisplayManager @Inject constructor(
 
                 repoPhotos.forEach { mediaItem ->
                     try {
-                        photos.add(Uri.parse(mediaItem.baseUrl))
+                        val uri = Uri.parse(mediaItem.baseUrl)
+                        // Add URI to list and the validation will happen later
+                        photos.add(uri)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error parsing URI: ${mediaItem.baseUrl}", e)
                     }
                 }
 
+                // Add virtual album photos
+                photos.addAll(virtualAlbumPhotos)
+
                 Log.d(TAG, """Updating photo sources:
-                • Photos from manager: ${photos.size}
-                • Virtual album photos: ${virtualAlbumPhotos.size}""".trimIndent())
+            • Photos from manager: ${photos.size}
+            • Virtual album photos: ${virtualAlbumPhotos.size}""".trimIndent())
 
                 if (photos.isNotEmpty()) {
                     displayPhotos(photos)
@@ -905,18 +913,37 @@ class PhotoDisplayManager @Inject constructor(
         lifecycleScope?.launch {
             try {
                 stopPhotoDisplay()
-                val photoUrls = photos.map { it.toString() }
-                photoManager.addPhotoUrls(photoUrls)
 
-                if (photoUrls.isNotEmpty()) {
-                    persistPhotoState("combined", photoUrls[0])
+                // Get a reference to the photoUriManager
+                val photoUriManager = (context as? MainActivity)?.photoUriManager
+
+                // First validate the URIs
+                val validPhotoUrls = if (photoUriManager != null) {
+                    photos.filter { uri ->
+                        photoUriManager.validateUri(uri) || photoUriManager.hasValidPermission(uri)
+                    }.map { it.toString() }
+                } else {
+                    // If we can't access photoUriManager, use all photos
+                    Log.w(TAG, "Unable to access photoUriManager, using all photos without validation")
+                    photos.map { it.toString() }
+                }
+
+                // Log validation results
+                if (validPhotoUrls.size < photos.size) {
+                    Log.w(TAG, "Some URIs failed validation - Using ${validPhotoUrls.size}/${photos.size}")
+                }
+
+                photoManager.addPhotoUrls(validPhotoUrls)
+
+                if (validPhotoUrls.isNotEmpty()) {
+                    persistPhotoState("combined", validPhotoUrls[0])
                 }
 
                 currentPhotoIndex = 0
                 hasLoadedPhotos = true
                 startPhotoDisplay()
 
-                Log.d(TAG, "Photo display started with ${photos.size} photos")
+                Log.d(TAG, "Photo display started with ${validPhotoUrls.size} photos")
             } catch (e: Exception) {
                 Log.e(TAG, "Error starting photo display", e)
                 showDefaultPhoto()

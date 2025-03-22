@@ -2,7 +2,9 @@ package com.example.screensaver
 
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
@@ -220,6 +222,14 @@ class PhotoRepository @Inject constructor(
                     return@withContext Uri.fromFile(existingFile)
                 }
 
+                // For Android 11, special handling for Google Photos URIs
+                if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
+                    photoUriManager.isGooglePhotosUri(uri)) {
+
+                    // Try to take persistable permission for Android 11
+                    photoUriManager.takePersistablePermission(uri)
+                }
+
                 // If not, try to migrate it
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     val fileName = "migrated_${System.currentTimeMillis()}_${uri.lastPathSegment}"
@@ -237,6 +247,32 @@ class PhotoRepository @Inject constructor(
                 null
             } catch (e: SecurityException) {
                 Log.e(TAG, "Security exception migrating URI: $uri", e)
+
+                // For Android 11, try to refresh permission and retry
+                if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
+                    photoUriManager.isGooglePhotosUri(uri)) {
+
+                    try {
+                        // Try to take permission again after the error
+                        photoUriManager.takePersistablePermission(uri)
+
+                        // Retry opening the stream
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            val fileName = "migrated_${System.currentTimeMillis()}_${uri.lastPathSegment}"
+                            val file = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), fileName)
+
+                            file.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+
+                            Log.d(TAG, "Successfully migrated URI on second attempt: ${file.absolutePath}")
+                            return@withContext Uri.fromFile(file)
+                        }
+                    } catch (retryEx: Exception) {
+                        Log.e(TAG, "Retry failed for URI: $uri", retryEx)
+                    }
+                }
+
                 null
             } catch (e: Exception) {
                 Log.e(TAG, "Error migrating URI: $uri", e)
@@ -307,25 +343,60 @@ class PhotoRepository @Inject constructor(
                 val currentPhotos = loadPhotos() ?: emptyList()
                 Log.d(TAG, "Validating ${currentPhotos.size} stored photos")
 
-                // Validate URIs with the PhotoUriManager
+                // Validate URIs with the PhotoUriManager - with version-specific handling
                 val validPhotoUris = photoUriManager.validateUris(currentPhotos.map { it.baseUrl })
 
                 // Check if any URIs are invalid
                 if (validPhotoUris.size < currentPhotos.size) {
                     Log.d(TAG, "Found ${currentPhotos.size - validPhotoUris.size} invalid URIs")
 
-                    // Filter to keep only valid photos
-                    val validPhotos = currentPhotos.filter { photo ->
-                        validPhotoUris.contains(photo.baseUrl)
-                    }
+                    // Attempt to refresh permissions for Android 11 URIs
+                    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                        val invalidUris = currentPhotos
+                            .map { it.baseUrl }
+                            .filterNot { validPhotoUris.contains(it) }
 
-                    // Update storage if needed
-                    clearPhotos()
-                    if (validPhotos.isNotEmpty()) {
-                        addPhotos(validPhotos)
-                    }
+                        invalidUris.forEach { uriString ->
+                            try {
+                                val uri = Uri.parse(uriString)
+                                if (photoUriManager.isGooglePhotosUri(uri)) {
+                                    photoUriManager.takePersistablePermission(uri)
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error refreshing permission for URI: $uriString", e)
+                            }
+                        }
 
-                    Log.d(TAG, "Updated repository with ${validPhotos.size} valid photos")
+                        // Re-validate after refresh attempt
+                        val refreshedValidUris = photoUriManager.validateUris(invalidUris)
+                        val allValidUris = validPhotoUris + refreshedValidUris
+
+                        // Filter to keep only valid photos after refresh attempt
+                        val validPhotos = currentPhotos.filter { photo ->
+                            allValidUris.contains(photo.baseUrl)
+                        }
+
+                        // Update storage if needed
+                        clearPhotos()
+                        if (validPhotos.isNotEmpty()) {
+                            addPhotos(validPhotos)
+                        }
+
+                        Log.d(TAG, "Updated repository with ${validPhotos.size} valid photos after refresh attempt")
+                    } else {
+                        // For other Android versions, just filter out invalid URIs
+                        val validPhotos = currentPhotos.filter { photo ->
+                            validPhotoUris.contains(photo.baseUrl)
+                        }
+
+                        // Update storage if needed
+                        clearPhotos()
+                        if (validPhotos.isNotEmpty()) {
+                            addPhotos(validPhotos)
+                        }
+
+                        Log.d(TAG, "Updated repository with ${validPhotos.size} valid photos")
+                    }
                 } else {
                     Log.d(TAG, "All stored photos are valid")
                 }
@@ -563,6 +634,20 @@ class PhotoRepository @Inject constructor(
         • Current count: ${mediaItems.size}
         • New photos: ${photos.size}""".trimMargin())
 
+        // First, ensure all URIs have permissions - especially important for Android 11
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+            photos.forEach { photo ->
+                try {
+                    val uri = Uri.parse(photo.baseUrl)
+                    if (photoUriManager.isGooglePhotosUri(uri)) {
+                        photoUriManager.takePersistablePermission(uri)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error taking permission for URI: ${photo.baseUrl}", e)
+                }
+            }
+        }
+
         when (mode) {
             PhotoAddMode.REPLACE -> {
                 mediaItems.clear()
@@ -595,6 +680,18 @@ class PhotoRepository @Inject constructor(
 
     fun addPhoto(uri: String) {
         if (!hasPhoto(uri)) {
+            // Take permission for the URI if needed - important for Android 11
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+                try {
+                    val parsedUri = Uri.parse(uri)
+                    if (photoUriManager.isGooglePhotosUri(parsedUri)) {
+                        photoUriManager.takePersistablePermission(parsedUri)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error taking permission for URI: $uri", e)
+                }
+            }
+
             val newItem = MediaItem(
                 id = uri,
                 albumId = "local_picked",
