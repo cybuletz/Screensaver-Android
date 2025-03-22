@@ -206,6 +206,19 @@ class PhotosGlideModule : AppGlideModule() {
             }
         }
 
+        private var isCallbackHandled = false
+
+        private fun safeCallback(callback: DataFetcher.DataCallback<in InputStream>, stream: InputStream?) {
+            if (!isCallbackHandled) {
+                isCallbackHandled = true
+                if (stream != null) {
+                    callback.onDataReady(stream)
+                } else {
+                    callback.onLoadFailed(IOException("Could not open input stream for URI: $uri"))
+                }
+            }
+        }
+
         private fun loadGooglePhotosUri(callback: DataFetcher.DataCallback<in InputStream>) {
             try {
                 // Check if this is a Google Photos URI that needs authentication
@@ -262,7 +275,7 @@ class PhotosGlideModule : AppGlideModule() {
 
                         // Try to open the stream with fresh permissions
                         context.contentResolver.openInputStream(uri)?.let { stream ->
-                            callback.onDataReady(stream)
+                            safeCallback(callback, stream)
                             return
                         }
                     } catch (e: Exception) {
