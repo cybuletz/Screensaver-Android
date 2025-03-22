@@ -97,39 +97,40 @@ class PhotosGlideModule : AppGlideModule() {
             val request = chain.request()
             val url = request.url.toString()
 
-            // Only handle Google URLs
             if (url.contains("googleusercontent.com")) {
                 try {
                     runBlocking {
-                        if (!googleAuthManager.hasValidTokens()) {
-                            googleAuthManager.refreshTokens()
+                        when (googleAuthManager.authState.value) {
+                            GoogleAuthManager.AuthState.ERROR -> {
+                                // Try to initialize auth
+                                if (!googleAuthManager.initialize()) {
+                                    throw IOException("Authentication required")
+                                }
+                            }
+                            GoogleAuthManager.AuthState.IDLE -> {
+                                if (!googleAuthManager.initialize()) {
+                                    throw IOException("Failed to initialize auth")
+                                }
+                            }
+                            else -> {
+                                if (!googleAuthManager.hasValidTokens() && !googleAuthManager.refreshTokens()) {
+                                    throw IOException("Failed to refresh tokens")
+                                }
+                            }
                         }
                     }
 
                     val credentials = googleAuthManager.getCurrentCredentials()
+                        ?: throw IOException("No credentials available")
+
                     val newRequest = request.newBuilder()
-                        .addHeader("Authorization", "Bearer ${credentials?.accessToken}")
+                        .addHeader("Authorization", "Bearer ${credentials.accessToken}")
                         .build()
 
-                    var response = chain.proceed(newRequest)
-
-                    // If we get a 403, try refreshing the token once
-                    if (response.code == 403) {
-                        response.close()
-                        runBlocking {
-                            googleAuthManager.refreshTokens()
-                        }
-                        val freshCredentials = googleAuthManager.getCurrentCredentials()
-                        val retryRequest = request.newBuilder()
-                            .addHeader("Authorization", "Bearer ${freshCredentials?.accessToken}")
-                            .build()
-                        response = chain.proceed(retryRequest)
-                    }
-
-                    return response
+                    return chain.proceed(newRequest)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling Google auth", e)
-                    return chain.proceed(request)
+                    throw e
                 }
             }
 
@@ -207,11 +208,35 @@ class PhotosGlideModule : AppGlideModule() {
 
         private fun loadGooglePhotosUri(callback: DataFetcher.DataCallback<in InputStream>) {
             try {
-                // Ensure we have valid Google auth tokens for Google Photos URIs
-                if (photoUriManager.isGooglePhotosUri(uri) && !googleAuthManager.hasValidTokens()) {
+                // Check if this is a Google Photos URI that needs authentication
+                if (photoUriManager.isGooglePhotosUri(uri)) {
                     runBlocking {
-                        if (!googleAuthManager.refreshTokens()) {
-                            throw IOException("Failed to refresh Google auth tokens")
+                        when (googleAuthManager.authState.value) {
+                            GoogleAuthManager.AuthState.ERROR -> {
+                                // Try standard content resolver access first
+                                try {
+                                    val inputStream = context.contentResolver.openInputStream(uri)
+                                    if (inputStream != null) {
+                                        callback.onDataReady(inputStream)
+                                        return@runBlocking
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Standard access failed, attempting to refresh auth", e)
+                                }
+
+                                // If that fails and we're in error state, throw exception
+                                throw IOException("Authentication required for Google Photos access")
+                            }
+                            GoogleAuthManager.AuthState.IDLE -> {
+                                if (!googleAuthManager.initialize()) {
+                                    throw IOException("Failed to initialize Google auth")
+                                }
+                            }
+                            else -> {
+                                if (!googleAuthManager.hasValidTokens() && !googleAuthManager.refreshTokens()) {
+                                    throw IOException("Failed to refresh Google auth tokens")
+                                }
+                            }
                         }
                     }
                 }

@@ -75,7 +75,17 @@ class GoogleAuthManager @Inject constructor(
         var connection: HttpURLConnection? = null
         try {
             val credentials = secureStorage.getGoogleCredentials()
-                ?: throw Exception("No credentials available")
+            if (credentials == null) {
+                Log.d(TAG, "No credentials available to refresh")
+                _authState.value = AuthState.ERROR
+                return@withContext false
+            }
+
+            if (credentials.refreshToken.isEmpty()) {
+                Log.d(TAG, "No refresh token available")
+                _authState.value = AuthState.ERROR
+                return@withContext false
+            }
 
             val refreshToken = credentials.refreshToken
             val clientId = context.getString(R.string.google_oauth_client_id)
@@ -96,6 +106,7 @@ class GoogleAuthManager @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error refreshing token", e)
+            _authState.value = AuthState.ERROR
             false
         } finally {
             connection?.disconnect()
