@@ -1,4 +1,4 @@
-package com.example.screensaver.auth
+package com.example.screensaver.shared
 
 import android.content.Context
 import android.util.Log
@@ -14,7 +14,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,7 +28,10 @@ class GoogleAuthManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "GoogleAuthManager"
-        private const val TOKEN_EXPIRY_BUFFER = 60000L // 1 minute buffer
+        // Increase buffer to 5 minutes for better handling of almost-expired tokens
+        private const val TOKEN_EXPIRY_BUFFER = 300000L // 5 minutes buffer
+        private const val MAX_REFRESH_ATTEMPTS = 3
+        private const val REFRESH_ATTEMPT_INTERVAL = 30000L // 30 seconds
 
         // Updated scopes for photo picker
         private val REQUIRED_SCOPES = listOf(
@@ -36,29 +42,48 @@ class GoogleAuthManager @Inject constructor(
     private val _authState = MutableStateFlow<AuthState>(AuthState.IDLE)
     val authState: StateFlow<AuthState> = _authState
 
+    private var lastRefreshAttempt = 0L
+    private var refreshAttemptCount = 0
+
     enum class AuthState {
         IDLE, AUTHENTICATING, AUTHENTICATED, ERROR
+    }
+
+    /**
+     * Helper method for consistent timestamp logging
+     */
+    private fun getCurrentDateTime(): String {
+        val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        formatter.timeZone = TimeZone.getTimeZone("UTC")
+        return formatter.format(Date())
     }
 
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
             _authState.value = AuthState.AUTHENTICATING
 
+            Log.d(TAG, "Initializing authentication at ${getCurrentDateTime()}")
+
             if (!hasValidTokens()) {
-                _authState.value = AuthState.ERROR
-                return@withContext false
+                Log.d(TAG, "No valid tokens found, attempting to refresh")
+                if (!refreshTokens()) {
+                    _authState.value = AuthState.ERROR
+                    return@withContext false
+                }
             }
 
             val credentials = getOrRefreshCredentials()
             if (credentials == null) {
                 _authState.value = AuthState.ERROR
+                Log.e(TAG, "Failed to get valid credentials")
                 return@withContext false
             }
 
             _authState.value = AuthState.AUTHENTICATED
+            Log.d(TAG, "Successfully authenticated at ${getCurrentDateTime()}")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Error in initialize", e)
+            Log.e(TAG, "Error in initialize at ${getCurrentDateTime()}", e)
             _authState.value = AuthState.ERROR
             false
         }
@@ -66,12 +91,31 @@ class GoogleAuthManager @Inject constructor(
 
     fun hasValidTokens(): Boolean {
         val credentials = secureStorage.getGoogleCredentials()
-        return credentials != null &&
+        val isValid = credentials != null &&
                 credentials.accessToken.isNotEmpty() &&
                 credentials.expirationTime > System.currentTimeMillis() + TOKEN_EXPIRY_BUFFER
+
+        if (!isValid && credentials != null) {
+            Log.d(TAG, "Tokens invalid or expiring soon. Current time: ${System.currentTimeMillis()}, Expiry time: ${credentials.expirationTime}")
+        }
+
+        return isValid
     }
 
     suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
+        // Add rate limiting for refresh attempts
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastRefreshAttempt < REFRESH_ATTEMPT_INTERVAL) {
+            refreshAttemptCount++
+            if (refreshAttemptCount > MAX_REFRESH_ATTEMPTS) {
+                Log.w(TAG, "Too many token refresh attempts in a short period at ${getCurrentDateTime()}")
+                return@withContext false
+            }
+        } else {
+            refreshAttemptCount = 1  // Reset counter but count this attempt
+        }
+        lastRefreshAttempt = currentTime
+
         var connection: HttpURLConnection? = null
         try {
             val credentials = secureStorage.getGoogleCredentials()
@@ -81,10 +125,14 @@ class GoogleAuthManager @Inject constructor(
             val clientId = context.getString(R.string.google_oauth_client_id)
             val clientSecret = context.getString(R.string.google_oauth_client_secret)
 
+            Log.d(TAG, "Refreshing tokens at ${getCurrentDateTime()}")
+
             connection = (URL("https://oauth2.googleapis.com/token").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                connectTimeout = 15000  // 15 seconds
+                readTimeout = 15000     // 15 seconds
             }
 
             val postData = buildPostData(refreshToken, clientId, clientSecret)
@@ -95,7 +143,7 @@ class GoogleAuthManager @Inject constructor(
                 else -> handleFailedTokenRefresh(connection)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error refreshing token", e)
+            Log.e(TAG, "Error refreshing token at ${getCurrentDateTime()}", e)
             false
         } finally {
             connection?.disconnect()
@@ -105,15 +153,14 @@ class GoogleAuthManager @Inject constructor(
     private suspend fun getOrRefreshCredentials(): GoogleCredentials? = withContext(Dispatchers.IO) {
         try {
             val credentials = secureStorage.getGoogleCredentials()
-            Log.d(TAG, "Checking credentials - Access Token: ${credentials != null}")
 
             if (credentials == null) {
-                Log.d(TAG, "Missing tokens")
+                Log.d(TAG, "Missing tokens at ${getCurrentDateTime()}")
                 return@withContext null
             }
 
             if (needsRefresh(credentials)) {
-                Log.d(TAG, "Token expired or needs refresh")
+                Log.d(TAG, "Token expired or needs refresh at ${getCurrentDateTime()}")
                 if (!refreshTokens()) {
                     return@withContext null
                 }
@@ -124,13 +171,17 @@ class GoogleAuthManager @Inject constructor(
 
             createGoogleCredentials(credentials)
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting/refreshing credentials", e)
+            Log.e(TAG, "Error getting/refreshing credentials at ${getCurrentDateTime()}", e)
             null
         }
     }
 
     private fun needsRefresh(credentials: SecureStorage.GoogleCredentials): Boolean {
-        return credentials.expirationTime <= System.currentTimeMillis() + TOKEN_EXPIRY_BUFFER
+        val needsRefresh = credentials.expirationTime <= System.currentTimeMillis() + TOKEN_EXPIRY_BUFFER
+        if (needsRefresh) {
+            Log.d(TAG, "Token needs refresh - Expiration: ${credentials.expirationTime}, Current: ${System.currentTimeMillis()}")
+        }
+        return needsRefresh
     }
 
     private fun buildPostData(refreshToken: String, clientId: String, clientSecret: String): String =
@@ -152,6 +203,7 @@ class GoogleAuthManager @Inject constructor(
             val newAccessToken = jsonResponse.getString("access_token")
             val expirationTime = System.currentTimeMillis() + (jsonResponse.getLong("expires_in") * 1000)
 
+            // Save refreshed credentials
             secureStorage.saveGoogleCredentials(
                 accessToken = newAccessToken,
                 refreshToken = currentCredentials.refreshToken,
@@ -159,16 +211,25 @@ class GoogleAuthManager @Inject constructor(
                 email = currentCredentials.email
             )
 
-            Log.d(TAG, "Successfully refreshed token")
+            Log.d(TAG, "Successfully refreshed token at ${getCurrentDateTime()}, new expiry: ${Date(expirationTime)}")
+
+            // Reset attempt count on success
+            refreshAttemptCount = 0
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling token refresh response", e)
+            Log.e(TAG, "Error handling token refresh response at ${getCurrentDateTime()}", e)
             false
         }
     }
 
     private fun handleFailedTokenRefresh(connection: HttpURLConnection): Boolean {
-        Log.e(TAG, "Failed to refresh token: ${connection.responseMessage}")
+        val error = try {
+            connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
+        } catch (e: Exception) {
+            "Failed to read error response: ${e.message}"
+        }
+
+        Log.e(TAG, "Failed to refresh token at ${getCurrentDateTime()}: ${connection.responseCode} - ${connection.responseMessage} - $error")
         return false
     }
 
@@ -184,5 +245,7 @@ class GoogleAuthManager @Inject constructor(
     fun clearCredentials() {
         secureStorage.clearGoogleCredentials()
         _authState.value = AuthState.IDLE
+        refreshAttemptCount = 0
+        Log.d(TAG, "Credentials cleared at ${getCurrentDateTime()}")
     }
 }

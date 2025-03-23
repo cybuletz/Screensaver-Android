@@ -36,7 +36,7 @@ import com.bumptech.glide.load.engine.bitmap_recycle.ArrayPool
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.Priority
 import com.bumptech.glide.signature.ObjectKey
-import com.example.screensaver.auth.GoogleAuthManager
+import com.example.screensaver.shared.GoogleAuthManager
 import org.json.JSONObject
 
 @GlideModule
@@ -97,39 +97,40 @@ class PhotosGlideModule : AppGlideModule() {
             val request = chain.request()
             val url = request.url.toString()
 
-            // Only handle Google URLs
             if (url.contains("googleusercontent.com")) {
                 try {
                     runBlocking {
-                        if (!googleAuthManager.hasValidTokens()) {
-                            googleAuthManager.refreshTokens()
+                        when (googleAuthManager.authState.value) {
+                            GoogleAuthManager.AuthState.ERROR -> {
+                                // Try to initialize auth
+                                if (!googleAuthManager.initialize()) {
+                                    throw IOException("Authentication required")
+                                }
+                            }
+                            GoogleAuthManager.AuthState.IDLE -> {
+                                if (!googleAuthManager.initialize()) {
+                                    throw IOException("Failed to initialize auth")
+                                }
+                            }
+                            else -> {
+                                if (!googleAuthManager.hasValidTokens() && !googleAuthManager.refreshTokens()) {
+                                    throw IOException("Failed to refresh tokens")
+                                }
+                            }
                         }
                     }
 
                     val credentials = googleAuthManager.getCurrentCredentials()
+                        ?: throw IOException("No credentials available")
+
                     val newRequest = request.newBuilder()
-                        .addHeader("Authorization", "Bearer ${credentials?.accessToken}")
+                        .addHeader("Authorization", "Bearer ${credentials.accessToken}")
                         .build()
 
-                    var response = chain.proceed(newRequest)
-
-                    // If we get a 403, try refreshing the token once
-                    if (response.code == 403) {
-                        response.close()
-                        runBlocking {
-                            googleAuthManager.refreshTokens()
-                        }
-                        val freshCredentials = googleAuthManager.getCurrentCredentials()
-                        val retryRequest = request.newBuilder()
-                            .addHeader("Authorization", "Bearer ${freshCredentials?.accessToken}")
-                            .build()
-                        response = chain.proceed(retryRequest)
-                    }
-
-                    return response
+                    return chain.proceed(newRequest)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling Google auth", e)
-                    return chain.proceed(request)
+                    throw e
                 }
             }
 
@@ -137,9 +138,6 @@ class PhotosGlideModule : AppGlideModule() {
         }
     }
 
-    /**
-     * Factory for creating UriLoader instances
-     */
     private class UriLoaderFactory(
         private val context: Context,
         private val photoUriManager: PhotoUriManager,
@@ -151,6 +149,7 @@ class PhotosGlideModule : AppGlideModule() {
 
         override fun teardown() {}
     }
+
 
     private class UriLoader(
         private val context: Context,

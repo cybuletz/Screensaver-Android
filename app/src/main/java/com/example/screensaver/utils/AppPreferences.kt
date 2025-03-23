@@ -3,17 +3,19 @@ package com.example.screensaver.utils
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import com.example.screensaver.photos.VirtualAlbum
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.annotation.PostConstruct
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Manages application preferences and settings.
@@ -47,8 +49,13 @@ class AppPreferences @Inject constructor(
     private val _previewCountFlow = MutableStateFlow(getPreviewCount())
 
     private val virtualAlbumPrefs = context.getSharedPreferences("virtual_albums", Context.MODE_PRIVATE)
+    // Add this new preferences file for URI permissions
+    private val uriPermissionsPrefs = context.getSharedPreferences("uri_permissions", Context.MODE_PRIVATE)
+
     private val KEY_VIRTUAL_ALBUMS = "virtual_albums_data"
     private val KEY_SELECTED_VIRTUAL_ALBUMS = "selected_virtual_albums"
+    private val KEY_URI_ACCESS_TIMESTAMPS = "uri_access_timestamps"
+
     private val _virtualAlbumsFlow = MutableStateFlow<List<VirtualAlbum>>(emptyList())
     val virtualAlbumsFlow = _virtualAlbumsFlow.asStateFlow()
 
@@ -88,6 +95,11 @@ class AppPreferences @Inject constructor(
         private const val PREF_PREVIEW_COUNT = "preview_count"
 
         private const val KEY_PICKED_URIS = "picked_photo_uris"
+        private const val KEY_RECENTLY_ACCESSED_URIS = "recently_accessed_uris"
+
+        // URI Management constants
+        private val URI_EXPIRATION_TIME_ANDROID_11 = TimeUnit.HOURS.toMillis(4) // 4 hours for Android 11
+        private val URI_EXPIRATION_TIME_DEFAULT = TimeUnit.DAYS.toMillis(7)     // 7 days for other versions
     }
 
     enum class DisplayMode {
@@ -102,13 +114,13 @@ class AppPreferences @Inject constructor(
         FORMAT_12H, FORMAT_24H
     }
 
-    data class VirtualAlbum(
-        val id: String,
-        val name: String,
-        val photoUris: List<String>,
-        val dateCreated: Long,
-        val sortOrder: Int = 0
-    )
+    enum class ScreenOrientation {
+        PORTRAIT, LANDSCAPE, SYSTEM
+    }
+
+    object PreferenceKeys {
+        const val SCREEN_ORIENTATION = "screen_orientation"
+    }
 
     init {
         loadVirtualAlbums()
@@ -148,6 +160,9 @@ class AppPreferences @Inject constructor(
         val currentUris = getPickedUris().toMutableSet()
         currentUris.remove(uri)
         prefs.edit().putStringSet("picked_uris", currentUris).apply()
+
+        // Also remove from recently accessed URIs if it exists
+        removeRecentlyAccessedUri(uri)
     }
 
     fun clearAll() {
@@ -255,7 +270,7 @@ class AppPreferences @Inject constructor(
 
     fun getTransitionAnimation(): TransitionAnimation {
         val prefValue = getString("transition_animation", "fade")
-        return when (prefValue.lowercase()) { // Remove the ?. operator
+        return when (prefValue.lowercase()) {
             "slide" -> TransitionAnimation.SLIDE
             "zoom" -> TransitionAnimation.ZOOM
             else -> TransitionAnimation.FADE
@@ -264,6 +279,12 @@ class AppPreferences @Inject constructor(
 
     fun savePickedUris(uris: Set<Uri>) {
         prefs.edit().putStringSet(KEY_PICKED_URIS, uris.map { it.toString() }.toSet()).apply()
+
+        // Also add to recently accessed URIs to ensure they remain accessible
+        val timestamp = System.currentTimeMillis()
+        uris.forEach { uri ->
+            updateUriAccessTimestamp(uri.toString(), timestamp)
+        }
     }
 
     fun getPickedUris(): Set<String> {
@@ -341,7 +362,8 @@ class AppPreferences @Inject constructor(
                         put("name", album.name)
                         put("photoUris", JSONArray(album.photoUris))
                         put("dateCreated", album.dateCreated)
-                        put("sortOrder", album.sortOrder)
+                        // Don't try to access sortOrder if it doesn't exist in your VirtualAlbum class
+                        // put("sortOrder", album.sortOrder)
                     })
                 }
             }
@@ -351,6 +373,14 @@ class AppPreferences @Inject constructor(
                 .apply()
 
             _virtualAlbumsFlow.value = albums
+
+            // For each URI in virtual albums, update its access timestamp
+            val timestamp = System.currentTimeMillis()
+            albums.forEach { album ->
+                album.photoUris.forEach { uri ->
+                    updateUriAccessTimestamp(uri, timestamp)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error saving virtual albums", e)
         }
@@ -360,20 +390,29 @@ class AppPreferences @Inject constructor(
         return try {
             val json = virtualAlbumPrefs.getString(KEY_VIRTUAL_ALBUMS, "[]")
             val jsonArray = JSONArray(json)
-            List(jsonArray.length()) { i ->
+            val albums = mutableListOf<VirtualAlbum>()
+
+            for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
                 val urisArray = obj.getJSONArray("photoUris")
-                val photoUris = List(urisArray.length()) { j ->
-                    urisArray.getString(j)
+                val photoUris = mutableListOf<String>()
+
+                for (j in 0 until urisArray.length()) {
+                    photoUris.add(urisArray.getString(j))
                 }
-                VirtualAlbum(
-                    id = obj.getString("id"),
-                    name = obj.getString("name"),
-                    photoUris = photoUris,
-                    dateCreated = obj.getLong("dateCreated"),
-                    sortOrder = obj.optInt("sortOrder", 0)
+
+                albums.add(
+                    VirtualAlbum(
+                        id = obj.getString("id"),
+                        name = obj.getString("name"),
+                        photoUris = photoUris,
+                        dateCreated = obj.getLong("dateCreated"),
+                        isSelected = getSelectedVirtualAlbumIds().contains(obj.getString("id"))
+                    )
                 )
-            }.sortedBy { it.sortOrder }
+            }
+
+            albums
         } catch (e: Exception) {
             Log.e(TAG, "Error loading virtual albums", e)
             emptyList()
@@ -407,15 +446,173 @@ class AppPreferences @Inject constructor(
         prefs.edit().putString(PreferenceKeys.SCREEN_ORIENTATION, orientation.name).apply()
     }
 
+    // =============================================
+    // === URI PERMISSION TRACKING METHODS =========
+    // =============================================
+
+    /**
+     * Adds a URI to the recently accessed list with the current timestamp
+     */
     fun addRecentlyAccessedUri(uri: String) {
         val uris = getRecentlyAccessedUris().toMutableSet()
         uris.add(uri)
         prefs.edit()
-            .putStringSet("recently_accessed_uris", uris)
+            .putStringSet(KEY_RECENTLY_ACCESSED_URIS, uris)
             .apply()
+
+        // Store the access timestamp
+        updateUriAccessTimestamp(uri, System.currentTimeMillis())
     }
 
+    /**
+     * Gets the set of recently accessed URIs
+     */
     fun getRecentlyAccessedUris(): Set<String> {
-        return prefs.getStringSet("recently_accessed_uris", emptySet()) ?: emptySet()
+        return prefs.getStringSet(KEY_RECENTLY_ACCESSED_URIS, emptySet()) ?: emptySet()
+    }
+
+    /**
+     * Removes a URI from the recently accessed list
+     */
+    fun removeRecentlyAccessedUri(uri: String) {
+        val uris = getRecentlyAccessedUris().toMutableSet()
+        uris.remove(uri)
+        prefs.edit()
+            .putStringSet(KEY_RECENTLY_ACCESSED_URIS, uris)
+            .apply()
+
+        // Also remove timestamp
+        removeUriAccessTimestamp(uri)
+    }
+
+    /**
+     * Updates the last access timestamp for a URI
+     */
+    private fun updateUriAccessTimestamp(uri: String, timestamp: Long) {
+        try {
+            val jsonStr = uriPermissionsPrefs.getString(KEY_URI_ACCESS_TIMESTAMPS, "{}")
+            val json = JSONObject(jsonStr ?: "{}")
+            json.put(uri, timestamp)
+
+            uriPermissionsPrefs.edit()
+                .putString(KEY_URI_ACCESS_TIMESTAMPS, json.toString())
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating URI timestamp", e)
+        }
+    }
+
+    /**
+     * Removes a URI's timestamp entry
+     */
+    private fun removeUriAccessTimestamp(uri: String) {
+        try {
+            val jsonStr = uriPermissionsPrefs.getString(KEY_URI_ACCESS_TIMESTAMPS, "{}")
+            val json = JSONObject(jsonStr ?: "{}")
+            json.remove(uri)
+
+            uriPermissionsPrefs.edit()
+                .putString(KEY_URI_ACCESS_TIMESTAMPS, json.toString())
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error removing URI timestamp", e)
+        }
+    }
+
+    /**
+     * Gets the last access timestamp for a URI or 0 if never accessed
+     */
+    fun getUriAccessTimestamp(uri: String): Long {
+        try {
+            val jsonStr = uriPermissionsPrefs.getString(KEY_URI_ACCESS_TIMESTAMPS, "{}")
+            val json = JSONObject(jsonStr ?: "{}")
+            return if (json.has(uri)) json.getLong(uri) else 0L
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting URI timestamp", e)
+            return 0L
+        }
+    }
+
+    /**
+     * Checks if a URI's access has expired based on Android version
+     * Android 11 has stricter URI access expiration
+     */
+    fun isUriAccessExpired(uri: String): Boolean {
+        val lastAccess = getUriAccessTimestamp(uri)
+        if (lastAccess == 0L) return true
+
+        val expirationTime = if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
+            URI_EXPIRATION_TIME_ANDROID_11 // Stricter expiration for Android 11
+        } else {
+            URI_EXPIRATION_TIME_DEFAULT
+        }
+
+        return (System.currentTimeMillis() - lastAccess) > expirationTime
+    }
+
+    /**
+     * Purge expired URIs from the recently accessed list
+     * Returns the set of URIs that were purged
+     */
+    fun purgeExpiredUris(): Set<String> {
+        val allUris = getRecentlyAccessedUris()
+        val expiredUris = allUris.filter { isUriAccessExpired(it) }.toSet()
+
+        if (expiredUris.isNotEmpty()) {
+            val remainingUris = allUris - expiredUris
+            prefs.edit()
+                .putStringSet(KEY_RECENTLY_ACCESSED_URIS, remainingUris)
+                .apply()
+
+            // Also remove timestamps for expired URIs
+            expiredUris.forEach {
+                removeUriAccessTimestamp(it)
+            }
+
+            Log.d(TAG, "Purged ${expiredUris.size} expired URIs")
+        }
+
+        return expiredUris
+    }
+
+    /**
+     * Refreshes the access timestamp for all URIs in a given set
+     * Returns the number of URIs updated
+     */
+    fun refreshUriTimestamps(uris: Set<String>): Int {
+        val timestamp = System.currentTimeMillis()
+        var updatedCount = 0
+
+        uris.forEach { uri ->
+            try {
+                updateUriAccessTimestamp(uri, timestamp)
+                updatedCount++
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to refresh URI: $uri", e)
+            }
+        }
+
+        Log.d(TAG, "Refreshed timestamps for $updatedCount URIs")
+        return updatedCount
+    }
+
+    /**
+     * Gets all URIs in the application - from picked URIs, virtual albums, etc.
+     */
+    fun getAllStoredUris(): Set<String> {
+        val result = mutableSetOf<String>()
+
+        // Add URIs from picked URIs
+        result.addAll(getPickedUris())
+
+        // Add URIs from virtual albums
+        getVirtualAlbums().forEach { album ->
+            result.addAll(album.photoUris)
+        }
+
+        // Add URIs from recently accessed
+        result.addAll(getRecentlyAccessedUris())
+
+        return result
     }
 }

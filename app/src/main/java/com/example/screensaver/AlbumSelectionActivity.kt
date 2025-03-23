@@ -38,7 +38,7 @@ import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import com.example.screensaver.PhotoRepository.PhotoAddMode
-import com.example.screensaver.auth.GoogleAuthManager
+import com.example.screensaver.shared.GoogleAuthManager
 import com.example.screensaver.photos.PhotoManagerActivity
 import com.example.screensaver.photos.PhotoManagerViewModel
 import com.example.screensaver.photos.PhotoUriManager

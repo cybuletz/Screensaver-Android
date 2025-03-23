@@ -6,7 +6,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
-import com.example.screensaver.auth.GoogleAuthManager
+import com.example.screensaver.shared.GoogleAuthManager
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.models.AlbumInfo
 import com.example.screensaver.photos.VirtualAlbum

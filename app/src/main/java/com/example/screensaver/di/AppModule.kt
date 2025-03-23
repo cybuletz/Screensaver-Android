@@ -19,7 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.example.screensaver.PhotoRepository
-import com.example.screensaver.auth.GoogleAuthManager
+import com.example.screensaver.shared.GoogleAuthManager
 import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.recovery.StateRecoveryManager
@@ -27,6 +27,7 @@ import com.example.screensaver.recovery.StateRestoration
 import com.example.screensaver.data.PhotoCache
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
+import com.example.screensaver.photos.PhotoPermissionManager
 import com.example.screensaver.photos.PhotoUriManager
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
@@ -97,14 +98,18 @@ object AppModule {
         photoCache: PhotoCache,
         @ApplicationContext context: Context,
         spotifyManager: SpotifyManager,
-        spotifyPreferences: SpotifyPreferences
+        spotifyPreferences: SpotifyPreferences,
+        photoUriManager: PhotoUriManager,
+        photoPermissionManager: PhotoPermissionManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
             photoCache = photoCache,
             context = context,
             spotifyManager = spotifyManager,
-            spotifyPreferences = spotifyPreferences
+            spotifyPreferences = spotifyPreferences,
+            photoUriManager = photoUriManager,
+            photoPermissionManager = photoPermissionManager
         )
     }
 
