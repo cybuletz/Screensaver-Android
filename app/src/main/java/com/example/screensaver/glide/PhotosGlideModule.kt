@@ -99,6 +99,14 @@ class PhotosGlideModule : AppGlideModule() {
 
             if (url.contains("googleusercontent.com")) {
                 try {
+                    // First check if credentials are available before attempting any operations
+                    val credentials = googleAuthManager.getCurrentCredentials()
+
+                    if (credentials == null) {
+                        Log.d(TAG, "No Google credentials available, proceeding without authentication")
+                        return chain.proceed(request)
+                    }
+
                     runBlocking {
                         when (googleAuthManager.authState.value) {
                             GoogleAuthManager.AuthState.ERROR -> {
@@ -120,17 +128,19 @@ class PhotosGlideModule : AppGlideModule() {
                         }
                     }
 
-                    val credentials = googleAuthManager.getCurrentCredentials()
+                    // Get fresh credentials after potential refresh
+                    val updatedCredentials = googleAuthManager.getCurrentCredentials()
                         ?: throw IOException("No credentials available")
 
                     val newRequest = request.newBuilder()
-                        .addHeader("Authorization", "Bearer ${credentials.accessToken}")
+                        .addHeader("Authorization", "Bearer ${updatedCredentials.accessToken}")
                         .build()
 
                     return chain.proceed(newRequest)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error handling Google auth", e)
-                    throw e
+                    Log.e(TAG, "Error handling Google auth, proceeding without authentication", e)
+                    // Try proceeding with the request without authentication rather than failing completely
+                    return chain.proceed(request)
                 }
             }
 
@@ -150,7 +160,6 @@ class PhotosGlideModule : AppGlideModule() {
         override fun teardown() {}
     }
 
-
     private class UriLoader(
         private val context: Context,
         private val photoUriManager: PhotoUriManager,
@@ -164,14 +173,18 @@ class PhotosGlideModule : AppGlideModule() {
         override fun handles(uri: Uri): Boolean = true
     }
 
-    private class UriDataFetcher(  // Changed from inner class to private class
+    private class UriDataFetcher(
         private val context: Context,
         private val uri: Uri
     ) : DataFetcher<InputStream> {
 
         companion object {
             private const val TAG = "UriDataFetcher"
+            private const val MAX_RETRIES = 2
         }
+
+        private var inputStream: InputStream? = null
+        private var retryCount = 0
 
         override fun loadData(priority: Priority, callback: DataFetcher.DataCallback<in InputStream>) {
             try {
@@ -186,9 +199,10 @@ class PhotosGlideModule : AppGlideModule() {
 
                 // For other URIs, try normal access
                 try {
-                    val inputStream = context.contentResolver.openInputStream(uri)
-                    if (inputStream != null) {
-                        callback.onDataReady(inputStream)
+                    val stream = context.contentResolver.openInputStream(uri)
+                    if (stream != null) {
+                        inputStream = stream
+                        callback.onDataReady(stream)
                     } else {
                         callback.onLoadFailed(IOException("Could not open input stream for URI: $uri"))
                     }
@@ -204,23 +218,52 @@ class PhotosGlideModule : AppGlideModule() {
 
         private fun loadGooglePhotosUri(callback: DataFetcher.DataCallback<in InputStream>) {
             try {
-                // For Google Photos URIs, create a new intent to get fresh access
+                // First try direct access
+                try {
+                    val stream = context.contentResolver.openInputStream(uri)
+                    if (stream != null) {
+                        inputStream = stream
+                        callback.onDataReady(stream)
+                        return
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Direct access failed for Google Photos URI, trying to refresh permissions: $uri")
+                }
+
+                // If direct access fails, try with explicit permissions
                 val intent = Intent(Intent.ACTION_VIEW).apply {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     setDataAndType(uri, "image/*")
                 }
 
-                // Get fresh access to the content
-                context.grantUriPermission(
-                    context.packageName,
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+                // Grant fresh permissions
+                try {
+                    context.grantUriPermission(
+                        context.packageName,
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to grant permissions for URI: $uri", e)
+                }
 
-                // Try to open the stream with fresh permissions
-                context.contentResolver.openInputStream(uri)?.let { stream ->
+                // Try again with fresh permissions
+                val stream = context.contentResolver.openInputStream(uri)
+                if (stream != null) {
+                    inputStream = stream
                     callback.onDataReady(stream)
-                } ?: throw IOException("Could not open input stream for URI: $uri")
+                    return
+                }
+
+                // If still failed, but we have more retries left
+                if (retryCount < MAX_RETRIES) {
+                    retryCount++
+                    Log.d(TAG, "Retry attempt $retryCount for URI: $uri")
+                    loadGooglePhotosUri(callback)
+                    return
+                }
+
+                callback.onLoadFailed(IOException("Could not open Google Photos URI after $MAX_RETRIES retries"))
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load Google Photos URI: $uri", e)
                 callback.onLoadFailed(e)
@@ -240,9 +283,10 @@ class PhotosGlideModule : AppGlideModule() {
                 }
 
                 // Try to open the stream again
-                val inputStream = context.contentResolver.openInputStream(uri)
-                if (inputStream != null) {
-                    callback.onDataReady(inputStream)
+                val stream = context.contentResolver.openInputStream(uri)
+                if (stream != null) {
+                    inputStream = stream
+                    callback.onDataReady(stream)
                 } else {
                     callback.onLoadFailed(IOException("Could not open input stream for URI: $uri"))
                 }
@@ -253,11 +297,15 @@ class PhotosGlideModule : AppGlideModule() {
         }
 
         override fun cleanup() {
-            // Nothing to clean up
+            try {
+                inputStream?.close()
+            } catch (e: IOException) {
+                // Ignore
+            }
         }
 
         override fun cancel() {
-            // Cannot cancel
+            cleanup()
         }
 
         override fun getDataClass(): Class<InputStream> = InputStream::class.java
