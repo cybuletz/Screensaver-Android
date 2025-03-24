@@ -47,8 +47,11 @@ import com.example.screensaver.photos.PhotoManagerActivity
 import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.fragment.app.DialogFragment
+import com.example.screensaver.photos.PersistentPhotoCache
 import java.io.File
 
 @AndroidEntryPoint
@@ -70,6 +73,9 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var appPreferences: AppPreferences
+
+    private val persistentPhotoCache: PersistentPhotoCache
+        get() = photoManager.persistentPhotoCache
 
     private var googleSignInClient: GoogleSignInClient? = null
     private var pendingChanges = mutableMapOf<String, Any>()
@@ -593,6 +599,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
             lifecycleScope.launch {
                 try {
                     val selectedUris = mutableListOf<Uri>()
+                    val googlePhotosUris = mutableListOf<Uri>()
 
                     when {
                         data?.clipData != null -> {
@@ -604,6 +611,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                                         uri.toString().contains("com.google.android.apps.photos")) {
                                         // Just store the URI
                                         selectedUris.add(uri)
+                                        googlePhotosUris.add(uri)
                                         // Store in current photo sources
                                         val currentSources = getCurrentPhotoSources().toMutableSet()
                                         currentSources.add(SOURCE_GOOGLE_PHOTOS)
@@ -615,10 +623,22 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                                                 Intent.FLAG_GRANT_READ_URI_PERMISSION
                                             )
                                             selectedUris.add(uri)
+
+                                            // If it's a Google Photos URI, add to list for caching
+                                            if (uri.toString().contains("com.google.android.apps.photos") ||
+                                                uri.toString().contains("googleusercontent.com")) {
+                                                googlePhotosUris.add(uri)
+                                            }
                                         } catch (e: SecurityException) {
                                             Log.e(TAG, "Failed to take permission for URI: $uri", e)
                                             // Still add the URI even if we couldn't get persistable permission
                                             selectedUris.add(uri)
+
+                                            // If it's a Google Photos URI, add to list for caching
+                                            if (uri.toString().contains("com.google.android.apps.photos") ||
+                                                uri.toString().contains("googleusercontent.com")) {
+                                                googlePhotosUris.add(uri)
+                                            }
                                         }
                                     }
                                 }
@@ -629,6 +649,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                             if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
                                 uri.toString().contains("com.google.android.apps.photos")) {
                                 selectedUris.add(uri)
+                                googlePhotosUris.add(uri)
                                 // Store in current photo sources
                                 val currentSources = getCurrentPhotoSources().toMutableSet()
                                 currentSources.add(SOURCE_GOOGLE_PHOTOS)
@@ -640,21 +661,89 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                                         Intent.FLAG_GRANT_READ_URI_PERMISSION
                                     )
                                     selectedUris.add(uri)
+
+                                    // If it's a Google Photos URI, add to list for caching
+                                    if (uri.toString().contains("com.google.android.apps.photos") ||
+                                        uri.toString().contains("googleusercontent.com")) {
+                                        googlePhotosUris.add(uri)
+                                    }
                                 } catch (e: SecurityException) {
                                     Log.e(TAG, "Failed to take permission for URI: $uri", e)
                                     selectedUris.add(uri)
+
+                                    // If it's a Google Photos URI, add to list for caching
+                                    if (uri.toString().contains("com.google.android.apps.photos") ||
+                                        uri.toString().contains("googleusercontent.com")) {
+                                        googlePhotosUris.add(uri)
+                                    }
                                 }
                             }
                         }
                     }
 
                     if (selectedUris.isNotEmpty()) {
-                        // Create MediaItems and add to repository
+                        // Show a loading indicator if we have Google Photos to cache
+                        if (googlePhotosUris.isNotEmpty()) {
+                            withContext(Dispatchers.Main) {
+                                showLoadingIndicator(true, getString(R.string.caching_google_photos))
+                            }
+                        }
+
+                        // Start caching Google Photos in the background if needed
+                        val cachedUriMap = mutableMapOf<String, String>()
+                        if (googlePhotosUris.isNotEmpty()) {
+                            try {
+                                // Cache the photos and collect progress updates
+                                persistentPhotoCache.cachePhotos(googlePhotosUris.map { it.toString() })
+                                    .collect { progress ->
+                                        when (progress) {
+                                            is PersistentPhotoCache.CachingProgress.InProgress -> {
+                                                val progressPercentage = (progress.progress * 100).toInt()
+                                                withContext(Dispatchers.Main) {
+                                                    updateLoadingProgress(
+                                                        getString(
+                                                            R.string.caching_photos_progress,
+                                                            progress.completed,
+                                                            progress.total,
+                                                            progressPercentage
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            is PersistentPhotoCache.CachingProgress.Complete -> {
+                                                Log.d(TAG, "Photo caching completed: ${progress.succeeded} succeeded, ${progress.failed} failed")
+
+                                                // Get the mapping of original URIs to cached URIs
+                                                for (uri in googlePhotosUris) {
+                                                    val originalUriStr = uri.toString()
+                                                    val cachedUriStr = persistentPhotoCache.getCachedPhotoUri(originalUriStr)
+                                                    if (cachedUriStr != null) {
+                                                        cachedUriMap[originalUriStr] = cachedUriStr
+                                                        Log.d(TAG, "Cached URI mapping: $originalUriStr -> $cachedUriStr")
+                                                    }
+                                                }
+                                            }
+                                            else -> { /* Handle other states as needed */ }
+                                        }
+                                    }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error caching Google Photos", e)
+                            } finally {
+                                withContext(Dispatchers.Main) {
+                                    showLoadingIndicator(false)
+                                }
+                            }
+                        }
+
+                        // Create MediaItems and add to repository, using cached URIs where available
                         val mediaItems = selectedUris.map { uri ->
+                            val originalUriStr = uri.toString()
+                            val baseUrl = cachedUriMap[originalUriStr] ?: originalUriStr
+
                             MediaItem(
-                                id = uri.toString(),
+                                id = originalUriStr, // Keep original URI as ID for reference
                                 albumId = "google_picked",
-                                baseUrl = uri.toString(),
+                                baseUrl = baseUrl, // Use cached URI if available
                                 mimeType = "image/*",
                                 width = 0,
                                 height = 0,
@@ -677,12 +766,140 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                             findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = true
                             updateGooglePhotosState(true)
                             applyChanges()
+
+                            // Show a toast with caching results if applicable
+                            if (googlePhotosUris.isNotEmpty()) {
+                                val cachedCount = cachedUriMap.size
+                                if (cachedCount > 0) {
+                                    val message = getString(
+                                        R.string.photos_cached_success,
+                                        cachedCount,
+                                        googlePhotosUris.size
+                                    )
+                                    Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+
                             notifyPhotosAdded()
                         }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error processing selected photos", e)
-                    showError(getString(R.string.photo_processing_error))
+                    withContext(Dispatchers.Main) {
+                        showLoadingIndicator(false)
+                        showError(getString(R.string.photo_processing_error))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showLoadingIndicator(show: Boolean, message: String = "") {
+        try {
+            val progressBar = view?.findViewById<View>(R.id.loading_indicator)
+            val textView = view?.findViewById<TextView>(R.id.loading_text)
+
+            if (progressBar != null && textView != null) {
+                if (show) {
+                    progressBar.visibility = View.VISIBLE
+                    textView.text = message
+                    textView.visibility = View.VISIBLE
+                } else {
+                    progressBar.visibility = View.GONE
+                    textView.visibility = View.GONE
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing/hiding loading indicator", e)
+        }
+    }
+
+    private fun updateLoadingProgress(message: String) {
+        try {
+            val textView = view?.findViewById<TextView>(R.id.loading_text)
+            textView?.text = message
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating loading progress", e)
+        }
+    }
+
+    private fun handleGooglePhotoCaching(selectedUris: List<Uri>) {
+        val googlePhotoUris = selectedUris
+            .map { it.toString() }
+            .filter { it.contains("photos.google.com") || it.contains("googleusercontent.com") }
+
+        if (googlePhotoUris.isNotEmpty()) {
+            lifecycleScope.launch {
+                try {
+                    // Show loading indicator
+                    val progressBar = view?.findViewById<View>(R.id.loading_indicator)
+                    val loadingText = view?.findViewById<TextView>(R.id.loading_text)
+
+                    if (progressBar != null) progressBar.visibility = View.VISIBLE
+                    if (loadingText != null) {
+                        loadingText.text = getString(R.string.caching_photos)
+                        loadingText.visibility = View.VISIBLE
+                    }
+
+                    // Start caching process
+                    persistentPhotoCache.cachePhotos(googlePhotoUris)
+                        .collect { progress ->
+                            when (progress) {
+                                is PersistentPhotoCache.CachingProgress.InProgress -> {
+                                    if (loadingText != null) {
+                                        loadingText.text = getString(
+                                            R.string.caching_photos_progress,
+                                            progress.completed,
+                                            progress.total,
+                                            (progress.progress * 100).toInt()
+                                        )
+                                    }
+                                }
+                                is PersistentPhotoCache.CachingProgress.Complete -> {
+                                    if (progressBar != null) progressBar.visibility = View.GONE
+                                    if (loadingText != null) loadingText.visibility = View.GONE
+
+                                    // Notify user of completion
+                                    val message = getString(
+                                        R.string.photos_cached_success,
+                                        progress.succeeded,
+                                        googlePhotoUris.size
+                                    )
+                                    view?.let {
+                                        Snackbar.make(it, message, Snackbar.LENGTH_SHORT).show()
+                                    }
+                                }
+                                is PersistentPhotoCache.CachingProgress.Failed -> {
+                                    if (progressBar != null) progressBar.visibility = View.GONE
+                                    if (loadingText != null) loadingText.visibility = View.GONE
+
+                                    // Notify user of failure
+                                    val message = getString(
+                                        R.string.photos_cached_error,
+                                        progress.completed,
+                                        progress.errors
+                                    )
+                                    view?.let {
+                                        Snackbar.make(it, message, Snackbar.LENGTH_LONG).show()
+                                    }
+                                }
+                                else -> {}
+                            }
+                        }
+                } catch (e: Exception) {
+                    val progressBar = view?.findViewById<View>(R.id.loading_indicator)
+                    val loadingText = view?.findViewById<TextView>(R.id.loading_text)
+
+                    if (progressBar != null) progressBar.visibility = View.GONE
+                    if (loadingText != null) loadingText.visibility = View.GONE
+
+                    view?.let {
+                        Snackbar.make(
+                            it,
+                            getString(R.string.photos_cached_error_general, e.message),
+                            Snackbar.LENGTH_LONG
+                        ).show()
+                    }
                 }
             }
         }

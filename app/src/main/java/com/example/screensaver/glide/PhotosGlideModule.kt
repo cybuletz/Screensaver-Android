@@ -37,6 +37,7 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.Priority
 import com.bumptech.glide.signature.ObjectKey
 import com.example.screensaver.auth.GoogleAuthManager
+import com.example.screensaver.photos.PersistentPhotoCache
 import org.json.JSONObject
 
 @GlideModule
@@ -52,6 +53,7 @@ class PhotosGlideModule : AppGlideModule() {
     interface GlideModuleEntryPoint {
         fun photoUriManager(): PhotoUriManager
         fun googleAuthManager(): GoogleAuthManager
+        fun persistentPhotoCache(): PersistentPhotoCache
     }
 
     override fun registerComponents(context: Context, glide: Glide, registry: Registry) {
@@ -62,6 +64,7 @@ class PhotosGlideModule : AppGlideModule() {
 
         val photoUriManager = entryPoint.photoUriManager()
         val googleAuthManager = entryPoint.googleAuthManager()
+        val persistentPhotoCache = entryPoint.persistentPhotoCache()
 
         // Create OkHttpClient with auth interceptor
         val client = OkHttpClient.Builder()
@@ -74,7 +77,7 @@ class PhotosGlideModule : AppGlideModule() {
         registry.prepend(
             Uri::class.java,
             InputStream::class.java,
-            UriLoaderFactory(context, photoUriManager, client)
+            UriLoaderFactory(context, photoUriManager, client, persistentPhotoCache)
         )
 
         // Standard URL loader
@@ -143,10 +146,11 @@ class PhotosGlideModule : AppGlideModule() {
     private class UriLoaderFactory(
         private val context: Context,
         private val photoUriManager: PhotoUriManager,
-        private val client: OkHttpClient
+        private val client: OkHttpClient,
+        private val persistentPhotoCache: PersistentPhotoCache
     ) : ModelLoaderFactory<Uri, InputStream> {
         override fun build(multiFactory: MultiModelLoaderFactory): ModelLoader<Uri, InputStream> {
-            return UriLoader(context, photoUriManager, client)
+            return UriLoader(context, photoUriManager, client, persistentPhotoCache)
         }
 
         override fun teardown() {}
@@ -155,17 +159,30 @@ class PhotosGlideModule : AppGlideModule() {
     private class UriLoader(
         private val context: Context,
         private val photoUriManager: PhotoUriManager,
-        private val client: OkHttpClient
+        private val client: OkHttpClient,
+        private val persistentPhotoCache: PersistentPhotoCache
     ) : ModelLoader<Uri, InputStream> {
         override fun buildLoadData(uri: Uri, width: Int, height: Int, options: Options): ModelLoader.LoadData<InputStream>? {
-            val signature = ObjectKey(uri.toString())
-            return ModelLoader.LoadData(signature, UriDataFetcher(context, uri))
+            // Check if this is a Google Photos URI and if we have a cached version
+            val uriString = uri.toString()
+            var finalUri = uri
+
+            if (photoUriManager.isGooglePhotosUri(uri)) {
+                val cachedUri = persistentPhotoCache.getCachedPhotoUri(uriString)
+                if (cachedUri != null) {
+                    // Use cached version instead
+                    finalUri = Uri.parse(cachedUri)
+                }
+            }
+
+            val signature = ObjectKey(finalUri.toString())
+            return ModelLoader.LoadData(signature, UriDataFetcher(context, finalUri))
         }
 
         override fun handles(uri: Uri): Boolean = true
     }
 
-    private class UriDataFetcher(  // Changed from inner class to private class
+    private class UriDataFetcher(
         private val context: Context,
         private val uri: Uri
     ) : DataFetcher<InputStream> {

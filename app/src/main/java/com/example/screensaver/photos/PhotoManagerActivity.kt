@@ -35,7 +35,10 @@ import android.widget.EditText
 import android.text.InputFilter
 import android.text.InputType
 import android.widget.Button
+import android.widget.ProgressBar
+import android.widget.TextView
 import androidx.core.view.doOnNextLayout
+import com.example.screensaver.PhotoRepository
 import com.google.android.material.snackbar.Snackbar
 import com.example.screensaver.photos.VirtualAlbum
 import com.example.screensaver.utils.AppPreferences
@@ -68,6 +71,9 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
     @Inject
     lateinit var appPreferences: AppPreferences
 
+    @Inject
+    lateinit var photoRepository: PhotoRepository
+
     private var isFirstTimeSetup = true
     private var isShowingDialog = false
     private var hasSkippedThisSession = false
@@ -95,6 +101,7 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         setupViewPager()
         setupFab()
         observeState()
+        observeCacheStatus()
 
         viewModel.reloadState()
 
@@ -433,6 +440,76 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
             }
         }
         binding.viewPager.isUserInputEnabled = enable
+    }
+
+    private fun observeCacheStatus() {
+        lifecycleScope.launch {
+            try {
+                val cacheStatusTextView = findViewById<TextView>(R.id.cache_status_text)
+                val cacheProgressBar = findViewById<ProgressBar>(R.id.cache_progress_bar)
+                val cacheTotalSizeView = findViewById<TextView>(R.id.cache_total_size)
+
+                if (cacheStatusTextView == null || cacheProgressBar == null) {
+                    Log.w(TAG, "Cache status views not found in layout")
+                    return@launch
+                }
+
+                // Collect total cache size
+                launch {
+                    photoRepository.persistentPhotoCache.totalCacheSize.collect { totalSizeBytes ->
+                        val formattedSize = photoRepository.persistentPhotoCache.formatFileSize(totalSizeBytes)
+                        cacheTotalSizeView?.text = "Total Cache: $formattedSize"
+                        cacheTotalSizeView?.visibility = View.VISIBLE
+                    }
+                }
+
+                // Collect caching progress
+                photoRepository.persistentPhotoCache.cachingProgress.collect { progress ->
+                    when (progress) {
+                        is PersistentPhotoCache.CachingProgress.Idle -> {
+                            cacheStatusTextView.visibility = View.GONE
+                            cacheProgressBar.visibility = View.GONE
+                        }
+                        is PersistentPhotoCache.CachingProgress.Starting -> {
+                            cacheStatusTextView.visibility = View.VISIBLE
+                            cacheProgressBar.visibility = View.VISIBLE
+                            cacheStatusTextView.text = "Preparing to cache ${progress.total} photos..."
+                            cacheProgressBar.isIndeterminate = true
+                        }
+                        is PersistentPhotoCache.CachingProgress.InProgress -> {
+                            cacheStatusTextView.visibility = View.VISIBLE
+                            cacheProgressBar.visibility = View.VISIBLE
+                            val currentSize = photoRepository.persistentPhotoCache.formatFileSize(progress.currentFileSize)
+                            cacheStatusTextView.text = "Caching photos: ${progress.completed}/${progress.total} ($currentSize)"
+                            cacheProgressBar.isIndeterminate = false
+                            cacheProgressBar.progress = (progress.progress * 100).toInt()
+                        }
+                        is PersistentPhotoCache.CachingProgress.Complete -> {
+                            cacheStatusTextView.visibility = View.VISIBLE
+                            cacheProgressBar.visibility = View.VISIBLE
+                            cacheProgressBar.progress = 100 // Ensure progress bar shows 100%
+
+                            val totalSize = photoRepository.persistentPhotoCache.formatFileSize(progress.totalSizeBytes)
+                            cacheStatusTextView.text = "Caching Complete: ${progress.succeeded} photos (${totalSize})"
+
+                            // Hide status after delay
+                            launch {
+                                delay(3000)
+                                cacheStatusTextView.visibility = View.GONE
+                                cacheProgressBar.visibility = View.GONE
+                            }
+                        }
+                        is PersistentPhotoCache.CachingProgress.Failed -> {
+                            cacheStatusTextView.visibility = View.VISIBLE
+                            cacheProgressBar.visibility = View.GONE
+                            cacheStatusTextView.text = "Caching failed: ${progress.reason}"
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in observeCacheStatus", e)
+            }
+        }
     }
 
     private fun updateButtonsVisibility(position: Int) {

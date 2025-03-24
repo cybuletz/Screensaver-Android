@@ -27,6 +27,7 @@ import com.example.screensaver.recovery.StateRestoration
 import com.example.screensaver.data.PhotoCache
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
+import com.example.screensaver.photos.PersistentPhotoCache
 import com.example.screensaver.photos.PhotoUriManager
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
@@ -175,12 +176,19 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun providePersistentPhotoCache(
+        @ApplicationContext context: Context
+    ): PersistentPhotoCache {
+        return PersistentPhotoCache(context)
+    }
+
+    @Provides
+    @Singleton
     fun providePhotoUriManager(
         @ApplicationContext context: Context,
-        preferences: AppPreferences,
-        googleAuthManager: GoogleAuthManager
+        persistentPhotoCache: PersistentPhotoCache
     ): PhotoUriManager {
-        return PhotoUriManager(context, preferences, googleAuthManager)
+        return PhotoUriManager(context, persistentPhotoCache)
     }
 
     @Provides

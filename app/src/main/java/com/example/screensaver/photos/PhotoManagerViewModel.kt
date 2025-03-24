@@ -34,6 +34,10 @@ class PhotoManagerViewModel @Inject constructor(
     private val photoRepository: PhotoRepository
 ) : ViewModel() {
 
+    private val persistentPhotoCache: PersistentPhotoCache
+        get() = photoRepository.persistentPhotoCache
+
+
     private val _state = MutableStateFlow<PhotoManagerState>(PhotoManagerState.Idle)
     private val _photos = MutableStateFlow<List<ManagedPhoto>>(emptyList())
     private val _virtualAlbums = MutableStateFlow<List<VirtualAlbum>>(emptyList())
@@ -65,8 +69,9 @@ class PhotoManagerViewModel @Inject constructor(
         object Idle : PhotoManagerState()
         object Loading : PhotoManagerState()
         object Empty : PhotoManagerState()
-        data class Error(val message: String) : PhotoManagerState()
         data class Success(val message: String) : PhotoManagerState()
+        data class Error(val message: String) : PhotoManagerState()
+        data class Processing(val message: String) : PhotoManagerState()
     }
 
     enum class SortOption {
@@ -580,6 +585,56 @@ class PhotoManagerViewModel @Inject constructor(
         return _photos.value
             .map { it.uri }
             .filterNot { allAlbumPhotos.contains(it) }
+    }
+
+    fun cacheGooglePhotos(photos: List<ManagedPhoto>) {
+        viewModelScope.launch {
+            try {
+                _state.value = PhotoManagerState.Loading
+
+                // Filter for Google Photos URIs
+                val googlePhotos = photos.filter {
+                    it.uri.contains("photos.google.com") ||
+                            it.uri.contains("googleusercontent.com")
+                }
+
+                if (googlePhotos.isEmpty()) {
+                    _state.value = PhotoManagerState.Idle
+                    return@launch
+                }
+
+                // Show caching notification
+                _state.value = PhotoManagerState.Processing("Caching Google Photos...")
+
+                // Start caching
+                persistentPhotoCache.cachePhotos(googlePhotos.map { it.uri })
+                    .collect { progress ->
+                        when (progress) {
+                            is PersistentPhotoCache.CachingProgress.InProgress -> {
+                                val percentComplete = (progress.progress * 100).toInt()
+                                _state.value = PhotoManagerState.Processing(
+                                    "Caching photos: $percentComplete% (${progress.completed}/${progress.total})"
+                                )
+                            }
+                            is PersistentPhotoCache.CachingProgress.Complete -> {
+                                Log.d(TAG, "Caching complete: ${progress.succeeded} succeeded, " +
+                                        "${progress.failed} failed, ${progress.alreadyCached} already cached")
+                                _state.value = PhotoManagerState.Idle
+                            }
+                            is PersistentPhotoCache.CachingProgress.Failed -> {
+                                Log.e(TAG, "Caching failed: ${progress.reason}")
+                                _state.value = PhotoManagerState.Error("Failed to cache photos: ${progress.reason}")
+                            }
+                            else -> {
+                                // Handle other states
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error caching Google Photos", e)
+                _state.value = PhotoManagerState.Error("Error caching photos: ${e.message}")
+            }
+        }
     }
 
     fun sortPhotos(option: SortOption) {

@@ -42,6 +42,48 @@
         android:visibility="gone"
         app:icon="@drawable/ic_create_album"/>
 
+    <!-- Cache status container -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:layout_margin="16dp">
+
+        <!-- Total Cache Size Text -->
+        <TextView
+            android:id="@+id/cache_total_size"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#80000000"
+            android:padding="4dp"
+            android:textSize="12sp"
+            android:textColor="#FFFFFF"
+            android:gravity="end"
+            android:visibility="gone"
+            android:layout_marginBottom="4dp"/>
+
+        <!-- Cache Status Text -->
+        <TextView
+            android:id="@+id/cache_status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#80000000"
+            android:padding="8dp"
+            android:textColor="#FFFFFF"
+            android:gravity="center"
+            android:visibility="gone"/>
+
+        <!-- Cache Progress Bar -->
+        <ProgressBar
+            android:id="@+id/cache_progress_bar"
+            style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:visibility="gone"/>
+    </LinearLayout>
+
     <include
         android:id="@+id/loadingState"
         layout="@layout/loading_state"

@@ -39,6 +39,7 @@ import com.bumptech.glide.load.HttpException
 import com.example.screensaver.glide.GlideApp
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
+import com.example.screensaver.photos.PersistentPhotoCache
 
 
 @Singleton
@@ -49,6 +50,7 @@ class PhotoDisplayManager @Inject constructor(
     private val spotifyManager: SpotifyManager,
     private val spotifyPreferences: SpotifyPreferences
 ) {
+
     private val managerJob = SupervisorJob()
     private val managerScope = CoroutineScope(Dispatchers.Main + managerJob)
 
@@ -264,8 +266,8 @@ class PhotoDisplayManager @Inject constructor(
 
         val photoCount = photoManager.getPhotoCount()
         if (photoCount == 0) {
-            Log.d(TAG, "No photos available, showing default photo")
-            showDefaultPhoto()
+            Log.d(TAG, "No photos available, showing default photo with message")
+            showNoPhotosMessage()
             return
         }
 
@@ -273,7 +275,20 @@ class PhotoDisplayManager @Inject constructor(
             try {
                 val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
                 val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: return@launch
-                Log.d(TAG, "Loading photo $nextIndex: $nextUrl")
+
+                // Try to get cached URI but fallback to original if needed
+                val originalUrl = nextUrl
+                val cachedUri = try {
+                    photoManager.persistentPhotoCache?.getCachedPhotoUri(nextUrl)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error getting cached URI", e)
+                    null
+                }
+
+                // Choose which URI to load - first try cached, if that fails use original
+                var uriToLoad = cachedUri ?: originalUrl
+
+                Log.d(TAG, "Loading photo $nextIndex: $uriToLoad (${if(cachedUri != null) "cached" else "original"})")
                 val startTime = System.currentTimeMillis()
 
                 views?.let { views ->
@@ -287,20 +302,32 @@ class PhotoDisplayManager @Inject constructor(
 
                         withContext(Dispatchers.Main) {
                             GlideApp.with(context)
-                                .load(nextUrl)
+                                .load(uriToLoad)
                                 .diskCacheStrategy(DiskCacheStrategy.ALL)
-                                .error(R.drawable.default_photo)
+                                .onlyRetrieveFromCache(false) // Allow loading from network if cache fails
+                                .error(
+                                    // If loading cached version fails, try the original
+                                    if (cachedUri != null && cachedUri == uriToLoad) {
+                                        GlideApp.with(context)
+                                            .load(originalUrl)
+                                            .diskCacheStrategy(DiskCacheStrategy.ALL)
+                                    } else {
+                                        GlideApp.with(context).load(R.drawable.default_photo)
+                                    }
+                                )
                                 .listener(createGlideListener(views, nextIndex, startTime, transitionEffect))
                                 .into(views.overlayView)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in loadAndDisplayPhoto", e)
                         isTransitioning = false
+                        showDefaultPhoto()
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error calculating next photo", e)
                 isTransitioning = false
+                showDefaultPhoto()
             }
         }
     }
@@ -327,6 +354,34 @@ class PhotoDisplayManager @Inject constructor(
                     .start()
 
                 Log.d(TAG, "Hiding loading overlay")
+            }
+        }
+    }
+
+    private fun showNoPhotosMessage() {
+        views?.let { views ->
+            try {
+                // Hide any existing messages first
+                hideAllMessages()
+
+                // Load default photo without animation and show message
+                views.primaryView.post {
+                    Glide.with(context)
+                        .load(R.drawable.default_photo)
+                        .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                        .into(views.primaryView)
+
+                    // Show message overlay
+                    views.overlayMessageContainer?.visibility = View.VISIBLE
+                    views.overlayMessageText?.text = "No photos selected"
+
+                    // Ensure the view is visible
+                    views.primaryView.visibility = View.VISIBLE
+                }
+
+                Log.d(TAG, "No photos message shown")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error showing no photos message", e)
             }
         }
     }

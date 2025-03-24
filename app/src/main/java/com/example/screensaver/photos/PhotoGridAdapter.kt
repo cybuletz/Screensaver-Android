@@ -32,6 +32,9 @@ class PhotoGridAdapter @Inject constructor(
     private val onPhotoLoadError: ((ManagedPhotoType, Exception?) -> Unit)? = null
 ) : ListAdapter<ManagedPhotoType, PhotoGridAdapter.PhotoViewHolder>(PhotoDiffCallback()) {
 
+    private val persistentPhotoCache: PersistentPhotoCache
+        get() = photoUriManager.persistentPhotoCache
+
     companion object {
         private const val TAG = "PhotoGridAdapter"
         private const val PREVIEW_SIZE = 300
@@ -63,13 +66,21 @@ class PhotoGridAdapter @Inject constructor(
             binding.photoImage.setImageResource(R.drawable.ic_photo_placeholder)
 
             try {
-                val uri = Uri.parse(photo.uri)
+                // Get cached URI if available
+                val cachedUri = persistentPhotoCache.getCachedPhotoUri(photo.uri)
+                val uriToLoad = cachedUri ?: photo.uri
+                val uri = Uri.parse(uriToLoad)
 
                 // Check URI permissions before loading
-                val hasPermission = photoUriManager.hasValidPermission(uri)
+                val hasPermission = if (cachedUri != null) true else photoUriManager.hasValidPermission(uri)
                 val isGooglePhotosUri = photoUriManager.isGooglePhotosUri(uri)
 
                 Log.d(TAG, "Loading photo URI: $uri, hasPermission: $hasPermission, isGooglePhotos: $isGooglePhotosUri")
+
+                if (!hasPermission && isGooglePhotosUri) {
+                    binding.errorIndicator.visibility = View.VISIBLE
+                    return
+                }
 
                 glide.clear(binding.photoImage)
 
@@ -156,6 +167,7 @@ class PhotoGridAdapter @Inject constructor(
     override fun onBindViewHolder(holder: PhotoViewHolder, position: Int) {
         holder.bind(getItem(position))
     }
+
 
     private class PhotoDiffCallback : DiffUtil.ItemCallback<ManagedPhotoType>() {
         override fun areItemsTheSame(oldItem: ManagedPhotoType, newItem: ManagedPhotoType): Boolean {

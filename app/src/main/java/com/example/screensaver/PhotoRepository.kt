@@ -9,6 +9,7 @@ import android.util.Log
 import com.example.screensaver.auth.GoogleAuthManager
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.models.AlbumInfo
+import com.example.screensaver.photos.PersistentPhotoCache
 import com.example.screensaver.photos.VirtualAlbum
 import com.example.screensaver.photos.PhotoManagerViewModel.Companion
 import com.example.screensaver.photos.PhotoUriManager
@@ -32,6 +33,9 @@ class PhotoRepository @Inject constructor(
     private val googleAuthManager: GoogleAuthManager,
     private val photoUriManager: PhotoUriManager
 ) {
+    val persistentPhotoCache: PersistentPhotoCache
+        get() = photoUriManager.persistentPhotoCache
+
     private val mediaItems = mutableListOf<MediaItem>()
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
     val loadingState: StateFlow<LoadingState> = _loadingState

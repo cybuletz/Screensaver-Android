@@ -17,124 +17,68 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Manages photo URIs across different Android versions, handling persistence,
- * validation, and version-specific behaviors for photo URIs.
- */
+
 @Singleton
 class PhotoUriManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val preferences: AppPreferences,
-    private val googleAuthManager: GoogleAuthManager
+    val persistentPhotoCache: PersistentPhotoCache
 ) {
     companion object {
         private const val TAG = "PhotoUriManager"
-        private const val URI_EXPIRY_CHECK_THRESHOLD = 86400000L // 24 hours in milliseconds
-
-        // Constants for URI types
-        const val URI_TYPE_PHOTO_PICKER = "photo_picker"
-        const val URI_TYPE_GOOGLE_PHOTOS = "google_photos"
-        const val URI_TYPE_CONTENT = "content"
-        const val URI_TYPE_FILE = "file"
-        const val URI_TYPE_UNKNOWN = "unknown"
-
-        // Permission flags
-        const val PERMISSION_FLAGS_READ = Intent.FLAG_GRANT_READ_URI_PERMISSION
-        const val PERMISSION_FLAGS_READ_WRITE = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-    }
-
-    /**
-     * Get a specialized intent specifically for Google Photos
-     */
-    fun getGooglePhotosIntent(allowMultiple: Boolean = true): Intent {
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-            type = "image/*"
-            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
-            addCategory(Intent.CATEGORY_OPENABLE)
-            putExtra(Intent.EXTRA_LOCAL_ONLY, false)
-
-            // Request ALL possible permissions
-            addFlags(
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-            )
-
-            // Target Google Photos specifically
-            `package` = "com.google.android.apps.photos"
-            putExtra(DocumentsContract.EXTRA_INITIAL_URI,
-                Uri.parse("content://com.google.android.apps.photos.contentprovider"))
-        }
-
-        return intent
-    }
-
-    fun takePersistablePermission(uri: Uri, flags: Int = PERMISSION_FLAGS_READ_WRITE): Boolean {
-        try {
-            val resolver = context.contentResolver
-
-            // Check if URI requires special handling
-            if (isGooglePhotosUri(uri)) {
-                // For Google Photos URIs on Android 11+, we need specific handling
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // Try to take persistable permission with specific flags
-                    resolver.takePersistableUriPermission(uri, PERMISSION_FLAGS_READ)
-                }
-
-                // Record this URI for future access
-                preferences.addRecentlyAccessedUri(uri.toString())
-                return true
-            } else {
-                // Standard URIs - try to take persistable permission
-                resolver.takePersistableUriPermission(uri, flags)
-                return true
-            }
-        } catch (e: SecurityException) {
-            Log.w(TAG, "Could not take persistable permission for $uri: ${e.message}")
-
-            // Even if we can't take persistable permission, record access for later
-            preferences.addRecentlyAccessedUri(uri.toString())
-            return false
-        } catch (e: Exception) {
-            Log.e(TAG, "Error taking persistable permission", e)
-            return false
-        }
+        const val URI_TYPE_GOOGLE_PHOTOS = 1
+        const val URI_TYPE_PHOTO_PICKER = 2
+        const val URI_TYPE_CONTENT = 3
+        const val URI_TYPE_FILE = 4
+        const val URI_TYPE_OTHER = 5
     }
 
     fun hasValidPermission(uri: Uri): Boolean {
-        try {
-            val resolver = context.contentResolver
+        // First check if we have a cached version
+        val uriString = uri.toString()
+        if (persistentPhotoCache.isUriCached(uriString)) {
+            return true
+        }
 
-            // For Google Photos URIs, check if we've accessed them recently
-            if (isGooglePhotosUri(uri)) {
-                return preferences.getRecentlyAccessedUris().contains(uri.toString())
-            }
-
-            // For other URIs, check if we have persistable permissions
-            return resolver.persistedUriPermissions.any {
-                it.uri == uri && it.isReadPermission
+        // Otherwise check actual URI permissions
+        return try {
+            val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            if (isGooglePhotosUri(uri) || isPhotoPickerUri(uri)) {
+                // For Google Photos URIs, check if the URI is valid at all
+                // Note: This might actually try to access the URI which could fail
+                val test = context.contentResolver.query(
+                    uri, null, null, null, null
+                )
+                val hasPermission = test != null
+                test?.close()
+                hasPermission
+            } else {
+                context.contentResolver.persistedUriPermissions.any {
+                    it.uri == uri && it.isReadPermission
+                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking URI permission", e)
-            return false
+            Log.e(TAG, "Permission check failed for URI: $uri", e)
+            false
         }
     }
 
-    fun getUriType(uri: Uri): String {
+    fun getUriType(uri: Uri): Int {
         return when {
-            uri.toString().contains("com.android.providers.media.photopicker") -> {
-                URI_TYPE_PHOTO_PICKER
-            }
-            uri.toString().contains("com.google.android.apps.photos") -> {
-                URI_TYPE_GOOGLE_PHOTOS
-            }
-            uri.scheme == ContentResolver.SCHEME_CONTENT -> {
-                URI_TYPE_CONTENT
-            }
-            uri.scheme == ContentResolver.SCHEME_FILE -> {
-                URI_TYPE_FILE
-            }
-            else -> URI_TYPE_UNKNOWN
+            isGooglePhotosUri(uri) -> URI_TYPE_GOOGLE_PHOTOS
+            isPhotoPickerUri(uri) -> URI_TYPE_PHOTO_PICKER
+            uri.scheme == ContentResolver.SCHEME_CONTENT -> URI_TYPE_CONTENT
+            uri.scheme == "file" -> URI_TYPE_FILE
+            else -> URI_TYPE_OTHER
+        }
+    }
+
+    private fun isPhotoPickerUri(uri: Uri): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val uriString = uri.toString()
+            uriString.contains("media/picker") ||
+                    uriString.contains("com.android.providers.media.photopicker")
+        } else {
+            false
         }
     }
 
@@ -144,31 +88,26 @@ class PhotoUriManager @Inject constructor(
                 uriString.contains("googleusercontent.com")
     }
 
-    suspend fun validateUris(uris: List<String>): List<String> = withContext(Dispatchers.IO) {
-        uris.filter { uriString ->
-            try {
-                val uri = Uri.parse(uriString)
-                when (getUriType(uri)) {
-                    URI_TYPE_PHOTO_PICKER -> {
-                        // Photo picker URIs from Android 13+ should be persistently accessible
-                        true
-                    }
-                    URI_TYPE_GOOGLE_PHOTOS -> {
-                        // Google Photos URIs need special handling
-                        hasValidPermission(uri)
-                    }
-                    URI_TYPE_CONTENT -> {
-                        // For general content URIs, check if we still have permission
-                        hasValidPermission(uri) && isUriAccessible(uri)
-                    }
-                    else -> {
-                        // For other URI types, just check if they're accessible
-                        isUriAccessible(uri)
-                    }
+    fun getCachedUriOrOriginal(uri: String): String {
+        return persistentPhotoCache.getCachedPhotoUri(uri) ?: uri
+    }
+
+    fun validateUris(uris: List<String>): List<String> {
+        return uris.filter { uriString ->
+            // First check if we have a cached version
+            val cachedUri = persistentPhotoCache.getCachedPhotoUri(uriString)
+            if (cachedUri != null) {
+                // We have a cached version, so this URI is valid
+                true
+            } else {
+                try {
+                    // Otherwise check if the original URI is valid
+                    val uri = Uri.parse(uriString)
+                    hasValidPermission(uri)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Invalid URI: $uriString", e)
+                    false
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error validating URI: $uriString", e)
-                false
             }
         }
     }
@@ -184,137 +123,13 @@ class PhotoUriManager @Inject constructor(
         }
     }
 
-    suspend fun processSelectedUris(uris: List<Uri>): List<UriData> = withContext(Dispatchers.IO) {
-        uris.mapNotNull { uri ->
-            try {
-                // First try to take persistable permissions
-                val permissionTaken = takePersistablePermission(uri)
-
-                // Create URI metadata
-                UriData(
-                    uri = uri.toString(),
-                    type = getUriType(uri),
-                    hasPersistedPermission = permissionTaken,
-                    timestamp = System.currentTimeMillis()
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Error processing URI: $uri", e)
-                null
-            }
-        }
-    }
-
-    fun getPhotoPickerIntent(allowMultiple: Boolean = true): Intent {
-        return when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                // Android 13+ (API 33+): Use system photo picker
-                Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, if (allowMultiple) 100 else 1)
-                    addFlags(
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                    )
-                }
-            }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && googleAuthManager.hasValidTokens() -> {
-                // Android 11-12 with Google auth: Try Google Photos first
-                getGooglePhotosIntent(allowMultiple)
-            }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                // Android 11-12 without Google auth: Use ACTION_OPEN_DOCUMENT
-                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    addFlags(
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                    )
-                }
-            }
-            else -> {
-                // Fallback for older versions
-                Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-            }
-        }
-    }
-
-    suspend fun processUri(uri: Uri): UriData? = withContext(Dispatchers.IO) {
-        try {
-            // For Google Photos URIs, ensure we have valid auth
-            if (isGooglePhotosUri(uri) && !googleAuthManager.hasValidTokens()) {
-                if (!googleAuthManager.refreshTokens()) {
-                    return@withContext null
-                }
-            }
-
-            val hasPermission = takePersistablePermission(uri)
-            val timestamp = System.currentTimeMillis()
-            val uriType = getUriType(uri)
-
-            if (hasPermission) {
-                preferences.addRecentlyAccessedUri(uri.toString())
-            }
-
-            UriData(
-                uri = uri.toString(),
-                type = uriType,
-                hasPersistedPermission = hasPermission,
-                timestamp = timestamp
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error processing URI: $uri", e)
-            null
-        }
-    }
-
     fun takePersistablePermission(uri: Uri): Boolean {
         return try {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            context.contentResolver.takePersistableUriPermission(uri, takeFlags)
             true
-        } catch (e: SecurityException) {
-            // If we can't take persistable permission, try to keep temporary
-            Log.w(TAG, "Could not take persistable permission: ${e.message}")
-            preferences.addRecentlyAccessedUri(uri.toString())
-            false
         } catch (e: Exception) {
-            Log.e(TAG, "Error taking permission: ${e.message}")
-            false
-        }
-    }
-
-    fun validateUri(uri: Uri): Boolean {
-        return try {
-            when (getUriType(uri)) {
-                URI_TYPE_PHOTO_PICKER -> {
-                    // For photo picker URIs, check if we have persisted permission
-                    context.contentResolver.persistedUriPermissions.any {
-                        it.uri == uri && it.isReadPermission
-                    }
-                }
-                URI_TYPE_CONTENT -> {
-                    // For content URIs, try to query metadata
-                    context.contentResolver.query(uri,
-                        arrayOf(MediaStore.Images.Media._ID),
-                        null, null, null)?.use { cursor ->
-                        cursor.count > 0
-                    } ?: false
-                }
-                else -> {
-                    // For all other URIs, check if recently accessed
-                    preferences.getRecentlyAccessedUris().contains(uri.toString())
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error validating URI: $uri", e)
+            Log.e(TAG, "Failed to take persistable permission: $uri", e)
             false
         }
     }
