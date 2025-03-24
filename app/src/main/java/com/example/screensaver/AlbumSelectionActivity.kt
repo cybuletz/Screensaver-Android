@@ -38,6 +38,7 @@ import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import com.example.screensaver.PhotoRepository.PhotoAddMode
+import com.example.screensaver.data.PhotoStorageCoordinator
 import com.example.screensaver.shared.GoogleAuthManager
 import com.example.screensaver.photos.PhotoManagerActivity
 import com.example.screensaver.photos.PhotoManagerViewModel
@@ -64,6 +65,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     @Inject
     lateinit var photoUriManager: PhotoUriManager
+
+    @Inject
+    lateinit var storageCoordinator: PhotoStorageCoordinator
 
     private val viewModel: AlbumSelectionViewModel by viewModels()
     private val photoManagerViewModel: PhotoManagerViewModel by viewModels()
@@ -515,11 +519,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
     private suspend fun saveProcessedItems(selectedMediaItems: List<MediaItem>) {
         withContext(Dispatchers.IO) {
             try {
-                // Add new items to repository
-                photoRepository.addPhotos(
-                    photos = selectedMediaItems,
-                    mode = PhotoRepository.PhotoAddMode.APPEND
-                )
+                // Add to both systems
+                photoRepository.addPhotos(selectedMediaItems, PhotoRepository.PhotoAddMode.APPEND)
+                storageCoordinator.addPhotos(selectedMediaItems)
 
                 // Update preferences
                 preferences.clearSelectedAlbums()
@@ -735,10 +737,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
         updateLoadingText("Saving photos...")
         withContext(Dispatchers.IO) {
-            photoRepository.addPhotos(
-                photos = photos,
-                mode = PhotoAddMode.APPEND
-            )
+            // Add to both systems during transition
+            photoRepository.addPhotos(photos, PhotoAddMode.APPEND)
+            storageCoordinator.addPhotos(photos)
         }
     }
 

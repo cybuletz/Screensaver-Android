@@ -47,6 +47,8 @@ import android.webkit.WebView
 import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.example.screensaver.data.PhotoMigrationManager
+import com.example.screensaver.data.PhotoStorageCoordinator
 import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.music.RadioManager
 import com.example.screensaver.music.RadioPreferences
@@ -112,6 +114,12 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var photoUriManager: PhotoUriManager
+
+    @Inject
+    lateinit var photoStorageCoordinator: PhotoStorageCoordinator
+
+    @Inject
+    lateinit var photoMigrationManager: PhotoMigrationManager
 
     private var isDestroyed = false
 
@@ -184,47 +192,65 @@ class MainActivity : AppCompatActivity() {
             setupNavigation()
             setupSettingsButton()
             setupTouchListener()
-            initializePhotoDisplayManager()
 
-            // Add validation here after photo manager is initialized
+            // Perform migration if needed before initializing photo display
             lifecycleScope.launch {
-                photoRepository.validateStoredPhotos()
-            }
-
-            initializePhotos()
-            preventUnauthorizedClosure()
-
-            photoDisplayManager.updatePhotoSources()
-            checkInitialChargingState()
-
-            if (navController.currentDestination?.id == R.id.mainFragment) {
-                lifecycleScope.launch {
-                    delay(500)
-                    photoDisplayManager.startPhotoDisplay()
-                }
-            }
-
-            if (intent?.getBooleanExtra("start_screensaver", false) == true) {
-                lifecycleScope.launch {
-                    try {
-                        if (navController.currentDestination?.id != R.id.mainFragment) {
-                            navController.navigate(R.id.mainFragment)
+                try {
+                    // Check if migration has been done
+                    if (!preferences.getBoolean("photo_migration_completed", false)) {
+                        Log.d(TAG, "Starting photo migration process")
+                        photoMigrationManager.migrateToCoordinator()
+                        // Mark migration as completed
+                        preferences.edit {
+                            putBoolean("photo_migration_completed", true)
                         }
-                        delay(500)
-                        setupFullScreen()
-                        photoDisplayManager.startPhotoDisplay()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error handling charging start", e)
+                        Log.d(TAG, "Photo migration completed successfully")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during photo migration", e)
+                } finally {
+                    // Initialize photo display manager regardless of migration status
+                    initializePhotoDisplayManager()
+
+                    // Add validation here after photo manager is initialized
+                    photoRepository.validateStoredPhotos()
+
+                    initializePhotos()
+                    preventUnauthorizedClosure()
+
+                    photoDisplayManager.updatePhotoSources()
+                    checkInitialChargingState()
+
+                    if (navController.currentDestination?.id == R.id.mainFragment) {
+                        lifecycleScope.launch {
+                            delay(500)
+                            photoDisplayManager.startPhotoDisplay()
+                        }
+                    }
+
+                    if (intent?.getBooleanExtra("start_screensaver", false) == true) {
+                        lifecycleScope.launch {
+                            try {
+                                if (navController.currentDestination?.id != R.id.mainFragment) {
+                                    navController.navigate(R.id.mainFragment)
+                                }
+                                delay(500)
+                                setupFullScreen()
+                                photoDisplayManager.startPhotoDisplay()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error handling charging start", e)
+                            }
+                        }
+                    }
+
+                    observeWidgetStates()
+                    setupKeepScreenOnObserver()
+                    updateOrientation()
+
+                    if (brightnessManager.isCustomBrightnessEnabled()) {
+                        brightnessManager.startMonitoring(window)
                     }
                 }
-            }
-
-            observeWidgetStates()
-            setupKeepScreenOnObserver()
-            updateOrientation()
-
-            if (brightnessManager.isCustomBrightnessEnabled()) {
-                brightnessManager.startMonitoring(window)
             }
 
         } catch (e: Exception) {
@@ -445,8 +471,9 @@ class MainActivity : AppCompatActivity() {
                 if (selectedAlbums.isNotEmpty()) {
                     Log.d(TAG, "Found ${selectedAlbums.size} saved albums")
 
-                    // Load photos from PhotoRepository instead
-                    val photos = photoRepository.getAllPhotos()
+                    // Use photoDisplayManager to get photos
+                    val photos = photoDisplayManager.getAllPhotos()
+
                     if (photos.isNotEmpty()) {
                         if (!isDestroyed) {
                             photoDisplayManager.startPhotoDisplay()
@@ -454,7 +481,7 @@ class MainActivity : AppCompatActivity() {
                             Log.d(TAG, "Activity is destroyed, skipping photo display")
                         }
                     } else {
-                        Log.e(TAG, "No photos found in repository")
+                        Log.e(TAG, "No photos found in photo display manager")
                     }
                 } else {
                     Log.d(TAG, "No albums selected")
@@ -772,35 +799,37 @@ class MainActivity : AppCompatActivity() {
                 // Initialize PhotoDisplayManager
                 photoDisplayManager.initialize(views, lifecycleScope)
 
-                // First validate stored photos to ensure we have valid permissions
-                photoRepository.validateStoredPhotos()
+                // Validate photos
+                photoDisplayManager.validateAllPhotos()
 
                 // Observe virtual albums from PhotoManagerViewModel
                 lifecycleScope.launch {
                     photoManagerViewModel.virtualAlbums.collect { albums ->
-                        val selectedAlbums = albums.filter { it.isSelected }
+                        val selectedAlbums = albums.filter { album -> album.isSelected }
 
-                        // Get photo URIs from selected albums
-                        val photos = if (selectedAlbums.isEmpty()) {
-                            // No virtual albums selected, use all photos from repository
-                            photoRepository.getAllPhotos().map { Uri.parse(it.baseUrl) }
+                        val photoUris = if (selectedAlbums.isEmpty()) {
+                            // No virtual albums selected, get all photos from PhotoDisplayManager
+                            photoDisplayManager.getAllPhotos().map { mediaItem ->
+                                Uri.parse(mediaItem.baseUrl)
+                            }
                         } else {
                             // Use photos from selected virtual albums
                             selectedAlbums.flatMap { album ->
-                                album.photoUris.map { Uri.parse(it) }
+                                album.photoUris.map { uri -> Uri.parse(uri) }
                             }
                         }
 
-                        // Before updating display, validate URIs
-                        val validPhotos = photos.filter { uri ->
+                        // Validate URIs using PhotoDisplayManager
+                        val validPhotoUris = photoUris.filter { uri ->
                             photoUriManager.hasValidPermission(uri)
                         }
 
-                        if (validPhotos.size < photos.size) {
-                            Log.w(TAG, "Found ${photos.size - validPhotos.size} invalid URIs, they will be skipped")
+                        if (validPhotoUris.size < photoUris.size) {
+                            Log.w(TAG, "Found ${photoUris.size - validPhotoUris.size} invalid URIs, they will be skipped")
                         }
 
-                        photoDisplayManager.updatePhotoSources(validPhotos)
+                        // Update display with valid photos
+                        photoDisplayManager.updatePhotoSources(validPhotoUris)
                     }
                 }
             } catch (e: Exception) {
@@ -912,8 +941,7 @@ class MainActivity : AppCompatActivity() {
 
                         if (forceReload) {
                             withContext(Dispatchers.IO) {
-                                // Use PhotoRepository instead
-                                val photos = photoRepository.getAllPhotos()
+                                val photos = photoDisplayManager.getAllPhotos()
                                 if (photos.isNotEmpty()) {
                                     withContext(Dispatchers.Main) {
                                         photoDisplayManager.startPhotoDisplay()

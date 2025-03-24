@@ -36,6 +36,7 @@ import android.text.InputFilter
 import android.text.InputType
 import android.widget.Button
 import androidx.core.view.doOnNextLayout
+import com.example.screensaver.data.PhotoStorageCoordinator
 import com.google.android.material.snackbar.Snackbar
 import com.example.screensaver.photos.VirtualAlbum
 import com.example.screensaver.utils.AppPreferences
@@ -67,6 +68,9 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
 
     @Inject
     lateinit var appPreferences: AppPreferences
+
+    @Inject
+    lateinit var photoStorageCoordinator: PhotoStorageCoordinator
 
     private var isFirstTimeSetup = true
     private var isShowingDialog = false
@@ -127,19 +131,23 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
     }
 
     private fun setupPhotoObserver() {
-        var lastPhotoCount = 0  // Track the previous photo count
+        var lastPhotoCount = 0
 
         lifecycleScope.launch {
+            // Collect from both sources
+            launch {
+                photoStorageCoordinator.photos.collect { coordinatorPhotos ->
+                    viewModel.updatePhotosFromCoordinator(coordinatorPhotos)
+                }
+            }
+
             viewModel.photos.collect { photos ->
                 val hasPhotos = photos.isNotEmpty()
                 val currentCount = photos.size
                 Log.d(TAG, "Photos updated: count = $currentCount")
 
-                // Update UI state
                 updateTabsVisibility(hasPhotos)
                 if (binding.viewPager.currentItem == 0) {
-
-                    // Only show dialog if we have new photos added in this session
                     if (hasPhotos && !dialogShownThisSession.value && currentCount > lastPhotoCount) {
                         createDefaultAlbum()
                         showPhotoAddedDialog()
@@ -376,37 +384,49 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
             viewModel.photos.collect { photos ->
                 val newHasPhotos = photos.isNotEmpty()
                 if (newHasPhotos) {
-                    // Store current position
-                    val currentPosition = binding.viewPager.currentItem
+                    withContext(Dispatchers.Main.immediate) {
+                        binding.viewPager.post {
+                            try {
+                                // Store current position
+                                val currentPosition = binding.viewPager.currentItem
 
-                    // Update adapter
-                    binding.viewPager.adapter = PhotoManagerPagerAdapter(this@PhotoManagerActivity, true).also {
-                        TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
-                            tab.text = it.getPageTitle(position)
-                        }.attach()
-                    }
+                                // Create new adapter
+                                val newAdapter = PhotoManagerPagerAdapter(this@PhotoManagerActivity, true)
 
-                    // Enable all tabs
-                    for (i in 0..2) {
-                        binding.tabLayout.getTabAt(i)?.apply {
-                            view?.isClickable = true
-                            view?.alpha = 1f
-                            view?.isEnabled = true
+                                // Update adapter safely
+                                binding.viewPager.adapter = newAdapter
+
+                                // Setup tab mediator after adapter is set
+                                TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
+                                    tab.text = newAdapter.getPageTitle(position)
+                                }.attach()
+
+                                // Enable all tabs
+                                for (i in 0..2) {
+                                    binding.tabLayout.getTabAt(i)?.apply {
+                                        view?.isClickable = true
+                                        view?.alpha = 1f
+                                        view?.isEnabled = true
+                                    }
+                                }
+
+                                // Configure ViewPager
+                                binding.viewPager.apply {
+                                    isUserInputEnabled = true
+                                    offscreenPageLimit = 2
+
+                                    // Restore position
+                                    setCurrentItem(currentPosition, false)
+                                }
+
+                                // Request layouts after everything is set
+                                binding.viewPager.requestLayout()
+                                binding.tabLayout.requestLayout()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error updating ViewPager adapter", e)
+                            }
                         }
                     }
-
-                    binding.viewPager.apply {
-                        isUserInputEnabled = true
-                        offscreenPageLimit = 2
-
-                        // Restore position after a brief delay
-                        post {
-                            setCurrentItem(currentPosition, false)
-                        }
-                    }
-
-                    binding.viewPager.requestLayout()
-                    binding.tabLayout.requestLayout()
                 }
             }
         }

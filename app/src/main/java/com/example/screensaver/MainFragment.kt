@@ -16,6 +16,7 @@ import javax.inject.Inject
 import android.view.animation.AnimationUtils
 import com.google.android.material.snackbar.Snackbar
 import androidx.preference.PreferenceManager
+import com.example.screensaver.data.PhotoStorageCoordinator
 import com.example.screensaver.ui.PhotoDisplayManager
 import kotlinx.coroutines.flow.collectLatest
 
@@ -32,6 +33,9 @@ class MainFragment : Fragment() {
 
     @Inject
     lateinit var photoManager: PhotoRepository
+
+    @Inject
+    lateinit var storageCoordinator: PhotoStorageCoordinator
 
     private var isPhotoDisplayActive = false
 
@@ -72,22 +76,22 @@ class MainFragment : Fragment() {
 
     private fun observePhotoManager() {
         viewLifecycleOwner.lifecycleScope.launch {
-            photoManager.loadingState.collectLatest { state ->
+            storageCoordinator.loadingState.collect { state ->
                 when (state) {
-                    PhotoRepository.LoadingState.SUCCESS -> {
+                    PhotoStorageCoordinator.LoadingState.SUCCESS -> {
                         binding.loadingIndicator.visibility = View.GONE
-                        if (photoManager.getPhotoCount() > 0) {
+                        if (storageCoordinator.getAllPhotos().isNotEmpty()) {
                             updatePreviewButtonState()
                         }
                     }
-                    PhotoRepository.LoadingState.LOADING -> {
+                    PhotoStorageCoordinator.LoadingState.LOADING -> {
                         binding.loadingIndicator.visibility = View.VISIBLE
                     }
-                    PhotoRepository.LoadingState.ERROR -> {
+                    PhotoStorageCoordinator.LoadingState.ERROR -> {
                         binding.loadingIndicator.visibility = View.GONE
                         showError("Error loading photos")
                     }
-                    PhotoRepository.LoadingState.IDLE -> {
+                    PhotoStorageCoordinator.LoadingState.IDLE -> {
                         binding.loadingIndicator.visibility = View.GONE
                     }
                 }
@@ -121,8 +125,7 @@ class MainFragment : Fragment() {
         )
 
         if (shouldRestartDisplay) {
-            binding.screensaverContainer.visibility = View.VISIBLE
-            photoDisplayManager.startPhotoDisplay()
+            startPreviewMode()
         }
     }
 

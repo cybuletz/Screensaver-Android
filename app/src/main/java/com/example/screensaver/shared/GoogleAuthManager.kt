@@ -103,18 +103,27 @@ class GoogleAuthManager @Inject constructor(
     }
 
     suspend fun refreshTokens(): Boolean = withContext(Dispatchers.IO) {
-        // Add rate limiting for refresh attempts
         val currentTime = System.currentTimeMillis()
+
+        // Check if we're within the rate limit window
         if (currentTime - lastRefreshAttempt < REFRESH_ATTEMPT_INTERVAL) {
-            refreshAttemptCount++
-            if (refreshAttemptCount > MAX_REFRESH_ATTEMPTS) {
-                Log.w(TAG, "Too many token refresh attempts in a short period at ${getCurrentDateTime()}")
+            // If we've already hit max attempts, block further attempts
+            if (refreshAttemptCount >= MAX_REFRESH_ATTEMPTS) {
+                val waitTime = REFRESH_ATTEMPT_INTERVAL - (currentTime - lastRefreshAttempt)
+                Log.w(TAG, """Too many token refresh attempts at ${getCurrentDateTime()}
+                • Current attempts: $refreshAttemptCount
+                • Wait time: ${waitTime/1000}s
+                • Last attempt: ${Date(lastRefreshAttempt)}""")
                 return@withContext false
             }
+            refreshAttemptCount++
         } else {
-            refreshAttemptCount = 1  // Reset counter but count this attempt
+            // Reset counter and timestamp if we're outside the interval window
+            refreshAttemptCount = 1
+            lastRefreshAttempt = currentTime
         }
-        lastRefreshAttempt = currentTime
+
+        Log.d(TAG, "Starting token refresh attempt $refreshAttemptCount at ${getCurrentDateTime()}")
 
         var connection: HttpURLConnection? = null
         try {

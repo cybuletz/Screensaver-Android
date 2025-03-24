@@ -25,6 +25,8 @@ import com.example.screensaver.data.SecureStorage
 import com.example.screensaver.recovery.StateRecoveryManager
 import com.example.screensaver.recovery.StateRestoration
 import com.example.screensaver.data.PhotoCache
+import com.example.screensaver.data.PhotoMigrationManager
+import com.example.screensaver.data.PhotoStorageCoordinator
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.photos.PhotoPermissionManager
@@ -95,6 +97,7 @@ object AppModule {
     @Singleton
     fun providePhotoDisplayManager(
         photoRepository: PhotoRepository,
+        photoStorageCoordinator: PhotoStorageCoordinator,
         photoCache: PhotoCache,
         @ApplicationContext context: Context,
         spotifyManager: SpotifyManager,
@@ -104,6 +107,7 @@ object AppModule {
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
+            storageCoordinator = photoStorageCoordinator,
             photoCache = photoCache,
             context = context,
             spotifyManager = spotifyManager,
@@ -112,7 +116,6 @@ object AppModule {
             photoPermissionManager = photoPermissionManager
         )
     }
-
 
     @Provides
     @Singleton
@@ -190,11 +193,49 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun providePhotoStorageCoordinator(
+        @ApplicationContext context: Context,
+        photoUriManager: PhotoUriManager,
+        preferences: AppPreferences,
+        coroutineScope: CoroutineScope,
+        photoCache: PhotoCache,
+        secureStorage: SecureStorage,
+        appDataManager: AppDataManager
+    ): PhotoStorageCoordinator {
+        return PhotoStorageCoordinator(
+            context,
+            photoUriManager,
+            preferences,
+            coroutineScope,
+            photoCache,
+            secureStorage,
+            appDataManager
+        )
+    }
+
+    @Provides
+    @Singleton
     fun providePhotoRepository(
         @ApplicationContext context: Context,
         googleAuthManager: GoogleAuthManager,
-        photoUriManager: PhotoUriManager
+        photoUriManager: PhotoUriManager,
+        storageCoordinator: PhotoStorageCoordinator
     ): PhotoRepository {
-        return PhotoRepository(context, googleAuthManager, photoUriManager)
+        return PhotoRepository(
+            context,
+            googleAuthManager,
+            photoUriManager,
+            storageCoordinator
+        )
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoMigrationManager(
+        @ApplicationContext context: Context,
+        photoRepository: PhotoRepository,
+        storageCoordinator: PhotoStorageCoordinator
+    ): PhotoMigrationManager {
+        return PhotoMigrationManager(context, photoRepository, storageCoordinator)
     }
 }

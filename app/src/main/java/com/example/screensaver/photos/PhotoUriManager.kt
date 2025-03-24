@@ -158,8 +158,8 @@ class PhotoUriManager @Inject constructor(
                 resolver.takePersistableUriPermission(uri, flags)
                 return true
             }
-        } catch (e: SecurityException) {
-            Log.w(TAG, "Could not take persistable permission for $uri: ${e.message}")
+        } catch (se: SecurityException) {
+            Log.w(TAG, "Could not take persistable permission for $uri: ${se.message}")
 
             // Even if we can't take persistable permission, record access for later
             preferences.addRecentlyAccessedUri(uri.toString())

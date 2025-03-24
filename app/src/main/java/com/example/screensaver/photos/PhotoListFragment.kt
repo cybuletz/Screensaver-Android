@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.RequestManager
+import com.example.screensaver.data.PhotoStorageCoordinator
 import com.example.screensaver.databinding.FragmentPhotoListBinding
 import com.example.screensaver.photos.PhotoManagerViewModel.PhotoManagerState
 import dagger.hilt.android.AndroidEntryPoint
@@ -30,6 +31,9 @@ class PhotoListFragment : Fragment() {
 
     @Inject
     lateinit var photoUriManager: PhotoUriManager
+
+    @Inject
+    lateinit var photoStorageCoordinator: PhotoStorageCoordinator
 
     private val photoAdapter by lazy {
         PhotoGridAdapter(
@@ -91,15 +95,21 @@ class PhotoListFragment : Fragment() {
 
     private fun observePhotos() {
         viewLifecycleOwner.lifecycleScope.launch {
+            // Observe both sources
+            launch {
+                photoStorageCoordinator.photos.collect { coordinatorPhotos ->
+                    viewModel.updatePhotosFromCoordinator(coordinatorPhotos)
+                }
+            }
+
             viewModel.photos.collectLatest { photos ->
-                // Don't refresh the list if we're just updating selection state
                 if (photos.size != photoAdapter.currentList.size ||
                     photos.any { newPhoto ->
                         !photoAdapter.currentList.any { it.id == newPhoto.id }
-                    }) {
+                    }
+                ) {
                     photoAdapter.submitList(photos)
                 } else {
-                    // Just update the items that changed their selection state
                     photoAdapter.notifyItemRangeChanged(0, photos.size)
                 }
                 binding.photoRecyclerView.isVisible = photos.isNotEmpty()

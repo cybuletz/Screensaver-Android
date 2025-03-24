@@ -49,7 +49,11 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.fragment.app.DialogFragment
+import com.example.screensaver.data.PhotoStorageCoordinator
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.NonCancellable
 import java.io.File
+import java.util.concurrent.CancellationException
 
 @AndroidEntryPoint
 class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
@@ -67,6 +71,9 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var photoManager: PhotoRepository
+
+    @Inject
+    lateinit var storageCoordinator: PhotoStorageCoordinator
 
     @Inject
     lateinit var appPreferences: AppPreferences
@@ -590,66 +597,78 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == GOOGLE_PHOTOS_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
-            lifecycleScope.launch {
+            lifecycleScope.launch(Dispatchers.Main + CoroutineExceptionHandler { _, exception ->
+                when (exception) {
+                    is CancellationException -> {
+                        Log.d(TAG, "Photo processing cancelled normally")
+                    }
+                    else -> {
+                        Log.e(TAG, "Error processing selected photos", exception)
+                        showError(getString(R.string.photo_processing_error))
+                    }
+                }
+            }) {
                 try {
                     val selectedUris = mutableListOf<Uri>()
 
-                    when {
-                        data?.clipData != null -> {
-                            val clipData = data.clipData!!
-                            for (i in 0 until clipData.itemCount) {
-                                clipData.getItemAt(i).uri?.let { uri ->
-                                    // For Android 11, don't try to take persistable permissions for Google Photos URIs
-                                    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
-                                        uri.toString().contains("com.google.android.apps.photos")) {
-                                        // Just store the URI
-                                        selectedUris.add(uri)
-                                        // Store in current photo sources
-                                        val currentSources = getCurrentPhotoSources().toMutableSet()
-                                        currentSources.add(SOURCE_GOOGLE_PHOTOS)
-                                        pendingChanges["photo_sources"] = currentSources
-                                    } else {
-                                        try {
-                                            requireContext().contentResolver.takePersistableUriPermission(
-                                                uri,
-                                                Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                            )
+                    // Use NonCancellable for critical URI processing
+                    withContext(Dispatchers.IO + NonCancellable) {
+                        when {
+                            data?.clipData != null -> {
+                                val clipData = data.clipData!!
+                                for (i in 0 until clipData.itemCount) {
+                                    clipData.getItemAt(i).uri?.let { uri ->
+                                        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
+                                            uri.toString().contains("com.google.android.apps.photos")
+                                        ) {
                                             selectedUris.add(uri)
-                                        } catch (e: SecurityException) {
-                                            Log.e(TAG, "Failed to take permission for URI: $uri", e)
-                                            // Still add the URI even if we couldn't get persistable permission
-                                            selectedUris.add(uri)
+                                            val currentSources = getCurrentPhotoSources().toMutableSet()
+                                            currentSources.add(SOURCE_GOOGLE_PHOTOS)
+                                            pendingChanges["photo_sources"] = currentSources
+                                        } else {
+                                            try {
+                                                requireContext().contentResolver.takePersistableUriPermission(
+                                                    uri,
+                                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                                )
+                                                selectedUris.add(uri)
+                                            } catch (e: SecurityException) {
+                                                Log.e(TAG, "Failed to take permission for URI: $uri", e)
+                                                selectedUris.add(uri)
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                        data?.data != null -> {
-                            val uri = data.data!!
-                            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
-                                uri.toString().contains("com.google.android.apps.photos")) {
-                                selectedUris.add(uri)
-                                // Store in current photo sources
-                                val currentSources = getCurrentPhotoSources().toMutableSet()
-                                currentSources.add(SOURCE_GOOGLE_PHOTOS)
-                                pendingChanges["photo_sources"] = currentSources
-                            } else {
-                                try {
-                                    requireContext().contentResolver.takePersistableUriPermission(
-                                        uri,
-                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                    )
+                            data?.data != null -> {
+                                val uri = data.data!!
+                                if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
+                                    uri.toString().contains("com.google.android.apps.photos")
+                                ) {
                                     selectedUris.add(uri)
-                                } catch (e: SecurityException) {
-                                    Log.e(TAG, "Failed to take permission for URI: $uri", e)
-                                    selectedUris.add(uri)
+                                    val currentSources = getCurrentPhotoSources().toMutableSet()
+                                    currentSources.add(SOURCE_GOOGLE_PHOTOS)
+                                    pendingChanges["photo_sources"] = currentSources
+                                } else {
+                                    try {
+                                        requireContext().contentResolver.takePersistableUriPermission(
+                                            uri,
+                                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                        )
+                                        selectedUris.add(uri)
+                                    } catch (e: SecurityException) {
+                                        Log.e(TAG, "Failed to take permission for URI: $uri", e)
+                                        selectedUris.add(uri)
+                                    }
                                 }
+                            }
+                            else -> {
+                                Log.d(TAG, "No data received from photo picker")
                             }
                         }
                     }
 
                     if (selectedUris.isNotEmpty()) {
-                        // Create MediaItems and add to repository
                         val mediaItems = selectedUris.map { uri ->
                             MediaItem(
                                 id = uri.toString(),
@@ -664,10 +683,11 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                             )
                         }
 
-                        // Add to repository
-                        photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
+                        withContext(Dispatchers.IO + NonCancellable) {
+                            photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
+                            storageCoordinator.addPhotos(mediaItems)
+                        }
 
-                        // Update sources and state
                         val currentSources = getCurrentPhotoSources().toMutableSet()
                         currentSources.add(SOURCE_GOOGLE_PHOTOS)
                         pendingChanges["photo_sources"] = currentSources
@@ -707,7 +727,10 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     }
 
     private fun notifyPhotosAdded() {
-        val photoCount = photoManager.getAllPhotos().size
+        // Try coordinator first, fall back to photoManager
+        val photoCount = storageCoordinator.getAllPhotos().size.takeIf { it > 0 }
+            ?: photoManager.getAllPhotos().size
+
         Log.d(TAG, "Notifying activity of photos added. Current count: $photoCount")
         val isFirstTime = appPreferences.getBoolean("is_first_time_setup", true)
         listener?.onPhotosAdded(isFirstTime)

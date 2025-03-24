@@ -37,7 +37,9 @@ import android.animation.ObjectAnimator
 import android.graphics.drawable.BitmapDrawable
 import com.bumptech.glide.load.HttpException
 import com.example.screensaver.MainActivity
+import com.example.screensaver.data.PhotoStorageCoordinator
 import com.example.screensaver.glide.GlideApp
+import com.example.screensaver.models.MediaItem
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
 import com.example.screensaver.photos.PhotoPermissionManager
@@ -51,6 +53,7 @@ import java.util.TimeZone
 @Singleton
 class PhotoDisplayManager @Inject constructor(
     private val photoManager: PhotoRepository,
+    private val storageCoordinator: PhotoStorageCoordinator,
     private val photoCache: PhotoCache,
     private val context: Context,
     private val spotifyManager: SpotifyManager,
@@ -273,7 +276,14 @@ class PhotoDisplayManager @Inject constructor(
             spotifyManager.resume()
         }
 
-        val photoCount = photoManager.getPhotoCount()
+        // First try to get photos from coordinator, fall back to photoManager
+        val coordinatorPhotos = storageCoordinator.getAllPhotos()
+        val photoCount = if (coordinatorPhotos.isNotEmpty()) {
+            coordinatorPhotos.size
+        } else {
+            photoManager.getPhotoCount()
+        }
+
         if (photoCount == 0) {
             Log.d(TAG, "No photos available, showing default photo")
             showDefaultPhoto()
@@ -283,7 +293,11 @@ class PhotoDisplayManager @Inject constructor(
         lifecycleScope?.launch {
             try {
                 val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
-                val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: return@launch
+                val nextUrl = if (coordinatorPhotos.isNotEmpty()) {
+                    coordinatorPhotos.getOrNull(nextIndex)?.baseUrl
+                } else {
+                    photoManager.getPhotoUrl(nextIndex)
+                } ?: return@launch
 
                 // First validate permissions if needed
                 if (!fromCache && !isRecovering) {
@@ -332,6 +346,50 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+
+    suspend fun validateAllPhotos() {
+        try {
+            // Validate photos from both sources
+            photoManager.validateStoredPhotos()
+            storageCoordinator.validateAllPhotos()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error validating photos", e)
+        }
+    }
+
+    suspend fun getAllPhotos(): List<MediaItem> {
+        return try {
+            // Try coordinator first
+            val coordinatorPhotos = storageCoordinator.getAllPhotos()
+            if (coordinatorPhotos.isNotEmpty()) {
+                coordinatorPhotos
+            } else {
+                // Fall back to legacy repository
+                photoManager.getAllPhotos()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting all photos", e)
+            emptyList()
+        }
+    }
+
+    suspend fun updatePhotoSourcesWithValidation() {
+        try {
+            val photos = getAllPhotos()
+            val validPhotos = photos.filter { photo ->
+                photoUriManager.hasValidPermission(Uri.parse(photo.baseUrl))
+            }
+
+            if (validPhotos.size < photos.size) {
+                Log.w(TAG, "Found ${photos.size - validPhotos.size} invalid URIs, they will be skipped")
+            }
+
+            updatePhotoSources(validPhotos.map { Uri.parse(it.baseUrl) })
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating photo sources with validation", e)
+        }
+    }
+
     private fun handlePermissionError(uri: String) {
         if (isRecovering) return
         isRecovering = true
@@ -345,24 +403,47 @@ class PhotoDisplayManager @Inject constructor(
 
                 // First try to refresh the tokens
                 val tokenRefreshed = photoManager.refreshTokens()
-                if (tokenRefreshed) {
-                    Log.d(TAG, "Successfully refreshed auth token, checking photo access")
+                if (!tokenRefreshed) {
+                    // Don't remove photos immediately on token refresh failure
+                    Log.w(TAG, "Token refresh failed, will retry on next cycle")
+                    isRecovering = false
+                    views?.loadingIndicator?.visibility = View.GONE
 
-                    // Verify we can access this specific photo
+                    // Skip to next photo instead of removing
+                    if (photoManager.getPhotoCount() > 1) {
+                        loadAndDisplayPhoto(true)
+                        return@launch
+                    }
+                }
+
+                // Only check access if token refresh succeeded
+                if (tokenRefreshed) {
                     val canAccess = photoUriManager.hasValidPermission(Uri.parse(uri))
                     if (!canAccess) {
                         Log.d(TAG, "Could not recover access to photo, removing it")
                         photoManager.removePhoto(uri)
                     }
-                } else {
-                    Log.d(TAG, "Token refresh failed, removing inaccessible photo")
-                    photoManager.removePhoto(uri)
                 }
 
                 isRecovering = false
                 views?.loadingIndicator?.visibility = View.GONE
 
-                // Only continue if we have photos left
+                // Only show default if we have no photos left
+                if (photoManager.getPhotoCount() == 0) {
+                    showErrorMessage(context.getString(R.string.error_photo_access_lost))
+                    stopPhotoDisplay()
+                    showDefaultPhoto()
+                } else {
+                    // Try next photo
+                    loadAndDisplayPhoto(true)
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling permission recovery", e)
+                isRecovering = false
+                views?.loadingIndicator?.visibility = View.GONE
+
+                // Don't stop on error, try next photo
                 if (photoManager.getPhotoCount() > 0) {
                     loadAndDisplayPhoto(true)
                 } else {
@@ -370,13 +451,6 @@ class PhotoDisplayManager @Inject constructor(
                     stopPhotoDisplay()
                     showDefaultPhoto()
                 }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling permission recovery", e)
-                isRecovering = false
-                views?.loadingIndicator?.visibility = View.GONE
-                showErrorMessage(context.getString(R.string.error_photo_access_lost))
-                stopPhotoDisplay()
             }
         }
     }
@@ -938,15 +1012,12 @@ class PhotoDisplayManager @Inject constructor(
             try {
                 val photos = mutableListOf<Uri>()
 
-                // Get photos from PhotoManager, but only from selected virtual albums
+                // Get photos from both sources
+                val coordinatorPhotos = storageCoordinator.getAllPhotos()
                 val repoPhotos = photoManager.loadPhotos()
-                if (repoPhotos == null) {
-                    Log.d(TAG, "No photos available (no albums selected), showing default photo")
-                    showDefaultPhoto()
-                    return@launch
-                }
 
-                repoPhotos.forEach { mediaItem ->
+                // Add coordinator photos
+                coordinatorPhotos.forEach { mediaItem ->
                     try {
                         photos.add(Uri.parse(mediaItem.baseUrl))
                     } catch (e: Exception) {
@@ -954,9 +1025,23 @@ class PhotoDisplayManager @Inject constructor(
                     }
                 }
 
+                // Add repo photos if not already added
+                repoPhotos?.forEach { mediaItem ->
+                    try {
+                        val uri = Uri.parse(mediaItem.baseUrl)
+                        if (!photos.contains(uri)) {
+                            photos.add(uri)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error parsing URI: ${mediaItem.baseUrl}", e)
+                    }
+                }
+
                 Log.d(TAG, """Updating photo sources:
-                • Photos from manager: ${photos.size}
-                • Virtual album photos: ${virtualAlbumPhotos.size}""".trimIndent())
+            • Photos from coordinator: ${coordinatorPhotos.size}
+            • Photos from manager: ${repoPhotos?.size ?: 0}
+            • Combined unique photos: ${photos.size}
+            • Virtual album photos: ${virtualAlbumPhotos.size}""".trimIndent())
 
                 if (photos.isNotEmpty()) {
                     displayPhotos(photos)
@@ -976,36 +1061,43 @@ class PhotoDisplayManager @Inject constructor(
             try {
                 stopPhotoDisplay()
 
-                // Get a reference to the photoUriManager
-                val photoUriManager = (context as? MainActivity)?.photoUriManager
-
                 // First validate the URIs
-                val validPhotoUrls = if (photoUriManager != null) {
-                    photos.filter { uri ->
-                        photoUriManager.validateUri(uri) || photoUriManager.hasValidPermission(uri)
-                    }.map { it.toString() }
-                } else {
-                    // If we can't access photoUriManager, use all photos
-                    Log.w(TAG, "Unable to access photoUriManager, using all photos without validation")
-                    photos.map { it.toString() }
-                }
+                val validPhotoUrls = photos.filter { uri ->
+                    photoUriManager.validateUri(uri) || photoUriManager.hasValidPermission(uri)
+                }.map { it.toString() }
 
                 // Log validation results
                 if (validPhotoUrls.size < photos.size) {
                     Log.w(TAG, "Some URIs failed validation - Using ${validPhotoUrls.size}/${photos.size}")
                 }
 
+                // Add to both systems during transition
                 photoManager.addPhotoUrls(validPhotoUrls)
+                storageCoordinator.addPhotos(validPhotoUrls.map { url ->
+                    MediaItem(
+                        id = url,
+                        albumId = "display_photos",
+                        baseUrl = url,
+                        mimeType = "image/*",
+                        width = 0,
+                        height = 0,
+                        description = null,
+                        createdAt = System.currentTimeMillis(),
+                        loadState = MediaItem.LoadState.IDLE
+                    )
+                })
 
                 if (validPhotoUrls.isNotEmpty()) {
                     persistPhotoState("combined", validPhotoUrls[0])
+                    currentPhotoIndex = 0
+                    hasLoadedPhotos = true
+                    startPhotoDisplay()
+
+                    Log.d(TAG, "Photo display started with ${photos.size} photos")
+                } else {
+                    Log.d(TAG, "No valid photos to display")
+                    showDefaultPhoto()
                 }
-
-                currentPhotoIndex = 0
-                hasLoadedPhotos = true
-                startPhotoDisplay()
-
-                Log.d(TAG, "Photo display started with ${validPhotoUrls.size} photos")
             } catch (e: Exception) {
                 Log.e(TAG, "Error starting photo display", e)
                 showDefaultPhoto()

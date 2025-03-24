@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import com.example.screensaver.data.PhotoStorageCoordinator
 import com.example.screensaver.shared.GoogleAuthManager
 import com.example.screensaver.models.MediaItem
 import com.example.screensaver.models.AlbumInfo
@@ -30,7 +31,8 @@ import kotlinx.coroutines.*
 class PhotoRepository @Inject constructor(
     private val context: Context,
     private val googleAuthManager: GoogleAuthManager,
-    private val photoUriManager: PhotoUriManager
+    private val photoUriManager: PhotoUriManager,
+    private val storageCoordinator: PhotoStorageCoordinator
 ) {
     private val mediaItems = mutableListOf<MediaItem>()
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.IDLE)
@@ -254,6 +256,12 @@ class PhotoRepository @Inject constructor(
     }
 
     fun getAllPhotos(): List<MediaItem> {
+        // Try coordinator first
+        val coordinatorPhotos = storageCoordinator.getAllPhotos()
+        if (coordinatorPhotos.isNotEmpty()) {
+            return coordinatorPhotos
+        }
+        // Fall back to legacy storage
         return mediaItems.toList()
     }
 
@@ -354,6 +362,12 @@ class PhotoRepository @Inject constructor(
     }
 
     fun getPhotoCount(): Int {
+        // Try coordinator first
+        val coordinatorPhotos = storageCoordinator.getAllPhotos()
+        if (coordinatorPhotos.isNotEmpty()) {
+            return coordinatorPhotos.size
+        }
+        // Fall back to legacy photos
         val selectedPhotos = loadPhotos() ?: emptyList()
         val count = selectedPhotos.size
         Log.d(TAG, "Current display photo count: $count")
@@ -361,6 +375,14 @@ class PhotoRepository @Inject constructor(
     }
 
     fun getPhotoUrl(index: Int): String? {
+        // Try coordinator first
+        val coordinatorPhotos = storageCoordinator.getAllPhotos()
+        if (coordinatorPhotos.isNotEmpty()) {
+            return if (index in coordinatorPhotos.indices) {
+                coordinatorPhotos[index].baseUrl
+            } else null
+        }
+        // Fall back to legacy system
         val selectedPhotos = loadPhotos() ?: emptyList()
         return if (index in selectedPhotos.indices) {
             val url = selectedPhotos[index].baseUrl
@@ -369,6 +391,32 @@ class PhotoRepository @Inject constructor(
         } else {
             Log.e(TAG, "Invalid photo index: $index")
             null
+        }
+    }
+
+    suspend fun migrateToCoordinator() {
+        try {
+            Log.d(TAG, "Starting migration to PhotoStorageCoordinator")
+
+            // Get all existing photos
+            val existingPhotos = mediaItems.toList()
+            if (existingPhotos.isNotEmpty()) {
+                // Add to coordinator
+                storageCoordinator.addPhotos(existingPhotos)
+                Log.d(TAG, "Migrated ${existingPhotos.size} photos to coordinator")
+            }
+
+            // Get all virtual albums
+            val existingAlbums = virtualAlbums.toList()
+            if (existingAlbums.isNotEmpty()) {
+                storageCoordinator.addVirtualAlbums(existingAlbums)
+                Log.d(TAG, "Migrated ${existingAlbums.size} virtual albums to coordinator")
+            }
+
+            Log.d(TAG, "Migration completed successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during migration to coordinator", e)
+            throw e
         }
     }
 
@@ -539,6 +587,11 @@ class PhotoRepository @Inject constructor(
     }
 
     fun cleanup() {
+        // Clean coordinator in a coroutine
+        repoScope.launch {
+            storageCoordinator.cleanup()
+        }
+
         // Cancel any ongoing coroutine operations
         repoScope.cancel()
 
@@ -559,10 +612,16 @@ class PhotoRepository @Inject constructor(
 
     fun addPhotos(photos: List<MediaItem>, mode: PhotoAddMode = PhotoAddMode.MERGE) {
         Log.d(TAG, """Adding photos:
-        • Mode: $mode
-        • Current count: ${mediaItems.size}
-        • New photos: ${photos.size}""".trimMargin())
+    • Mode: $mode
+    • Current count: ${mediaItems.size}
+    • New photos: ${photos.size}""".trimMargin())
 
+        // Add to storage coordinator in a coroutine
+        repoScope.launch {
+            storageCoordinator.addPhotos(photos)
+        }
+
+        // Keep legacy behavior for backward compatibility
         when (mode) {
             PhotoAddMode.REPLACE -> {
                 mediaItems.clear()
@@ -570,7 +629,6 @@ class PhotoRepository @Inject constructor(
                 Log.d(TAG, "Replaced all photos with ${photos.size} new photos")
             }
             PhotoAddMode.APPEND, PhotoAddMode.MERGE -> {
-                // For both APPEND and MERGE, ensure no duplicates
                 val uniqueNewPhotos = photos.filterNot { newPhoto ->
                     mediaItems.any { existing ->
                         existing.baseUrl == newPhoto.baseUrl
@@ -578,9 +636,9 @@ class PhotoRepository @Inject constructor(
                 }
                 mediaItems.addAll(uniqueNewPhotos)
                 Log.d(TAG, """Added photos:
-                • New unique photos: ${uniqueNewPhotos.size}
-                • Duplicates filtered: ${photos.size - uniqueNewPhotos.size}
-                • Total now: ${mediaItems.size}""".trimMargin())
+            • New unique photos: ${uniqueNewPhotos.size}
+            • Duplicates filtered: ${photos.size - uniqueNewPhotos.size}
+            • Total now: ${mediaItems.size}""".trimMargin())
             }
         }
 

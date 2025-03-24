@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.bumptech.glide.RequestManager
 import com.example.screensaver.R
+import com.example.screensaver.data.PhotoStorageCoordinator
 import com.example.screensaver.databinding.FragmentAlbumListBinding
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
@@ -28,6 +29,9 @@ class AlbumListFragment : Fragment() {
 
     @Inject
     lateinit var glide: RequestManager
+
+    @Inject
+    lateinit var photoStorageCoordinator: PhotoStorageCoordinator
 
     private lateinit var virtualAlbumsAdapter: VirtualAlbumsAdapter
 
@@ -109,20 +113,24 @@ class AlbumListFragment : Fragment() {
             },
             onAlbumSelectionChanged = { album: VirtualAlbum, isSelected: Boolean ->
                 viewModel.toggleVirtualAlbumSelection(album.id)
+                // Also update in coordinator
+                photoStorageCoordinator.updateVirtualAlbumSelection(album.id, isSelected)
                 Log.d(TAG, "Album selection changed: ${album.id}, selected: $isSelected")
-                // Force check button state
+
                 val currentAlbums = viewModel.virtualAlbums.value
                 val hasSelections = currentAlbums.any { it.isSelected }
                 Log.d(TAG, "Current selection state after toggle: hasSelections=$hasSelections")
             }
         )
 
-        binding.recyclerViewVirtualAlbums.apply {
-            adapter = virtualAlbumsAdapter
-            layoutManager = GridLayoutManager(requireContext(), 2)
-        }
-
         viewLifecycleOwner.lifecycleScope.launch {
+            // Observe both sources
+            launch {
+                photoStorageCoordinator.virtualAlbums.collect { albums ->
+                    viewModel.updateVirtualAlbumsFromCoordinator(albums)
+                }
+            }
+
             viewModel.virtualAlbums.collectLatest { albums ->
                 Log.d(TAG, "Received ${albums.size} albums, selected count: ${albums.count { it.isSelected }}")
                 virtualAlbumsAdapter.submitList(albums)
