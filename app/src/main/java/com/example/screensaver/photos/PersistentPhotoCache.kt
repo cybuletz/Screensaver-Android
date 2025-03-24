@@ -2,14 +2,23 @@ package com.example.screensaver.photos
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.bumptech.glide.Glide
 import dagger.hilt.android.qualifiers.ApplicationContext
+import id.zelory.compressor.Compressor
+import id.zelory.compressor.constraint.default
+import id.zelory.compressor.constraint.destination
+import id.zelory.compressor.constraint.format
+import id.zelory.compressor.constraint.quality
+import id.zelory.compressor.constraint.resolution
+import id.zelory.compressor.constraint.size
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.text.DecimalFormat
 import java.util.concurrent.ConcurrentHashMap
@@ -24,6 +33,33 @@ import kotlin.math.pow
 class PersistentPhotoCache @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    // ======== CONFIGURATION CONSTANTS ========
+    // Modify these values to change quality settings
+
+    /**
+     * Quality resize factor: controls how much bigger than the screen size images should be cached
+     * - 1.0 = Exactly screen size
+     * - 1.15 = 15% larger than screen size (better quality)
+     * - 1.5 = 50% larger than screen size (high quality but uses more storage)
+     */
+    companion object {
+        private const val TAG = "PersistentPhotoCache"
+        private const val CACHE_VERSION = 2
+
+        // Resize factor: higher values mean more detail but larger file sizes
+        // 1.15 = 15% larger than screen size for improved quality
+        const val QUALITY_RESIZE_FACTOR = 1.15f
+
+        // JPEG quality (1-100): higher values mean better quality but larger file sizes
+        // 100 = Maximum quality, no compression artifacts
+        const val JPEG_QUALITY = 100
+
+        // Maximum file size in bytes (default: 2MB)
+        // This is a soft limit - Compressor will try to meet this target
+        const val MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
+    }
+    // ========================================
+
     private val cacheDir = File(context.filesDir, "cached_photos").apply {
         if (!exists()) mkdirs()
     }
@@ -50,11 +86,6 @@ class PersistentPhotoCache @Inject constructor(
     val fileSizes: Map<String, Long> get() = _fileSizes
     private val _totalCacheSize = MutableStateFlow(0L)
     val totalCacheSize: StateFlow<Long> = _totalCacheSize.asStateFlow()
-
-    companion object {
-        private const val TAG = "PersistentPhotoCache"
-        private const val CACHE_VERSION = 1 // Increment when cache format changes
-    }
 
     init {
         // Load existing URI mappings
@@ -297,7 +328,7 @@ class PersistentPhotoCache @Inject constructor(
     }
 
     /**
-     * Internal method to cache a single photo
+     * Internal method to cache a single photo using Compressor library
      */
     private suspend fun cachePhotoInternal(originalUri: String): CacheResult {
         return withContext(Dispatchers.IO) {
@@ -319,52 +350,121 @@ class PersistentPhotoCache @Inject constructor(
                 val screenWidth = displayMetrics.widthPixels
                 val screenHeight = displayMetrics.heightPixels
 
-                // Use the larger dimension to ensure we have enough resolution
-                // but don't go unnecessarily large
-                val targetSize = maxOf(screenWidth, screenHeight)
-
-                // Try to download and cache using Glide with optimal size
                 try {
-                    val future = Glide.with(context.applicationContext)
-                        .asBitmap()
-                        .load(Uri.parse(originalUri))
-                        .override(targetSize)  // Set max width to screen width
-                        .submit()
+                    val uri = Uri.parse(originalUri)
+                    val contentResolver = context.contentResolver
 
-                    val bitmap = future.get()
-                    if (bitmap != null) {
-                        FileOutputStream(cachedFile).use { out ->
-                            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                        }
+                    // STEP 1: First pass - determine image dimensions without fully loading
+                    var originalWidth = 0
+                    var originalHeight = 0
 
-                        if (cachedFile.exists() && cachedFile.length() > 0) {
-                            val cachedUri = getFileProviderUri(cachedFile)
-                            uriMapping[originalUri] = cachedUri
-                            updateFileSize(cachedUri)
-                            Log.d(TAG, "Successfully cached photo: $originalUri -> $cachedUri (${formatFileSize(cachedFile.length())}) [${bitmap.width}x${bitmap.height}]")
-                            return@withContext CacheResult.Success(cachedUri)
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        val opts = BitmapFactory.Options().apply {
+                            inJustDecodeBounds = true
                         }
+                        BitmapFactory.decodeStream(input, null, opts)
+                        originalWidth = opts.outWidth
+                        originalHeight = opts.outHeight
                     }
-                    return@withContext CacheResult.Error("Failed to get bitmap from Glide")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error caching with Glide: ${e.message}")
 
-                    // Fallback: try to download directly from content provider
+                    if (originalWidth <= 0 || originalHeight <= 0) {
+                        throw Exception("Could not determine image dimensions")
+                    }
+
+                    // STEP 2: Calculate target dimensions based on screen size and quality factor
+                    val (targetWidth, targetHeight) = calculateTargetDimensions(
+                        originalWidth = originalWidth,
+                        originalHeight = originalHeight,
+                        screenWidth = screenWidth,
+                        screenHeight = screenHeight,
+                        resizeFactor = QUALITY_RESIZE_FACTOR
+                    )
+
+                    // STEP 3: Calculate optimal sample size for memory-efficient loading
+                    val sampleSize = calculateInSampleSize(originalWidth, originalHeight, targetWidth, targetHeight)
+
+                    Log.d(TAG, "Processing image: ${originalWidth}x$originalHeight → ${targetWidth}x$targetHeight " +
+                            "(screen: ${screenWidth}x$screenHeight, sample: $sampleSize, quality: $JPEG_QUALITY%)")
+
+                    // STEP 4: Load bitmap with calculated sample size
+                    var bitmap: Bitmap? = null
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        val opts = BitmapFactory.Options().apply {
+                            inJustDecodeBounds = false
+                            inSampleSize = sampleSize
+                            inPreferredConfig = Bitmap.Config.ARGB_8888
+                        }
+                        bitmap = BitmapFactory.decodeStream(input, null, opts)
+                    }
+
+                    if (bitmap == null) {
+                        throw Exception("Failed to decode image")
+                    }
+
+                    // STEP 5: Resize to exact dimensions if needed
+                    val resizedBitmap = if (bitmap!!.width != targetWidth || bitmap!!.height != targetHeight) {
+                        try {
+                            Bitmap.createScaledBitmap(bitmap!!, targetWidth, targetHeight, true).also {
+                                // Recycle the original to free memory immediately
+                                bitmap?.recycle()
+                                bitmap = null
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Error during exact resize, using sampled bitmap: ${e.message}")
+                            bitmap  // Use the sampled bitmap if exact resize fails
+                        }
+                    } else {
+                        bitmap
+                    }
+
+                    // STEP 6: Write directly to file with quality setting
+                    FileOutputStream(cachedFile).use { out ->
+                        resizedBitmap!!.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+                        out.flush()
+                    }
+
+                    // STEP 7: Clean up bitmap resources
+                    resizedBitmap?.recycle()
+
+                    // STEP 8: Verify and record success
+                    if (cachedFile.exists() && cachedFile.length() > 0) {
+                        val cachedUri = getFileProviderUri(cachedFile)
+                        uriMapping[originalUri] = cachedUri
+                        updateFileSize(cachedUri)
+
+                        Log.d(TAG, "Successfully cached photo: $originalUri → $cachedUri " +
+                                "(${formatFileSize(cachedFile.length())})")
+
+                        return@withContext CacheResult.Success(cachedUri)
+                    } else {
+                        throw Exception("Failed to write compressed image")
+                    }
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error optimizing image: ${e.message}")
+
+                    // Fallback: direct stream copy (much faster but no optimization)
                     try {
                         val uri = Uri.parse(originalUri)
                         context.contentResolver.openInputStream(uri)?.use { input ->
-                            cachedFile.outputStream().use { output ->
-                                input.copyTo(output)
+                            FileOutputStream(cachedFile).use { output ->
+                                val buffer = ByteArray(8192)
+                                var bytesRead: Int
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    output.write(buffer, 0, bytesRead)
+                                }
+                                output.flush()
                             }
 
                             val cachedUri = getFileProviderUri(cachedFile)
                             uriMapping[originalUri] = cachedUri
                             updateFileSize(cachedUri)
+                            Log.w(TAG, "Used fallback direct stream copy for $originalUri")
                             return@withContext CacheResult.Success(cachedUri)
                         }
                     } catch (e2: Exception) {
                         Log.e(TAG, "Fallback caching also failed", e2)
-                        return@withContext CacheResult.Error("Both caching methods failed: ${e.message}, ${e2.message}")
+                        return@withContext CacheResult.Error("Image processing failed: ${e.message}")
                     }
                 }
 
@@ -374,6 +474,62 @@ class PersistentPhotoCache @Inject constructor(
                 return@withContext CacheResult.Error(e.message ?: "Unknown error")
             }
         }
+    }
+
+    /**
+     * Calculate optimal sampling size to reduce memory usage during loading
+     */
+    private fun calculateInSampleSize(width: Int, height: Int, reqWidth: Int, reqHeight: Int): Int {
+        var inSampleSize = 1
+
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+
+            // Calculate the largest inSampleSize value that is a power of 2 and keeps both
+            // height and width larger than the requested height and width
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+
+        return inSampleSize
+    }
+
+    /**
+     * Calculate target dimensions that:
+     * 1. Maintain the original aspect ratio
+     * 2. Don't exceed screen dimensions × resizeFactor
+     * 3. Don't upscale if image is smaller than adjusted target
+     */
+    private fun calculateTargetDimensions(
+        originalWidth: Int,
+        originalHeight: Int,
+        screenWidth: Int,
+        screenHeight: Int,
+        resizeFactor: Float = QUALITY_RESIZE_FACTOR
+    ): Pair<Int, Int> {
+        // Apply resize factor to screen dimensions
+        val targetScreenWidth = (screenWidth * resizeFactor).toInt()
+        val targetScreenHeight = (screenHeight * resizeFactor).toInt()
+
+        // If image is already smaller than target screen in both dimensions, keep original size
+        if (originalWidth <= targetScreenWidth && originalHeight <= targetScreenHeight) {
+            return Pair(originalWidth, originalHeight)
+        }
+
+        // Calculate ratios
+        val widthRatio = targetScreenWidth.toFloat() / originalWidth
+        val heightRatio = targetScreenHeight.toFloat() / originalHeight
+
+        // Use the smaller ratio to ensure image fits screen while maintaining aspect ratio
+        val ratio = minOf(widthRatio, heightRatio)
+
+        // Calculate new dimensions (round to integers)
+        val newWidth = (originalWidth * ratio).toInt()
+        val newHeight = (originalHeight * ratio).toInt()
+
+        return Pair(newWidth, newHeight)
     }
 
     /**

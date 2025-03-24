@@ -117,6 +117,7 @@ dependencies {
     val coroutinesVersion = "1.7.3"
     val grpcVersion = "1.58.0"
 
+    implementation("id.zelory:compressor:3.0.1")
 
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
