@@ -62,6 +62,9 @@ class PhotoGridAdapter @Inject constructor(
             // Hide error indicator initially
             binding.errorIndicator.visibility = View.GONE
 
+            // Hide file size initially
+            binding.photoFileSize.visibility = View.GONE
+
             // Show placeholder immediately
             binding.photoImage.setImageResource(R.drawable.ic_photo_placeholder)
 
@@ -106,6 +109,7 @@ class PhotoGridAdapter @Inject constructor(
 
                             // Show error indicator
                             binding.errorIndicator.visibility = View.VISIBLE
+                            binding.photoFileSize.visibility = View.GONE // Hide file size on error
 
                             // Notify about error
                             onPhotoLoadError?.invoke(photo, e)
@@ -126,6 +130,20 @@ class PhotoGridAdapter @Inject constructor(
                             binding.photoImage.visibility = View.VISIBLE
                             binding.errorIndicator.visibility = View.GONE
 
+                            // Display file size if this is a cached photo
+                            if (cachedUri != null) {
+                                try {
+                                    persistentPhotoCache.fileSizes[cachedUri]?.let { size ->
+                                        if (size > 0) {
+                                            binding.photoFileSize.text = persistentPhotoCache.formatFileSize(size)
+                                            binding.photoFileSize.visibility = View.VISIBLE
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error getting file size", e)
+                                }
+                            }
+
                             return false
                         }
                     })
@@ -135,6 +153,7 @@ class PhotoGridAdapter @Inject constructor(
                 Log.e(TAG, "Error setting up image load", e)
                 binding.photoImage.setImageResource(R.drawable.ic_error)
                 binding.errorIndicator.visibility = View.VISIBLE
+                binding.photoFileSize.visibility = View.GONE // Hide file size on error
                 onPhotoLoadError?.invoke(photo, e)
             }
 

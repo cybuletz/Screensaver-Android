@@ -454,17 +454,63 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
                     return@launch
                 }
 
+                // Monitor tab changes to show/hide cache status
+                binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+                    override fun onPageSelected(position: Int) {
+                        super.onPageSelected(position)
+                        // Only show cache status on first tab
+                        if (position == 0) {
+                            // Check current status
+                            when (val progress = photoRepository.persistentPhotoCache.cachingProgress.value) {
+                                is PersistentPhotoCache.CachingProgress.Idle -> {
+                                    cacheStatusTextView.visibility = View.GONE
+                                    cacheProgressBar.visibility = View.GONE
+                                    cacheTotalSizeView?.visibility = View.VISIBLE
+                                }
+                                is PersistentPhotoCache.CachingProgress.InProgress,
+                                is PersistentPhotoCache.CachingProgress.Starting -> {
+                                    cacheStatusTextView.visibility = View.VISIBLE
+                                    cacheProgressBar.visibility = View.VISIBLE
+                                    cacheTotalSizeView?.visibility = View.VISIBLE
+                                }
+                                is PersistentPhotoCache.CachingProgress.Complete -> {
+                                    // Show for 3 seconds then hide
+                                    cacheStatusTextView.visibility = View.VISIBLE
+                                    cacheProgressBar.visibility = View.VISIBLE
+                                    cacheTotalSizeView?.visibility = View.VISIBLE
+                                }
+                                is PersistentPhotoCache.CachingProgress.Failed -> {
+                                    cacheStatusTextView.visibility = View.VISIBLE
+                                    cacheProgressBar.visibility = View.GONE
+                                    cacheTotalSizeView?.visibility = View.VISIBLE
+                                }
+                            }
+                        } else {
+                            // Hide on other tabs
+                            cacheStatusTextView.visibility = View.GONE
+                            cacheProgressBar.visibility = View.GONE
+                            cacheTotalSizeView?.visibility = View.GONE
+                        }
+                    }
+                })
+
                 // Collect total cache size
                 launch {
                     photoRepository.persistentPhotoCache.totalCacheSize.collect { totalSizeBytes ->
                         val formattedSize = photoRepository.persistentPhotoCache.formatFileSize(totalSizeBytes)
                         cacheTotalSizeView?.text = "Total Cache: $formattedSize"
-                        cacheTotalSizeView?.visibility = View.VISIBLE
+                        // Only show on first tab
+                        cacheTotalSizeView?.visibility = if (binding.viewPager.currentItem == 0) View.VISIBLE else View.GONE
                     }
                 }
 
                 // Collect caching progress
                 photoRepository.persistentPhotoCache.cachingProgress.collect { progress ->
+                    // Only apply changes if we're on the first tab
+                    if (binding.viewPager.currentItem != 0) {
+                        return@collect
+                    }
+
                     when (progress) {
                         is PersistentPhotoCache.CachingProgress.Idle -> {
                             cacheStatusTextView.visibility = View.GONE
@@ -495,8 +541,10 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
                             // Hide status after delay
                             launch {
                                 delay(3000)
-                                cacheStatusTextView.visibility = View.GONE
-                                cacheProgressBar.visibility = View.GONE
+                                if (binding.viewPager.currentItem == 0) { // Only hide if still on first tab
+                                    cacheStatusTextView.visibility = View.GONE
+                                    cacheProgressBar.visibility = View.GONE
+                                }
                             }
                         }
                         is PersistentPhotoCache.CachingProgress.Failed -> {
