@@ -591,6 +591,100 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun handleLocalPhotosResult(data: Intent?) {
+        if (data == null) {
+            Log.w(TAG, "No data received from local photos selection")
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                val selectedPhotos = data.getStringArrayListExtra("selected_photos")
+                if (selectedPhotos.isNullOrEmpty()) {
+                    Log.w(TAG, "No photos selected")
+                    return@launch
+                }
+
+                withContext(Dispatchers.Main) {
+                    showLoadingIndicator(true, getString(R.string.processing_local_photos))
+                }
+
+                // Process the URIs and take permissions
+                val processedUris = selectedPhotos.mapNotNull { uriString ->
+                    try {
+                        val uri = Uri.parse(uriString)
+                        // Take persistable permission with both read and write
+                        requireContext().contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+
+                        // Verify the permission was actually granted
+                        val perms = requireContext().contentResolver.persistedUriPermissions
+                        val hasPermission = perms.any { it.uri.toString() == uri.toString() }
+                        if (!hasPermission) {
+                            Log.w(TAG, "Failed to persist permission for URI: $uriString")
+                        }
+
+                        uriString
+                    } catch (e: SecurityException) {
+                        Log.e(TAG, "Failed to take permission for URI: $uriString", e)
+                        // Still include the URI but log the error
+                        uriString
+                    }
+                }
+
+
+                // Save to preferences
+                PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .edit()
+                    .putStringSet("selected_local_photos", processedUris.toSet())
+                    .apply()
+
+                // Create MediaItems
+                val mediaItems = processedUris.map { uri ->
+                    MediaItem(
+                        id = uri,
+                        albumId = "local_picked",
+                        baseUrl = uri,
+                        mimeType = "image/*",
+                        width = 0,
+                        height = 0,
+                        description = null,
+                        createdAt = System.currentTimeMillis(),
+                        loadState = MediaItem.LoadState.IDLE
+                    )
+                }
+
+                // Add to PhotoRepository
+                photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
+
+                withContext(Dispatchers.Main) {
+                    showLoadingIndicator(false)
+
+                    // Update sources in pending changes
+                    val currentSources = getCurrentPhotoSources().toMutableSet()
+                    currentSources.add(SOURCE_LOCAL_PHOTOS)
+                    pendingChanges["photo_sources"] = currentSources
+
+                    // Update UI
+                    findPreference<Preference>("select_local_photos")?.summary =
+                        getString(R.string.photos_selected, processedUris.size)
+
+                    applyChanges()
+                    notifyPhotosAdded()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing local photos", e)
+                withContext(Dispatchers.Main) {
+                    showLoadingIndicator(false)
+                    showError(getString(R.string.photo_processing_error))
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "Fragment onCreate, isDialog=${parentFragment is DialogFragment}")
@@ -602,21 +696,154 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        if (requestCode == GOOGLE_PHOTOS_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
-            lifecycleScope.launch {
-                try {
-                    val selectedUris = mutableListOf<Uri>()
-                    val googlePhotosUris = mutableListOf<Uri>()
+        when (requestCode) {
+            REQUEST_SELECT_PHOTOS -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    Log.d(TAG, "Local photos selection result received")
+                    lifecycleScope.launch {
+                        try {
+                            val selectedPhotos = data?.getStringArrayListExtra("selected_photos")
+                            if (selectedPhotos != null) {
+                                withContext(Dispatchers.Main) {
+                                    showLoadingIndicator(true, getString(R.string.processing_local_photos))
+                                }
 
-                    when {
-                        data?.clipData != null -> {
-                            val clipData = data.clipData!!
-                            for (i in 0 until clipData.itemCount) {
-                                clipData.getItemAt(i).uri?.let { uri ->
-                                    // For Android 11, don't try to take persistable permissions for Google Photos URIs
+                                // Process local photos
+                                val processedUris = selectedPhotos.mapNotNull { uriString ->
+                                    try {
+                                        val uri = Uri.parse(uriString)
+                                        requireContext().contentResolver.takePersistableUriPermission(
+                                            uri,
+                                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                        )
+                                        uriString
+                                    } catch (e: SecurityException) {
+                                        Log.e(TAG, "Failed to take permission for URI: $uriString", e)
+                                        uriString // Still include the URI even if permission failed
+                                    }
+                                }
+
+                                // Save to preferences using appPreferences
+                                appPreferences.updateLocalSelectedPhotos(processedUris.toSet())
+                                appPreferences.addPickedUris(processedUris)
+
+                                // Save to AppDataManager
+                                appDataManager.updateState { currentState ->
+                                    currentState.copy(
+                                        photoSources = currentState.photoSources + SOURCE_LOCAL_PHOTOS,
+                                        selectedLocalPhotos = processedUris.toSet()
+                                    )
+                                }
+
+                                // Create MediaItems
+                                val mediaItems = processedUris.map { uri ->
+                                    MediaItem(
+                                        id = uri,
+                                        albumId = "local_picked",
+                                        baseUrl = uri,
+                                        mimeType = "image/*",
+                                        width = 0,
+                                        height = 0,
+                                        description = null,
+                                        createdAt = System.currentTimeMillis(),
+                                        loadState = MediaItem.LoadState.IDLE
+                                    )
+                                }
+
+                                photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
+
+                                withContext(Dispatchers.Main) {
+                                    findPreference<Preference>("select_local_photos")?.summary =
+                                        getString(R.string.photos_selected, processedUris.size)
+
+                                    val currentSources = getCurrentPhotoSources().toMutableSet()
+                                    currentSources.add(SOURCE_LOCAL_PHOTOS)
+                                    pendingChanges["photo_sources"] = currentSources
+
+                                    applyChanges()
+                                    showLoadingIndicator(false)
+                                    notifyPhotosAdded()
+
+                                    Toast.makeText(
+                                        requireContext(),
+                                        resources.getQuantityString(
+                                            R.plurals.local_photos_added_success,
+                                            processedUris.size,
+                                            processedUris.size
+                                        ),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            } else {
+                                Log.w(TAG, "No selected_photos in result")
+                                withContext(Dispatchers.Main) {
+                                    showError(getString(R.string.no_photos_selected))
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error processing local photos", e)
+                            withContext(Dispatchers.Main) {
+                                showLoadingIndicator(false)
+                                showError(getString(R.string.photo_processing_error))
+                            }
+                        }
+                    }
+                }
+            }
+            GOOGLE_PHOTOS_REQUEST_CODE -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    lifecycleScope.launch {
+                        try {
+                            val selectedUris = mutableListOf<Uri>()
+                            val googlePhotosUris = mutableListOf<Uri>()
+
+                            when {
+                                data?.clipData != null -> {
+                                    val clipData = data.clipData!!
+                                    for (i in 0 until clipData.itemCount) {
+                                        clipData.getItemAt(i).uri?.let { uri ->
+                                            // For Android 11, don't try to take persistable permissions for Google Photos URIs
+                                            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
+                                                uri.toString().contains("com.google.android.apps.photos")) {
+                                                // Just store the URI
+                                                selectedUris.add(uri)
+                                                googlePhotosUris.add(uri)
+                                                // Store in current photo sources
+                                                val currentSources = getCurrentPhotoSources().toMutableSet()
+                                                currentSources.add(SOURCE_GOOGLE_PHOTOS)
+                                                pendingChanges["photo_sources"] = currentSources
+                                            } else {
+                                                try {
+                                                    requireContext().contentResolver.takePersistableUriPermission(
+                                                        uri,
+                                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                                    )
+                                                    selectedUris.add(uri)
+
+                                                    // If it's a Google Photos URI, add to list for caching
+                                                    if (uri.toString().contains("com.google.android.apps.photos") ||
+                                                        uri.toString().contains("googleusercontent.com")) {
+                                                        googlePhotosUris.add(uri)
+                                                    }
+                                                } catch (e: SecurityException) {
+                                                    Log.e(TAG, "Failed to take permission for URI: $uri", e)
+                                                    // Still add the URI even if we couldn't get persistable permission
+                                                    selectedUris.add(uri)
+
+                                                    // If it's a Google Photos URI, add to list for caching
+                                                    if (uri.toString().contains("com.google.android.apps.photos") ||
+                                                        uri.toString().contains("googleusercontent.com")) {
+                                                        googlePhotosUris.add(uri)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                data?.data != null -> {
+                                    val uri = data.data!!
                                     if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
                                         uri.toString().contains("com.google.android.apps.photos")) {
-                                        // Just store the URI
                                         selectedUris.add(uri)
                                         googlePhotosUris.add(uri)
                                         // Store in current photo sources
@@ -638,7 +865,6 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                                             }
                                         } catch (e: SecurityException) {
                                             Log.e(TAG, "Failed to take permission for URI: $uri", e)
-                                            // Still add the URI even if we couldn't get persistable permission
                                             selectedUris.add(uri)
 
                                             // If it's a Google Photos URI, add to list for caching
@@ -650,151 +876,116 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                                     }
                                 }
                             }
-                        }
-                        data?.data != null -> {
-                            val uri = data.data!!
-                            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R &&
-                                uri.toString().contains("com.google.android.apps.photos")) {
-                                selectedUris.add(uri)
-                                googlePhotosUris.add(uri)
-                                // Store in current photo sources
+
+                            if (selectedUris.isNotEmpty()) {
+                                // Show a loading indicator if we have Google Photos to cache
+                                if (googlePhotosUris.isNotEmpty()) {
+                                    withContext(Dispatchers.Main) {
+                                        showLoadingIndicator(true, getString(R.string.caching_google_photos))
+                                    }
+                                }
+
+                                // Start caching Google Photos in the background if needed
+                                val cachedUriMap = mutableMapOf<String, String>()
+                                if (googlePhotosUris.isNotEmpty()) {
+                                    try {
+                                        // Cache the photos and collect progress updates
+                                        persistentPhotoCache.cachePhotos(googlePhotosUris.map { it.toString() })
+                                            .collect { progress ->
+                                                when (progress) {
+                                                    is PersistentPhotoCache.CachingProgress.InProgress -> {
+                                                        val progressPercentage = (progress.progress * 100).toInt()
+                                                        withContext(Dispatchers.Main) {
+                                                            updateLoadingProgress(
+                                                                getString(
+                                                                    R.string.caching_photos_progress,
+                                                                    progress.completed,
+                                                                    progress.total,
+                                                                    progressPercentage
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                    is PersistentPhotoCache.CachingProgress.Complete -> {
+                                                        Log.d(TAG, "Photo caching completed: ${progress.succeeded} succeeded, ${progress.failed} failed")
+
+                                                        // Get the mapping of original URIs to cached URIs
+                                                        for (uri in googlePhotosUris) {
+                                                            val originalUriStr = uri.toString()
+                                                            val cachedUriStr = persistentPhotoCache.getCachedPhotoUri(originalUriStr)
+                                                            if (cachedUriStr != null) {
+                                                                cachedUriMap[originalUriStr] = cachedUriStr
+                                                                Log.d(TAG, "Cached URI mapping: $originalUriStr -> $cachedUriStr")
+                                                            }
+                                                        }
+                                                    }
+                                                    else -> { /* Handle other states as needed */ }
+                                                }
+                                            }
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error caching Google Photos", e)
+                                    } finally {
+                                        withContext(Dispatchers.Main) {
+                                            showLoadingIndicator(false)
+                                        }
+                                    }
+                                }
+
+                                // Create MediaItems and add to repository, using cached URIs where available
+                                val mediaItems = selectedUris.map { uri ->
+                                    val originalUriStr = uri.toString()
+                                    val baseUrl = cachedUriMap[originalUriStr] ?: originalUriStr
+
+                                    MediaItem(
+                                        id = originalUriStr, // Keep original URI as ID for reference
+                                        albumId = "google_picked",
+                                        baseUrl = baseUrl, // Use cached URI if available
+                                        mimeType = "image/*",
+                                        width = 0,
+                                        height = 0,
+                                        description = null,
+                                        createdAt = System.currentTimeMillis(),
+                                        loadState = MediaItem.LoadState.IDLE
+                                    )
+                                }
+
+                                // Add to repository
+                                photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
+
+                                // Update sources and state
                                 val currentSources = getCurrentPhotoSources().toMutableSet()
                                 currentSources.add(SOURCE_GOOGLE_PHOTOS)
                                 pendingChanges["photo_sources"] = currentSources
-                            } else {
-                                try {
-                                    requireContext().contentResolver.takePersistableUriPermission(
-                                        uri,
-                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                    )
-                                    selectedUris.add(uri)
+                                pendingChanges["google_photos_enabled"] = true
 
-                                    // If it's a Google Photos URI, add to list for caching
-                                    if (uri.toString().contains("com.google.android.apps.photos") ||
-                                        uri.toString().contains("googleusercontent.com")) {
-                                        googlePhotosUris.add(uri)
-                                    }
-                                } catch (e: SecurityException) {
-                                    Log.e(TAG, "Failed to take permission for URI: $uri", e)
-                                    selectedUris.add(uri)
+                                withContext(Dispatchers.Main) {
+                                    findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = true
+                                    updateGooglePhotosState(true)
+                                    applyChanges()
 
-                                    // If it's a Google Photos URI, add to list for caching
-                                    if (uri.toString().contains("com.google.android.apps.photos") ||
-                                        uri.toString().contains("googleusercontent.com")) {
-                                        googlePhotosUris.add(uri)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (selectedUris.isNotEmpty()) {
-                        // Show a loading indicator if we have Google Photos to cache
-                        if (googlePhotosUris.isNotEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                showLoadingIndicator(true, getString(R.string.caching_google_photos))
-                            }
-                        }
-
-                        // Start caching Google Photos in the background if needed
-                        val cachedUriMap = mutableMapOf<String, String>()
-                        if (googlePhotosUris.isNotEmpty()) {
-                            try {
-                                // Cache the photos and collect progress updates
-                                persistentPhotoCache.cachePhotos(googlePhotosUris.map { it.toString() })
-                                    .collect { progress ->
-                                        when (progress) {
-                                            is PersistentPhotoCache.CachingProgress.InProgress -> {
-                                                val progressPercentage = (progress.progress * 100).toInt()
-                                                withContext(Dispatchers.Main) {
-                                                    updateLoadingProgress(
-                                                        getString(
-                                                            R.string.caching_photos_progress,
-                                                            progress.completed,
-                                                            progress.total,
-                                                            progressPercentage
-                                                        )
-                                                    )
-                                                }
-                                            }
-                                            is PersistentPhotoCache.CachingProgress.Complete -> {
-                                                Log.d(TAG, "Photo caching completed: ${progress.succeeded} succeeded, ${progress.failed} failed")
-
-                                                // Get the mapping of original URIs to cached URIs
-                                                for (uri in googlePhotosUris) {
-                                                    val originalUriStr = uri.toString()
-                                                    val cachedUriStr = persistentPhotoCache.getCachedPhotoUri(originalUriStr)
-                                                    if (cachedUriStr != null) {
-                                                        cachedUriMap[originalUriStr] = cachedUriStr
-                                                        Log.d(TAG, "Cached URI mapping: $originalUriStr -> $cachedUriStr")
-                                                    }
-                                                }
-                                            }
-                                            else -> { /* Handle other states as needed */ }
+                                    // Show a toast with caching results if applicable
+                                    if (googlePhotosUris.isNotEmpty()) {
+                                        val cachedCount = cachedUriMap.size
+                                        if (cachedCount > 0) {
+                                            val message = getString(
+                                                R.string.photos_cached_success,
+                                                cachedCount,
+                                                googlePhotosUris.size
+                                            )
+                                            Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
                                         }
                                     }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error caching Google Photos", e)
-                            } finally {
-                                withContext(Dispatchers.Main) {
-                                    showLoadingIndicator(false)
+
+                                    notifyPhotosAdded()
                                 }
                             }
-                        }
-
-                        // Create MediaItems and add to repository, using cached URIs where available
-                        val mediaItems = selectedUris.map { uri ->
-                            val originalUriStr = uri.toString()
-                            val baseUrl = cachedUriMap[originalUriStr] ?: originalUriStr
-
-                            MediaItem(
-                                id = originalUriStr, // Keep original URI as ID for reference
-                                albumId = "google_picked",
-                                baseUrl = baseUrl, // Use cached URI if available
-                                mimeType = "image/*",
-                                width = 0,
-                                height = 0,
-                                description = null,
-                                createdAt = System.currentTimeMillis(),
-                                loadState = MediaItem.LoadState.IDLE
-                            )
-                        }
-
-                        // Add to repository
-                        photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
-
-                        // Update sources and state
-                        val currentSources = getCurrentPhotoSources().toMutableSet()
-                        currentSources.add(SOURCE_GOOGLE_PHOTOS)
-                        pendingChanges["photo_sources"] = currentSources
-                        pendingChanges["google_photos_enabled"] = true
-
-                        withContext(Dispatchers.Main) {
-                            findPreference<SwitchPreferenceCompat>("google_photos_enabled")?.isChecked = true
-                            updateGooglePhotosState(true)
-                            applyChanges()
-
-                            // Show a toast with caching results if applicable
-                            if (googlePhotosUris.isNotEmpty()) {
-                                val cachedCount = cachedUriMap.size
-                                if (cachedCount > 0) {
-                                    val message = getString(
-                                        R.string.photos_cached_success,
-                                        cachedCount,
-                                        googlePhotosUris.size
-                                    )
-                                    Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
-                                }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error processing selected photos", e)
+                            withContext(Dispatchers.Main) {
+                                showLoadingIndicator(false)
+                                showError(getString(R.string.photo_processing_error))
                             }
-
-                            notifyPhotosAdded()
                         }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error processing selected photos", e)
-                    withContext(Dispatchers.Main) {
-                        showLoadingIndicator(false)
-                        showError(getString(R.string.photo_processing_error))
                     }
                 }
             }

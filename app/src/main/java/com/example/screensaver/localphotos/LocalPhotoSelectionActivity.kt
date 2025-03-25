@@ -28,6 +28,7 @@ import android.app.Activity
 import android.content.ContentUris
 import android.content.Intent
 import android.os.Build
+import android.widget.Toast
 import androidx.core.view.isVisible
 
 @AndroidEntryPoint
@@ -242,14 +243,45 @@ class LocalPhotoSelectionActivity : AppCompatActivity() {
         val selectedPhotos = adapter.getSelectedPhotos()
         Log.d(TAG, "Saving ${selectedPhotos.size} selected photos")
 
-        val resultIntent = Intent().apply {
-            putStringArrayListExtra(
-                "selected_photos",
-                ArrayList(selectedPhotos.map { it.uri.toString() })
-            )
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // Take persistable permissions for each URI
+                val processedUris = selectedPhotos.mapNotNull { photo ->
+                    try {
+                        // Convert to content URI if needed
+                        val uri = Uri.parse(photo.uri.toString())
+                        contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                        uri.toString()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error taking permission for URI: ${photo.uri}", e)
+                        photo.uri.toString() // Still include the URI even if permission failed
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    val resultIntent = Intent().apply {
+                        putStringArrayListExtra(
+                            "selected_photos",
+                            ArrayList(processedUris)
+                        )
+                    }
+                    setResult(Activity.RESULT_OK, resultIntent)
+                    Log.d(TAG, "Setting result with ${processedUris.size} processed URIs")
+                    finish()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing selected photos", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        this@LocalPhotoSelectionActivity,
+                        R.string.error_saving_photos,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
         }
-        setResult(Activity.RESULT_OK, resultIntent)
-        Log.d(TAG, "Setting result and finishing activity")
-        finish()
     }
 }

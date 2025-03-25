@@ -45,9 +45,14 @@ class PhotoSourceState @Inject constructor(
         }
 
     var hasSelectedPhotos: Boolean
-        get() = appDataManager.getCurrentState().selectedAlbums.isNotEmpty()
+        get() = appDataManager.getCurrentState().hasAnyPhotosSelected()
         set(value) = appDataManager.updateState {
-            if (!value) it.copy(selectedAlbums = emptySet()) else it
+            if (!value) {
+                it.copy(
+                    selectedAlbums = emptySet(),
+                    selectedLocalPhotos = emptySet()
+                )
+            } else it
         }
 
     var lastPreviewTimestamp: Long

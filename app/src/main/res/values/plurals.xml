@@ -14,4 +14,9 @@
         <item quantity="one">Delete %d selected photo?</item>
         <item quantity="other">Delete %d selected photos?</item>
     </plurals>
+
+    <plurals name="local_photos_added_success">
+        <item quantity="one">Successfully added %d photo</item>
+        <item quantity="other">Successfully added %d photos</item>
+    </plurals>
 </resources>

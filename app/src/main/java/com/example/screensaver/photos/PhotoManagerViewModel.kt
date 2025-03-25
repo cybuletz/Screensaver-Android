@@ -197,9 +197,18 @@ class PhotoManagerViewModel @Inject constructor(
             try {
                 _state.value = PhotoManagerState.Loading
                 Log.d(TAG, "Starting to load initial state")
+                Log.d(TAG, "Checking preferences for picked URIs...")
+                val pickedUrisDebug = preferences.getPickedUris()
+                Log.d(TAG, "Found ${pickedUrisDebug.size} picked URIs in preferences")
+                pickedUrisDebug.take(5).forEach { uri ->
+                    Log.d(TAG, "Sample picked URI: $uri")
+                }
 
                 // First get all albums from repository and preferences
-                val repoAlbums = photoRepository.getAllAlbums().map { repoAlbum ->
+                val repoAlbums = photoRepository.getAllAlbums()
+                Log.d(TAG, "Loaded ${repoAlbums.size} albums from repository")
+
+                val virtualAlbums = repoAlbums.map { repoAlbum ->
                     VirtualAlbum(
                         id = repoAlbum.id,
                         name = repoAlbum.name,
@@ -210,7 +219,7 @@ class PhotoManagerViewModel @Inject constructor(
                 }
 
                 // Update virtual albums state with repository data
-                _virtualAlbums.value = repoAlbums
+                _virtualAlbums.value = virtualAlbums
 
                 // Create a set of existing photo URIs to prevent duplicates
                 val existingPhotoUris = mutableSetOf<String>()
@@ -219,6 +228,11 @@ class PhotoManagerViewModel @Inject constructor(
                 // Get all available photos for management
                 val availablePhotos = photoRepository.getAllPhotos()
                 Log.d(TAG, "PhotoRepository has ${availablePhotos.size} photos")
+
+                // Debug: Log the first few photo URLs to see what we're dealing with
+                availablePhotos.take(5).forEach {
+                    Log.d(TAG, "PhotoRepository photo: ${it.baseUrl}")
+                }
 
                 // Convert existing photos from PhotoRepository, avoiding duplicates
                 availablePhotos.forEach { item ->
@@ -251,6 +265,11 @@ class PhotoManagerViewModel @Inject constructor(
                 val pickedUris = preferences.getPickedUris()
                 Log.d(TAG, "Found ${pickedUris.size} picked URIs in preferences")
 
+                // Debug: Log the first few picked URIs to see what we're dealing with
+                pickedUris.take(5).forEach {
+                    Log.d(TAG, "Picked URI from prefs: $it")
+                }
+
                 pickedUris.forEach { uriString ->
                     if (!existingPhotoUris.contains(uriString)) {
                         existingPhotoUris.add(uriString)
@@ -265,7 +284,7 @@ class PhotoManagerViewModel @Inject constructor(
                             albumId = if (sourceType == PhotoSourceType.GOOGLE_PHOTOS) "google_picked" else "local_picked",
                             dateAdded = System.currentTimeMillis()
                         ))
-                        Log.d(TAG, "Added picked photo: $uriString")
+                        Log.d(TAG, "Added picked photo: $uriString with source type: $sourceType")
 
                         // Make sure it's in the PhotoRepository if it's not already there
                         if (!photoRepository.hasPhoto(uriString)) {
@@ -294,26 +313,28 @@ class PhotoManagerViewModel @Inject constructor(
                         if (!existingPhotoUris.contains(photo.uri)) {
                             existingPhotoUris.add(photo.uri)
                             photos.add(photo)
+                            Log.d(TAG, "Added local album photo: ${photo.uri}")
                         }
                     }
                 }
 
                 // Log detailed photo counts by source
                 Log.d(TAG, """Photos loaded by source:
-                • Total: ${photos.size}
-                • Google Photos: ${photos.count { it.sourceType == PhotoSourceType.GOOGLE_PHOTOS }}
-                • Local Picked: ${photos.count { it.sourceType == PhotoSourceType.LOCAL_PICKED }}
-                • Local Album: ${photos.count { it.sourceType == PhotoSourceType.LOCAL_ALBUM }}
-                • Virtual Album: ${photos.count { it.sourceType == PhotoSourceType.VIRTUAL_ALBUM }}
-            """.trimIndent())
+            • Total: ${photos.size}
+            • Google Photos: ${photos.count { it.sourceType == PhotoSourceType.GOOGLE_PHOTOS }}
+            • Local Picked: ${photos.count { it.sourceType == PhotoSourceType.LOCAL_PICKED }}
+            • Local Album: ${photos.count { it.sourceType == PhotoSourceType.LOCAL_ALBUM }}
+            • Virtual Album: ${photos.count { it.sourceType == PhotoSourceType.VIRTUAL_ALBUM }}
+        """.trimIndent())
 
                 if (photos.isNotEmpty()) {
                     _photos.value = photos.sortedByDescending { it.dateAdded }
                     _state.value = PhotoManagerState.Idle
+                    Log.d(TAG, "PhotoManagerViewModel state set to Idle with ${photos.size} photos")
                 } else {
                     _photos.value = emptyList()
                     _state.value = PhotoManagerState.Empty
-                    Log.d(TAG, "No photos found")
+                    Log.d(TAG, "No photos found - PhotoManagerViewModel state set to Empty")
                 }
 
             } catch (e: Exception) {

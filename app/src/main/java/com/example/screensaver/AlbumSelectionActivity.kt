@@ -345,65 +345,61 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     private suspend fun createMediaItemFromUri(uri: Uri): MediaItem {
         return withContext(Dispatchers.IO) {
-            val projection = arrayOf(
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DISPLAY_NAME,
-                MediaStore.Images.Media.DATE_ADDED,
-                MediaStore.Images.Media.MIME_TYPE,
-                MediaStore.Images.Media.WIDTH,
-                MediaStore.Images.Media.HEIGHT
-            )
+            try {
+                Log.d(TAG, "Creating MediaItem from URI: $uri")
 
-            contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                cursor.moveToFirst()
-
-                val nameColumn = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
-                val dateColumn = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
-                val mimeColumn = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
-                val widthColumn = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
-                val heightColumn = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
-
-                MediaItem(
-                    id = uri.toString(),
-                    albumId = "picked_photos",
-                    baseUrl = uri.toString(),
-                    mimeType = cursor.getString(mimeColumn) ?: "image/*",
-                    width = cursor.getInt(widthColumn),
-                    height = cursor.getInt(heightColumn),
-                    description = cursor.getString(nameColumn),
-                    createdAt = cursor.getLong(dateColumn) * 1000,
-                    loadState = MediaItem.LoadState.IDLE
+                val projection = arrayOf(
+                    MediaStore.Images.Media._ID,
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    MediaStore.Images.Media.DATE_ADDED,
+                    MediaStore.Images.Media.MIME_TYPE,
+                    MediaStore.Images.Media.WIDTH,
+                    MediaStore.Images.Media.HEIGHT
                 )
-            } ?: MediaItem(
-                id = uri.toString(),
-                albumId = "picked_photos",
-                baseUrl = uri.toString(),
-                mimeType = "image/*",
-                width = 0,
-                height = 0,
-                description = uri.lastPathSegment,
-                createdAt = System.currentTimeMillis(),
-                loadState = MediaItem.LoadState.IDLE
-            )
+
+                contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameColumn = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
+                        val dateColumn = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
+                        val mimeColumn = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
+                        val widthColumn = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
+                        val heightColumn = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
+
+                        MediaItem(
+                            id = uri.toString(),
+                            albumId = "picked_photos",
+                            baseUrl = uri.toString(),
+                            mimeType = if (mimeColumn >= 0) cursor.getString(mimeColumn) else "image/*",
+                            width = if (widthColumn >= 0) cursor.getInt(widthColumn) else 0,
+                            height = if (heightColumn >= 0) cursor.getInt(heightColumn) else 0,
+                            description = if (nameColumn >= 0) cursor.getString(nameColumn) else uri.lastPathSegment,
+                            createdAt = if (dateColumn >= 0) cursor.getLong(dateColumn) * 1000 else System.currentTimeMillis(),
+                            loadState = MediaItem.LoadState.IDLE
+                        )
+                    } else {
+                        // Cursor is empty, create item with default values
+                        createFallbackMediaItem(uri)
+                    }
+                } ?: createFallbackMediaItem(uri)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error querying URI details: $uri", e)
+                createFallbackMediaItem(uri)
+            }
         }
     }
 
-    private fun startPhotoPicker() {
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100) // Adjust max as needed
-                }
-                startActivityForResult(intent, PICK_IMAGES_REQUEST_CODE)
-            } else {
-                // If device doesn't support the photo picker, fall back to Google Photos API
-                initializePhotoSelection()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error launching photo picker: ${e.message}")
-            // Fall back to Google Photos API
-            initializePhotoSelection()
-        }
+    private fun createFallbackMediaItem(uri: Uri): MediaItem {
+        return MediaItem(
+            id = uri.toString(),
+            albumId = "picked_photos",
+            baseUrl = uri.toString(),
+            mimeType = "image/*",
+            width = 0,
+            height = 0,
+            description = uri.lastPathSegment,
+            createdAt = System.currentTimeMillis(),
+            loadState = MediaItem.LoadState.IDLE
+        )
     }
 
     private fun initializePhotoSelection() {
@@ -459,9 +455,9 @@ class AlbumSelectionActivity : AppCompatActivity() {
                             val clipData = data.clipData!!
                             for (i in 0 until clipData.itemCount) {
                                 clipData.getItemAt(i).uri?.let { uri ->
-                                    if (photoUriManager.takePersistablePermission(uri)) {
-                                        processedUris.add(uri)
-                                    }
+                                    processedUris.add(uri)
+                                    Log.d(TAG, "Processing URI from clipData: $uri")
+                                    // For local photos, we don't need to take persistable permission
                                     updateLoadingText(getString(R.string.processing_photo_progress,
                                         i + 1, clipData.itemCount))
                                 }
@@ -469,9 +465,8 @@ class AlbumSelectionActivity : AppCompatActivity() {
                         }
                         data?.data != null -> {
                             val uri = data.data!!
-                            if (photoUriManager.takePersistablePermission(uri)) {
-                                processedUris.add(uri)
-                            }
+                            processedUris.add(uri)
+                            Log.d(TAG, "Processing single URI: $uri")
                         }
                     }
 
@@ -480,8 +475,20 @@ class AlbumSelectionActivity : AppCompatActivity() {
                         withContext(Dispatchers.IO) {
                             processedUris.forEachIndexed { index, uri ->
                                 try {
-                                    val mediaItem = createMediaItemFromUri(uri)
+                                    // For local photos, simply create a reference
+                                    val mediaItem = MediaItem(
+                                        id = uri.toString(),
+                                        albumId = "picked_photos",
+                                        baseUrl = uri.toString(),
+                                        mimeType = contentResolver.getType(uri) ?: "image/*",
+                                        width = 0,
+                                        height = 0,
+                                        description = uri.lastPathSegment,
+                                        createdAt = System.currentTimeMillis(),
+                                        loadState = MediaItem.LoadState.IDLE
+                                    )
                                     selectedMediaItems.add(mediaItem)
+                                    Log.d(TAG, "Created MediaItem for URI: $uri")
 
                                     withContext(Dispatchers.Main) {
                                         updateLoadingText(getString(
@@ -498,12 +505,17 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
                         // Save processed items
                         if (selectedMediaItems.isNotEmpty()) {
+                            Log.d(TAG, "Saving ${selectedMediaItems.size} MediaItems")
+                            // IMPORTANT: Save to both repository AND preferences
                             saveProcessedItems(selectedMediaItems)
                         } else {
                             handleError(getString(R.string.no_photos_selected))
                         }
+                    } else {
+                        handleError(getString(R.string.no_photos_selected))
                     }
                 } catch (e: Exception) {
+                    Log.e(TAG, "Error in photo selection", e)
                     handleError(getString(R.string.photo_processing_error, e.message))
                 } finally {
                     viewModel.setLoading(false)
@@ -515,17 +527,24 @@ class AlbumSelectionActivity : AppCompatActivity() {
     private suspend fun saveProcessedItems(selectedMediaItems: List<MediaItem>) {
         withContext(Dispatchers.IO) {
             try {
-                // Add new items to repository
+                Log.d(TAG, "Saving ${selectedMediaItems.size} media items")
+
+                // 1. Add new items to repository
                 photoRepository.addPhotos(
                     photos = selectedMediaItems,
                     mode = PhotoRepository.PhotoAddMode.APPEND
                 )
 
-                // Update preferences
-                preferences.clearSelectedAlbums()
-                preferences.updateLocalSelectedPhotos(
-                    selectedMediaItems.map { it.baseUrl }.toSet()
-                )
+                // 2. Update preferences with the photo URIs
+                val uriStrings = selectedMediaItems.map { it.baseUrl }.toSet()
+
+                // Update local selected photos
+                preferences.updateLocalSelectedPhotos(uriStrings)
+
+                // IMPORTANT: Also add to picked URIs - this is where PhotoManagerViewModel looks for them
+                preferences.addPickedUris(uriStrings)
+
+                Log.d(TAG, "Saved ${selectedMediaItems.size} photos to repository and preferences")
 
                 // Return to MainActivity
                 withContext(Dispatchers.Main) {

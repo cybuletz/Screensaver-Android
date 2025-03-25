@@ -27,6 +27,7 @@ data class AppDataState(
     val keepScreenOn: Boolean = false,
 
     // Photo Source Settings
+    val selectedLocalPhotos: Set<String> = emptySet(),
     val photoSources: Set<String> = setOf("local"),
     val selectedAlbums: Set<String> = emptySet(),
     val selectedLocalFolders: Set<String> = emptySet(),
@@ -82,6 +83,10 @@ data class AppDataState(
     fun withUpdatedTimestamp(): AppDataState = copy(
         lastModified = Instant.now().epochSecond
     )
+
+    fun hasAnyPhotosSelected(): Boolean {
+        return selectedAlbums.isNotEmpty() || selectedLocalPhotos.isNotEmpty()
+    }
 
     override fun toString(): String = buildString {
         append("AppDataState(")

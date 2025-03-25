@@ -270,9 +270,17 @@ class AppPreferences @Inject constructor(
         return prefs.getStringSet(KEY_PICKED_URIS, emptySet()) ?: emptySet()
     }
 
-    fun updateLocalSelectedPhotos(selectedPhotos: Set<String>) {
+    fun addPickedUris(uris: Collection<String>) {
+        val currentUris = getPickedUris().toMutableSet()
+        currentUris.addAll(uris)
         prefs.edit()
-            .putStringSet("selected_local_photos", selectedPhotos)
+            .putStringSet("picked_uris", currentUris)
+            .apply()
+    }
+
+    fun updateLocalSelectedPhotos(uris: Set<String>) {
+        prefs.edit()
+            .putStringSet("selected_local_photos", uris)
             .apply()
     }
 
@@ -306,6 +314,18 @@ class AppPreferences @Inject constructor(
 
     fun cleanup() {
         prefs.unregisterOnSharedPreferenceChangeListener(prefsChangeListener)
+    }
+
+    fun addPickedUris(uris: Set<String>) {
+        val currentUris = getPickedUris().toMutableSet()
+        currentUris.addAll(uris)
+        prefs.edit().putStringSet(KEY_PICKED_URIS, currentUris).apply()
+        Log.d(TAG, "Added ${uris.size} URIs to picked URIs. Total now: ${currentUris.size}")
+    }
+
+    fun setPickedUris(uris: Set<String>) {
+        prefs.edit().putStringSet(KEY_PICKED_URIS, uris).apply()
+        Log.d(TAG, "Set picked URIs. Total: ${uris.size}")
     }
 
     fun saveVirtualAlbum(album: VirtualAlbum) {
