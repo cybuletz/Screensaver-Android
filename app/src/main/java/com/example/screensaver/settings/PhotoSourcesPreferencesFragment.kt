@@ -613,24 +613,21 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                 val processedUris = selectedPhotos.mapNotNull { uriString ->
                     try {
                         val uri = Uri.parse(uriString)
-                        // Take persistable permission with both read and write
-                        requireContext().contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
-
-                        // Verify the permission was actually granted
-                        val perms = requireContext().contentResolver.persistedUriPermissions
-                        val hasPermission = perms.any { it.uri.toString() == uri.toString() }
-                        if (!hasPermission) {
-                            Log.w(TAG, "Failed to persist permission for URI: $uriString")
+                        // Only take persistable permissions for non-media URIs
+                        if (!uri.toString().startsWith("content://media/")) {
+                            try {
+                                requireContext().contentResolver.takePersistableUriPermission(
+                                    uri,
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                )
+                            } catch (e: SecurityException) {
+                                Log.d(TAG, "No need for persistable permission for media URI: $uriString")
+                            }
                         }
-
                         uriString
-                    } catch (e: SecurityException) {
-                        Log.e(TAG, "Failed to take permission for URI: $uriString", e)
-                        // Still include the URI but log the error
-                        uriString
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing URI: $uriString", e)
+                        uriString // Still include the URI even if there was an error
                     }
                 }
 

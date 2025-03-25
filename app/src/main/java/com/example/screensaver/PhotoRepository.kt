@@ -311,28 +311,38 @@ class PhotoRepository @Inject constructor(
                 val currentPhotos = loadPhotos() ?: emptyList()
                 Log.d(TAG, "Validating ${currentPhotos.size} stored photos")
 
-                // Validate URIs with the PhotoUriManager
-                val validPhotoUris = photoUriManager.validateUris(currentPhotos.map { it.baseUrl })
+                val validPhotos = currentPhotos.filter { photo ->
+                    val uri = Uri.parse(photo.baseUrl)
+                    photoUriManager.hasValidPermission(uri)
+                }
 
-                // Check if any URIs are invalid
-                if (validPhotoUris.size < currentPhotos.size) {
-                    Log.d(TAG, "Found ${currentPhotos.size - validPhotoUris.size} invalid URIs")
-
-                    // Filter to keep only valid photos
-                    val validPhotos = currentPhotos.filter { photo ->
-                        validPhotoUris.contains(photo.baseUrl)
-                    }
-
-                    // Update storage if needed
+                // Update storage if any photos were invalid
+                if (validPhotos.size < currentPhotos.size) {
+                    Log.d(TAG, "Found ${currentPhotos.size - validPhotos.size} invalid URIs")
                     clearPhotos()
                     if (validPhotos.isNotEmpty()) {
                         addPhotos(validPhotos)
                     }
-
                     Log.d(TAG, "Updated repository with ${validPhotos.size} valid photos")
                 } else {
                     Log.d(TAG, "All stored photos are valid")
                 }
+
+                // Update virtual albums to remove invalid photos
+                val updatedAlbums = virtualAlbums.map { album ->
+                    val validUris = album.photoUris.filter { uri ->
+                        photoUriManager.hasValidPermission(Uri.parse(uri))
+                    }
+                    album.copy(photoUris = validUris)
+                }.filter { it.photoUris.isNotEmpty() }
+
+                // Update albums if any changes
+                if (updatedAlbums.sumOf { it.photoUris.size } < virtualAlbums.sumOf { it.photoUris.size }) {
+                    virtualAlbums.clear()
+                    virtualAlbums.addAll(updatedAlbums)
+                    saveVirtualAlbums()
+                }
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error validating photos", e)
             }
@@ -438,14 +448,24 @@ class PhotoRepository @Inject constructor(
 
     private fun saveVirtualAlbums() {
         try {
+            // Filter out albums with invalid URIs
+            val validAlbums = virtualAlbums.map { album ->
+                // Validate each URI in the album
+                val validUris = album.photoUris.filter { uri ->
+                    photoUriManager.hasValidPermission(Uri.parse(uri))
+                }
+                album.copy(photoUris = validUris)
+            }.filter { it.photoUris.isNotEmpty() }
+
+            // Create JSON array from valid albums
             val jsonArray = JSONArray()
-            virtualAlbums.forEach { album ->
+            validAlbums.forEach { album ->
                 jsonArray.put(JSONObject().apply {
                     put("id", album.id)
                     put("name", album.name)
                     put("photoUris", JSONArray(album.photoUris))
                     put("dateCreated", album.dateCreated)
-                    put("isSelected", album.isSelected)  // Ensure this is always saved
+                    put("isSelected", album.isSelected)
                 })
             }
 
@@ -454,9 +474,9 @@ class PhotoRepository @Inject constructor(
                 .apply()
 
             Log.d(TAG, """Saved virtual albums:
-            • Total albums: ${virtualAlbums.size}
-            • Selected albums: ${virtualAlbums.count { it.isSelected }}
-            • Selection states: ${virtualAlbums.joinToString { "${it.id}: ${it.isSelected}" }}""".trimIndent())
+            • Total albums: ${validAlbums.size}
+            • Selected albums: ${validAlbums.count { it.isSelected }}
+            • Selection states: ${validAlbums.joinToString { "${it.id}: ${it.isSelected}" }}""".trimIndent())
         } catch (e: Exception) {
             Log.e(TAG, "Error saving virtual albums", e)
         }
@@ -567,15 +587,31 @@ class PhotoRepository @Inject constructor(
         • Current count: ${mediaItems.size}
         • New photos: ${photos.size}""".trimMargin())
 
+        // Process photos based on their type
+        val processedPhotos = photos.map { photo ->
+            val uri = Uri.parse(photo.baseUrl)
+            when {
+                // For Google Photos URIs, we need to cache them
+                photoUriManager.isGooglePhotosUri(uri) -> {
+                    // Let the cached URI be resolved when needed
+                    photo
+                }
+                else -> {
+                    // Keep local URIs as-is, no caching needed
+                    photo
+                }
+            }
+        }
+
         when (mode) {
             PhotoAddMode.REPLACE -> {
                 mediaItems.clear()
-                mediaItems.addAll(photos)
-                Log.d(TAG, "Replaced all photos with ${photos.size} new photos")
+                mediaItems.addAll(processedPhotos)
+                Log.d(TAG, "Replaced all photos with ${processedPhotos.size} new photos")
             }
             PhotoAddMode.APPEND, PhotoAddMode.MERGE -> {
                 // For both APPEND and MERGE, ensure no duplicates
-                val uniqueNewPhotos = photos.filterNot { newPhoto ->
+                val uniqueNewPhotos = processedPhotos.filterNot { newPhoto ->
                     mediaItems.any { existing ->
                         existing.baseUrl == newPhoto.baseUrl
                     }
@@ -583,7 +619,7 @@ class PhotoRepository @Inject constructor(
                 mediaItems.addAll(uniqueNewPhotos)
                 Log.d(TAG, """Added photos:
                 • New unique photos: ${uniqueNewPhotos.size}
-                • Duplicates filtered: ${photos.size - uniqueNewPhotos.size}
+                • Duplicates filtered: ${processedPhotos.size - uniqueNewPhotos.size}
                 • Total now: ${mediaItems.size}""".trimMargin())
             }
         }
@@ -595,26 +631,6 @@ class PhotoRepository @Inject constructor(
 
     fun hasPhoto(uri: String): Boolean {
         return mediaItems.any { it.baseUrl == uri }
-    }
-
-    fun addPhoto(uri: String) {
-        if (!hasPhoto(uri)) {
-            val newItem = MediaItem(
-                id = uri,
-                albumId = "local_picked",
-                baseUrl = uri,
-                mimeType = "image/*",
-                width = 0,
-                height = 0,
-                description = null,
-                createdAt = System.currentTimeMillis(),
-                loadState = MediaItem.LoadState.IDLE
-            )
-            addPhotos(listOf(newItem), PhotoAddMode.MERGE)
-            Log.d(TAG, "Added new photo: $uri")
-        } else {
-            Log.d(TAG, "Photo already exists: $uri")
-        }
     }
 
     private fun isDuplicate(newItem: MediaItem): Boolean {

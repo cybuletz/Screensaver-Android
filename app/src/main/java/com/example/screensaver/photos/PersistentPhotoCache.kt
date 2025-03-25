@@ -152,32 +152,42 @@ class PersistentPhotoCache @Inject constructor(
         }
     }
 
-    /**
-     * Get a cached URI for a photo if it exists
-     */
-    fun getCachedPhotoUri(originalUri: String): String? {
+    private fun isGooglePhotosUri(uri: String): Boolean {
+        val lowerUri = uri.lowercase()
+
+        // Only allow specific Google Photos URIs - everything else is considered local
+        // This is a whitelist approach rather than a blacklist
+        return lowerUri.startsWith("content://com.google.android.apps.photos") ||
+                lowerUri.contains("googleusercontent.com/")
+    }
+
+    fun getCachedPhotoUri(originalUri: String): String {
+        // ALWAYS return original URI for non-Google Photos
+        if (!isGooglePhotosUri(originalUri)) {
+            Log.d(TAG, "Returning original URI (not Google Photos): $originalUri")
+            return originalUri
+        }
+
         val cachedUri = uriMapping[originalUri]
         if (cachedUri != null) {
-            // Verify the file still exists
             val uri = Uri.parse(cachedUri)
             if (uri.scheme == "file") {
                 val file = File(uri.path!!)
                 if (file.exists() && file.length() > 0) {
                     return cachedUri
-                } else {
-                    // File is gone, remove from mapping
-                    uriMapping.remove(originalUri)
-                    _fileSizes.remove(cachedUri)
-                    scope.launch {
-                        saveUriMappings()
-                        calculateTotalCacheSize()
-                    }
+                }
+                // Invalid cache entry - clean it up
+                uriMapping.remove(originalUri)
+                _fileSizes.remove(cachedUri)
+                scope.launch {
+                    saveUriMappings()
+                    calculateTotalCacheSize()
                 }
             } else {
                 return cachedUri
             }
         }
-        return null
+        return originalUri  // Always return original if not cached
     }
 
     /**
@@ -231,116 +241,20 @@ class PersistentPhotoCache @Inject constructor(
         }
     }
 
-    /**
-     * Cache a list of photos with progress tracking
-     */
-    /**
-     * Cache a list of photos with progress tracking
-     */
-    fun cachePhotos(photoUris: List<String>): Flow<CachingProgress> {
-        if (photoUris.isEmpty()) {
-            return flowOf(CachingProgress.Complete(0, 0, 0, 0L))
-        }
-
-        return channelFlow {  // Changed from flow to channelFlow
-            send(CachingProgress.Starting(photoUris.size))  // Changed emit to send
-
-            val alreadyCached = photoUris.count { uriMapping.containsKey(it) }
-            val toCacheCount = photoUris.size - alreadyCached
-
-            if (toCacheCount <= 0) {
-                send(CachingProgress.Complete(photoUris.size, 0, alreadyCached, _totalCacheSize.value))  // Changed emit to send
-                return@channelFlow
-            }
-
-            // Filter out already cached URIs
-            val urisToCache = photoUris.filter { !uriMapping.containsKey(it) }
-            val results = ConcurrentHashMap<String, CacheResult>()
-            var completed = 0
-            var errors = 0
-
-            // Update global progress
-            _cachingProgress.value = CachingProgress.InProgress(0, 0, urisToCache.size, 0f, 0L)
-
-            try {
-                withContext(cacheDispatcher) {
-                    urisToCache.map { uri ->
-                        async {
-                            try {
-                                val result = cachePhotoInternal(uri)
-                                results[uri] = result
-
-                                if (result is CacheResult.Success) {
-                                    completed++
-                                    updateFileSize(result.cachedUri)
-
-                                    // Get the current file size for progress updates
-                                    val currentFileSize = _fileSizes[result.cachedUri] ?: 0L
-
-                                    // Calculate progress
-                                    val progress = (completed + errors).toFloat() / urisToCache.size
-                                    _cachingProgress.value = CachingProgress.InProgress(
-                                        completed, errors, urisToCache.size, progress, currentFileSize
-                                    )
-                                } else {
-                                    errors++
-
-                                    // Calculate progress
-                                    val progress = (completed + errors).toFloat() / urisToCache.size
-                                    _cachingProgress.value = CachingProgress.InProgress(
-                                        completed, errors, urisToCache.size, progress, 0L
-                                    )
-                                }
-
-                                // Emit progress updates at reasonable intervals
-                                if ((completed + errors) % 5 == 0 || (completed + errors) == urisToCache.size) {
-                                    val latestFileSize = if (result is CacheResult.Success)
-                                        _fileSizes[result.cachedUri] ?: 0L
-                                    else
-                                        0L
-
-                                    send(  // Changed emit to send
-                                        CachingProgress.InProgress(
-                                            completed, errors, urisToCache.size,
-                                            (completed + errors).toFloat() / urisToCache.size,
-                                            latestFileSize
-                                        )
-                                    )
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error caching photo: $uri", e)
-                                errors++
-                                results[uri] = CacheResult.Error(e.message ?: "Unknown error")
-                            }
-                        }
-                    }.awaitAll() // Wait for all caching operations to complete
-                }
-
-                // Save URI mappings after batch complete
-                saveUriMappings()
-
-                // Final progress update
-                send(CachingProgress.Complete(completed, errors, alreadyCached, _totalCacheSize.value))  // Changed emit to send
-                _cachingProgress.value = CachingProgress.Complete(completed, errors, alreadyCached, _totalCacheSize.value)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during batch caching", e)
-                send(CachingProgress.Failed(e.message ?: "Unknown error", completed, errors))  // Changed emit to send
-                _cachingProgress.value = CachingProgress.Failed(e.message ?: "Unknown error", completed, errors)
-            }
-        }
-    }
-
-    /**
-     * Internal method to cache a single photo using Compressor library
-     */
     private suspend fun cachePhotoInternal(originalUri: String): CacheResult {
+        val isGoogle = isGooglePhotosUri(originalUri)
+        Log.d(TAG, "Cache attempt for URI: $originalUri (isGooglePhotos: $isGoogle)")
+
+        if (!isGoogle) {
+            Log.d(TAG, "Rejected caching for non-Google Photos URI: $originalUri")
+            return CacheResult.Success(originalUri)
+        }
+
         return withContext(Dispatchers.IO) {
             try {
-                // Generate a stable filename
                 val fileName = "photo_${abs(originalUri.hashCode())}.jpg"
                 val cachedFile = File(cacheDir, fileName)
 
-                // If already cached, return success
                 if (cachedFile.exists() && cachedFile.length() > 0) {
                     val cachedUri = getFileProviderUri(cachedFile)
                     uriMapping[originalUri] = cachedUri
@@ -348,7 +262,6 @@ class PersistentPhotoCache @Inject constructor(
                     return@withContext CacheResult.Success(cachedUri)
                 }
 
-                // Get device display metrics for optimal sizing
                 val displayMetrics = context.resources.displayMetrics
                 val screenWidth = displayMetrics.widthPixels
                 val screenHeight = displayMetrics.heightPixels
@@ -356,8 +269,6 @@ class PersistentPhotoCache @Inject constructor(
                 try {
                     val uri = Uri.parse(originalUri)
                     val contentResolver = context.contentResolver
-
-                    // STEP 1: First pass - determine image dimensions without fully loading
                     var originalWidth = 0
                     var originalHeight = 0
 
@@ -374,7 +285,6 @@ class PersistentPhotoCache @Inject constructor(
                         throw Exception("Could not determine image dimensions")
                     }
 
-                    // STEP 2: Calculate target dimensions based on screen size and quality factor
                     val (targetWidth, targetHeight) = calculateTargetDimensions(
                         originalWidth = originalWidth,
                         originalHeight = originalHeight,
@@ -383,13 +293,8 @@ class PersistentPhotoCache @Inject constructor(
                         resizeFactor = QUALITY_RESIZE_FACTOR
                     )
 
-                    // STEP 3: Calculate optimal sample size for memory-efficient loading
                     val sampleSize = calculateInSampleSize(originalWidth, originalHeight, targetWidth, targetHeight)
 
-                    Log.d(TAG, "Processing image: ${originalWidth}x$originalHeight → ${targetWidth}x$targetHeight " +
-                            "(screen: ${screenWidth}x$screenHeight, sample: $sampleSize, quality: $JPEG_QUALITY%)")
-
-                    // STEP 4: Load bitmap with calculated sample size
                     var bitmap: Bitmap? = null
                     contentResolver.openInputStream(uri)?.use { input ->
                         val opts = BitmapFactory.Options().apply {
@@ -404,65 +309,47 @@ class PersistentPhotoCache @Inject constructor(
                         throw Exception("Failed to decode image")
                     }
 
-                    // STEP 5: Resize to exact dimensions if needed
                     val resizedBitmap = if (bitmap!!.width != targetWidth || bitmap!!.height != targetHeight) {
                         try {
                             Bitmap.createScaledBitmap(bitmap!!, targetWidth, targetHeight, true).also {
-                                // Recycle the original to free memory immediately
                                 bitmap?.recycle()
                                 bitmap = null
                             }
                         } catch (e: Exception) {
                             Log.w(TAG, "Error during exact resize, using sampled bitmap: ${e.message}")
-                            bitmap  // Use the sampled bitmap if exact resize fails
+                            bitmap
                         }
                     } else {
                         bitmap
                     }
 
-                    // STEP 6: Write directly to file with quality setting
                     FileOutputStream(cachedFile).use { out ->
                         resizedBitmap!!.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
                         out.flush()
                     }
 
-                    // STEP 7: Clean up bitmap resources
                     resizedBitmap?.recycle()
 
-                    // STEP 8: Verify and record success
                     if (cachedFile.exists() && cachedFile.length() > 0) {
                         val cachedUri = getFileProviderUri(cachedFile)
                         uriMapping[originalUri] = cachedUri
                         updateFileSize(cachedUri)
-
-                        Log.d(TAG, "Successfully cached photo: $originalUri → $cachedUri " +
-                                "(${formatFileSize(cachedFile.length())})")
-
                         return@withContext CacheResult.Success(cachedUri)
                     } else {
                         throw Exception("Failed to write compressed image")
                     }
-
                 } catch (e: Exception) {
                     Log.e(TAG, "Error optimizing image: ${e.message}")
-
-                    // Fallback: direct stream copy (much faster but no optimization)
                     try {
                         val uri = Uri.parse(originalUri)
                         context.contentResolver.openInputStream(uri)?.use { input ->
                             FileOutputStream(cachedFile).use { output ->
-                                val buffer = ByteArray(8192)
-                                var bytesRead: Int
-                                while (input.read(buffer).also { bytesRead = it } != -1) {
-                                    output.write(buffer, 0, bytesRead)
-                                }
+                                input.copyTo(output)
                                 output.flush()
                             }
-
                             val cachedUri = getFileProviderUri(cachedFile)
                             uriMapping[originalUri] = cachedUri
                             updateFileSize(cachedUri)
-                            Log.w(TAG, "Used fallback direct stream copy for $originalUri")
                             return@withContext CacheResult.Success(cachedUri)
                         }
                     } catch (e2: Exception) {
@@ -470,11 +357,105 @@ class PersistentPhotoCache @Inject constructor(
                         return@withContext CacheResult.Error("Image processing failed: ${e.message}")
                     }
                 }
-
                 return@withContext CacheResult.Error("Failed to cache photo")
             } catch (e: Exception) {
                 Log.e(TAG, "Unexpected error caching photo", e)
                 return@withContext CacheResult.Error(e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    fun cachePhotos(photoUris: List<String>): Flow<CachingProgress> {
+        Log.d(TAG, "Cache request for ${photoUris.size} URIs")
+
+        if (photoUris.isEmpty()) {
+            return flowOf(CachingProgress.Complete(0, 0, 0, 0L))
+        }
+
+        val googlePhotosUris = photoUris.filter { uri ->
+            val isGoogle = isGooglePhotosUri(uri)
+            Log.d(TAG, "URI filter check: $uri (isGooglePhotos: $isGoogle)")
+            isGoogle
+        }
+
+        if (googlePhotosUris.isEmpty()) {
+            Log.d(TAG, "No Google Photos URIs to cache")
+            return flowOf(CachingProgress.Complete(0, 0, 0, 0L))
+        }
+
+        return channelFlow {
+            send(CachingProgress.Starting(googlePhotosUris.size))
+
+            val alreadyCached = googlePhotosUris.count { uriMapping.containsKey(it) }
+            val toCacheCount = googlePhotosUris.size - alreadyCached
+
+            if (toCacheCount <= 0) {
+                send(CachingProgress.Complete(googlePhotosUris.size, 0, alreadyCached, _totalCacheSize.value))
+                return@channelFlow
+            }
+
+            val urisToCache = googlePhotosUris.filter { !uriMapping.containsKey(it) }
+            val results = ConcurrentHashMap<String, CacheResult>(urisToCache.size)
+            var completed = 0
+            var errors = 0
+
+            _cachingProgress.value = CachingProgress.InProgress(0, 0, urisToCache.size, 0f, 0L)
+
+            try {
+                withContext(cacheDispatcher) {
+                    urisToCache.map { uri ->
+                        async {
+                            try {
+                                val result = cachePhotoInternal(uri)
+                                results[uri] = result
+
+                                if (result is CacheResult.Success) {
+                                    completed++
+                                    updateFileSize(result.cachedUri)
+                                    val currentFileSize = _fileSizes[result.cachedUri] ?: 0L
+
+                                    val progress = (completed + errors).toFloat() / urisToCache.size
+                                    _cachingProgress.value = CachingProgress.InProgress(
+                                        completed, errors, urisToCache.size, progress, currentFileSize
+                                    )
+                                } else {
+                                    errors++
+                                    val progress = (completed + errors).toFloat() / urisToCache.size
+                                    _cachingProgress.value = CachingProgress.InProgress(
+                                        completed, errors, urisToCache.size, progress, 0L
+                                    )
+                                }
+
+                                if ((completed + errors) % 5 == 0 || (completed + errors) == urisToCache.size) {
+                                    val latestFileSize = if (result is CacheResult.Success)
+                                        _fileSizes[result.cachedUri] ?: 0L
+                                    else
+                                        0L
+
+                                    send(CachingProgress.InProgress(
+                                        completed,
+                                        errors,
+                                        urisToCache.size,
+                                        (completed + errors).toFloat() / urisToCache.size,
+                                        latestFileSize
+                                    ))
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error caching photo: $uri", e)
+                                errors++
+                                results[uri] = CacheResult.Error(e.message ?: "Unknown error")
+                            }
+                        }
+                    }.awaitAll()
+                }
+
+                saveUriMappings()
+                send(CachingProgress.Complete(completed, errors, alreadyCached, _totalCacheSize.value))
+                _cachingProgress.value = CachingProgress.Complete(completed, errors, alreadyCached, _totalCacheSize.value)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during batch caching", e)
+                send(CachingProgress.Failed(e.message ?: "Unknown error", completed, errors))
+                _cachingProgress.value = CachingProgress.Failed(e.message ?: "Unknown error", completed, errors)
             }
         }
     }

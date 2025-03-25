@@ -193,6 +193,8 @@ class PhotosGlideModule : AppGlideModule() {
             private const val TAG = "UriDataFetcher"
         }
 
+        private var currentInputStream: InputStream? = null
+
         override fun loadData(priority: Priority, callback: DataFetcher.DataCallback<in InputStream>) {
             try {
                 val uriString = uri.toString()
@@ -206,6 +208,7 @@ class PhotosGlideModule : AppGlideModule() {
                             val cachedUriObj = Uri.parse(cachedUri)
                             val inputStream = context.contentResolver.openInputStream(cachedUriObj)
                             if (inputStream != null) {
+                                currentInputStream = inputStream
                                 callback.onDataReady(inputStream)
                                 return
                             } else {
@@ -213,6 +216,8 @@ class PhotosGlideModule : AppGlideModule() {
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error loading from cached URI, falling back to original", e)
+                            currentInputStream?.close()
+                            currentInputStream = null
                         }
                     }
                 }
@@ -229,6 +234,7 @@ class PhotosGlideModule : AppGlideModule() {
                 try {
                     val inputStream = context.contentResolver.openInputStream(uri)
                     if (inputStream != null) {
+                        currentInputStream = inputStream
                         callback.onDataReady(inputStream)
                     } else {
                         callback.onLoadFailed(IOException("Could not open input stream for URI: $uri"))
@@ -259,9 +265,13 @@ class PhotosGlideModule : AppGlideModule() {
                 )
 
                 // Try to open the stream with fresh permissions
-                context.contentResolver.openInputStream(uri)?.let { stream ->
+                val stream = context.contentResolver.openInputStream(uri)
+                if (stream != null) {
+                    currentInputStream = stream
                     callback.onDataReady(stream)
-                } ?: throw IOException("Could not open input stream for URI: $uri")
+                } else {
+                    throw IOException("Could not open input stream for URI: $uri")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load Google Photos URI: $uri", e)
                 callback.onLoadFailed(e)
@@ -283,6 +293,7 @@ class PhotosGlideModule : AppGlideModule() {
                 // Try to open the stream again
                 val inputStream = context.contentResolver.openInputStream(uri)
                 if (inputStream != null) {
+                    currentInputStream = inputStream
                     callback.onDataReady(inputStream)
                 } else {
                     callback.onLoadFailed(IOException("Could not open input stream for URI: $uri"))
@@ -294,11 +305,25 @@ class PhotosGlideModule : AppGlideModule() {
         }
 
         override fun cleanup() {
-            // Nothing to clean up
+            // Properly close the input stream in cleanup
+            try {
+                currentInputStream?.close()
+            } catch (e: IOException) {
+                Log.w(TAG, "Error closing stream during cleanup", e)
+            } finally {
+                currentInputStream = null
+            }
         }
 
         override fun cancel() {
-            // Cannot cancel
+            // Close the input stream if cancelled
+            try {
+                currentInputStream?.close()
+            } catch (e: IOException) {
+                Log.w(TAG, "Error closing stream during cancel", e)
+            } finally {
+                currentInputStream = null
+            }
         }
 
         override fun getDataClass(): Class<InputStream> = InputStream::class.java
