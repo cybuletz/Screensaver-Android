@@ -264,68 +264,117 @@ class PhotoDisplayManager @Inject constructor(
             spotifyManager.resume()
         }
 
-        val photoCount = photoManager.getPhotoCount()
-        if (photoCount == 0) {
-            Log.d(TAG, "No photos available, showing default photo with message")
-            showNoPhotosMessage()
-            return
-        }
+        // Store lifecycleScope in a local variable
+        val currentScope = lifecycleScope ?: return
 
-        lifecycleScope?.launch {
+        // Get available photos and filter out Google Photos URIs that aren't cached
+        currentScope.launch {
             try {
-                val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
-                val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: return@launch
-
-                // Try to get cached URI but fallback to original if needed
-                val originalUrl = nextUrl
-                val cachedUri = try {
-                    photoManager.persistentPhotoCache?.getCachedPhotoUri(nextUrl)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error getting cached URI", e)
-                    null
+                val photoCount = photoManager.getPhotoCount()
+                if (photoCount == 0) {
+                    Log.d(TAG, "No photos available, showing default photo with message")
+                    showNoPhotosMessage()
+                    return@launch
                 }
 
-                // Choose which URI to load - first try cached, if that fails use original
-                var uriToLoad = cachedUri ?: originalUrl
+                // Find a valid photo to display
+                var foundValidPhoto = false
+                var attemptsCount = 0
+                val maxAttempts = photoCount * 2 // Prevent infinite loops
 
-                Log.d(TAG, "Loading photo $nextIndex: $uriToLoad (${if(cachedUri != null) "cached" else "original"})")
-                val startTime = System.currentTimeMillis()
+                while (!foundValidPhoto && attemptsCount < maxAttempts) {
+                    attemptsCount++
+                    val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
+                    val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: continue
 
-                views?.let { views ->
-                    isTransitioning = true
+                    // Check if this is a Google Photos URI
+                    val isGooglePhotosUri = nextUrl.contains("com.google.android.apps.photos") ||
+                            nextUrl.contains("googleusercontent.com")
 
-                    try {
-                        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-                        val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
-
-                        resetViewProperties(views)
-
-                        withContext(Dispatchers.Main) {
-                            GlideApp.with(context)
-                                .load(uriToLoad)
-                                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                                .onlyRetrieveFromCache(false) // Allow loading from network if cache fails
-                                .error(
-                                    // If loading cached version fails, try the original
-                                    if (cachedUri != null && cachedUri == uriToLoad) {
-                                        GlideApp.with(context)
-                                            .load(originalUrl)
-                                            .diskCacheStrategy(DiskCacheStrategy.ALL)
-                                    } else {
-                                        GlideApp.with(context).load(R.drawable.default_photo)
-                                    }
-                                )
-                                .listener(createGlideListener(views, nextIndex, startTime, transitionEffect))
-                                .into(views.overlayView)
+                    if (isGooglePhotosUri) {
+                        // For Google Photos URIs, only use if we have a cached version
+                        val cachedUri = photoManager.persistentPhotoCache?.getCachedPhotoUri(nextUrl)
+                        if (cachedUri != null) {
+                            // We have a cached version, use it
+                            displayPhoto(nextIndex, cachedUri, true)
+                            foundValidPhoto = true
+                        } else {
+                            // No cached version, skip to next photo
+                            Log.d(TAG, "Skipping uncached Google Photos URI: $nextUrl")
+                            currentPhotoIndex = nextIndex
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in loadAndDisplayPhoto", e)
-                        isTransitioning = false
-                        showDefaultPhoto()
+                    } else {
+                        // Regular URI, display directly
+                        displayPhoto(nextIndex, nextUrl, false)
+                        foundValidPhoto = true
                     }
                 }
+
+                // If no valid photo was found after checking all photos
+                if (!foundValidPhoto) {
+                    Log.d(TAG, "No valid cached photos available, showing default photo")
+                    showNoPhotosMessage()
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error calculating next photo", e)
+                Log.e(TAG, "Error finding valid photo", e)
+                showDefaultPhoto()
+            }
+        }
+    }
+
+
+    private fun displayPhoto(photoIndex: Int, uri: String, isCached: Boolean) {
+        val views = this.views ?: return
+        val currentScope = lifecycleScope ?: return
+
+        isTransitioning = true
+
+        currentScope.launch {
+            try {
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
+                val startTime = System.currentTimeMillis()
+
+                resetViewProperties(views)
+
+                Log.d(TAG, "Displaying photo $photoIndex: $uri" + (if(isCached) " (cached)" else ""))
+
+                withContext(Dispatchers.Main) {
+                    GlideApp.with(context)
+                        .load(uri)
+                        .diskCacheStrategy(DiskCacheStrategy.ALL)
+                        .error(R.drawable.default_photo)
+                        .listener(object : RequestListener<Drawable> {
+                            override fun onLoadFailed(
+                                e: GlideException?,
+                                model: Any?,
+                                target: Target<Drawable>,
+                                isFirstResource: Boolean
+                            ): Boolean {
+                                Log.e(TAG, "Failed to load photo: $model", e)
+                                isTransitioning = false
+
+                                // Skip to next photo
+                                currentPhotoIndex = photoIndex
+                                loadAndDisplayPhoto(false)
+                                return false
+                            }
+
+                            override fun onResourceReady(
+                                resource: Drawable,
+                                model: Any,
+                                target: Target<Drawable>,
+                                dataSource: DataSource,
+                                isFirstResource: Boolean
+                            ): Boolean {
+                                return createGlideListener(views, photoIndex, startTime, transitionEffect)
+                                    .onResourceReady(resource, model, target, dataSource, isFirstResource)
+                            }
+                        })
+                        .into(views.overlayView)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error displaying photo", e)
                 isTransitioning = false
                 showDefaultPhoto()
             }

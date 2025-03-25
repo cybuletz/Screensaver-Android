@@ -455,6 +455,13 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     private fun launchGoogleAlbumSelection() {
         Log.d(TAG, "Launching Google Album Selection")
 
+        // Add this Toast message at the beginning of the method
+        Toast.makeText(
+            requireContext(),
+            "For stability, please select up to 50 photos at a time",
+            Toast.LENGTH_LONG
+        ).show()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = "image/*"

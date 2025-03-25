@@ -172,11 +172,12 @@ class PhotosGlideModule : AppGlideModule() {
                 if (cachedUri != null) {
                     // Use cached version instead
                     finalUri = Uri.parse(cachedUri)
+                    Log.d(TAG, "Using cached URI for Google Photos: $uriString -> $cachedUri")
                 }
             }
 
             val signature = ObjectKey(finalUri.toString())
-            return ModelLoader.LoadData(signature, UriDataFetcher(context, finalUri))
+            return ModelLoader.LoadData(signature, UriDataFetcher(context, finalUri, persistentPhotoCache))
         }
 
         override fun handles(uri: Uri): Boolean = true
@@ -184,7 +185,8 @@ class PhotosGlideModule : AppGlideModule() {
 
     private class UriDataFetcher(
         private val context: Context,
-        private val uri: Uri
+        private val uri: Uri,
+        private val persistentPhotoCache: PersistentPhotoCache
     ) : DataFetcher<InputStream> {
 
         companion object {
@@ -193,11 +195,32 @@ class PhotosGlideModule : AppGlideModule() {
 
         override fun loadData(priority: Priority, callback: DataFetcher.DataCallback<in InputStream>) {
             try {
-                // First try to get persistable permission if needed
+                val uriString = uri.toString()
+
+                // First check if this URI is from Google Photos and has a cached version
+                if (uriString.contains("com.google.android.apps.photos")) {
+                    val cachedUri = persistentPhotoCache.getCachedPhotoUri(uriString)
+                    if (cachedUri != null) {
+                        try {
+                            Log.d(TAG, "Using cached version for Google Photos URI: $uriString -> $cachedUri")
+                            val cachedUriObj = Uri.parse(cachedUri)
+                            val inputStream = context.contentResolver.openInputStream(cachedUriObj)
+                            if (inputStream != null) {
+                                callback.onDataReady(inputStream)
+                                return
+                            } else {
+                                Log.w(TAG, "Cached URI exists but couldn't open stream, falling back to original")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error loading from cached URI, falling back to original", e)
+                        }
+                    }
+                }
+
+                // Continue with original Google Photos URI handling if no cache or cache failed
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                    uri.toString().contains("com.google.android.apps.photos")
+                    uriString.contains("com.google.android.apps.photos")
                 ) {
-                    // For Google Photos URIs on Android 11+, use a different approach
                     loadGooglePhotosUri(callback)
                     return
                 }

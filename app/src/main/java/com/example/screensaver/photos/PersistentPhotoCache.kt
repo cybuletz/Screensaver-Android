@@ -234,20 +234,23 @@ class PersistentPhotoCache @Inject constructor(
     /**
      * Cache a list of photos with progress tracking
      */
+    /**
+     * Cache a list of photos with progress tracking
+     */
     fun cachePhotos(photoUris: List<String>): Flow<CachingProgress> {
         if (photoUris.isEmpty()) {
             return flowOf(CachingProgress.Complete(0, 0, 0, 0L))
         }
 
-        return flow {
-            emit(CachingProgress.Starting(photoUris.size))
+        return channelFlow {  // Changed from flow to channelFlow
+            send(CachingProgress.Starting(photoUris.size))  // Changed emit to send
 
             val alreadyCached = photoUris.count { uriMapping.containsKey(it) }
             val toCacheCount = photoUris.size - alreadyCached
 
             if (toCacheCount <= 0) {
-                emit(CachingProgress.Complete(photoUris.size, 0, alreadyCached, _totalCacheSize.value))
-                return@flow
+                send(CachingProgress.Complete(photoUris.size, 0, alreadyCached, _totalCacheSize.value))  // Changed emit to send
+                return@channelFlow
             }
 
             // Filter out already cached URIs
@@ -296,7 +299,7 @@ class PersistentPhotoCache @Inject constructor(
                                     else
                                         0L
 
-                                    emit(
+                                    send(  // Changed emit to send
                                         CachingProgress.InProgress(
                                             completed, errors, urisToCache.size,
                                             (completed + errors).toFloat() / urisToCache.size,
@@ -317,11 +320,11 @@ class PersistentPhotoCache @Inject constructor(
                 saveUriMappings()
 
                 // Final progress update
-                emit(CachingProgress.Complete(completed, errors, alreadyCached, _totalCacheSize.value))
+                send(CachingProgress.Complete(completed, errors, alreadyCached, _totalCacheSize.value))  // Changed emit to send
                 _cachingProgress.value = CachingProgress.Complete(completed, errors, alreadyCached, _totalCacheSize.value)
             } catch (e: Exception) {
                 Log.e(TAG, "Error during batch caching", e)
-                emit(CachingProgress.Failed(e.message ?: "Unknown error", completed, errors))
+                send(CachingProgress.Failed(e.message ?: "Unknown error", completed, errors))  // Changed emit to send
                 _cachingProgress.value = CachingProgress.Failed(e.message ?: "Unknown error", completed, errors)
             }
         }
