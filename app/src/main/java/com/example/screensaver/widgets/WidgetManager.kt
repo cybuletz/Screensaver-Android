@@ -92,9 +92,13 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Loaded clock config: $config")
 
         try {
-            // Save current weather widget state
+            // Save states of other widgets before setting up clock
             val weatherWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
             val weatherState = weatherWidget?.currentWeatherState
+
+            // Save music widget state
+            val musicWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
+            val musicConfig = musicWidget?.config
 
             // Create and setup the clock widget
             val clockWidget = ClockWidget(container, config)
@@ -115,6 +119,11 @@ class WidgetManager @Inject constructor(
             // Restore weather widget state if needed
             weatherState?.let { state ->
                 weatherWidget?.updateState(state)
+            }
+
+            // Restore music widget if it was previously enabled
+            if (musicConfig?.enabled == true) {
+                setupMusicWidget(container)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up clock widget", e)
@@ -164,10 +173,14 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Reinitializing clock widget")
         val widget = widgets[WidgetType.CLOCK] as? ClockWidget
 
-        // Save weather widget state
+        // Save states of other widgets
         val weatherWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
         val weatherState = weatherWidget?.currentWeatherState
         val weatherConfig = weatherWidget?.config
+
+        // Save music widget state
+        val musicWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
+        val musicConfig = musicWidget?.config
 
         if (widget != null) {
             Log.d(TAG, "Existing widget found, updating")
@@ -197,6 +210,11 @@ class WidgetManager @Inject constructor(
                 setupWeatherWidget(container)
                 (widgets[WidgetType.WEATHER] as? WeatherWidget)?.updateState(weatherState)
             }
+        }
+
+        // Restore music widget if it was active
+        if (musicConfig?.enabled == true && container != null) {
+            setupMusicWidget(container)
         }
     }
 
