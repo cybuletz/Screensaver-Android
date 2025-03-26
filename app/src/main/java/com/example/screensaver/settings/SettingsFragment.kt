@@ -65,6 +65,11 @@ import com.example.screensaver.utils.BrightnessManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import timber.log.Timber
 import com.google.android.material.color.MaterialColors
+import com.example.screensaver.ads.AdManager
+import com.example.screensaver.version.AppVersionManager
+import com.example.screensaver.version.FeatureManager
+import com.example.screensaver.version.ProVersionPromptDialog
+import android.widget.FrameLayout
 
 
 @AndroidEntryPoint
@@ -105,6 +110,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var brightnessManager: BrightnessManager
+
+    @Inject
+    lateinit var appVersionManager: AppVersionManager
+
+    @Inject
+    lateinit var featureManager: FeatureManager
+
+    @Inject
+    lateinit var adManager: AdManager
+
+    private lateinit var adContainer: FrameLayout
 
     private var widgetPreferenceFragment: WidgetPreferenceFragment? = null
 
@@ -213,6 +229,22 @@ class SettingsFragment : PreferenceFragmentCompat() {
             setBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface))
         }
 
+        val coordinator = view as CoordinatorLayout
+        adContainer = FrameLayout(requireContext()).apply {
+            id = View.generateViewId()
+            layoutParams = CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM
+            }
+            visibility = View.GONE
+        }
+        coordinator.addView(adContainer)
+
+        // Initialize ad manager for settings
+        adManager.setupSettingsFragmentAd(adContainer)
+
         // Add the preferences view with Material You styling
         view.apply {
             setBackgroundColor(androidx.core.content.ContextCompat.getColor(context, android.R.color.transparent))
@@ -250,6 +282,22 @@ class SettingsFragment : PreferenceFragmentCompat() {
         coordinator.addView(fab)
 
         return coordinator
+
+    }
+
+    private fun checkFeatureAccess(feature: FeatureManager.Feature): Boolean {
+        if (!featureManager.isFeatureAvailable(feature)) {
+            if (featureManager.showProVersionPrompt(feature)) {
+                showProVersionPrompt(feature)
+            }
+            return false
+        }
+        return true
+    }
+
+    private fun showProVersionPrompt(feature: FeatureManager.Feature) {
+        ProVersionPromptDialog.newInstance(feature)
+            .show(childFragmentManager, "pro_version_prompt")
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -344,35 +392,62 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     false
                 }
             }
-            "spotify_preferences" -> {
-                try {
+            "spotify_preferences", "radio_preferences" -> {
+                if (checkFeatureAccess(FeatureManager.Feature.MUSIC)) {
+                    // Original music settings code
                     MusicSourcesDialog.newInstance()
                         .show(childFragmentManager, "music_sources")
-                    true
-                } catch (e: Exception) {
-                    Log.e("SettingsFragment", "Error showing music sources dialog", e)
-                    false
                 }
-            }
-            "clock_widget_settings" -> {
-                showWidgetDialog(WidgetType.CLOCK)
                 true
             }
-            "weather_widget_settings" -> {
-                showWidgetDialog(WidgetType.WEATHER)
-                true
-            }
-            "music_widget_settings" -> {
-                showWidgetDialog(WidgetType.MUSIC)
+            "clock_widget_settings", "weather_widget_settings", "music_widget_settings" -> {
+                if (checkFeatureAccess(FeatureManager.Feature.WIDGETS)) {
+                    // Original widget code
+                    val widgetType = when (preference.key) {
+                        "clock_widget_settings" -> WidgetType.CLOCK
+                        "weather_widget_settings" -> WidgetType.WEATHER
+                        "music_widget_settings" -> WidgetType.MUSIC
+                        else -> WidgetType.CLOCK
+                    }
+                    showWidgetDialog(widgetType)
+                }
                 true
             }
             "security_preferences" -> {
-                SecurityPreferenceDialog.newInstance()
-                    .show(childFragmentManager, "security_settings")
+                if (checkFeatureAccess(FeatureManager.Feature.SECURITY)) {
+                    // Original security code
+                    SecurityPreferenceDialog.newInstance()
+                        .show(childFragmentManager, "security_settings")
+                }
                 true
             }
             else -> super.onPreferenceTreeClick(preference)
         }
+    }
+
+    private fun setupAdIntervalPreference() {
+        findPreference<SeekBarPreference>("ad_interval_minutes")?.apply {
+            isVisible = !appVersionManager.isProVersion()
+
+            setOnPreferenceChangeListener { _, newValue ->
+                val intervalMinutes = newValue as Int
+                val intervalMillis = intervalMinutes * 60 * 1000L
+                appVersionManager.setAdInterval(intervalMillis)
+                summary = "Show ads every $intervalMinutes minutes"
+                true
+            }
+
+            // Set initial summary
+            val currentIntervalMillis = appVersionManager.getAdInterval()
+            val currentIntervalMinutes = (currentIntervalMillis / (60 * 1000)).toInt()
+            summary = "Show ads every $currentIntervalMinutes minutes"
+            value = currentIntervalMinutes
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        adManager.loadSettingsAd()
     }
 
     private fun showWidgetDialog(widgetType: WidgetType) {

@@ -57,6 +57,11 @@ import com.example.screensaver.photos.PhotoUriManager
 import com.example.screensaver.utils.BrightnessManager
 import com.example.screensaver.utils.PreferenceKeys
 import com.example.screensaver.utils.ScreenOrientation
+import com.example.screensaver.ads.AdManager
+import com.example.screensaver.version.AppVersionManager
+import com.example.screensaver.version.FeatureManager
+import com.example.screensaver.version.ProVersionPromptDialog
+import android.widget.FrameLayout
 
 
 @AndroidEntryPoint
@@ -113,6 +118,17 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var photoUriManager: PhotoUriManager
 
+    @Inject
+    lateinit var appVersionManager: AppVersionManager
+
+    @Inject
+    lateinit var featureManager: FeatureManager
+
+    @Inject
+    lateinit var adManager: AdManager
+
+    private lateinit var adContainer: FrameLayout
+
     private var isDestroyed = false
 
     private var isAuthenticating = false
@@ -163,6 +179,13 @@ class MainActivity : AppCompatActivity() {
 
         enableFullScreen()
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+
+        // Initialize ad container (add this to your binding setup)
+        adContainer = binding.adContainer
+
+        // Initialize ad manager
+        adManager.initialize()
+        adManager.setupMainActivityAd(adContainer)
 
         if (securityPreferences.isSecurityEnabled) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -235,7 +258,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun checkFeatureAccess(feature: FeatureManager.Feature): Boolean {
+        if (!featureManager.isFeatureAvailable(feature)) {
+            if (featureManager.showProVersionPrompt(feature)) {
+                showProVersionPrompt(feature)
+            }
+            return false
+        }
+        return true
+    }
+
+    private fun showProVersionPrompt(feature: FeatureManager.Feature) {
+        ProVersionPromptDialog.newInstance(feature)
+            .show(supportFragmentManager, "pro_version_prompt")
+    }
+
     private fun initializeMusicSources() {
+        if (!checkFeatureAccess(FeatureManager.Feature.MUSIC)) {
+            return
+        }
+
         val musicSource = PreferenceManager.getDefaultSharedPreferences(this)
             .getString("music_source", "spotify") ?: "spotify"
 
@@ -263,6 +305,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initializeWidgetSystem() {
+        if (!checkFeatureAccess(FeatureManager.Feature.WIDGETS)) {
+            return
+        }
         Log.d(TAG, "Starting widget system initialization")
         try {
             ensureBinding()
@@ -623,6 +668,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSecurityLock() {
+        if (!checkFeatureAccess(FeatureManager.Feature.SECURITY)) {
+            return
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startLockTask()
         }
@@ -1188,6 +1237,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        adManager.pauseAds()
+
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         brightnessManager.stopMonitoring()
 
@@ -1241,6 +1292,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        adManager.resumeAds()
+
         setupFullScreen()
         updateKeepScreenOn()
         initializeMusicSources()
@@ -1351,10 +1404,14 @@ class MainActivity : AppCompatActivity() {
             _binding = null
             _navController = null
             widgetManager.cleanup()
+            adManager.destroyAds()
             super.onDestroy()
+
         } catch (e: Exception) {
             Log.e(TAG, "Error in onDestroy", e)
+            adManager.destroyAds()
             super.onDestroy()
+
         }
     }
 

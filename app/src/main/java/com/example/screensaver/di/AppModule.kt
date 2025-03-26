@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.example.screensaver.PhotoRepository
+import com.example.screensaver.ads.AdManager
 import com.example.screensaver.auth.GoogleAuthManager
 import com.example.screensaver.data.AppDataManager
 import com.example.screensaver.data.SecureStorage
@@ -32,6 +33,8 @@ import com.example.screensaver.photos.PhotoUriManager
 import com.example.screensaver.security.AppAuthManager
 import com.example.screensaver.security.BiometricHelper
 import com.example.screensaver.security.SecurityPreferences
+import com.example.screensaver.version.AppVersionManager
+import com.example.screensaver.version.FeatureManager
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -199,5 +202,29 @@ object AppModule {
         photoUriManager: PhotoUriManager
     ): PhotoRepository {
         return PhotoRepository(context, googleAuthManager, photoUriManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAppVersionManager(@ApplicationContext context: Context): AppVersionManager {
+        return AppVersionManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideFeatureManager(
+        @ApplicationContext context: Context,
+        appVersionManager: AppVersionManager
+    ): FeatureManager {
+        return FeatureManager(context, appVersionManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAdManager(
+        @ApplicationContext context: Context,
+        appVersionManager: AppVersionManager
+    ): AdManager {
+        return AdManager(context, appVersionManager)
     }
 }

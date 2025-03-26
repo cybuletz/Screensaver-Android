@@ -75,6 +75,10 @@
         android:usesCleartextTraffic="true"
         tools:replace="android:allowBackup">
 
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy" />
+
         <!-- Main Activity -->
         <activity
             android:name=".MainActivity"

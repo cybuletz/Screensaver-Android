@@ -61,4 +61,39 @@
         android:layout="@layout/preference_bottom_spacing"
         android:key="bottom_spacing"/>
 
+    <PreferenceCategory
+        android:key="version_settings"
+        android:title="@string/version_settings"
+        android:icon="@drawable/ic_upgrade">
+
+        <SwitchPreferenceCompat
+            android:key="pro_version"
+            android:title="@string/pro_version_title"
+            android:summary="@string/pro_version_summary"
+            android:defaultValue="false" />
+
+        <Preference
+            android:key="upgrade_to_pro"
+            android:title="@string/upgrade_to_pro"
+            android:summary="@string/upgrade_to_pro_summary"
+            app:dependency="pro_version"
+            app:isPreferenceVisible="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:key="ad_settings"
+        android:title="@string/ad_settings_title"
+        android:icon="@drawable/ic_ad_settings">
+
+        <SeekBarPreference
+            android:key="ad_interval_minutes"
+            android:title="@string/ad_interval_title"
+            android:summary="@string/ad_interval_summary"
+            android:defaultValue="10"
+            android:min="1"
+            android:max="60"
+            app:showSeekBarValue="true"
+            app:isPreferenceVisible="false" />
+    </PreferenceCategory>
+
 </PreferenceScreen>

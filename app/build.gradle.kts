@@ -117,7 +117,11 @@ dependencies {
     val coroutinesVersion = "1.7.3"
     val grpcVersion = "1.58.0"
 
-    implementation("id.zelory:compressor:3.0.1")
+    // Google AdMob
+    implementation("com.google.android.gms:play-services-ads:22.0.0")
+
+    // In-app billing (optional, for handling purchases)
+    implementation("com.android.billingclient:billing:6.0.1")
 
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
