@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -11,23 +10,21 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/pro_feature_title"
-        android:textAppearance="@style/TextAppearance.Material3.HeadlineSmall"
+        android:textAlignment="center"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Headline5"
         android:textStyle="bold"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintTop_toTopOf="parent" />
 
     <ImageView
         android:id="@+id/pro_feature_image"
-        android:layout_width="match_parent"
-        android:layout_height="180dp"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
         android:layout_marginTop="16dp"
-        android:scaleType="centerInside"
-        android:background="@drawable/feature_preview_background"
-        android:contentDescription="@string/pro_feature_image_description"
-        app:layout_constraintTop_toBottomOf="@id/pro_feature_title"
+        android:contentDescription="@string/feature_image_description"
+        android:src="@drawable/ic_music_pref"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintTop_toBottomOf="@id/pro_feature_title" />
 
     <TextView
         android:id="@+id/pro_feature_description"
@@ -35,37 +32,66 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:text="@string/pro_feature_description"
-        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-        app:layout_constraintTop_toBottomOf="@id/pro_feature_image"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        android:textAlignment="center"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
+        app:layout_constraintTop_toBottomOf="@id/pro_feature_image" />
 
-    <Button
-        android:id="@+id/upgrade_button"
-        android:layout_width="0dp"
+    <FrameLayout
+        android:id="@+id/loading_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        app:layout_constraintTop_toBottomOf="@id/pro_feature_description">
+
+        <TextView
+            android:id="@+id/price_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textAlignment="center"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
+            android:textStyle="bold" />
+
+        <ProgressBar
+            android:id="@+id/loading_indicator"
+            style="?android:attr/progressBarStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="visible" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/error_message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textAlignment="center"
+        android:textColor="#F44336"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/loading_container" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
-        android:layout_marginEnd="8dp"
-        android:text="@string/upgrade_to_pro"
-        android:backgroundTint="@color/design_default_color_primary"
-        app:layout_constraintTop_toBottomOf="@id/pro_feature_description"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/cancel_button"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintHorizontal_weight="1" />
+        android:orientation="horizontal"
+        app:layout_constraintTop_toBottomOf="@id/loading_container">
 
-    <Button
-        android:id="@+id/cancel_button"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginTop="24dp"
-        android:text="@android:string/cancel"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        app:layout_constraintTop_toBottomOf="@id/pro_feature_description"
-        app:layout_constraintStart_toEndOf="@id/upgrade_button"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintHorizontal_weight="1" />
+        <Button
+            android:id="@+id/cancel_button"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/cancel" />
+
+        <Button
+            android:id="@+id/upgrade_button"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/upgrade_to_pro" />
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -203,28 +203,4 @@ object AppModule {
     ): PhotoRepository {
         return PhotoRepository(context, googleAuthManager, photoUriManager)
     }
-
-    @Provides
-    @Singleton
-    fun provideAppVersionManager(@ApplicationContext context: Context): AppVersionManager {
-        return AppVersionManager(context)
-    }
-
-    @Provides
-    @Singleton
-    fun provideFeatureManager(
-        @ApplicationContext context: Context,
-        appVersionManager: AppVersionManager
-    ): FeatureManager {
-        return FeatureManager(context, appVersionManager)
-    }
-
-    @Provides
-    @Singleton
-    fun provideAdManager(
-        @ApplicationContext context: Context,
-        appVersionManager: AppVersionManager
-    ): AdManager {
-        return AdManager(context, appVersionManager)
-    }
 }
