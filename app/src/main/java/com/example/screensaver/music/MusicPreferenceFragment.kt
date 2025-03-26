@@ -35,6 +35,7 @@ import com.example.screensaver.widgets.WidgetManager
 import android.widget.ImageView
 import android.widget.BaseAdapter
 import android.view.ViewGroup
+import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import java.io.IOException
 import kotlinx.coroutines.Job
@@ -848,15 +849,40 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Search Radio Stations")
             .setView(dialogView)
+            .setPositiveButton("Close", null)  // Add close button
             .create()
 
         val searchInput = dialogView.findViewById<TextInputEditText>(R.id.search_input)
+        val searchButton = dialogView.findViewById<MaterialButton>(R.id.search_button)
         val stationsList = dialogView.findViewById<RecyclerView>(R.id.stations_list)
         val loadingIndicator = dialogView.findViewById<ProgressBar>(R.id.loading_indicator)
         val noResultsText = dialogView.findViewById<TextView>(R.id.no_results_text)
 
         lateinit var stationsAdapter: RadioStationAdapter
         var currentJob: Job? = null
+
+        fun performSearch() {
+            val query = searchInput.text?.toString() ?: ""
+            if (query.length >= 3) {
+                loadingIndicator.visibility = View.VISIBLE
+                stationsList.visibility = View.GONE
+                noResultsText.visibility = View.GONE
+
+                radioManager.searchStations(query) { stations ->
+                    loadingIndicator.visibility = View.GONE
+                    if (stations.isEmpty()) {
+                        noResultsText.visibility = View.VISIBLE
+                        stationsList.visibility = View.GONE
+                    } else {
+                        noResultsText.visibility = View.GONE
+                        stationsList.visibility = View.VISIBLE
+                        stationsAdapter.submitList(stations)
+                    }
+                }
+            } else {
+                Toast.makeText(requireContext(), "Please enter at least 3 characters", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         stationsAdapter = RadioStationAdapter(
             radioManager = radioManager,
@@ -866,7 +892,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
                 currentJob = viewLifecycleOwner.lifecycleScope.launch {
                     try {
+                        // Play station first
                         radioManager.playStation(station)
+
+                        // Then collect states
                         radioManager.playbackState
                             .onEach { state ->
                                 when (state) {
@@ -883,7 +912,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                                         Toast.makeText(requireContext(), "Failed to load station", Toast.LENGTH_SHORT).show()
                                     }
                                 }
-                            }.collect() // Add .collect() here
+                            }
+                            .collect()
                     } catch (e: Exception) {
                         stationsAdapter.setLoadingState(null)
                         Timber.e(e, "Error playing station")
@@ -910,28 +940,17 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         stationsList.layoutManager = LinearLayoutManager(context)
         stationsList.adapter = stationsAdapter
 
+        // Search button click listener
+        searchButton.setOnClickListener {
+            performSearch()
+        }
+
+        // Enter key listener
         searchInput.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH ||
                 (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
             ) {
-                val query = searchInput.text?.toString() ?: ""
-                if (query.length >= 3) {
-                    loadingIndicator.visibility = View.VISIBLE
-                    stationsList.visibility = View.GONE
-                    noResultsText.visibility = View.GONE
-
-                    radioManager.searchStations(query) { stations ->
-                        loadingIndicator.visibility = View.GONE
-                        if (stations.isEmpty()) {
-                            noResultsText.visibility = View.VISIBLE
-                            stationsList.visibility = View.GONE
-                        } else {
-                            noResultsText.visibility = View.GONE
-                            stationsList.visibility = View.VISIBLE
-                            stationsAdapter.submitList(stations)
-                        }
-                    }
-                }
+                performSearch()
                 true
             } else false
         }
