@@ -15,8 +15,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.preference.PreferenceManager
-import com.example.screensaver.databinding.ActivityMainBinding
-import com.example.screensaver.ui.PhotoDisplayManager
+import com.photostreamr.databinding.ActivityMainBinding
+import com.photostreamr.ui.PhotoDisplayManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -24,43 +24,46 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import com.example.screensaver.ui.SettingsButtonController
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.ui.SettingsButtonController
+import com.photostreamr.utils.AppPreferences
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.os.BatteryManager
 import android.net.Uri
 import androidx.constraintlayout.widget.ConstraintLayout
-import com.example.screensaver.security.AppAuthManager
-import com.example.screensaver.security.BiometricHelper
-import com.example.screensaver.security.PasscodeDialog
-import com.example.screensaver.security.SecurityPreferences
-import com.example.screensaver.utils.NotificationHelper
-import com.example.screensaver.widgets.WidgetData
-import com.example.screensaver.widgets.WidgetManager
-import com.example.screensaver.widgets.WidgetState
-import com.example.screensaver.widgets.WidgetType
+import com.photostreamr.security.AppAuthManager
+import com.photostreamr.security.BiometricHelper
+import com.photostreamr.security.PasscodeDialog
+import com.photostreamr.security.SecurityPreferences
+import com.photostreamr.utils.NotificationHelper
+import com.photostreamr.widgets.WidgetData
+import com.photostreamr.widgets.WidgetManager
+import com.photostreamr.widgets.WidgetState
+import com.photostreamr.widgets.WidgetType
 import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import com.example.screensaver.data.SecureStorage
-import com.example.screensaver.music.RadioManager
-import com.example.screensaver.music.RadioPreferences
-import com.example.screensaver.music.SpotifyManager
-import com.example.screensaver.music.SpotifyPreferences
-import com.example.screensaver.photos.PhotoManagerViewModel
-import com.example.screensaver.photos.PhotoUriManager
-import com.example.screensaver.utils.BrightnessManager
-import com.example.screensaver.utils.PreferenceKeys
-import com.example.screensaver.utils.ScreenOrientation
-import com.example.screensaver.ads.AdManager
-import com.example.screensaver.version.AppVersionManager
-import com.example.screensaver.version.FeatureManager
-import com.example.screensaver.version.ProVersionPromptDialog
+import com.photostreamr.data.SecureStorage
+import com.photostreamr.music.RadioManager
+import com.photostreamr.music.RadioPreferences
+import com.photostreamr.music.SpotifyManager
+import com.photostreamr.music.SpotifyPreferences
+import com.photostreamr.photos.PhotoManagerViewModel
+import com.photostreamr.photos.PhotoUriManager
+import com.photostreamr.utils.BrightnessManager
+import com.photostreamr.utils.PreferenceKeys
+import com.photostreamr.utils.ScreenOrientation
+import com.photostreamr.ads.AdManager
+import com.photostreamr.version.AppVersionManager
+import com.photostreamr.version.FeatureManager
+import com.photostreamr.version.ProVersionPromptDialog
 import android.widget.FrameLayout
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.photostreamr.version.ProVersionPromptManager
+import java.util.concurrent.TimeUnit
 
 
 @AndroidEntryPoint
@@ -126,6 +129,9 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var adManager: AdManager
 
+    @Inject
+    lateinit var proVersionPromptManager: ProVersionPromptManager
+
     private lateinit var adContainer: FrameLayout
 
     private var isDestroyed = false
@@ -158,6 +164,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun checkForProPrompt() {
+        // Check if we should show the Pro version prompt, completely separate from other prompts
+        if (proVersionPromptManager.shouldShowProVersionPrompt()) {
+            // Show dedicated Pro version prompt
+            showProVersionPrompt()
+        }
+    }
+
+    private fun showProVersionPrompt() {
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Upgrade to Pro Version")
+            .setMessage("Enhance your experience with the Pro version! Enjoy ad-free usage, unlimited features, and more.")
+            .setPositiveButton("Upgrade Now") { _, _ ->
+                // Launch purchase flow
+                // launchPurchaseFlow()
+            }
+            .setNegativeButton("Later", null)
+            .setNeutralButton("Don't Ask Again") { _, _ ->
+                // Set a very long interval before showing again
+                proVersionPromptManager.setPromptInterval(TimeUnit.DAYS.toMillis(90))
+            }
+            .create()
+
+        dialog.show()
+
+        // Update the last prompt time
+        proVersionPromptManager.updateLastPromptTime()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -180,7 +215,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         enableFullScreen()
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
         // Initialize ad container now that binding is set up
         adContainer = binding.adContainer
@@ -221,6 +255,7 @@ class MainActivity : AppCompatActivity() {
 
             photoDisplayManager.updatePhotoSources()
             checkInitialChargingState()
+            checkForProPrompt()
 
             if (navController.currentDestination?.id == R.id.mainFragment) {
                 lifecycleScope.launch {
@@ -695,8 +730,6 @@ class MainActivity : AppCompatActivity() {
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
 
-        // Prevent recent apps preview
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
         // Lock to current task when security is enabled
         if (securityPreferences.isSecurityEnabled) {

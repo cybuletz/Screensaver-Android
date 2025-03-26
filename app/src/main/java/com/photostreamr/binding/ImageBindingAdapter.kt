@@ -11,7 +11,7 @@ import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
-import com.example.screensaver.utils.OnPhotoLoadListener
+import com.photostreamr.utils.OnPhotoLoadListener
 
 object ImageBindingAdapter {
     private const val CROSSFADE_DURATION = 300

@@ -10,6 +10,7 @@ import com.google.android.material.button.MaterialButton
 import javax.inject.Inject
 import android.widget.TextView
 import androidx.preference.PreferenceFragmentCompat
+import com.photostreamr.R
 
 class WidgetPreferenceDialog : DialogFragment() {
 

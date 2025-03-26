@@ -2,7 +2,7 @@ package com.photostreamr.preview
 
 import android.content.Context
 import android.os.SystemClock
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.utils.AppPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

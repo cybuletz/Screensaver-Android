@@ -3,7 +3,7 @@ package com.photostreamr.ui
 import android.os.Bundle
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
-import com.example.screensaver.R
+import com.photostreamr.R
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 

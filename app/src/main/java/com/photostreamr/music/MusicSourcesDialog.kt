@@ -6,7 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.fragment.app.DialogFragment
-import com.example.screensaver.R
+import com.photostreamr.R
 import com.google.android.material.button.MaterialButton
 
 class MusicSourcesDialog : DialogFragment() {

@@ -8,8 +8,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
-import com.example.screensaver.R
-import com.example.screensaver.databinding.ActivityLocalPhotoSelectionBinding
+import com.photostreamr.R
+import com.photostreamr.databinding.ActivityLocalPhotoSelectionBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

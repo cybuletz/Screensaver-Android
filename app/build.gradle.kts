@@ -13,18 +13,18 @@ kapt {
 }
 
 android {
-    namespace = "com.example.screensaver"
+    namespace = "com.photostreamr"
     compileSdk = 34
 
     android {
         defaultConfig {
-            applicationId = "com.example.screensaver"
-            minSdk = 23
+            applicationId = "com.photostreamr"
+            minSdk = 26
             targetSdk = 34
             versionCode = 1
             versionName = "1.0"
             manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
-            manifestPlaceholders["redirectSchemeName"] = "screensaver-spotify"
+            manifestPlaceholders["redirectSchemeName"] = "photostreamr-spotify"
             manifestPlaceholders["redirectHostName"] = "callback"
         }
     }
@@ -72,6 +72,20 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+
+        getByName("debug") {
+
+            versionNameSuffix = "-debug"
+            isDebuggable = true
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("String", "BUILD_TYPE", "\"debug\"")
+            buildConfigField("boolean", "DEBUG_MODE", "true")
+
+            // Add this to make Firebase use the base applicationId for the google-services plugin
+            manifestPlaceholders["appIdSuffix"] = ""
         }
     }
 
@@ -122,6 +136,9 @@ dependencies {
 
     // In-app billing (optional, for handling purchases)
     implementation("com.android.billingclient:billing:6.0.1")
+
+    implementation("com.google.android.play:feature-delivery:2.1.0")
+    implementation("com.google.android.play:feature-delivery-ktx:2.1.0")
 
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
@@ -192,6 +209,9 @@ dependencies {
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
     implementation("com.google.api:gax:2.19.5")
     implementation("com.google.android.gms:play-services-location:21.1.0")
+
+    implementation("com.google.android.play:app-update:2.1.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 
     // Google Photos Library
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")

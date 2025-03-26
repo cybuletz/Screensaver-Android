@@ -35,7 +35,7 @@ import okhttp3.Response
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.IOException
-import com.example.screensaver.data.SecureStorage
+import com.photostreamr.data.SecureStorage
 import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Paint

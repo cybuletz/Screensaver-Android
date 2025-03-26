@@ -10,8 +10,8 @@ import android.widget.Toast
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceScreen
-import com.example.screensaver.R
-import com.example.screensaver.utils.BrightnessManager
+import com.photostreamr.R
+import com.photostreamr.utils.BrightnessManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
@@ -19,7 +19,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import androidx.preference.ListPreference
 import androidx.preference.SwitchPreferenceCompat
-import com.example.screensaver.utils.ScreenOrientation
+import com.photostreamr.utils.ScreenOrientation
 
 @AndroidEntryPoint
 class DisplaySettingsPreferenceFragment : PreferenceFragmentCompat() {

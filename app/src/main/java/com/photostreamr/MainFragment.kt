@@ -8,14 +8,14 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import com.example.screensaver.databinding.FragmentMainBinding
+import com.photostreamr.databinding.FragmentMainBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import android.view.animation.AnimationUtils
 import com.google.android.material.snackbar.Snackbar
 import androidx.preference.PreferenceManager
-import com.example.screensaver.ui.PhotoDisplayManager
+import com.photostreamr.ui.PhotoDisplayManager
 import kotlinx.coroutines.flow.collectLatest
 
 @AndroidEntryPoint

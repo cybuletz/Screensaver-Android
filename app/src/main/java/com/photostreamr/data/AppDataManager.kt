@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.utils.AppPreferences
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlinx.coroutines.Dispatchers

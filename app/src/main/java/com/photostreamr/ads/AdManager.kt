@@ -6,7 +6,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import com.example.screensaver.version.AppVersionManager
+import com.photostreamr.version.AppVersionManager
 import com.google.android.gms.ads.AdListener
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize

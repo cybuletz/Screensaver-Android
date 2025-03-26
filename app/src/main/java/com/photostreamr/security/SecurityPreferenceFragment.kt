@@ -5,13 +5,14 @@ import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.*
-import com.example.screensaver.MainActivity
-import com.example.screensaver.data.SecureStorage
+import com.photostreamr.MainActivity
+import com.photostreamr.data.SecureStorage
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.photostreamr.R
 
 @AndroidEntryPoint
 class SecurityPreferenceFragment : PreferenceFragmentCompat() {

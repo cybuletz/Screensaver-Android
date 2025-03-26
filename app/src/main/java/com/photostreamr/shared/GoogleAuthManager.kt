@@ -1,9 +1,9 @@
-package com.example.screensaver.auth
+package com.photostreamr.auth
 
 import android.content.Context
 import android.util.Log
-import com.example.screensaver.R
-import com.example.screensaver.data.SecureStorage
+import com.photostreamr.R
+import com.photostreamr.data.SecureStorage
 import com.google.auth.oauth2.AccessToken
 import com.google.auth.oauth2.GoogleCredentials
 import dagger.hilt.android.qualifiers.ApplicationContext

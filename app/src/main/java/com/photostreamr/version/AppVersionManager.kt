@@ -8,9 +8,10 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.preference.PreferenceManager
-import com.example.screensaver.billing.BillingRepository
+import com.photostreamr.billing.BillingRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +41,7 @@ class AppVersionManager @Inject constructor(
         private const val KEY_PRO_PURCHASE_TIME = "pro_purchase_time"
         private const val KEY_LAST_AD_SHOWN_TIME = "last_ad_shown_time"
         private const val DEFAULT_AD_INTERVAL = 10 * 60 * 1000L // 10 minutes in milliseconds
+        private const val KEY_DEV_ADS_DISABLED = "development_ads_disabled"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val ENCRYPTION_KEY_ALIAS = "ProVersionEncryptionKey"
         private const val ENCRYPTION_BLOCK_MODE = KeyProperties.BLOCK_MODE_GCM
@@ -61,7 +63,7 @@ class AppVersionManager @Inject constructor(
 
     private val purchaseStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == "com.example.photostreamr.ACTION_PRO_STATUS_CHANGED") {
+            if (intent.action == "com.photostreamr.ACTION_PRO_STATUS_CHANGED") {
                 val isPro = intent.getBooleanExtra("is_pro_version", false)
                 updateProStatusFromBilling(isPro)
             }
@@ -72,7 +74,7 @@ class AppVersionManager @Inject constructor(
         // Register for purchase status changes
         context.registerReceiver(
             purchaseStatusReceiver,
-            IntentFilter("com.example.photostreamr.ACTION_PRO_STATUS_CHANGED"),
+            IntentFilter("com.photostreamr.ACTION_PRO_STATUS_CHANGED"),
             Context.RECEIVER_NOT_EXPORTED
         )
 
@@ -182,17 +184,60 @@ class AppVersionManager @Inject constructor(
         }
     }
 
+    fun refreshVersionState() {
+        // Force a billing check
+        coroutineScope.launch {
+            try {
+                // First verify purchase status through billing
+                billingRepository.verifyPurchaseStatus()
+
+                // Check billing status after a brief delay
+                delay(500)
+
+                if (billingRepository.isPurchased()) {
+                    updateProStatusFromBilling(true)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error refreshing version state")
+            }
+        }
+    }
+
+    fun shouldSkipVerificationInTestMode(): Boolean {
+        if (!isDebugBuild() || !isDevelopmentTestingMode()) {
+            return false // Only skip in debug build and test mode
+        }
+
+        val devPrefs = context.getSharedPreferences("developer_settings", Context.MODE_PRIVATE)
+        return devPrefs.getBoolean("skip_purchase_verification", true)
+    }
+
     fun isProVersion(): Boolean = _versionState.value is VersionState.Pro
+
+    fun enableDevelopmentTesting() {
+        if (isDebugBuild()) {
+            preferences.edit()
+                .putBoolean("development_testing_mode", true)
+                .apply()
+
+            // Log the change for debugging
+            Timber.d("Development testing mode enabled")
+        }
+    }
 
     fun setProVersionForDevelopment(isPro: Boolean) {
         // This should only work in debug builds
         if (isDebugBuild()) {
+            // Use both preferences and state flow for immediate effect
             preferences.edit()
                 .putBoolean("developer_pro_mode", isPro)
                 .putBoolean("development_testing_mode", true)
                 .apply()
 
+            // Update state immediately
             _versionState.value = if (isPro) VersionState.Pro else VersionState.Free
+
+            // Log the change for debugging
             Timber.d("Development testing mode enabled: Pro=$isPro")
         }
     }
@@ -214,7 +259,7 @@ class AppVersionManager @Inject constructor(
         return isDebugBuild() && preferences.getBoolean("development_testing_mode", false)
     }
 
-    private fun isDebugBuild(): Boolean {
+    fun isDebugBuild(): Boolean {
         return try {
             val applicationInfo = context.applicationInfo
             (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
@@ -224,9 +269,31 @@ class AppVersionManager @Inject constructor(
         }
     }
 
-    fun shouldShowAd(): Boolean {
-        if (isProVersion()) return false
+    fun setDevAdsDisabled(disabled: Boolean) {
+        if (isDebugBuild()) {
+            preferences.edit()
+                .putBoolean(KEY_DEV_ADS_DISABLED, disabled)
+                .apply()
 
+            // Log the change
+            Timber.d("Development ads disabled: $disabled")
+        }
+    }
+
+    fun areDevAdsDisabled(): Boolean {
+        return isDebugBuild() &&
+                isDevelopmentTestingMode() &&
+                preferences.getBoolean(KEY_DEV_ADS_DISABLED, false)
+    }
+
+
+
+    fun shouldShowAd(): Boolean {
+        // Don't show ads for Pro users (existing behavior)
+        // Don't show ads if in development mode with ads explicitly disabled (new behavior)
+        if (isProVersion() || areDevAdsDisabled()) return false
+
+        // Regular ad timing logic for free users (existing behavior)
         val currentTime = System.currentTimeMillis()
         val lastAdShownTime = preferences.getLong(KEY_LAST_AD_SHOWN_TIME, 0L)
         val adInterval = preferences.getLong("ad_interval", DEFAULT_AD_INTERVAL)

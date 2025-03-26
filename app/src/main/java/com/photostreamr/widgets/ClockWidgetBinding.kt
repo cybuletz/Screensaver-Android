@@ -7,7 +7,7 @@ import android.view.ViewGroup
 import android.widget.TextClock
 import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
-import com.example.screensaver.R
+import com.photostreamr.R
 
 class ClockWidgetBinding(
     private val container: ViewGroup

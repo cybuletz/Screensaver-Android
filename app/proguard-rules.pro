@@ -13,10 +13,10 @@
 -keepattributes InnerClasses
 
 # Keep all your model classes
--keep class com.example.screensaver.model.** { *; }
+-keep class com.photostreamr.model.** { *; }
 
 # Keep your app's core classes
--keep class com.example.screensaver.** { *; }
+-keep class com.photostreamr.** { *; }
 
 # WebView related rules
 -keep class android.webkit.** { *; }
@@ -101,8 +101,8 @@
 -dontwarn reactor.blockhound.**
 
 # Keep specific fragments
--keep class com.example.screensaver.MainFragment { *; }
--keep class com.example.screensaver.fragments.** { *; }
+-keep class com.photostreamr.MainFragment { *; }
+-keep class com.photostreamr.fragments.** { *; }
 
 # Google Services and Libraries
 -keep class com.google.android.gms.** { *; }

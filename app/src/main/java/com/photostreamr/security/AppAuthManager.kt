@@ -3,7 +3,7 @@ package com.photostreamr.security
 import android.content.Context
 import android.util.Log
 import androidx.fragment.app.FragmentActivity
-import com.example.screensaver.data.SecureStorage
+import com.photostreamr.data.SecureStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

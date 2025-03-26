@@ -6,8 +6,8 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.RequestManager
-import com.example.screensaver.R
-import com.example.screensaver.databinding.ItemVirtualAlbumBinding
+import com.photostreamr.R
+import com.photostreamr.databinding.ItemVirtualAlbumBinding
 import android.net.Uri  // Add this import for URI handling
 
 class VirtualAlbumsAdapter(

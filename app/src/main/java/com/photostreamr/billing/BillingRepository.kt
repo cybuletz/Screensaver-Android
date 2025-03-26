@@ -1,11 +1,17 @@
 package com.photostreamr.billing
 
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.android.billingclient.api.*
 import com.android.billingclient.api.BillingClient.BillingResponseCode
+import com.photostreamr.version.AppVersionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,16 +21,30 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import javax.inject.Provider
+import dagger.Lazy
 
 @Singleton
 class BillingRepository @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val coroutineScope: CoroutineScope
+    private val coroutineScope: CoroutineScope,
+    private val appVersionManagerLazy: Lazy<AppVersionManager>
 ) : PurchasesUpdatedListener, BillingClientStateListener {
+
+    private val appVersionManager by lazy { appVersionManagerLazy.get() }
+
+    private val refreshReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == "com.photostreamr.ACTION_REFRESH_PURCHASES") {
+                Timber.d("Received purchase refresh request")
+                queryPurchases()
+            }
+        }
+    }
 
     companion object {
         // Product IDs
-        const val PRO_VERSION_PRODUCT_ID = "com.example.photostreamr.pro"
+        const val PRO_VERSION_PRODUCT_ID = "com.photostreamr.pro"
 
         // Verification salts (change these to random strings in production)
         private const val VERIFICATION_SALT_1 = "a1b2c3d4e5f6g7h8i9j0"
@@ -48,6 +68,19 @@ class BillingRepository @Inject constructor(
 
     init {
         connectToPlayBilling()
+
+        context.registerReceiver(
+            refreshReceiver,
+            IntentFilter("com.photostreamr.ACTION_REFRESH_PURCHASES"),
+            Context.RECEIVER_NOT_EXPORTED
+        )
+    }
+
+    var skipVerificationInTestMode = true
+        private set  // Only this class can modify
+
+    fun setSkipVerificationInTestMode(skip: Boolean) {
+        skipVerificationInTestMode = skip
     }
 
     fun connectToPlayBilling() {
@@ -89,16 +122,39 @@ class BillingRepository @Inject constructor(
             )
             .build()
 
+
         billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
             if (billingResult.responseCode == BillingResponseCode.OK) {
                 if (productDetailsList.isNotEmpty()) {
                     proVersionDetails = productDetailsList[0]
                     Timber.d("Pro version product details retrieved successfully: ${proVersionDetails?.name}")
+                    Timber.d("Product price: ${proVersionDetails?.oneTimePurchaseOfferDetails?.formattedPrice}")
                 } else {
-                    Timber.e("No product details found for Pro version")
+                    // Add more detailed diagnostics
+                    Timber.e("No product details found for Pro version. Check that:")
+                    Timber.e("1. Product ID '$PRO_VERSION_PRODUCT_ID' exactly matches what's in Google Play Console")
+                    Timber.e("2. Your app is published to at least an internal testing track")
+                    Timber.e("3. You're signed in with a test account that has access to the app")
+                    Timber.e("4. The in-app product is active in Google Play Console")
                 }
             } else {
-                Timber.e("Failed to query product details: ${billingResult.debugMessage}")
+                Timber.e("Failed to query product details - Response code: ${billingResult.responseCode}")
+                Timber.e("Debug message: ${billingResult.debugMessage}")
+
+                // Translate common error codes
+                val errorMessage = when (billingResult.responseCode) {
+                    BillingResponseCode.SERVICE_DISCONNECTED -> "Google Play service is disconnected"
+                    BillingResponseCode.FEATURE_NOT_SUPPORTED -> "Billing feature not supported on this device"
+                    BillingResponseCode.SERVICE_UNAVAILABLE -> "Network connection is down"
+                    BillingResponseCode.BILLING_UNAVAILABLE -> "Billing API version not supported"
+                    BillingResponseCode.ITEM_UNAVAILABLE -> "Product is not available for purchase"
+                    BillingResponseCode.DEVELOPER_ERROR -> "Invalid arguments provided to the API"
+                    BillingResponseCode.ERROR -> "Fatal error during the API action"
+                    BillingResponseCode.ITEM_ALREADY_OWNED -> "Item already owned"
+                    BillingResponseCode.ITEM_NOT_OWNED -> "Item not owned"
+                    else -> "Unknown error code: ${billingResult.responseCode}"
+                }
+                Timber.e("Error explanation: $errorMessage")
             }
         }
     }
@@ -223,8 +279,22 @@ class BillingRepository @Inject constructor(
 
     private fun verifyValidSignature(purchase: Purchase): Boolean {
         try {
-            // In a production app, you would implement server-side purchase verification
-            // For now, we'll use a simplified local verification
+            // For testing only - check if we're in a debug build
+            if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                // In debug mode, check if testing is enabled in developer settings
+                val devPrefs = context.getSharedPreferences("developer_settings", Context.MODE_PRIVATE)
+                val skipVerification = devPrefs.getBoolean("skip_purchase_verification", true)
+
+                // Add more debug logging to understand what's happening
+                Timber.d("DEBUG BUILD: skipVerification=$skipVerification, purchase=$purchase")
+
+                if (skipVerification) {
+                    Timber.d("DEBUG BUILD: Skipping purchase signature verification")
+                    return true
+                }
+            }
+
+            // Regular verification code continues below
             if (purchase.purchaseToken.isEmpty()) {
                 return false
             }
@@ -281,8 +351,7 @@ class BillingRepository @Inject constructor(
     }
 
     private fun broadcastPurchaseUpdate(isPro: Boolean) {
-        // Updating other app components about the purchase state
-        val intent = android.content.Intent("com.example.photostreamr.ACTION_PRO_STATUS_CHANGED")
+        val intent = android.content.Intent("com.photostreamr.ACTION_PRO_STATUS_CHANGED")
         intent.putExtra("is_pro_version", isPro)
         context.sendBroadcast(intent)
     }

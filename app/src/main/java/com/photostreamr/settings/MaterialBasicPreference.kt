@@ -7,7 +7,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
-import com.example.screensaver.R
+import com.photostreamr.R
 
 class MaterialBasicPreference : Preference {
     constructor(context: Context) : super(context) {

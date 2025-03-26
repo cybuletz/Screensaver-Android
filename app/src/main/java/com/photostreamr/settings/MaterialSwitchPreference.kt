@@ -6,7 +6,7 @@ import android.view.View
 import android.widget.ImageView
 import androidx.preference.SwitchPreference
 import androidx.preference.PreferenceViewHolder
-import com.example.screensaver.R
+import com.photostreamr.R
 import com.google.android.material.switchmaterial.SwitchMaterial
 
 class MaterialSwitchPreference : SwitchPreference {

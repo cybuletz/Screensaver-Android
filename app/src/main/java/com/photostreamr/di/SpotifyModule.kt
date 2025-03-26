@@ -1,13 +1,13 @@
 package com.photostreamr.di
 
 import android.content.Context
-import com.example.screensaver.music.SpotifyManager
-import com.example.screensaver.music.SpotifyAuthManager
-import com.example.screensaver.music.SpotifyPreferences
-import com.example.screensaver.data.SecureStorage
-import com.example.screensaver.music.RadioManager
-import com.example.screensaver.music.RadioPreferences
-import com.example.screensaver.music.SpotifyTokenManager
+import com.photostreamr.music.SpotifyManager
+import com.photostreamr.music.SpotifyAuthManager
+import com.photostreamr.music.SpotifyPreferences
+import com.photostreamr.data.SecureStorage
+import com.photostreamr.music.RadioManager
+import com.photostreamr.music.RadioPreferences
+import com.photostreamr.music.SpotifyTokenManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:447081188401:android:4054ad48036b3dbad11910",
+        "mobilesdk_app_id": "1:447081188401:android:c8c51c12fcb49632d11910",
         "android_client_info": {
-          "package_name": "com.example.screensaver"
+          "package_name": "com.photostreamr"
         }
       },
       "oauth_client": [],

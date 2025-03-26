@@ -6,7 +6,7 @@ import androidx.preference.PreferenceManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
-import com.example.screensaver.data.SecureStorage
+import com.photostreamr.data.SecureStorage
 import org.json.JSONArray
 import org.json.JSONObject
 

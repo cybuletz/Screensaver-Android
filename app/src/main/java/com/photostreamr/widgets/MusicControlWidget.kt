@@ -8,11 +8,11 @@ import android.widget.ProgressBar
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
-import com.example.screensaver.R
-import com.example.screensaver.music.SpotifyManager
-import com.example.screensaver.music.RadioManager
-import com.example.screensaver.music.RadioPreferences
-import com.example.screensaver.music.SpotifyPreferences
+import com.photostreamr.R
+import com.photostreamr.music.SpotifyManager
+import com.photostreamr.music.RadioManager
+import com.photostreamr.music.RadioPreferences
+import com.photostreamr.music.SpotifyPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

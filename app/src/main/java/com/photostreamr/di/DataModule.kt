@@ -1,10 +1,10 @@
 package com.photostreamr.di
 
 import android.content.Context
-import com.example.screensaver.data.AppDataManager
-import com.example.screensaver.data.PhotoCache
-import com.example.screensaver.data.SecureStorage
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.data.AppDataManager
+import com.photostreamr.data.PhotoCache
+import com.photostreamr.data.SecureStorage
+import com.photostreamr.utils.AppPreferences
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module

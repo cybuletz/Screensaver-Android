@@ -10,8 +10,8 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.bumptech.glide.RequestManager
-import com.example.screensaver.R
-import com.example.screensaver.databinding.FragmentAlbumListBinding
+import com.photostreamr.R
+import com.photostreamr.databinding.FragmentAlbumListBinding
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject

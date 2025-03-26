@@ -17,7 +17,7 @@ import com.bumptech.glide.load.model.ModelLoader
 import com.bumptech.glide.load.model.ModelLoaderFactory
 import com.bumptech.glide.load.model.MultiModelLoaderFactory
 import com.bumptech.glide.module.AppGlideModule
-import com.example.screensaver.photos.PhotoUriManager
+import com.photostreamr.photos.PhotoUriManager
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -31,8 +31,8 @@ import java.io.InputStream
 import java.util.concurrent.TimeUnit
 import com.bumptech.glide.Priority
 import com.bumptech.glide.signature.ObjectKey
-import com.example.screensaver.auth.GoogleAuthManager
-import com.example.screensaver.photos.PersistentPhotoCache
+import com.photostreamr.auth.GoogleAuthManager
+import com.photostreamr.photos.PersistentPhotoCache
 
 @GlideModule
 class PhotosGlideModule : AppGlideModule() {

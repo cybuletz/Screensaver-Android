@@ -8,7 +8,7 @@
             type="String" />
         <variable
             name="onRetry"
-            type="com.example.screensaver.utils.RetryActionListener" />
+            type="com.photostreamr.utils.RetryActionListener" />
     </data>
 
     <LinearLayout

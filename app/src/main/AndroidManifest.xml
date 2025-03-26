@@ -115,7 +115,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="com.example.screensaver"
+                    android:scheme="com.photostreamr"
                     android:host="oauth2redirect" />
             </intent-filter>
         </activity>
@@ -223,7 +223,7 @@
         </provider>
 
         <meta-data
-            android:name="com.example.screensaver.glide.PhotosGlideModule"
+            android:name="com.photostreamr.glide.PhotosGlideModule"
             android:value="GlideModule" />
 
     </application>

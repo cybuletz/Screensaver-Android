@@ -1,9 +1,9 @@
 package com.photostreamr.recovery
 
 import android.content.Context
-import com.example.screensaver.data.AppDataManager
-import com.example.screensaver.data.AppDataState
-import com.example.screensaver.data.SecureStorage
+import com.photostreamr.data.AppDataManager
+import com.photostreamr.data.AppDataState
+import com.photostreamr.data.SecureStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

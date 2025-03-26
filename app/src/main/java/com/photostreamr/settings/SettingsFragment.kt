@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import com.example.screensaver.ui.PhotoDisplayManager
+import com.photostreamr.ui.PhotoDisplayManager
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.view.View
@@ -23,10 +23,10 @@ import androidx.navigation.fragment.findNavController
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import android.view.Gravity
-import com.example.screensaver.data.AppDataManager
-import com.example.screensaver.data.AppDataState
-import com.example.screensaver.data.SecureStorage
-import com.example.screensaver.data.PhotoCache
+import com.photostreamr.data.AppDataManager
+import com.photostreamr.data.AppDataState
+import com.photostreamr.data.SecureStorage
+import com.photostreamr.data.PhotoCache
 import android.app.Activity
 import android.graphics.Typeface
 import android.widget.LinearLayout
@@ -35,30 +35,32 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceCategory
 import androidx.preference.MultiSelectListPreference
-import com.example.screensaver.PhotoRepository
-import com.example.screensaver.widgets.WidgetPreferenceFragment
-import com.example.screensaver.widgets.WidgetState
-import com.example.screensaver.widgets.WidgetType
-import com.example.screensaver.widgets.WidgetManager
+import com.photostreamr.PhotoRepository
+import com.photostreamr.widgets.WidgetPreferenceFragment
+import com.photostreamr.widgets.WidgetState
+import com.photostreamr.widgets.WidgetType
+import com.photostreamr.widgets.WidgetManager
 import androidx.preference.SwitchPreferenceCompat
-import com.example.screensaver.photos.PhotoManagerActivity
-import com.example.screensaver.utils.AppPreferences
-import com.example.screensaver.security.AppAuthManager
-import com.example.screensaver.security.BiometricHelper
-import com.example.screensaver.security.SecurityPreferenceDialog
-import com.example.screensaver.security.SecurityPreferences
-import com.example.screensaver.widgets.WidgetPreferenceDialog
-import com.example.screensaver.models.MediaItem
-import com.example.screensaver.PhotoRepository.PhotoAddMode
-import com.example.screensaver.music.MusicSourcesDialog
-import com.example.screensaver.music.SpotifyPreferences
-import com.example.screensaver.utils.BrightnessManager
+import com.photostreamr.photos.PhotoManagerActivity
+import com.photostreamr.utils.AppPreferences
+import com.photostreamr.security.AppAuthManager
+import com.photostreamr.security.BiometricHelper
+import com.photostreamr.security.SecurityPreferenceDialog
+import com.photostreamr.security.SecurityPreferences
+import com.photostreamr.widgets.WidgetPreferenceDialog
+import com.photostreamr.models.MediaItem
+import com.photostreamr.PhotoRepository.PhotoAddMode
+import com.photostreamr.music.MusicSourcesDialog
+import com.photostreamr.music.SpotifyPreferences
+import com.photostreamr.utils.BrightnessManager
 import com.google.android.material.color.MaterialColors
-import com.example.screensaver.ads.AdManager
-import com.example.screensaver.version.AppVersionManager
-import com.example.screensaver.version.FeatureManager
-import com.example.screensaver.version.ProVersionPromptDialog
+import com.photostreamr.ads.AdManager
+import com.photostreamr.version.AppVersionManager
+import com.photostreamr.version.FeatureManager
+import com.photostreamr.version.ProVersionPromptDialog
 import android.widget.FrameLayout
+import com.photostreamr.R
+import com.photostreamr.ui.settings.DeveloperSettingsDialogFragment
 
 
 @AndroidEntryPoint
@@ -407,6 +409,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     SecurityPreferenceDialog.newInstance()
                         .show(childFragmentManager, "security_settings")
                 }
+                true
+            }
+            "developer_settings" -> {
+                // Option 1: Launch as an activity
+                // startActivity(Intent(requireContext(), DeveloperSettingsActivity::class.java))
+
+                // Option 2: Show as dialog fragment
+                DeveloperSettingsDialogFragment.newInstance()
+                    .show(childFragmentManager, "developer_settings_dialog")
                 true
             }
             else -> super.onPreferenceTreeClick(preference)

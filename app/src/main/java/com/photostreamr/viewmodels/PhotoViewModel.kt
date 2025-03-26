@@ -5,7 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import com.example.screensaver.PhotoRepository
+import com.photostreamr.PhotoRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -15,14 +15,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
-import com.example.screensaver.utils.RetryActionListener
-import com.example.screensaver.utils.OnPhotoLoadListener
+import com.photostreamr.utils.RetryActionListener
+import com.photostreamr.utils.OnPhotoLoadListener
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import com.example.screensaver.models.Album
-import com.example.screensaver.models.MediaItem
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.models.Album
+import com.photostreamr.models.MediaItem
+import com.photostreamr.utils.AppPreferences
+
+
 
 @HiltViewModel
 class PhotoViewModel @Inject constructor(

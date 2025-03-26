@@ -7,7 +7,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.util.Log
 import androidx.preference.PreferenceManager
-import com.example.screensaver.MainActivity
+import com.photostreamr.MainActivity
 
 class ChargingReceiver : BroadcastReceiver() {
     companion object {

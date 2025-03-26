@@ -19,11 +19,11 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
-import com.example.screensaver.R
-import com.example.screensaver.databinding.ItemPhotoGridBinding
+import com.photostreamr.R
+import com.photostreamr.databinding.ItemPhotoGridBinding
 import javax.inject.Inject
 
-typealias ManagedPhotoType = com.example.screensaver.photos.PhotoManagerViewModel.ManagedPhoto
+typealias ManagedPhotoType = com.photostreamr.photos.PhotoManagerViewModel.ManagedPhoto
 
 class PhotoGridAdapter @Inject constructor(
     private val glide: RequestManager,

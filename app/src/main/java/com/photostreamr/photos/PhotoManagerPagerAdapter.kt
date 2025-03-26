@@ -3,8 +3,8 @@ package com.photostreamr.photos
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.viewpager2.adapter.FragmentStateAdapter
-import com.example.screensaver.R
-import com.example.screensaver.settings.PhotoSourcesPreferencesFragment
+import com.photostreamr.R
+import com.photostreamr.settings.PhotoSourcesPreferencesFragment
 import android.os.Bundle
 
 class PhotoManagerPagerAdapter(

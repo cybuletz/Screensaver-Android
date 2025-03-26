@@ -2,7 +2,7 @@
 package com.photostreamr
 
 import androidx.lifecycle.ViewModel
-import com.example.screensaver.models.Album
+import com.photostreamr.models.Album
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

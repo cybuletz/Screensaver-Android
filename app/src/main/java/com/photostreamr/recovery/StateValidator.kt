@@ -1,6 +1,6 @@
 package com.photostreamr.recovery
 
-import com.example.screensaver.data.AppDataState
+import com.photostreamr.data.AppDataState
 
 class StateValidator {
     data class ValidationResult(

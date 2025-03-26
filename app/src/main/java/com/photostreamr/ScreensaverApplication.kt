@@ -7,9 +7,9 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import com.example.screensaver.utils.AppPreferences
-import com.example.screensaver.work.CacheCleanupWorker
-import com.example.screensaver.work.PhotoRefreshWorker
+import com.photostreamr.utils.AppPreferences
+import com.photostreamr.work.CacheCleanupWorker
+import com.photostreamr.work.PhotoRefreshWorker
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.HiltAndroidApp
@@ -20,12 +20,13 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
-import com.example.screensaver.data.AppDataManager
+import com.photostreamr.data.AppDataManager
 import androidx.preference.PreferenceManager
-import com.example.screensaver.music.RadioManager
-import com.example.screensaver.music.RadioPreferences
-import com.example.screensaver.music.SpotifyManager
-import com.example.screensaver.music.SpotifyPreferences
+import com.photostreamr.music.RadioManager
+import com.photostreamr.music.RadioPreferences
+import com.photostreamr.music.SpotifyManager
+import com.photostreamr.music.SpotifyPreferences
+import com.photostreamr.version.AppVersionManager
 import java.io.File
 import kotlinx.coroutines.NonCancellable
 
@@ -50,6 +51,9 @@ class ScreensaverApplication : Application() {
 
     @Inject lateinit var radioPreferences: RadioPreferences
 
+    @Inject
+    lateinit var appVersionManager: AppVersionManager
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var firebaseAnalytics: FirebaseAnalytics
 
@@ -67,6 +71,7 @@ class ScreensaverApplication : Application() {
         super.onCreate()
         checkFirstInstall()
         initializeApp()
+        appVersionManager.refreshVersionState()
     }
 
     private fun initializeApp() {

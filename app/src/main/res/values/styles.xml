@@ -180,4 +180,12 @@
         <item name="buttonBarPositiveButtonStyle">@style/MaterialDialog.Button.Primary</item>
         <item name="buttonBarNegativeButtonStyle">@style/MaterialDialog.Button.Cancel</item>
     </style>
+
+    <style name="FullScreenDialogStyle" parent="Theme.AppCompat.Light.Dialog">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="colorPrimary">@color/primary</item>
+    </style>
 </resources>

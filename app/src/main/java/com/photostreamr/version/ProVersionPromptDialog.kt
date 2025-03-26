@@ -2,6 +2,8 @@ package com.photostreamr.version
 
 import android.app.Dialog
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
@@ -9,8 +11,8 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
-import com.example.screensaver.R
-import com.example.screensaver.billing.BillingRepository
+import com.photostreamr.R
+import com.photostreamr.billing.BillingRepository
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
@@ -23,6 +25,9 @@ class ProVersionPromptDialog : DialogFragment() {
 
     @Inject
     lateinit var billingRepository: BillingRepository
+
+    @Inject
+    lateinit var appVersionManager: AppVersionManager
 
     private lateinit var upgradeButton: Button
     private lateinit var cancelButton: Button
@@ -101,6 +106,20 @@ class ProVersionPromptDialog : DialogFragment() {
             .create()
     }
 
+    override fun onResume() {
+        super.onResume()
+
+        // Check if already purchased whenever the dialog is shown
+        if (billingRepository.isPurchased()) {
+            Timber.d("Product already purchased, closing dialog")
+            dismiss()
+            return
+        }
+
+        // Force a purchase status check
+        billingRepository.verifyPurchaseStatus()
+    }
+
     private fun observeBillingRepository() {
         // Get the price from billing repository
         val price = billingRepository.getProductPrice()
@@ -122,6 +141,8 @@ class ProVersionPromptDialog : DialogFragment() {
                     when (status) {
                         is BillingRepository.PurchaseStatus.Purchased -> {
                             Timber.d("Purchase completed successfully")
+                            appVersionManager.refreshVersionState()
+                            updateLoadingState(false)
                             dismiss()
                         }
                         is BillingRepository.PurchaseStatus.Failed -> {
@@ -157,7 +178,6 @@ class ProVersionPromptDialog : DialogFragment() {
         if (::upgradeButton.isInitialized) {
             upgradeButton.isEnabled = !isLoading
             loadingView.visibility = if (isLoading) View.VISIBLE else View.GONE
-            upgradeButton.isEnabled = !isLoading
             upgradeButton.alpha = if (isLoading) 0.5f else 1.0f
 
             if (!isLoading && priceTextView.text.isNullOrEmpty()) {

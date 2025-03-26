@@ -15,14 +15,14 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
 import androidx.preference.Preference
 import androidx.preference.SwitchPreferenceCompat
-import com.example.screensaver.R
-import com.example.screensaver.data.AppDataManager
-import com.example.screensaver.data.SecureStorage
-import com.example.screensaver.localphotos.LocalPhotoSelectionActivity
-import com.example.screensaver.models.MediaItem
-import com.example.screensaver.PhotoRepository
-import com.example.screensaver.PhotoRepository.PhotoAddMode
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.R
+import com.photostreamr.data.AppDataManager
+import com.photostreamr.data.SecureStorage
+import com.photostreamr.localphotos.LocalPhotoSelectionActivity
+import com.photostreamr.models.MediaItem
+import com.photostreamr.PhotoRepository
+import com.photostreamr.PhotoRepository.PhotoAddMode
+import com.photostreamr.utils.AppPreferences
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -41,13 +41,13 @@ import java.net.URL
 import java.net.URLEncoder
 import android.content.Context
 import android.net.Uri
-import com.example.screensaver.photos.PhotoManagerActivity
+import com.photostreamr.photos.PhotoManagerActivity
 import android.os.Bundle
 import android.provider.MediaStore
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.DialogFragment
-import com.example.screensaver.photos.PersistentPhotoCache
+import com.photostreamr.photos.PersistentPhotoCache
 import java.io.File
 
 @AndroidEntryPoint

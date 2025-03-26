@@ -3,82 +3,66 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <com.example.screensaver.settings.MaterialBasicPreference
+    <com.photostreamr.settings.MaterialBasicPreference
         style="@style/SettingsCardStyle"
         android:icon="@drawable/manage_photos"
         android:key="manage_photos"
         android:summary="@string/pref_photo_manager_summary"
         android:title="@string/manage_photos" />
 
-    <com.example.screensaver.settings.MaterialBasicPreference
+    <com.photostreamr.settings.MaterialBasicPreference
         android:key="spotify_preferences"
         android:title="@string/pref_music_sources_title"
         android:summary="@string/pref_music_sources_summary"
         android:icon="@drawable/music_sources"
         style="@style/SettingsCardStyle"/>
 
-    <com.example.screensaver.settings.MaterialBasicPreference
+    <com.photostreamr.settings.MaterialBasicPreference
         android:key="common_settings"
         android:title="@string/pref_category_common"
         android:summary="@string/pref_common_summary"
         android:icon="@drawable/photoshow_settings"
         style="@style/SettingsCardStyle"/>
 
-    <com.example.screensaver.settings.MaterialBasicPreference
+    <com.photostreamr.settings.MaterialBasicPreference
         android:key="clock_widget_settings"
         android:title="@string/pref_category_clock_widget"
         android:summary="@string/pref_clock_widget_enabled_summary"
         android:icon="@drawable/widgets"
         style="@style/SettingsCardStyle"/>
 
-    <com.example.screensaver.settings.MaterialBasicPreference
+    <com.photostreamr.settings.MaterialBasicPreference
         android:key="weather_widget_settings"
         android:title="@string/pref_category_weather_widget"
         android:summary="@string/pref_show_weather_summary"
         style="@style/SettingsCardStyle"/>
 
-    <com.example.screensaver.settings.MaterialBasicPreference
+    <com.photostreamr.settings.MaterialBasicPreference
         android:key="music_widget_settings"
         android:title="@string/pref_music_widget"
         android:summary="@string/pref_show_music_summary"
         style="@style/SettingsCardStyle"/>
 
-    <com.example.screensaver.settings.MaterialBasicPreference
+    <com.photostreamr.settings.MaterialBasicPreference
         android:key="security_preferences"
         android:title="@string/pref_security_settings_title"
         android:summary="@string/pref_security_settings_summary"
         android:icon="@drawable/security_settings"
         style="@style/SettingsCardStyle"/>
 
-    <com.example.screensaver.settings.MaterialBasicPreference
+    <com.photostreamr.settings.MaterialBasicPreference
         android:key="display_settings"
         android:title="@string/pref_category_display"
         android:summary="@string/pref_display_summary"
         android:icon="@drawable/ic_display"
         style="@style/SettingsCardStyle"/>
 
-    <Preference
-        android:layout="@layout/preference_bottom_spacing"
-        android:key="bottom_spacing"/>
+    <com.photostreamr.settings.MaterialBasicPreference
+        android:key="developer_settings"
+        android:title="@string/developer_mode"
+        android:summary="Access developer-only features and testing options"
+        style="@style/SettingsCardStyle"/>
 
-    <PreferenceCategory
-        android:key="version_settings"
-        android:title="@string/version_settings"
-        android:icon="@drawable/ic_upgrade">
-
-        <SwitchPreferenceCompat
-            android:key="pro_version"
-            android:title="@string/pro_version_title"
-            android:summary="@string/pro_version_summary"
-            android:defaultValue="false" />
-
-        <Preference
-            android:key="upgrade_to_pro"
-            android:title="@string/upgrade_to_pro"
-            android:summary="@string/upgrade_to_pro_summary"
-            app:dependency="pro_version"
-            app:isPreferenceVisible="false" />
-    </PreferenceCategory>
 
     <PreferenceCategory
         android:key="ad_settings"
@@ -95,5 +79,9 @@
             app:showSeekBarValue="true"
             app:isPreferenceVisible="false" />
     </PreferenceCategory>
+
+    <Preference
+        android:layout="@layout/preference_bottom_spacing"
+        android:key="bottom_spacing"/>
 
 </PreferenceScreen>

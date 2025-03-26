@@ -18,7 +18,7 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreferenceCompat
-import com.example.screensaver.R
+import com.photostreamr.R
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -31,7 +31,7 @@ import android.view.KeyEvent
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.view.inputmethod.EditorInfo
-import com.example.screensaver.widgets.WidgetManager
+import com.photostreamr.widgets.WidgetManager
 import android.widget.ImageView
 import android.widget.BaseAdapter
 import android.view.ViewGroup

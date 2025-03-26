@@ -9,7 +9,7 @@ import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
 import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
-import com.example.screensaver.R
+import com.photostreamr.R
 import com.google.android.material.card.MaterialCardView
 
 abstract class MaterialPreferenceBase : Preference {

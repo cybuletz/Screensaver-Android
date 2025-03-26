@@ -2,9 +2,10 @@ package com.photostreamr.settings
 
 import android.os.Bundle
 import androidx.preference.*
-import com.example.screensaver.ui.PhotoDisplayManager
+import com.photostreamr.ui.PhotoDisplayManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import com.photostreamr.R
 
 @AndroidEntryPoint
 class PhotoShowSettingsPreferenceFragment : PreferenceFragmentCompat() {

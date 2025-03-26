@@ -3,7 +3,7 @@ package com.photostreamr
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
-import com.example.screensaver.settings.SettingsFragment
+import com.photostreamr.settings.SettingsFragment
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint

@@ -12,8 +12,8 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.RequestManager
 import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.example.screensaver.R
-import com.example.screensaver.models.Album
+import com.photostreamr.R
+import com.photostreamr.models.Album
 
 
 class AlbumAdapter(

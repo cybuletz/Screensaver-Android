@@ -6,7 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import androidx.fragment.app.DialogFragment
-import com.example.screensaver.R
+import com.photostreamr.R
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint

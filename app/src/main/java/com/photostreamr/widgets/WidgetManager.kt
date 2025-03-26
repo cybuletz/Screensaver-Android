@@ -1,7 +1,7 @@
 package com.photostreamr.widgets
 
 import android.content.Context
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.utils.AppPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,10 +10,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
 import android.view.ViewGroup
-import com.example.screensaver.music.RadioManager
-import com.example.screensaver.music.RadioPreferences
-import com.example.screensaver.music.SpotifyManager
-import com.example.screensaver.music.SpotifyPreferences
+import com.photostreamr.music.RadioManager
+import com.photostreamr.music.RadioPreferences
+import com.photostreamr.music.SpotifyManager
+import com.photostreamr.music.SpotifyPreferences
 import java.text.SimpleDateFormat
 import java.util.Locale
 import androidx.preference.PreferenceManager

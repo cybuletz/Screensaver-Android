@@ -7,7 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.core.view.isVisible
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.utils.AppPreferences
 import android.animation.AnimatorSet
 
 /**

@@ -7,9 +7,9 @@ import android.widget.TextView
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.example.screensaver.PhotoRepository
-import com.example.screensaver.data.PhotoCache
-import com.example.screensaver.models.LoadingState
+import com.photostreamr.PhotoRepository
+import com.photostreamr.data.PhotoCache
+import com.photostreamr.models.LoadingState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import javax.inject.Inject
@@ -22,7 +22,7 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import kotlin.random.Random
 import kotlinx.coroutines.delay
-import com.example.screensaver.R
+import com.photostreamr.R
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Looper
@@ -36,9 +36,9 @@ import android.animation.Animator
 import android.animation.ObjectAnimator
 import android.graphics.drawable.BitmapDrawable
 import com.bumptech.glide.load.HttpException
-import com.example.screensaver.glide.GlideApp
-import com.example.screensaver.music.SpotifyManager
-import com.example.screensaver.music.SpotifyPreferences
+import com.photostreamr.glide.GlideApp
+import com.photostreamr.music.SpotifyManager
+import com.photostreamr.music.SpotifyPreferences
 
 
 @Singleton

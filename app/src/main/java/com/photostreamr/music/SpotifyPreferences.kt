@@ -3,7 +3,7 @@ package com.photostreamr.music
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.preference.PreferenceManager
-import com.example.screensaver.data.SecureStorage
+import com.photostreamr.data.SecureStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton

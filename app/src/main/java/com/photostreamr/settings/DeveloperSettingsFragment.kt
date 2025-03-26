@@ -1,4 +1,4 @@
-package com.example.screensaver.ui.settings
+package com.photostreamr.ui.settings
 
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -9,9 +9,9 @@ import android.widget.Switch
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import com.example.screensaver.R
-import com.example.screensaver.version.AppVersionManager
-import com.example.screensaver.version.FeatureManager
+import com.photostreamr.R
+import com.photostreamr.version.AppVersionManager
+import com.photostreamr.version.FeatureManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch

@@ -1,7 +1,7 @@
 package com.photostreamr
 
 import android.content.Context
-import com.example.screensaver.data.AppDataManager
+import com.photostreamr.data.AppDataManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject

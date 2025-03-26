@@ -10,23 +10,23 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.RequestManager
-import com.example.screensaver.R
-import com.example.screensaver.databinding.ActivityPhotoManagerBinding
-import com.example.screensaver.databinding.DialogCreateAlbumBinding
+import com.photostreamr.R
+import com.photostreamr.databinding.ActivityPhotoManagerBinding
+import com.photostreamr.databinding.DialogCreateAlbumBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import com.example.screensaver.photos.PhotoManagerViewModel.SortOption
+import com.photostreamr.photos.PhotoManagerViewModel.SortOption
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayoutMediator
 import android.widget.ProgressBar
 import android.widget.TextView
-import com.example.screensaver.PhotoRepository
+import com.photostreamr.PhotoRepository
 import com.google.android.material.snackbar.Snackbar
-import com.example.screensaver.utils.AppPreferences
-import com.example.screensaver.settings.PhotoSourcesPreferencesFragment
+import com.photostreamr.utils.AppPreferences
+import com.photostreamr.settings.PhotoSourcesPreferencesFragment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +36,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+
 
 
 @AndroidEntryPoint
@@ -269,11 +270,11 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         lifecycleScope.launch {
             viewModel.state.collect { state ->
                 when (state) {
-                    is PhotoManagerState.Loading -> binding.loadingState.root.isVisible = true
+                    is PhotoManagerViewModel.PhotoManagerState.Loading -> binding.loadingState.root.isVisible = true
                     else -> binding.loadingState.root.isVisible = false
                 }
 
-                if (state is PhotoManagerState.Error) {
+                if (state is PhotoManagerViewModel.PhotoManagerState.Error) {
                     Snackbar.make(binding.root, state.message, Snackbar.LENGTH_LONG).show()
                 }
             }

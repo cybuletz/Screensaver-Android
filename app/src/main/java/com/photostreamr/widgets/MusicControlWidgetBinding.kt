@@ -9,7 +9,7 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
-import com.example.screensaver.R
+import com.photostreamr.R
 
 class MusicControlWidgetBinding(
     private val container: ViewGroup

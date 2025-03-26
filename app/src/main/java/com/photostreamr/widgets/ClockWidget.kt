@@ -8,7 +8,7 @@ import android.view.ViewGroup
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.constraintlayout.widget.ConstraintLayout
-import com.example.screensaver.R
+import com.photostreamr.R
 import java.util.Date
 import java.util.Locale
 import java.util.Calendar

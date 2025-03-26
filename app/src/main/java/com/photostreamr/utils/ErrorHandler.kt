@@ -4,8 +4,8 @@ import android.content.Context
 import android.view.View
 import android.widget.Toast
 import androidx.annotation.StringRes
-import com.example.screensaver.R
-import com.example.screensaver.analytics.PhotoAnalytics
+import com.photostreamr.R
+import com.photostreamr.analytics.PhotoAnalytics
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel

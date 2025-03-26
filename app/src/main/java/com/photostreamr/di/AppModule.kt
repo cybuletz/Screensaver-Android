@@ -3,12 +3,12 @@ package com.photostreamr.di
 import android.content.Context
 import com.bumptech.glide.Glide
 import com.bumptech.glide.RequestManager
-import com.example.screensaver.analytics.PhotoAnalytics
-import com.example.screensaver.utils.AppPreferences
-import com.example.screensaver.utils.NotificationHelper
-import com.example.screensaver.PhotoSourceState
-import com.example.screensaver.ui.PhotoDisplayManager
-import com.example.screensaver.utils.PhotoLoadingManager
+import com.photostreamr.analytics.PhotoAnalytics
+import com.photostreamr.utils.AppPreferences
+import com.photostreamr.utils.NotificationHelper
+import com.photostreamr.PhotoSourceState
+import com.photostreamr.ui.PhotoDisplayManager
+import com.photostreamr.utils.PhotoLoadingManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -18,20 +18,20 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import com.example.screensaver.PhotoRepository
-import com.example.screensaver.auth.GoogleAuthManager
-import com.example.screensaver.data.AppDataManager
-import com.example.screensaver.data.SecureStorage
-import com.example.screensaver.recovery.StateRecoveryManager
-import com.example.screensaver.recovery.StateRestoration
-import com.example.screensaver.data.PhotoCache
-import com.example.screensaver.music.SpotifyManager
-import com.example.screensaver.music.SpotifyPreferences
-import com.example.screensaver.photos.PersistentPhotoCache
-import com.example.screensaver.photos.PhotoUriManager
-import com.example.screensaver.security.AppAuthManager
-import com.example.screensaver.security.BiometricHelper
-import com.example.screensaver.security.SecurityPreferences
+import com.photostreamr.PhotoRepository
+import com.photostreamr.auth.GoogleAuthManager
+import com.photostreamr.data.AppDataManager
+import com.photostreamr.data.SecureStorage
+import com.photostreamr.recovery.StateRecoveryManager
+import com.photostreamr.recovery.StateRestoration
+import com.photostreamr.data.PhotoCache
+import com.photostreamr.music.SpotifyManager
+import com.photostreamr.music.SpotifyPreferences
+import com.photostreamr.photos.PersistentPhotoCache
+import com.photostreamr.photos.PhotoUriManager
+import com.photostreamr.security.AppAuthManager
+import com.photostreamr.security.BiometricHelper
+import com.photostreamr.security.SecurityPreferences
 
 @Module
 @InstallIn(SingletonComponent::class)

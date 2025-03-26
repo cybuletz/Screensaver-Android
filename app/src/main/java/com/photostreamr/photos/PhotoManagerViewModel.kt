@@ -7,10 +7,10 @@ import android.provider.MediaStore
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.screensaver.data.SecureStorage
-import com.example.screensaver.PhotoRepository
-import com.example.screensaver.models.MediaItem
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.data.SecureStorage
+import com.photostreamr.PhotoRepository
+import com.photostreamr.models.MediaItem
+import com.photostreamr.utils.AppPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers

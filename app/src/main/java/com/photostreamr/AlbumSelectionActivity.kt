@@ -9,12 +9,12 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
-import com.example.screensaver.adapters.AlbumAdapter
-import com.example.screensaver.databinding.ActivityAlbumSelectionBinding
-import com.example.screensaver.models.Album
-import com.example.screensaver.models.MediaItem
-import com.example.screensaver.utils.PhotoLoadingManager
-import com.example.screensaver.utils.AppPreferences
+import com.photostreamr.adapters.AlbumAdapter
+import com.photostreamr.databinding.ActivityAlbumSelectionBinding
+import com.photostreamr.models.Album
+import com.photostreamr.models.MediaItem
+import com.photostreamr.utils.PhotoLoadingManager
+import com.photostreamr.utils.AppPreferences
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,10 +36,10 @@ import android.provider.MediaStore
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
-import com.example.screensaver.PhotoRepository.PhotoAddMode
-import com.example.screensaver.photos.PhotoManagerActivity
-import com.example.screensaver.photos.PhotoManagerViewModel
-import com.example.screensaver.photos.PhotoUriManager
+import com.photostreamr.PhotoRepository.PhotoAddMode
+import com.photostreamr.photos.PhotoManagerActivity
+import com.photostreamr.photos.PhotoManagerViewModel
+import com.photostreamr.photos.PhotoUriManager
 
 
 @AndroidEntryPoint

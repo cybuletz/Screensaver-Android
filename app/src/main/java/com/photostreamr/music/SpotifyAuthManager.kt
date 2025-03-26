@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
-import com.example.screensaver.data.SecureStorage
+import com.photostreamr.data.SecureStorage
 
 @Singleton
 class SpotifyAuthManager @Inject constructor(
