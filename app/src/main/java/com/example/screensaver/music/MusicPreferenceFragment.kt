@@ -37,6 +37,10 @@ import android.widget.BaseAdapter
 import android.view.ViewGroup
 import kotlinx.coroutines.Dispatchers
 import java.io.IOException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onEach
 
 
 @AndroidEntryPoint
@@ -852,35 +856,39 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         val noResultsText = dialogView.findViewById<TextView>(R.id.no_results_text)
 
         lateinit var stationsAdapter: RadioStationAdapter
+        var currentJob: Job? = null
 
         stationsAdapter = RadioStationAdapter(
-            radioManager = radioManager, // Add RadioManager instance
+            radioManager = radioManager,
             onStationClick = { station ->
-                // Show loading state immediately
+                currentJob?.cancel()
                 stationsAdapter.setLoadingState(station.id)
 
-                // Setup playback state observation
-                viewLifecycleOwner.lifecycleScope.launch {
-                    radioManager.playbackState.collect { state ->
-                        when (state) {
-                            is RadioManager.PlaybackState.Playing -> {
-                                stationsAdapter.setLoadingState(null)
-                                radioPreferences.setLastStation(station)
-                                dialog.dismiss()
-                            }
-                            RadioManager.PlaybackState.Loading -> {
-                                // Keep the loading state visible
-                            }
-                            RadioManager.PlaybackState.Idle -> {
-                                // Clear loading if something went wrong
-                                stationsAdapter.setLoadingState(null)
-                            }
-                        }
+                currentJob = viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        radioManager.playStation(station)
+                        radioManager.playbackState
+                            .onEach { state ->
+                                when (state) {
+                                    is RadioManager.PlaybackState.Playing -> {
+                                        stationsAdapter.setLoadingState(null)
+                                        radioPreferences.setLastStation(station)
+                                        dialog.dismiss()
+                                    }
+                                    RadioManager.PlaybackState.Loading -> {
+                                        stationsAdapter.setLoadingState(station.id)
+                                    }
+                                    RadioManager.PlaybackState.Idle -> {
+                                        stationsAdapter.setLoadingState(null)
+                                        Toast.makeText(requireContext(), "Failed to load station", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }.collect() // Add .collect() here
+                    } catch (e: Exception) {
+                        stationsAdapter.setLoadingState(null)
+                        Timber.e(e, "Error playing station")
                     }
                 }
-
-                // Start playing the station
-                radioManager.playStation(station)
             },
             onFavoriteClick = { station ->
                 val favorites = radioPreferences.getFavoriteStations().toMutableList()
@@ -928,6 +936,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             } else false
         }
 
+        dialog.setOnDismissListener {
+            currentJob?.cancel()
+        }
+
         dialog.show()
     }
 
@@ -937,45 +949,47 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
         val stationsList = dialogView.findViewById<RecyclerView>(R.id.stations_list)
 
-        // Create the dialog first so we can reference it
         val alertDialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Recent Stations")
             .setView(dialogView)
             .setPositiveButton("Close", null)
             .create()
 
-        // Create adapter reference that can be captured by lambda
+        var currentJob: Job? = null
         lateinit var recentAdapter: RadioStationAdapter
 
         recentAdapter = RadioStationAdapter(
             radioManager = radioManager,
             onStationClick = { station ->
-                // Show loading state immediately
+                currentJob?.cancel()
                 recentAdapter.setLoadingState(station.id)
 
-                // Setup playback state observation
-                viewLifecycleOwner.lifecycleScope.launch {
-                    radioManager.playbackState.collect { state ->
-                        when (state) {
-                            is RadioManager.PlaybackState.Playing -> {
-                                recentAdapter.setLoadingState(null)
-                                radioPreferences.setLastStation(station)
-                                radioPreferences.addToRecentStations(station)
-                                alertDialog.dismiss() // Use the stored dialog reference
-                            }
-                            RadioManager.PlaybackState.Loading -> {
-                                // Keep the loading state visible
-                            }
-                            RadioManager.PlaybackState.Idle -> {
-                                // Clear loading if something went wrong
-                                recentAdapter.setLoadingState(null)
-                            }
-                        }
+                currentJob = viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        radioManager.playStation(station)
+                        radioManager.playbackState
+                            .onEach { state ->
+                                when (state) {
+                                    is RadioManager.PlaybackState.Playing -> {
+                                        recentAdapter.setLoadingState(null)
+                                        radioPreferences.setLastStation(station)
+                                        radioPreferences.addToRecentStations(station)
+                                        alertDialog.dismiss()
+                                    }
+                                    RadioManager.PlaybackState.Loading -> {
+                                        recentAdapter.setLoadingState(station.id)
+                                    }
+                                    RadioManager.PlaybackState.Idle -> {
+                                        recentAdapter.setLoadingState(null)
+                                        Toast.makeText(requireContext(), "Failed to load station", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }.collect() // Add .collect() here
+                    } catch (e: Exception) {
+                        recentAdapter.setLoadingState(null)
+                        Timber.e(e, "Error playing station")
                     }
                 }
-
-                // Start playing the station
-                radioManager.playStation(station)
             },
             onFavoriteClick = { station ->
                 val favorites = radioPreferences.getFavoriteStations().toMutableList()
@@ -997,9 +1011,12 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         stationsList.layoutManager = LinearLayoutManager(context)
         stationsList.adapter = recentAdapter
 
-        alertDialog.show() // Show the dialog after setup
+        alertDialog.setOnDismissListener {
+            currentJob?.cancel()
+        }
 
-        // Load and display the recent stations
+        alertDialog.show()
+
         val recentStations = radioPreferences.getRecentStations()
         if (recentStations.isEmpty()) {
             Toast.makeText(requireContext(), "No recent stations", Toast.LENGTH_SHORT).show()
@@ -1015,39 +1032,46 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
         val stationsList = dialogView.findViewById<RecyclerView>(R.id.stations_list)
 
-        // Create the dialog first
         val alertDialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Favorite Stations")
             .setView(dialogView)
             .setPositiveButton("Close", null)
             .create()
 
+        var currentJob: Job? = null
         lateinit var favoritesAdapter: RadioStationAdapter
 
         favoritesAdapter = RadioStationAdapter(
             radioManager = radioManager,
             onStationClick = { station ->
+                currentJob?.cancel()
                 favoritesAdapter.setLoadingState(station.id)
 
-                viewLifecycleOwner.lifecycleScope.launch {
-                    radioManager.playbackState.collect { state ->
-                        when (state) {
-                            is RadioManager.PlaybackState.Playing -> {
-                                favoritesAdapter.setLoadingState(null)
-                                radioPreferences.setLastStation(station)
-                                alertDialog.dismiss() // Use the stored dialog reference
-                            }
-                            RadioManager.PlaybackState.Loading -> {
-                                // Keep the loading state visible
-                            }
-                            RadioManager.PlaybackState.Idle -> {
-                                favoritesAdapter.setLoadingState(null)
-                            }
-                        }
+                currentJob = viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        radioManager.playStation(station)
+                        radioManager.playbackState
+                            .onEach { state ->
+                                when (state) {
+                                    is RadioManager.PlaybackState.Playing -> {
+                                        favoritesAdapter.setLoadingState(null)
+                                        radioPreferences.setLastStation(station)
+                                        alertDialog.dismiss()
+                                    }
+                                    RadioManager.PlaybackState.Loading -> {
+                                        favoritesAdapter.setLoadingState(station.id)
+                                    }
+                                    RadioManager.PlaybackState.Idle -> {
+                                        favoritesAdapter.setLoadingState(null)
+                                        Toast.makeText(requireContext(), "Failed to load station", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }.collect() // Add .collect() here
+                    } catch (e: Exception) {
+                        favoritesAdapter.setLoadingState(null)
+                        Timber.e(e, "Error playing station")
                     }
                 }
-
-                radioManager.playStation(station)
             },
             onFavoriteClick = { station ->
                 val favorites = radioPreferences.getFavoriteStations().toMutableList()
@@ -1061,6 +1085,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
         stationsList.layoutManager = LinearLayoutManager(context)
         stationsList.adapter = favoritesAdapter
+
+        alertDialog.setOnDismissListener {
+            currentJob?.cancel()
+        }
 
         alertDialog.show()
         favoritesAdapter.submitList(radioPreferences.getFavoriteStations())

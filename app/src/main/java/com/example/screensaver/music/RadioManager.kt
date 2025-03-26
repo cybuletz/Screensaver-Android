@@ -152,19 +152,24 @@ class RadioManager @Inject constructor(
         Log.d(TAG, "Playing station: ${station.name}")
         scope.launch {
             try {
-                // Immediately show loading state
+                // Clear any existing state
+                mediaPlayer?.reset()
+
+                // Update states to show loading
                 _playbackState.value = PlaybackState.Loading
                 _currentStation.value = station
                 _connectionState.value = ConnectionState.Connected
 
-                mediaPlayer?.apply {
-                    reset()
-                    setDataSource(station.url)
-                    prepareAsync() // This will trigger onPrepared when ready
-                }
-
-                // Store station immediately, but don't set wasPlaying until actually playing
+                // Save station but don't mark as playing yet
                 preferences.setLastStation(station)
+
+                // Prepare media player
+                withContext(Dispatchers.IO) {
+                    mediaPlayer?.apply {
+                        setDataSource(station.url)
+                        prepareAsync() // This will trigger onPrepared when ready
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error playing station", e)
                 _connectionState.value = ConnectionState.Error(e)
@@ -172,7 +177,6 @@ class RadioManager @Inject constructor(
             }
         }
     }
-
 
     private fun updatePlaybackState(isPlaying: Boolean) {
         val station = _currentStation.value
