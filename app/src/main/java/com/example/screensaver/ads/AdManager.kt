@@ -30,8 +30,8 @@ class AdManager @Inject constructor(
     private var isInitialized = false
     private var mainAdView: AdView? = null
     private var settingsAdView: AdView? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
     private var timerRunnable: Runnable? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     fun initialize() {
         if (isInitialized) return
@@ -58,8 +58,8 @@ class AdManager @Inject constructor(
             }
 
             mainAdView = AdView(context).apply {
-                adUnitId = BANNER_AD_UNIT_ID
-                adSize = AdSize.BANNER
+                setAdUnitId(BANNER_AD_UNIT_ID)
+                setAdSize(AdSize.BANNER)
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         Log.d(TAG, "Main activity ad loaded")
@@ -96,8 +96,8 @@ class AdManager @Inject constructor(
             }
 
             settingsAdView = AdView(context).apply {
-                adUnitId = BANNER_AD_UNIT_ID
-                adSize = AdSize.BANNER
+                setAdUnitId(BANNER_AD_UNIT_ID)
+                setAdSize(AdSize.BANNER)
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         Log.d(TAG, "Settings fragment ad loaded")

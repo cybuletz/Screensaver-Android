@@ -8,13 +8,6 @@ import android.util.Log
 import androidx.core.content.FileProvider
 import com.bumptech.glide.Glide
 import dagger.hilt.android.qualifiers.ApplicationContext
-import id.zelory.compressor.Compressor
-import id.zelory.compressor.constraint.default
-import id.zelory.compressor.constraint.destination
-import id.zelory.compressor.constraint.format
-import id.zelory.compressor.constraint.quality
-import id.zelory.compressor.constraint.resolution
-import id.zelory.compressor.constraint.size
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.File
