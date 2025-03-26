@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
 import com.example.screensaver.R
@@ -74,6 +75,10 @@ class MusicControlWidgetBinding(
             Log.e(TAG, "Error in inflate()", e)
             throw e
         }
+    }
+
+    fun getLoadingIndicator(): ProgressBar? {
+        return getRootView()?.findViewById(R.id.loading_indicator)
     }
 
     fun getTrackArtworkBackground(): ImageView? = trackArtworkBackground

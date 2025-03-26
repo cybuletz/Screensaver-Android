@@ -239,6 +239,8 @@ class MainActivity : AppCompatActivity() {
         val musicSource = PreferenceManager.getDefaultSharedPreferences(this)
             .getString("music_source", "spotify") ?: "spotify"
 
+        Log.d(TAG, "Initializing music source: $musicSource")
+
         when (musicSource) {
             "spotify" -> {
                 if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
@@ -247,8 +249,13 @@ class MainActivity : AppCompatActivity() {
             }
             "radio" -> {
                 if (radioPreferences.isEnabled()) {
+                    // First ensure state is initialized
+                    radioManager.initializeState()
+                    // Then try auto-resume in a coroutine
                     lifecycleScope.launch {
+                        delay(100) // Small delay to ensure proper initialization
                         radioManager.tryAutoResume()
+                        Log.d(TAG, "Called radio auto-resume")
                     }
                 }
             }
@@ -671,24 +678,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateKeepScreenOn() {
         val keepScreenOn = PreferenceManager.getDefaultSharedPreferences(this)
-            .getBoolean("keep_screen_on", true)  // Changed default to true here as well
+            .getBoolean("keep_screen_on", true)
+
+        val isSpotifyPlaying = spotifyManager.playbackState.value.let { state ->
+            state is SpotifyManager.PlaybackState.Playing && state.isPlaying
+        }
+
+        val isRadioPlaying = radioManager.playbackState.value.let { state ->
+            state is RadioManager.PlaybackState.Playing &&
+                    (state as RadioManager.PlaybackState.Playing).isPlaying
+        }
 
         val shouldKeepScreenOn = keepScreenOn && (
                 photoDisplayManager.isScreensaverActive() ||
-                        (spotifyPreferences.isEnabled() &&
-                                spotifyManager.playbackState.value is SpotifyManager.PlaybackState.Playing) ||
-                        (radioPreferences.isEnabled() &&
-                                radioManager.playbackState.value is RadioManager.PlaybackState.Playing &&
-                                (radioManager.playbackState.value as RadioManager.PlaybackState.Playing).isPlaying)
+                        isSpotifyPlaying ||
+                        isRadioPlaying
                 )
+
+        Log.d(TAG, "Screen keep-on updated: $shouldKeepScreenOn (preference: $keepScreenOn, spotify: $isSpotifyPlaying, radio: $isRadioPlaying)")
 
         if (shouldKeepScreenOn) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
-
-        Log.d(TAG, "Screen keep-on updated: $shouldKeepScreenOn (preference: $keepScreenOn)")
     }
 
     private fun updateOrientation() {
@@ -709,20 +722,19 @@ class MainActivity : AppCompatActivity() {
         // Initial state
         updateKeepScreenOn()
 
-        // Observe Spotify playback state
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                spotifyManager.playbackState.collect { state ->
-                    updateKeepScreenOn()
+                // Combine both Spotify and Radio playback states
+                launch {
+                    spotifyManager.playbackState.collect { state ->
+                        updateKeepScreenOn()
+                    }
                 }
-            }
-        }
 
-        // Add Radio playback state observer
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                radioManager.playbackState.collect { state ->
-                    updateKeepScreenOn()
+                launch {
+                    radioManager.playbackState.collect { state ->
+                        updateKeepScreenOn()
+                    }
                 }
             }
         }
@@ -1184,26 +1196,31 @@ class MainActivity : AppCompatActivity() {
             securityPreferences.isSecurityEnabled = false
             secureStorage.clearSecurityCredentials()
             secureStorage.setRemoveSecurityOnMinimize(false)
-            Log.d(TAG, "Security settings have been removed on minimize")
         }
 
-        // Only disconnect music sources if not changing configurations
+        // Only disconnect if not changing configurations
         if (!isChangingConfigurations) {
             when (PreferenceManager.getDefaultSharedPreferences(this)
                 .getString("music_source", "spotify")) {
                 "spotify" -> spotifyManager.disconnect()
                 "radio" -> {
-                    // Store radio state before disconnecting
-                    val wasPlaying = radioManager.playbackState.value is RadioManager.PlaybackState.Playing
-                    radioPreferences.setWasPlaying(wasPlaying)
-                    // Store current station if playing
-                    if (wasPlaying) {
-                        (radioManager.playbackState.value as? RadioManager.PlaybackState.Playing)?.let { state ->
-                            radioManager.currentStation.value?.let { station ->
-                                radioPreferences.setLastStation(station)
-                            }
-                        }
+                    // First store state in preferences
+                    val currentState = radioManager.playbackState.value
+                    val currentStation = radioManager.currentStation.value
+
+                    if (currentState is RadioManager.PlaybackState.Playing && currentStation != null) {
+                        radioPreferences.setWasPlaying(currentState.isPlaying)
+                        radioPreferences.setLastStation(currentStation)
+                        Log.d(TAG, "Stored radio state: playing=${currentState.isPlaying}, station=${currentStation.name}")
+                    } else if (currentStation != null) {
+                        // Even if not playing, store the station
+                        radioPreferences.setWasPlaying(false)
+                        radioPreferences.setLastStation(currentStation)
+                        Log.d(TAG, "Stored radio station: ${currentStation.name}")
                     }
+
+                    // Now disconnect
+                    radioManager.disconnect()
                 }
             }
         }
@@ -1232,13 +1249,18 @@ class MainActivity : AppCompatActivity() {
         when (PreferenceManager.getDefaultSharedPreferences(this).getString("music_source", "spotify")) {
             "spotify" -> {
                 if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
-                    // Check token and connection state
                     spotifyManager.checkAndRefreshTokenIfNeeded()
                 }
             }
             "radio" -> {
                 if (radioPreferences.isEnabled()) {
-                    radioManager.tryAutoResume()
+                    // First initialize the state to ensure proper UI
+                    radioManager.initializeState()
+                    // Then try auto-resume if appropriate
+                    lifecycleScope.launch {
+                        delay(100) // Small delay to ensure UI is ready
+                        radioManager.tryAutoResume()
+                    }
                 }
             }
         }

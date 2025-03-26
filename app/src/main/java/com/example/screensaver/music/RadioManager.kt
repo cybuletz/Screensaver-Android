@@ -47,6 +47,10 @@ class RadioManager @Inject constructor(
     private val _currentStation = MutableStateFlow<RadioStation?>(null)
     val currentStation: StateFlow<RadioStation?> = _currentStation.asStateFlow()
 
+    private var pendingResume = false
+    private var lastKnownStation: RadioStation? = null
+    private var wasLastPlaying = false
+
     companion object {
         private const val TAG = "RadioManager"
         private const val DNS_LOOKUP_HOST = "all.api.radio-browser.info"
@@ -70,6 +74,7 @@ class RadioManager @Inject constructor(
 
     sealed class PlaybackState {
         object Idle : PlaybackState()
+        object Loading : PlaybackState()
         data class Playing(
             val stationName: String,
             val genre: String?,
@@ -80,19 +85,25 @@ class RadioManager @Inject constructor(
 
     init {
         setupMediaPlayer()
-        // Set initial connection state based on preferences
-        if (preferences.isEnabled()) {
-            _connectionState.value = ConnectionState.Connected  // Add this line
-            if (preferences.wasPlaying()) {
-                preferences.getLastStation()?.let { lastStation ->
-                    _currentStation.value = lastStation
-                    _playbackState.value = PlaybackState.Playing(
-                        stationName = lastStation.name,
-                        genre = lastStation.genre,
-                        isPlaying = false
-                    )
-                }
-            }
+    }
+
+    fun initializeState() {
+        if (!preferences.isEnabled()) return
+
+        // On full app start, always read from preferences
+        preferences.getLastStation()?.let { station ->
+            lastKnownStation = station
+            wasLastPlaying = preferences.wasPlaying()
+            pendingResume = wasLastPlaying
+
+            _connectionState.value = ConnectionState.Connected
+            _currentStation.value = station
+            _playbackState.value = PlaybackState.Playing(
+                stationName = station.name,
+                genre = station.genre,
+                isPlaying = false // Start as not playing
+            )
+            Timber.d("Initialized state with last station: ${station.name}, wasPlaying: $wasLastPlaying")
         }
     }
 
@@ -110,8 +121,18 @@ class RadioManager @Inject constructor(
                 Timber.d("MediaPlayer prepared")
                 start()
                 _connectionState.value = ConnectionState.Connected
-                updatePlaybackState(true)
+
+                // Now update to playing state
+                _currentStation.value?.let { station ->
+                    _playbackState.value = PlaybackState.Playing(
+                        stationName = station.name,
+                        genre = station.genre,
+                        isPlaying = true
+                    )
+                    preferences.setWasPlaying(true)
+                }
             }
+
 
             setOnErrorListener { _, what, extra ->
                 val error = Exception("MediaPlayer error: what=$what, extra=$extra")
@@ -128,24 +149,30 @@ class RadioManager @Inject constructor(
     }
 
     fun playStation(station: RadioStation) {
-        Timber.d("Playing station: ${station.name}")
+        Log.d(TAG, "Playing station: ${station.name}")
         scope.launch {
             try {
+                // Immediately show loading state
+                _playbackState.value = PlaybackState.Loading
                 _currentStation.value = station
-                _connectionState.value = ConnectionState.Connected // Add this line
+                _connectionState.value = ConnectionState.Connected
+
                 mediaPlayer?.apply {
                     reset()
                     setDataSource(station.url)
-                    prepareAsync()
+                    prepareAsync() // This will trigger onPrepared when ready
                 }
-                // Add to recent stations when playing
-                preferences.addToRecentStations(station)
+
+                // Store station immediately, but don't set wasPlaying until actually playing
+                preferences.setLastStation(station)
             } catch (e: Exception) {
-                Timber.e(e, "Error playing station")
+                Log.e(TAG, "Error playing station", e)
                 _connectionState.value = ConnectionState.Error(e)
+                _playbackState.value = PlaybackState.Idle
             }
         }
     }
+
 
     private fun updatePlaybackState(isPlaying: Boolean) {
         val station = _currentStation.value
@@ -196,55 +223,79 @@ class RadioManager @Inject constructor(
         }
     }
 
-    fun resume() {
-        Timber.d("Resuming playback")
-        if (_connectionState.value !is ConnectionState.Connected) {
-            _connectionState.value = ConnectionState.Connected
+    fun tryAutoResume() {
+        if (!preferences.isEnabled()) return
+
+        // First restore connection state
+        _connectionState.value = ConnectionState.Connected
+
+        // Use cached state first, then fall back to preferences
+        val station = lastKnownStation ?: preferences.getLastStation()
+        val shouldPlay = pendingResume || preferences.wasPlaying()
+
+        if (station != null) {
+            _currentStation.value = station
+            if (shouldPlay) {
+                Timber.d("Auto-resuming last station: ${station.name}")
+                playStation(station)
+            } else {
+                // Show station info without playing
+                _playbackState.value = PlaybackState.Playing(
+                    stationName = station.name,
+                    genre = station.genre,
+                    isPlaying = false
+                )
+                Timber.d("Restored last station without playing: ${station.name}")
+            }
+        } else {
+            _playbackState.value = PlaybackState.Idle
+            Timber.d("No last station found")
         }
-        mediaPlayer?.start()
-        updatePlaybackState(true)
+
+        // Reset pending state
+        pendingResume = false
     }
 
     fun disconnect() {
-        // Store playing state before disconnecting
-        val wasPlaying = mediaPlayer?.isPlaying == true
-        preferences.setWasPlaying(wasPlaying)
+        // Store state before ANY changes
+        val currentStation = _currentStation.value
+        val isCurrentlyPlaying = (playbackState.value as? PlaybackState.Playing)?.isPlaying ?: false
 
-        // Store current station if we were playing
-        if (wasPlaying) {
-            _currentStation.value?.let { station ->
-                preferences.setLastStation(station)
-            }
+        // Always update preferences first
+        preferences.setWasPlaying(isCurrentlyPlaying)
+        currentStation?.let { station ->
+            preferences.setLastStation(station)
+            Timber.d("Storing last station on disconnect: ${station.name}, wasPlaying: $isCurrentlyPlaying")
         }
 
+        // Cache state for quick resume
+        lastKnownStation = currentStation
+        wasLastPlaying = isCurrentlyPlaying
+        pendingResume = isCurrentlyPlaying
+
+        // Now safe to disconnect
         mediaPlayer?.apply {
             stop()
             reset()
         }
-        _currentStation.value = null
+
+        // Update states but maintain station info
         _connectionState.value = ConnectionState.Disconnected
-        _playbackState.value = PlaybackState.Idle
+        if (currentStation != null) {
+            _playbackState.value = PlaybackState.Playing(
+                stationName = currentStation.name,
+                genre = currentStation.genre,
+                isPlaying = false
+            )
+        } else {
+            _playbackState.value = PlaybackState.Idle
+        }
     }
 
-    fun tryAutoResume() {
-        if (preferences.isEnabled()) {
-            _connectionState.value = ConnectionState.Connected
-            if (preferences.wasPlaying()) {
-                preferences.getLastStation()?.let { lastStation ->
-                    Timber.d("Auto-resuming last station: ${lastStation.name}")
-                    playStation(lastStation)
-                }
-            } else {
-                // Even if we weren't playing, set the last station as current
-                preferences.getLastStation()?.let { lastStation ->
-                    _currentStation.value = lastStation
-                    _playbackState.value = PlaybackState.Playing(
-                        stationName = lastStation.name,
-                        genre = lastStation.genre,
-                        isPlaying = false
-                    )
-                }
-            }
+    fun resume() {
+        Timber.d("Resuming playback")
+        preferences.getLastStation()?.let { lastStation ->
+            playStation(lastStation)
         }
     }
 

@@ -44,6 +44,9 @@ class MusicControlWidget(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var progressUpdateJob: Job? = null
 
+    private var lastRadioStation: RadioManager.RadioStation? = null
+    private var wasRadioPlaying: Boolean = false
+
     private var currentTrackUri: String? = null
 
     companion object {
@@ -149,21 +152,7 @@ class MusicControlWidget(
             // Radio state observers
             scope.launch {
                 radioManager.connectionState.collect { state ->
-                    if (getMusicSource() == MUSIC_SOURCE_RADIO) {
-                        Log.e(TAG, "Radio connection state update: $state")
-                        when (state) {
-                            is RadioManager.ConnectionState.Connected -> {
-                                clearErrorState()
-                                updateRadioPlaybackState(radioManager.playbackState.value)
-                            }
-                            is RadioManager.ConnectionState.Disconnected -> {
-                                updateErrorState("Radio disconnected")
-                            }
-                            is RadioManager.ConnectionState.Error -> {
-                                updateErrorState("Radio error")
-                            }
-                        }
-                    }
+                    handleRadioConnectionStateChange(state)
                 }
             }
 
@@ -171,7 +160,9 @@ class MusicControlWidget(
                 radioManager.playbackState.collect { state ->
                     if (getMusicSource() == MUSIC_SOURCE_RADIO) {
                         Log.e(TAG, "Radio playback state update received: $state")
-                        if (radioManager.connectionState.value is RadioManager.ConnectionState.Connected) {
+                        // Only update UI if we're connected or have cached state
+                        if (radioManager.connectionState.value is RadioManager.ConnectionState.Connected
+                            || lastRadioStation != null) {
                             updateRadioPlaybackState(state)
                         }
                     }
@@ -236,6 +227,10 @@ class MusicControlWidget(
                         radioManager.playStation(station)
                     }
                 }
+            }
+            RadioManager.PlaybackState.Loading -> {
+                // Do nothing while loading - button should be disabled anyway
+                Log.d(TAG, "Ignoring play/pause while station is loading")
             }
         }
     }
@@ -385,6 +380,13 @@ class MusicControlWidget(
         binding?.apply {
             when (state) {
                 is RadioManager.PlaybackState.Playing -> {
+                    // Cache state when playing
+                    lastRadioStation = radioManager.currentStation.value
+                    wasRadioPlaying = state.isPlaying
+
+                    // Hide loading indicator
+                    getLoadingIndicator()?.visibility = View.GONE
+
                     // Handle station logo/artwork
                     if (config.showArtwork) {
                         radioManager.currentStation.value?.let { station ->
@@ -438,8 +440,53 @@ class MusicControlWidget(
                     // Hide progress bar for radio
                     getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.visibility = View.GONE
                 }
+
+                RadioManager.PlaybackState.Loading -> {
+                    // Show loading indicator
+                    getLoadingIndicator()?.visibility = View.VISIBLE
+
+                    // Keep current station name but show loading state
+                    getTrackNameView()?.apply {
+                        text = "Loading station..."
+                        isSelected = true
+                    }
+                    getArtistNameView()?.apply {
+                        text = radioManager.currentStation.value?.name ?: ""
+                        isSelected = true
+                    }
+
+                    // Disable controls during loading
+                    getPlayPauseButton()?.apply {
+                        setImageResource(R.drawable.ic_music_pause)
+                        isEnabled = false
+                        isClickable = false
+                        isFocusable = false
+                        alpha = 0.5f
+                    }
+
+                    // Hide navigation buttons
+                    getPreviousButton()?.visibility = View.GONE
+                    getNextButton()?.visibility = View.GONE
+
+                    // Hide progress bar
+                    getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.visibility = View.GONE
+
+                    // Keep artwork but dim it during loading
+                    getTrackArtworkBackground()?.apply {
+                        if (visibility == View.VISIBLE) {
+                            animate()
+                                .alpha(0.5f)
+                                .setDuration(300)
+                                .start()
+                        }
+                    }
+                }
+
                 RadioManager.PlaybackState.Idle -> {
-                    // Clear artwork
+                    // Hide loading indicator
+                    getLoadingIndicator()?.visibility = View.GONE
+
+                    // Clear artwork with animation
                     getTrackArtworkBackground()?.apply {
                         animate()
                             .alpha(0f)
@@ -451,23 +498,63 @@ class MusicControlWidget(
                             .start()
                     }
 
+                    // Use cached state or get from preferences
+                    val station = lastRadioStation ?: radioPreferences.getLastStation()
+
                     getTrackNameView()?.apply {
-                        text = "Select a radio station"
-                        isSelected = false
+                        text = station?.name ?: "Select a radio station"
+                        isSelected = station != null
                     }
                     getArtistNameView()?.apply {
-                        text = ""
-                        isSelected = false
+                        text = station?.genre ?: ""
+                        isSelected = station != null
                     }
                     getPlayPauseButton()?.apply {
                         setImageResource(R.drawable.ic_music_play)
                         isEnabled = true
                         isClickable = true
                         isFocusable = true
+                        alpha = 1.0f
                     }
                     getPreviousButton()?.visibility = View.GONE
                     getNextButton()?.visibility = View.GONE
                     getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.visibility = View.GONE
+                }
+            }
+        }
+    }
+
+    private fun handleRadioConnectionStateChange(state: RadioManager.ConnectionState) {
+        if (getMusicSource() == MUSIC_SOURCE_RADIO) {
+            Log.e(TAG, "Radio connection state update: $state")
+            when (state) {
+                is RadioManager.ConnectionState.Connected -> {
+                    clearErrorState()
+                    // No need to clear cached state here
+                }
+                is RadioManager.ConnectionState.Disconnected -> {
+                    // Cache the current state before disconnect
+                    if (radioManager.currentStation.value != null) {
+                        lastRadioStation = radioManager.currentStation.value
+                        wasRadioPlaying = (radioManager.playbackState.value as? RadioManager.PlaybackState.Playing)?.isPlaying ?: false
+                    }
+
+                    // Instead of showing error, show the last known state
+                    binding?.apply {
+                        getTrackNameView()?.apply {
+                            text = lastRadioStation?.name ?: "Select a radio station"
+                            isSelected = lastRadioStation != null
+                        }
+                        getArtistNameView()?.apply {
+                            text = lastRadioStation?.genre ?: ""
+                            isSelected = lastRadioStation != null
+                        }
+                    }
+                    // Keep buttons enabled
+                    updateButtonState(true)
+                }
+                is RadioManager.ConnectionState.Error -> {
+                    updateErrorState("Radio error")
                 }
             }
         }

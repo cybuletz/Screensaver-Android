@@ -22,6 +22,8 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import com.example.screensaver.data.AppDataManager
 import androidx.preference.PreferenceManager
+import com.example.screensaver.music.RadioManager
+import com.example.screensaver.music.RadioPreferences
 import com.example.screensaver.music.SpotifyManager
 import com.example.screensaver.music.SpotifyPreferences
 import java.io.File
@@ -34,20 +36,19 @@ import kotlinx.coroutines.NonCancellable
 @HiltAndroidApp
 class ScreensaverApplication : Application() {
 
-    @Inject
-    lateinit var preferences: AppPreferences
+    @Inject lateinit var preferences: AppPreferences
 
-    @Inject
-    lateinit var photoSourceState: PhotoSourceState
+    @Inject lateinit var photoSourceState: PhotoSourceState
 
-    @Inject
-    lateinit var appDataManager: AppDataManager
+    @Inject lateinit var appDataManager: AppDataManager
 
-    @Inject
-    lateinit var spotifyManager: SpotifyManager
+    @Inject lateinit var spotifyManager: SpotifyManager
 
-    @Inject
-    lateinit var spotifyPreferences: SpotifyPreferences
+    @Inject lateinit var spotifyPreferences: SpotifyPreferences
+
+    @Inject lateinit var radioManager: RadioManager
+
+    @Inject lateinit var radioPreferences: RadioPreferences
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var firebaseAnalytics: FirebaseAnalytics
@@ -79,6 +80,7 @@ class ScreensaverApplication : Application() {
         initializePhotoSourceState()
         initializeAppData()
         initializeSpotify()
+        initializeRadio()
         logApplicationStart()
     }
 
@@ -235,6 +237,29 @@ class ScreensaverApplication : Application() {
                 )
             } catch (e: Exception) {
                 Timber.e(e, "Failed to initialize Spotify")
+                FirebaseCrashlytics.getInstance().recordException(e)
+            }
+        }
+    }
+
+    private fun initializeRadio() {
+        applicationScope.launch {
+            try {
+                // Initialize radio state
+                if (radioPreferences.isEnabled()) {
+                    radioManager.initializeState()
+                }
+                // Track in analytics
+                firebaseAnalytics.setUserProperty(
+                    "radio_enabled",
+                    radioPreferences.isEnabled().toString()
+                )
+                firebaseAnalytics.setUserProperty(
+                    "radio_was_playing",
+                    radioPreferences.wasPlaying().toString()
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize Radio")
                 FirebaseCrashlytics.getInstance().recordException(e)
             }
         }
