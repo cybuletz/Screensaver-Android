@@ -892,6 +892,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
                 currentJob = viewLifecycleOwner.lifecycleScope.launch {
                     try {
+                        var hasStartedLoading = false
+
                         // Play station first
                         radioManager.playStation(station)
 
@@ -902,14 +904,19 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                                     is RadioManager.PlaybackState.Playing -> {
                                         stationsAdapter.setLoadingState(null)
                                         radioPreferences.setLastStation(station)
+                                        radioPreferences.addToRecentStations(station)
                                         dialog.dismiss()
                                     }
                                     RadioManager.PlaybackState.Loading -> {
+                                        hasStartedLoading = true
                                         stationsAdapter.setLoadingState(station.id)
                                     }
                                     RadioManager.PlaybackState.Idle -> {
-                                        stationsAdapter.setLoadingState(null)
-                                        Toast.makeText(requireContext(), "Failed to load station", Toast.LENGTH_SHORT).show()
+                                        // Only show error if we've already started loading
+                                        if (hasStartedLoading) {
+                                            stationsAdapter.setLoadingState(null)
+                                            Toast.makeText(requireContext(), "Failed to load station", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
                             }
