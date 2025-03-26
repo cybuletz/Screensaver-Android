@@ -229,7 +229,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             setBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface))
         }
 
-        val rootView = view as CoordinatorLayout
+        // Create a new container for the ad
         adContainer = FrameLayout(requireContext()).apply {
             id = View.generateViewId()
             layoutParams = CoordinatorLayout.LayoutParams(
@@ -240,7 +240,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
             visibility = View.GONE
         }
-        rootView.addView(adContainer)
         coordinator.addView(adContainer)
 
         // Initialize ad manager for settings
@@ -283,7 +282,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         coordinator.addView(fab)
 
         return coordinator
-
     }
 
     private fun checkFeatureAccess(feature: FeatureManager.Feature): Boolean {

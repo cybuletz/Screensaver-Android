@@ -162,6 +162,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        _binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
         // Check if this is a cold start (savedInstanceState is null) and security is enabled
         if (savedInstanceState == null && securityPreferences.isSecurityEnabled) {
             Log.d(TAG, "Cold start detected - removing security settings")
@@ -180,7 +183,7 @@ class MainActivity : AppCompatActivity() {
         enableFullScreen()
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
-        // Initialize ad container (add this to your binding setup)
+        // Initialize ad container now that binding is set up
         adContainer = binding.adContainer
 
         // Initialize ad manager
@@ -255,6 +258,13 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
+        }
+    }
+
+    private fun ensureBinding() {
+        if (_binding == null) {
+            _binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
         }
     }
 
@@ -1117,14 +1127,6 @@ class MainActivity : AppCompatActivity() {
         // Keep setup message and legal links visible only on first launch
         binding.initialSetupMessage.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
         binding.legalLinksContainer.visibility = if (isFirstLaunch) View.VISIBLE else View.GONE
-    }
-
-    private fun ensureBinding() {
-        if (_binding == null) {
-            Log.d(TAG, "Binding was null, reinitializing")
-            _binding = ActivityMainBinding.inflate(layoutInflater)
-            setContentView(binding.root)
-        }
     }
 
     private fun checkSecurityWithCallback(onSuccess: () -> Unit) {
