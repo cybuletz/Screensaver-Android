@@ -28,6 +28,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.BitmapShader
 import android.graphics.Shader
+import kotlinx.coroutines.CompletableJob
+import kotlinx.coroutines.SupervisorJob
 
 class MusicControlWidget(
     private val container: ViewGroup,
@@ -39,7 +41,7 @@ class MusicControlWidget(
 ) : ScreenWidget {
     private var binding: MusicControlWidgetBinding? = null
     private var isVisible = false
-    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var progressUpdateJob: Job? = null
 
     private var currentTrackUri: String? = null
@@ -223,8 +225,16 @@ class MusicControlWidget(
                 if (state.isPlaying) radioManager.pause() else radioManager.resume()
             }
             RadioManager.PlaybackState.Idle -> {
-                radioPreferences.getLastStation()?.let { station ->
-                    radioManager.playStation(station)
+                // Check if we have a last station and radio was playing
+                if (radioPreferences.wasPlaying()) {
+                    radioPreferences.getLastStation()?.let { station ->
+                        radioManager.playStation(station)
+                    }
+                } else {
+                    // If no last station or wasn't playing, try to get any last station
+                    radioPreferences.getLastStation()?.let { station ->
+                        radioManager.playStation(station)
+                    }
                 }
             }
         }
@@ -535,6 +545,9 @@ class MusicControlWidget(
             Log.d(TAG, "Starting music widget cleanup")
             stopProgressUpdates()
 
+            // Cancel all coroutines
+            (scope.coroutineContext[Job] as? CompletableJob)?.cancel()
+
             // Clear artwork and its state
             binding?.getTrackArtworkBackground()?.apply {
                 animate().cancel()
@@ -542,6 +555,18 @@ class MusicControlWidget(
                 visibility = View.GONE
             }
             currentTrackUri = null
+
+            // Store radio state before disconnecting if it's the current source
+            if (getMusicSource() == MUSIC_SOURCE_RADIO) {
+                val wasPlaying = radioManager.playbackState.value is RadioManager.PlaybackState.Playing
+                radioPreferences.setWasPlaying(wasPlaying)
+                // Store current station if playing
+                if (wasPlaying) {
+                    radioManager.currentStation.value?.let { station ->
+                        radioPreferences.setLastStation(station)
+                    }
+                }
+            }
 
             when (getMusicSource()) {
                 MUSIC_SOURCE_SPOTIFY -> spotifyManager.disconnect()

@@ -131,14 +131,22 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.music_preferences, rootKey)
 
-        // Get the initial music source using the fragment's preference manager
-        currentMusicSource = preferenceManager.sharedPreferences?.getString("music_source", MUSIC_SOURCE_SPOTIFY)
-            ?: MUSIC_SOURCE_SPOTIFY
+        // Hide EVERYTHING first except music source
+        hideAllPreferencesExceptSource()
+
+        // Set initial music source to Spotify
+        currentMusicSource = MUSIC_SOURCE_SPOTIFY
+
+        // Get the music source from preferences if it exists
+        preferenceManager.sharedPreferences?.getString("music_source", MUSIC_SOURCE_SPOTIFY)?.let { savedSource ->
+            currentMusicSource = savedSource
+        }
+
+        // Force initial visibility update based on current source
+        updateVisiblePreferences(currentMusicSource)
 
         findPreference<ListPreference>("music_source")?.apply {
-            // Get initial music source from preferences
-            currentMusicSource = preferenceManager.sharedPreferences?.getString("music_source", MUSIC_SOURCE_SPOTIFY)
-                ?: MUSIC_SOURCE_SPOTIFY
+            value = currentMusicSource  // Set the current selection
 
             setOnPreferenceChangeListener { _, newValue ->
                 val newSource = newValue.toString()
@@ -174,6 +182,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         findPreference<Preference>("radio_station_search")?.isVisible = false
                         findPreference<Preference>("radio_favorites")?.isVisible = false
                         findPreference<Preference>("radio_recent")?.isVisible = false
+                        // Hide local music
+                        findPreference<Preference>("local_music_folder")?.isVisible = false
 
                         // Show Spotify switch but hide other options until enabled
                         findPreference<SwitchPreferenceCompat>("spotify_enabled")?.apply {
@@ -189,7 +199,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isVisible = false
                         findPreference<Preference>("spotify_login")?.isVisible = false
                         findPreference<Preference>("spotify_playlist")?.isVisible = false
+                        findPreference<Preference>("spotify_shuffle")?.isVisible = false  // Add this line
                         findPreference<Preference>("spotify_autoplay")?.isVisible = false
+                        // Hide local music
+                        findPreference<Preference>("local_music_folder")?.isVisible = false
 
                         // Show radio switch but hide other options until enabled
                         findPreference<SwitchPreferenceCompat>("radio_enabled")?.apply {
@@ -199,6 +212,21 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         findPreference<Preference>("radio_station_search")?.isVisible = false
                         findPreference<Preference>("radio_favorites")?.isVisible = false
                         findPreference<Preference>("radio_recent")?.isVisible = false
+                    }
+                    MUSIC_SOURCE_LOCAL -> {
+                        // Hide all Spotify options
+                        findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isVisible = false
+                        findPreference<Preference>("spotify_login")?.isVisible = false
+                        findPreference<Preference>("spotify_playlist")?.isVisible = false
+                        findPreference<Preference>("spotify_shuffle")?.isVisible = false  // Add this line
+                        findPreference<Preference>("spotify_autoplay")?.isVisible = false
+                        // Hide all radio options
+                        findPreference<SwitchPreferenceCompat>("radio_enabled")?.isVisible = false
+                        findPreference<Preference>("radio_station_search")?.isVisible = false
+                        findPreference<Preference>("radio_favorites")?.isVisible = false
+                        findPreference<Preference>("radio_recent")?.isVisible = false
+                        // Show local music
+                        findPreference<Preference>("local_music_folder")?.isVisible = true
                     }
                 }
 
@@ -221,6 +249,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             findPreference<Preference>("spotify_login")?.isVisible = enabled
             findPreference<Preference>("spotify_playlist")?.isVisible = enabled
             findPreference<Preference>("spotify_autoplay")?.isVisible = enabled
+            findPreference<Preference>("spotify_shuffle")?.isVisible = enabled  // Add this line
             onPreferenceChangeCallback?.invoke()
             true
         }
@@ -242,6 +271,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         // Check initial state for widget visibility
         widgetManager.updateMusicWidgetBasedOnSource()
     }
+
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -322,6 +352,24 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun hideAllPreferencesExceptSource() {
+        // Hide Spotify preferences
+        findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isVisible = false
+        findPreference<Preference>("spotify_login")?.isVisible = false
+        findPreference<Preference>("spotify_playlist")?.isVisible = false
+        findPreference<SwitchPreferenceCompat>("spotify_shuffle")?.isVisible = false
+        findPreference<SwitchPreferenceCompat>("spotify_autoplay")?.isVisible = false
+
+        // Hide Radio preferences
+        findPreference<SwitchPreferenceCompat>("radio_enabled")?.isVisible = false
+        findPreference<Preference>("radio_station_search")?.isVisible = false
+        findPreference<Preference>("radio_favorites")?.isVisible = false
+        findPreference<Preference>("radio_recent")?.isVisible = false
+
+        // Hide Local Music preferences
+        findPreference<Preference>("local_music_folder")?.isVisible = false
+    }
+
     private fun updateVisiblePreferences(musicSource: String) {
         Timber.d("Updating visible preferences for music source: $musicSource")
 
@@ -329,6 +377,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         findPreference<Preference>("spotify_enabled")?.isVisible = false
         findPreference<Preference>("spotify_login")?.isVisible = false
         findPreference<Preference>("spotify_playlist")?.isVisible = false
+        findPreference<Preference>("spotify_shuffle")?.isVisible = false  // Add this line
         findPreference<Preference>("spotify_autoplay")?.isVisible = false
         findPreference<Preference>("local_music_folder")?.isVisible = false
         findPreference<Preference>("radio_enabled")?.isVisible = false
@@ -345,6 +394,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                     val showSpotifyOptions = isChecked
                     findPreference<Preference>("spotify_login")?.isVisible = showSpotifyOptions
                     findPreference<Preference>("spotify_playlist")?.isVisible = showSpotifyOptions
+                    findPreference<Preference>("spotify_shuffle")?.isVisible = showSpotifyOptions  // Add this line
                     findPreference<Preference>("spotify_autoplay")?.isVisible = showSpotifyOptions
                 }
             }
@@ -362,9 +412,6 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                 findPreference<Preference>("local_music_folder")?.isVisible = true
             }
         }
-
-        // Force preference screen to redraw
-        preferenceScreen.notifyDependencyChange(false)
     }
 
     private fun setupSpotifyPreferences() {
@@ -400,7 +447,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                     // Hide Spotify options
                     findPreference<Preference>("spotify_login")?.isVisible = false
                     findPreference<Preference>("spotify_playlist")?.isVisible = false
-                    findPreference<Preference>("spotify_autoplay")?.isVisible = false
+                    findPreference<SwitchPreferenceCompat>("spotify_shuffle")?.isVisible = false
+                    findPreference<SwitchPreferenceCompat>("spotify_autoplay")?.isVisible = false
 
                     // Force widget update
                     widgetManager.updateMusicWidgetBasedOnSource()
@@ -729,14 +777,13 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
     }
 
     private fun setupRadioPreferences() {
-        // Radio Enable Switch
         findPreference<SwitchPreferenceCompat>("radio_enabled")?.apply {
             isChecked = radioPreferences.isEnabled()
             setOnPreferenceChangeListener { _, newValue ->
                 val enabled = newValue as Boolean
                 radioPreferences.setEnabled(enabled)
 
-                // Force immediate UI update
+                // Update visibility immediately
                 findPreference<Preference>("radio_station_search")?.isVisible = enabled
                 findPreference<Preference>("radio_favorites")?.isVisible = enabled
                 findPreference<Preference>("radio_recent")?.isVisible = enabled
@@ -744,7 +791,6 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                 if (!enabled) {
                     radioManager.disconnect()
                 } else {
-                    // Update music widget visibility when radio is enabled
                     widgetManager.updateMusicWidgetBasedOnSource()
                 }
                 true

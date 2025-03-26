@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,6 +23,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.InetAddress
 
 @Singleton
 class RadioManager @Inject constructor(
@@ -31,6 +33,10 @@ class RadioManager @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var mediaPlayer: MediaPlayer? = null
     private val client = OkHttpClient()
+
+    // Add these properties for server management
+    private var availableServers: List<String> = emptyList()
+    private var currentServerIndex = 0
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -43,7 +49,7 @@ class RadioManager @Inject constructor(
 
     companion object {
         private const val TAG = "RadioManager"
-        private const val BASE_URL = "https://de1.api.radio-browser.info/json"
+        private const val DNS_LOOKUP_HOST = "all.api.radio-browser.info"
     }
 
     // Internal data classes
@@ -71,12 +77,21 @@ class RadioManager @Inject constructor(
         ) : PlaybackState()
     }
 
+
     init {
         setupMediaPlayer()
-        // Only auto-play if radio is enabled and was playing
-        if (preferences.isEnabled() && preferences.wasPlaying()) {
-            preferences.getLastStation()?.let { lastStation ->
-                playStation(lastStation)
+        // Set initial connection state based on preferences
+        if (preferences.isEnabled()) {
+            _connectionState.value = ConnectionState.Connected  // Add this line
+            if (preferences.wasPlaying()) {
+                preferences.getLastStation()?.let { lastStation ->
+                    _currentStation.value = lastStation
+                    _playbackState.value = PlaybackState.Playing(
+                        stationName = lastStation.name,
+                        genre = lastStation.genre,
+                        isPlaying = false
+                    )
+                }
             }
         }
     }
@@ -112,24 +127,12 @@ class RadioManager @Inject constructor(
         }
     }
 
-    private fun updatePlaybackState(isPlaying: Boolean) {
-        val station = _currentStation.value
-        _playbackState.value = if (station != null) {
-            PlaybackState.Playing(
-                stationName = station.name,
-                genre = station.genre,
-                isPlaying = isPlaying
-            )
-        } else {
-            PlaybackState.Idle
-        }
-    }
-
     fun playStation(station: RadioStation) {
         Timber.d("Playing station: ${station.name}")
         scope.launch {
             try {
                 _currentStation.value = station
+                _connectionState.value = ConnectionState.Connected // Add this line
                 mediaPlayer?.apply {
                     reset()
                     setDataSource(station.url)
@@ -144,16 +147,62 @@ class RadioManager @Inject constructor(
         }
     }
 
-    fun resume() {
-        Timber.d("Resuming playback")
-        mediaPlayer?.start()
-        updatePlaybackState(true)
+    private fun updatePlaybackState(isPlaying: Boolean) {
+        val station = _currentStation.value
+        _playbackState.value = if (station != null) {
+            PlaybackState.Playing(
+                stationName = station.name,
+                genre = station.genre,
+                isPlaying = isPlaying
+            )
+        } else {
+            PlaybackState.Idle
+        }
     }
 
-    fun pause() {
-        Timber.d("Pausing playback")
-        mediaPlayer?.pause()
-        updatePlaybackState(false)
+    private suspend fun updateServersList() {
+        try {
+            val addresses = withContext(Dispatchers.IO) {
+                InetAddress.getAllByName(DNS_LOOKUP_HOST)
+            }
+            availableServers = addresses.mapNotNull { address ->
+                try {
+                    val hostname = address.canonicalHostName
+                    if (hostname.contains("api.radio-browser.info")) {
+                        "https://$hostname/json"
+                    } else null
+                } catch (e: Exception) {
+                    null
+                }
+            }.shuffled()
+
+            if (availableServers.isEmpty()) {
+                // Fallback servers
+                availableServers = listOf(
+                    "https://de1.api.radio-browser.info/json",
+                    "https://de2.api.radio-browser.info/json",
+                    "https://nl1.api.radio-browser.info/json"
+                ).shuffled()
+            }
+            Timber.d("Available radio servers: $availableServers")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to get radio servers list")
+            // Use fallback servers
+            availableServers = listOf(
+                "https://de1.api.radio-browser.info/json",
+                "https://de2.api.radio-browser.info/json",
+                "https://nl1.api.radio-browser.info/json"
+            ).shuffled()
+        }
+    }
+
+    fun resume() {
+        Timber.d("Resuming playback")
+        if (_connectionState.value !is ConnectionState.Connected) {
+            _connectionState.value = ConnectionState.Connected
+        }
+        mediaPlayer?.start()
+        updatePlaybackState(true)
     }
 
     fun disconnect() {
@@ -178,44 +227,88 @@ class RadioManager @Inject constructor(
     }
 
     fun tryAutoResume() {
-        if (preferences.isEnabled() && preferences.wasPlaying()) {
-            preferences.getLastStation()?.let { lastStation ->
-                Log.d(TAG, "Auto-resuming last station: ${lastStation.name}")
-                playStation(lastStation)
-            } ?: Log.d(TAG, "No last station to resume")
+        if (preferences.isEnabled()) {
+            _connectionState.value = ConnectionState.Connected
+            if (preferences.wasPlaying()) {
+                preferences.getLastStation()?.let { lastStation ->
+                    Timber.d("Auto-resuming last station: ${lastStation.name}")
+                    playStation(lastStation)
+                }
+            } else {
+                // Even if we weren't playing, set the last station as current
+                preferences.getLastStation()?.let { lastStation ->
+                    _currentStation.value = lastStation
+                    _playbackState.value = PlaybackState.Playing(
+                        stationName = lastStation.name,
+                        genre = lastStation.genre,
+                        isPlaying = false
+                    )
+                }
+            }
         }
+    }
+
+    fun pause() {
+        Timber.d("Pausing playback")
+        mediaPlayer?.pause()
+        updatePlaybackState(false)
     }
 
     fun searchStations(query: String, callback: (List<RadioStation>) -> Unit) {
         scope.launch(Dispatchers.IO) {
-            try {
-                val request = Request.Builder()
-                    .url("$BASE_URL/stations/search?name=$query&limit=30")
-                    .build()
+            if (availableServers.isEmpty()) {
+                updateServersList()
+            }
 
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw Exception("Search failed")
+            var lastError: Exception? = null
+            var success = false
 
-                    val stations = JSONArray(response.body!!.string()).let { json ->
-                        List(json.length()) { i ->
-                            val station = json.getJSONObject(i)
-                            RadioStation(
-                                id = station.getString("stationuuid"),
-                                name = station.getString("name"),
-                                url = station.getString("url_resolved"),
-                                genre = station.optString("tags").takeIf { it.isNotEmpty() },
-                                country = station.optString("country").takeIf { it.isNotEmpty() },
-                                favicon = station.optString("favicon").takeIf { it.isNotEmpty() }
-                            )
+            // Try each server until one works
+            for (i in availableServers.indices) {
+                if (success) break
+
+                try {
+                    val server = availableServers[(currentServerIndex + i) % availableServers.size]
+                    val request = Request.Builder()
+                        .url("$server/stations/search?name=$query&limit=30")
+                        .build()
+
+                    val response = client.newCall(request).execute()
+                    if (!response.isSuccessful) {
+                        continue
+                    }
+
+                    response.body?.string()?.let { responseBody ->
+                        val stations = JSONArray(responseBody).let { json ->
+                            List(json.length()) { j ->
+                                val station = json.getJSONObject(j)
+                                RadioStation(
+                                    id = station.getString("stationuuid"),
+                                    name = station.getString("name"),
+                                    url = station.getString("url_resolved"),
+                                    genre = station.optString("tags").takeIf { it.isNotEmpty() },
+                                    country = station.optString("country").takeIf { it.isNotEmpty() },
+                                    favicon = station.optString("favicon").takeIf { it.isNotEmpty() }
+                                )
+                            }
+                        }
+
+                        // Update the current working server index
+                        currentServerIndex = (currentServerIndex + i) % availableServers.size
+                        success = true
+                        launch(Dispatchers.Main) {
+                            callback(stations)
                         }
                     }
-
-                    launch(Dispatchers.Main) {
-                        callback(stations)
-                    }
+                } catch (e: Exception) {
+                    lastError = e
+                    Timber.e(e, "Error with server ${availableServers[(currentServerIndex + i) % availableServers.size]}")
                 }
-            } catch (e: Exception) {
-                Timber.e(e, "Error searching stations")
+            }
+
+            // If we get here and success is false, all servers failed
+            if (!success) {
+                Timber.e(lastError, "All radio servers failed")
                 launch(Dispatchers.Main) {
                     callback(emptyList())
                 }

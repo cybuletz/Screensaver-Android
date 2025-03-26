@@ -222,6 +222,7 @@ class MainActivity : AppCompatActivity() {
             observeWidgetStates()
             setupKeepScreenOnObserver()
             updateOrientation()
+            initializeMusicSources()
 
             if (brightnessManager.isCustomBrightnessEnabled()) {
                 brightnessManager.startMonitoring(window)
@@ -231,6 +232,26 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
+        }
+    }
+
+    private fun initializeMusicSources() {
+        val musicSource = PreferenceManager.getDefaultSharedPreferences(this)
+            .getString("music_source", "spotify") ?: "spotify"
+
+        when (musicSource) {
+            "spotify" -> {
+                if (spotifyPreferences.isEnabled() && spotifyManager.isSpotifyInstalled()) {
+                    spotifyManager.checkAndRefreshTokenIfNeeded()
+                }
+            }
+            "radio" -> {
+                if (radioPreferences.isEnabled()) {
+                    lifecycleScope.launch {
+                        radioManager.tryAutoResume()
+                    }
+                }
+            }
         }
     }
 
@@ -697,6 +718,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Add Radio playback state observer
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                radioManager.playbackState.collect { state ->
+                    updateKeepScreenOn()
+                }
+            }
+        }
+
         // Observe preference changes
         PreferenceManager.getDefaultSharedPreferences(this)
             .registerOnSharedPreferenceChangeListener { _, key ->
@@ -827,10 +857,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         when {
             navController.currentDestination?.id == R.id.settingsFragment -> {
                 navController.navigateUp()
+                super.onBackPressed()
             }
             securityPreferences.isSecurityEnabled -> {
                 // Only check security when enabled
@@ -844,11 +876,13 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     moveTaskToBack(true)
+                    super.onBackPressed()
                 }
             }
             else -> {
                 // No security, just minimize immediately
                 moveTaskToBack(true)
+                super.onBackPressed()
             }
         }
     }
@@ -1149,14 +1183,29 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "Removing security settings on minimize")
             securityPreferences.isSecurityEnabled = false
             secureStorage.clearSecurityCredentials()
-
-            // Also clear the minimize flag since we've handled it
             secureStorage.setRemoveSecurityOnMinimize(false)
             Log.d(TAG, "Security settings have been removed on minimize")
         }
 
+        // Only disconnect music sources if not changing configurations
         if (!isChangingConfigurations) {
-            spotifyManager.disconnect()
+            when (PreferenceManager.getDefaultSharedPreferences(this)
+                .getString("music_source", "spotify")) {
+                "spotify" -> spotifyManager.disconnect()
+                "radio" -> {
+                    // Store radio state before disconnecting
+                    val wasPlaying = radioManager.playbackState.value is RadioManager.PlaybackState.Playing
+                    radioPreferences.setWasPlaying(wasPlaying)
+                    // Store current station if playing
+                    if (wasPlaying) {
+                        (radioManager.playbackState.value as? RadioManager.PlaybackState.Playing)?.let { state ->
+                            radioManager.currentStation.value?.let { station ->
+                                radioPreferences.setLastStation(station)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1177,6 +1226,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         setupFullScreen()
         updateKeepScreenOn()
+        initializeMusicSources()
 
         // Handle music sources auto-resume
         when (PreferenceManager.getDefaultSharedPreferences(this).getString("music_source", "spotify")) {
