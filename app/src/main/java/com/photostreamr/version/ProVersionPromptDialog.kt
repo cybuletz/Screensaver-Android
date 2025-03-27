@@ -91,7 +91,14 @@ class ProVersionPromptDialog : DialogFragment() {
         cancelButton = view.findViewById<Button>(R.id.cancel_button)
 
         upgradeButton.setOnClickListener {
-            initiateProPurchase()
+            // Show immediate visual feedback
+            updateLoadingState(true)
+            upgradeButton.isEnabled = false
+
+            // Add a small delay to ensure UI updates before launching billing flow
+            Handler(Looper.getMainLooper()).postDelayed({
+                initiateProPurchase()
+            }, 100)
         }
 
         cancelButton.setOnClickListener {
@@ -194,7 +201,6 @@ class ProVersionPromptDialog : DialogFragment() {
     }
 
     private fun initiateProPurchase() {
-        updateLoadingState(true)
         billingRepository.launchBillingFlow(requireActivity())
     }
 }
