@@ -132,7 +132,7 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data
-                    android:scheme="screensaver-spotify"
+                    android:scheme="photostreamr-spotify"
                     android:host="callback"/>
             </intent-filter>
         </activity>
@@ -147,7 +147,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="screensaver-spotify"
+                    android:scheme="photostreamr-spotify"
                     android:host="callback"/>
             </intent-filter>
         </activity>
@@ -226,6 +226,8 @@
         <meta-data
             android:name="com.photostreamr.glide.PhotosGlideModule"
             android:value="GlideModule" />
+
+
 
     </application>
 </manifest>

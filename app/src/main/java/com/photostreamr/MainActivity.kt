@@ -68,7 +68,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 
-@Singleton
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private var _binding: ActivityMainBinding? = null
     private val binding get() = _binding!!
@@ -232,9 +232,25 @@ class MainActivity : AppCompatActivity() {
         // Initialize ad container now that binding is set up
         adContainer = binding.adContainer
 
-        // Initialize ad manager
-        adManager.initialize()
-        adManager.setupMainActivityAd(adContainer)
+        // Initialize ad manager - FIX: Wrap in try-catch and add null check for container
+        try {
+            adManager.initialize()
+            // Only setup ads if container exists
+            if (adContainer != null && !isDestroyed) {
+                // Post to main thread to ensure view is ready
+                adContainer.post {
+                    try {
+                        if (adContainer.isAttachedToWindow) {
+                            adManager.setupMainActivityAd(adContainer)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error setting up ad container", e)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing ad manager", e)
+        }
 
         if (securityPreferences.isSecurityEnabled) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1445,6 +1461,9 @@ class MainActivity : AppCompatActivity() {
         try {
             isDestroyed = true
 
+            // Call ad cleanup BEFORE nulling bindings
+            adManager.destroyAds()
+
             viewLifecycleOwner?.lifecycleScope?.launch(Dispatchers.Main) {
                 withContext(NonCancellable) {
                     photoDisplayManager.cleanup()
@@ -1459,15 +1478,12 @@ class MainActivity : AppCompatActivity() {
             _navController = null
             widgetManager.cleanup()
             currentActivity = null
-            adManager.destroyAds()
-            super.onDestroy()
 
+            super.onDestroy()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onDestroy", e)
             currentActivity = null
-            adManager.destroyAds()
             super.onDestroy()
-
         }
     }
 

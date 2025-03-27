@@ -4,8 +4,10 @@ import android.app.Activity
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import com.photostreamr.version.AppVersionManager
 import com.google.android.gms.ads.AdError
@@ -36,8 +38,8 @@ class AdManager @Inject constructor(
         private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
 
         // Production ad units - replace with your actual ad unit IDs
-        private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111"
-        private const val PRODUCTION_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
+        private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY"
+        private const val PRODUCTION_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ"
 
         // Auto-detect whether we're in debug or release mode
         private val IS_DEBUG = BuildConfig.DEBUG
@@ -140,9 +142,9 @@ class AdManager @Inject constructor(
             })
     }
 
-    fun setupMainActivityAd(container: FrameLayout) {
-        if (appVersionManager.isProVersion()) {
-            Log.d(TAG, "Pro version, not showing ads")
+    fun setupMainActivityAd(container: FrameLayout?) {
+        if (appVersionManager.isProVersion() || container == null) {
+            Log.d(TAG, "Pro version or null container, not showing ads")
             return
         }
 
@@ -151,31 +153,68 @@ class AdManager @Inject constructor(
                 initialize()
             }
 
+            // Get the ad size before creating the AdView
+            val adSize = getAdSizeForContainer(container)
+
+            // Create new AdView with the correct size
             mainAdView = AdView(context).apply {
-                setAdUnitId(BANNER_AD_UNIT_ID)
-                setAdSize(AdSize.BANNER)
+                setAdSize(adSize)  // Use setter method instead of property assignment
+                setAdUnitId(BANNER_AD_UNIT_ID)  // Use setter method instead of property assignment
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         Log.d(TAG, "Main activity ad loaded")
-                        container.visibility = ViewGroup.VISIBLE
+                        container.post {
+                            if (container.isAttachedToWindow) {
+                                container.visibility = ViewGroup.VISIBLE
+                            }
+                        }
                     }
 
                     override fun onAdFailedToLoad(error: LoadAdError) {
                         Log.e(TAG, "Main activity ad failed to load: ${error.message}")
-                        container.visibility = ViewGroup.GONE
+                        container.post {
+                            if (container.isAttachedToWindow) {
+                                container.visibility = ViewGroup.GONE
+                            }
+                        }
                     }
                 }
             }
 
-            container.removeAllViews()
-            container.addView(mainAdView)
-            container.visibility = ViewGroup.GONE
+            container.post {
+                try {
+                    if (container.isAttachedToWindow) {
+                        container.removeAllViews()
+                        container.addView(mainAdView)
+                        container.visibility = ViewGroup.GONE
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error setting up ad container view", e)
+                }
+            }
 
-            // Start the timer for periodic ad display
+            // Schedule ad display
             scheduleAdDisplay()
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up main activity ad", e)
         }
+    }
+
+    // Helper method to calculate the optimal ad size
+    private fun getAdSizeForContainer(container: FrameLayout): AdSize {
+        val display = (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
+        val outMetrics = DisplayMetrics()
+        display.getMetrics(outMetrics)
+
+        val density = outMetrics.density
+
+        var adWidthPixels = container.width.toFloat()
+        if (adWidthPixels == 0f) {
+            adWidthPixels = outMetrics.widthPixels.toFloat()
+        }
+
+        val adWidth = (adWidthPixels / density).toInt()
+        return AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, adWidth)
     }
 
     fun setupSettingsFragmentAd(container: FrameLayout) {

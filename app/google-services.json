@@ -1,26 +1,44 @@
 {
   "project_info": {
-    "project_number": "447081188401",
-    "project_id": "screensaver-df25d",
-    "storage_bucket": "screensaver-df25d.firebasestorage.app"
+    "project_number": "197175025747",
+    "project_id": "screensaver-448519",
+    "storage_bucket": "screensaver-448519.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:447081188401:android:c8c51c12fcb49632d11910",
+        "mobilesdk_app_id": "1:197175025747:android:b7b1d1efb570ea04d4e6a6",
         "android_client_info": {
           "package_name": "com.photostreamr"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "197175025747-e4orscrpk62hvv0bq1h2lj58qib0sork.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.photostreamr",
+            "certificate_hash": "9237d0283bc4ec1f201a19454dfeeeaae9fcd7a2"
+          }
+        },
+        {
+          "client_id": "197175025747-m0h2qclr7cvdssicdkhcp1aqvv416cgn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyCndtZ6Ch_Y3X27KHiqHWbyimZZjjRV6z4"
+          "current_key": "AIzaSyAqpw5LySbS3G7Tl73g8UrD2Erv5t4nYN0"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "197175025747-m0h2qclr7cvdssicdkhcp1aqvv416cgn.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

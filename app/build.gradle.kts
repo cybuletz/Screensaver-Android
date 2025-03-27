@@ -1,6 +1,3 @@
-import java.text.SimpleDateFormat
-import java.util.Date
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -32,7 +29,7 @@ val currentTimeMillis = System.currentTimeMillis()
 // Use the time in seconds (or milliseconds) as the base for versionCode
 val autoVersionCode = (currentTimeMillis / 100000000).toInt()
 
-val autoVersionName = "2.0.${autoVersionCode}"
+val autoVersionName = "2.1.0.${autoVersionCode}"
 
 android {
     namespace = "com.photostreamr"
@@ -42,13 +39,12 @@ android {
         applicationId = "com.photostreamr"
         minSdk = 26
         targetSdk = 34
-        versionCode = 17436
+        versionCode = 17441
         versionName = autoVersionName
         manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
         manifestPlaceholders["redirectSchemeName"] = "photostreamr-spotify"
         manifestPlaceholders["redirectHostName"] = "callback"
     }
-
 
     signingConfigs {
         getByName("debug") {
