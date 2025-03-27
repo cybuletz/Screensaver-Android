@@ -60,7 +60,6 @@ import com.photostreamr.version.FeatureManager
 import com.photostreamr.version.ProVersionPromptDialog
 import android.widget.FrameLayout
 import com.photostreamr.R
-import com.photostreamr.ui.settings.DeveloperSettingsDialogFragment
 
 
 @AndroidEntryPoint
@@ -409,15 +408,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     SecurityPreferenceDialog.newInstance()
                         .show(childFragmentManager, "security_settings")
                 }
-                true
-            }
-            "developer_settings" -> {
-                // Option 1: Launch as an activity
-                // startActivity(Intent(requireContext(), DeveloperSettingsActivity::class.java))
-
-                // Option 2: Show as dialog fragment
-                DeveloperSettingsDialogFragment.newInstance()
-                    .show(childFragmentManager, "developer_settings_dialog")
                 true
             }
             else -> super.onPreferenceTreeClick(preference)

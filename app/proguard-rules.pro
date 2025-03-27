@@ -29,6 +29,10 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
+# Billing Library
+-keep class com.android.billingclient.** {*;}
+-keep interface com.android.billingclient.** {*;}
+
 # Hilt and Dagger rules
 -keep class dagger.** { *; }
 -keep class javax.inject.** { *; }

@@ -778,7 +778,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
                 // Return to appropriate activity
                 if (intent.getStringExtra("parent_activity") ==
-                    "com.example.photostreamr.photos.PhotoManagerActivity") {
+                    "com.photostreamr.photos.PhotoManagerActivity") {
                     setResult(Activity.RESULT_OK)
                     finish()
                 } else {
@@ -829,7 +829,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
     override fun finish() {
         // Get the parent activity from the intent
         val parentActivity = intent.getStringExtra("parent_activity")
-        if (parentActivity == "com.example.photostreamr.photos.PhotoManagerActivity") {
+        if (parentActivity == "com.photostreamr.photos.PhotoManagerActivity") {
             // Return to PhotoManagerActivity
             navigateUpTo(Intent(this, PhotoManagerActivity::class.java))
         } else {

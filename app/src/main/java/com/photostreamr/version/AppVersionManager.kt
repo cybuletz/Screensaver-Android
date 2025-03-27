@@ -41,7 +41,6 @@ class AppVersionManager @Inject constructor(
         private const val KEY_PRO_PURCHASE_TIME = "pro_purchase_time"
         private const val KEY_LAST_AD_SHOWN_TIME = "last_ad_shown_time"
         private const val DEFAULT_AD_INTERVAL = 10 * 60 * 1000L // 10 minutes in milliseconds
-        private const val KEY_DEV_ADS_DISABLED = "development_ads_disabled"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val ENCRYPTION_KEY_ALIAS = "ProVersionEncryptionKey"
         private const val ENCRYPTION_BLOCK_MODE = KeyProperties.BLOCK_MODE_GCM
@@ -94,10 +93,7 @@ class AppVersionManager @Inject constructor(
                     is BillingRepository.PurchaseStatus.NotPurchased,
                     is BillingRepository.PurchaseStatus.Invalid,
                     is BillingRepository.PurchaseStatus.Failed -> {
-                        // Only downgrade if we're not in development testing mode
-                        if (!isDevelopmentTestingMode()) {
-                            updateProStatusFromBilling(false)
-                        }
+                        updateProStatusFromBilling(false)
                     }
                     else -> {
                         // For other states (Pending, Canceled, Unknown), don't change the current state
@@ -128,31 +124,21 @@ class AppVersionManager @Inject constructor(
 
             _versionState.value = VersionState.Pro
         } else {
-            // Only clear pro status if we're not in development mode
-            if (!isDevelopmentTestingMode()) {
-                preferences.edit()
-                    .putBoolean(KEY_IS_PRO_VERSION, false)
-                    .remove(KEY_PRO_PURCHASE_TIME)
-                    .apply()
+            preferences.edit()
+                .putBoolean(KEY_IS_PRO_VERSION, false)
+                .remove(KEY_PRO_PURCHASE_TIME)
+                .apply()
 
-                securePreferences.edit()
-                    .remove(KEY_PRO_VERSION_VERIFICATION)
-                    .apply()
+            securePreferences.edit()
+                .remove(KEY_PRO_VERSION_VERIFICATION)
+                .apply()
 
-                _versionState.value = VersionState.Free
-            }
+            _versionState.value = VersionState.Free
         }
     }
 
     private fun loadVersionState() {
         try {
-            // Check for development testing mode first
-            if (isDevelopmentTestingMode()) {
-                val isDeveloperPro = preferences.getBoolean("developer_pro_mode", false)
-                _versionState.value = if (isDeveloperPro) VersionState.Pro else VersionState.Free
-                return
-            }
-
             // Normal production operation - verify stored status
             val storedIsPro = preferences.getBoolean(KEY_IS_PRO_VERSION, false)
             val verificationEncrypted = securePreferences.getString(KEY_PRO_VERSION_VERIFICATION, null)
@@ -203,97 +189,13 @@ class AppVersionManager @Inject constructor(
         }
     }
 
-    fun shouldSkipVerificationInTestMode(): Boolean {
-        if (!isDebugBuild() || !isDevelopmentTestingMode()) {
-            return false // Only skip in debug build and test mode
-        }
-
-        val devPrefs = context.getSharedPreferences("developer_settings", Context.MODE_PRIVATE)
-        return devPrefs.getBoolean("skip_purchase_verification", true)
-    }
-
     fun isProVersion(): Boolean = _versionState.value is VersionState.Pro
 
-    fun enableDevelopmentTesting() {
-        if (isDebugBuild()) {
-            preferences.edit()
-                .putBoolean("development_testing_mode", true)
-                .apply()
-
-            // Log the change for debugging
-            Timber.d("Development testing mode enabled")
-        }
-    }
-
-    fun setProVersionForDevelopment(isPro: Boolean) {
-        // This should only work in debug builds
-        if (isDebugBuild()) {
-            // Use both preferences and state flow for immediate effect
-            preferences.edit()
-                .putBoolean("developer_pro_mode", isPro)
-                .putBoolean("development_testing_mode", true)
-                .apply()
-
-            // Update state immediately
-            _versionState.value = if (isPro) VersionState.Pro else VersionState.Free
-
-            // Log the change for debugging
-            Timber.d("Development testing mode enabled: Pro=$isPro")
-        }
-    }
-
-    fun disableDevelopmentTesting() {
-        if (isDebugBuild()) {
-            preferences.edit()
-                .putBoolean("development_testing_mode", false)
-                .apply()
-
-            // Reload actual state from billing
-            billingRepository.verifyPurchaseStatus()
-            loadVersionState()
-            Timber.d("Development testing mode disabled")
-        }
-    }
-
-    fun isDevelopmentTestingMode(): Boolean {
-        return isDebugBuild() && preferences.getBoolean("development_testing_mode", false)
-    }
-
-    fun isDebugBuild(): Boolean {
-        return try {
-            val applicationInfo = context.applicationInfo
-            (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
-        } catch (e: Exception) {
-            Timber.e(e, "Error checking debug status")
-            false
-        }
-    }
-
-    fun setDevAdsDisabled(disabled: Boolean) {
-        if (isDebugBuild()) {
-            preferences.edit()
-                .putBoolean(KEY_DEV_ADS_DISABLED, disabled)
-                .apply()
-
-            // Log the change
-            Timber.d("Development ads disabled: $disabled")
-        }
-    }
-
-    fun areDevAdsDisabled(): Boolean {
-        return isDebugBuild() &&
-                isDevelopmentTestingMode() &&
-                preferences.getBoolean(KEY_DEV_ADS_DISABLED, false)
-    }
-
-
-
     fun shouldShowAd(): Boolean {
-        // Don't show ads for Pro users (existing behavior)
-        // Don't show ads if in development mode with ads explicitly disabled (new behavior)
-        if (isProVersion() || areDevAdsDisabled()) return false
+        // Don't show ads for Pro users
+        if (isProVersion()) return false
 
-        // Regular ad timing logic for free users (existing behavior)
+        // Regular ad timing logic for free users
         val currentTime = System.currentTimeMillis()
         val lastAdShownTime = preferences.getLong(KEY_LAST_AD_SHOWN_TIME, 0L)
         val adInterval = preferences.getLong("ad_interval", DEFAULT_AD_INTERVAL)

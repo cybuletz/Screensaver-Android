@@ -26,12 +26,6 @@ class ProVersionPromptManager @Inject constructor(
         // Don't show if already Pro version
         if (appVersionManager.isProVersion()) return false
 
-        // Don't show in development testing mode with ads disabled
-        if (appVersionManager.isDevelopmentTestingMode() &&
-            preferences.getBoolean("development_ads_disabled", false)) {
-            return false
-        }
-
         // Check app launch count
         val launchCount = preferences.getInt(KEY_APP_LAUNCH_COUNT, 0)
         if (launchCount < MIN_APP_LAUNCHES) {

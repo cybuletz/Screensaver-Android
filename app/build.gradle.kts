@@ -1,3 +1,6 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,22 +15,40 @@ kapt {
     correctErrorTypes = true
 }
 
+
+// Use ProcessBuilder to get commit count for versionCode
+val commitCount: Int = try {
+    val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+        .redirectErrorStream(true)
+        .start()
+    process.inputStream.bufferedReader().readText().trim().toInt()
+} catch (e: Exception) {
+    0 // If git fails, set commit count to 0
+}
+
+// Get current time in milliseconds since epoch
+val currentTimeMillis = System.currentTimeMillis()
+
+// Use the time in seconds (or milliseconds) as the base for versionCode
+val autoVersionCode = (currentTimeMillis / 100000000).toInt()
+
+val autoVersionName = "2.0.${autoVersionCode}"
+
 android {
     namespace = "com.photostreamr"
     compileSdk = 34
 
-    android {
-        defaultConfig {
-            applicationId = "com.photostreamr"
-            minSdk = 26
-            targetSdk = 34
-            versionCode = 1
-            versionName = "1.0"
-            manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
-            manifestPlaceholders["redirectSchemeName"] = "photostreamr-spotify"
-            manifestPlaceholders["redirectHostName"] = "callback"
-        }
+    defaultConfig {
+        applicationId = "com.photostreamr"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 17432
+        versionName = autoVersionName
+        manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
+        manifestPlaceholders["redirectSchemeName"] = "photostreamr-spotify"
+        manifestPlaceholders["redirectHostName"] = "callback"
     }
+
 
     signingConfigs {
         getByName("debug") {

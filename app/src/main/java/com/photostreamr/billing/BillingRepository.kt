@@ -5,8 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Handler
-import android.os.Looper
+import android.widget.Toast
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.android.billingclient.api.*
@@ -21,7 +20,6 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
-import javax.inject.Provider
 import dagger.Lazy
 
 @Singleton
@@ -45,10 +43,6 @@ class BillingRepository @Inject constructor(
     companion object {
         // Product IDs
         const val PRO_VERSION_PRODUCT_ID = "com.photostreamr.pro"
-
-        // Verification salts (change these to random strings in production)
-        private const val VERIFICATION_SALT_1 = "a1b2c3d4e5f6g7h8i9j0"
-        private const val VERIFICATION_SALT_2 = "z9y8x7w6v5u4t3s2r1q0"
     }
 
     private val _purchaseStatus = MutableStateFlow<PurchaseStatus>(PurchaseStatus.NotPurchased)
@@ -74,13 +68,6 @@ class BillingRepository @Inject constructor(
             IntentFilter("com.photostreamr.ACTION_REFRESH_PURCHASES"),
             Context.RECEIVER_NOT_EXPORTED
         )
-    }
-
-    var skipVerificationInTestMode = true
-        private set  // Only this class can modify
-
-    fun setSkipVerificationInTestMode(skip: Boolean) {
-        skipVerificationInTestMode = skip
     }
 
     fun connectToPlayBilling() {
@@ -121,7 +108,6 @@ class BillingRepository @Inject constructor(
                 )
             )
             .build()
-
 
         billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
             if (billingResult.responseCode == BillingResponseCode.OK) {
@@ -196,18 +182,12 @@ class BillingRepository @Inject constructor(
             if (purchase.products.contains(PRO_VERSION_PRODUCT_ID)) {
                 when (purchase.purchaseState) {
                     Purchase.PurchaseState.PURCHASED -> {
-                        if (verifyValidSignature(purchase)) {
-                            if (purchase.isAcknowledged) {
-                                Timber.d("Pro version purchase is valid and acknowledged")
-                                _purchaseStatus.value = PurchaseStatus.Purchased(purchase)
-                                savePurchaseState(true)
-                            } else {
-                                acknowledgePurchase(purchase)
-                            }
+                        if (purchase.isAcknowledged) {
+                            Timber.d("Pro version purchase is valid and acknowledged")
+                            _purchaseStatus.value = PurchaseStatus.Purchased(purchase)
+                            savePurchaseState(true)
                         } else {
-                            Timber.w("Purchase signature verification failed")
-                            _purchaseStatus.value = PurchaseStatus.Invalid(purchase)
-                            savePurchaseState(false)
+                            acknowledgePurchase(purchase)
                         }
                     }
                     Purchase.PurchaseState.PENDING -> {
@@ -251,76 +231,38 @@ class BillingRepository @Inject constructor(
     }
 
     fun launchBillingFlow(activity: Activity) {
-        val productDetails = proVersionDetails
-        if (productDetails != null) {
-            val productDetailsParamsList = listOf(
-                BillingFlowParams.ProductDetailsParams.newBuilder()
-                    .setProductDetails(productDetails)
-                    .build()
-            )
-
-            val billingFlowParams = BillingFlowParams.newBuilder()
-                .setProductDetailsParamsList(productDetailsParamsList)
-                .build()
-
-            Timber.d("Launching billing flow for Pro version")
-            billingClient.launchBillingFlow(activity, billingFlowParams)
-        } else {
-            Timber.e("Unable to launch billing flow. Product details not loaded.")
-            _purchaseStatus.value = PurchaseStatus.Failed(
-                BillingResult.newBuilder()
-                    .setResponseCode(BillingResponseCode.ERROR)
-                    .setDebugMessage("Product details not available")
-                    .build()
-            )
-            queryProductDetails() // Try to fetch product details again
-        }
-    }
-
-    private fun verifyValidSignature(purchase: Purchase): Boolean {
         try {
-            // For testing only - check if we're in a debug build
-            if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-                // In debug mode, check if testing is enabled in developer settings
-                val devPrefs = context.getSharedPreferences("developer_settings", Context.MODE_PRIVATE)
-                val skipVerification = devPrefs.getBoolean("skip_purchase_verification", true)
+            val productDetails = proVersionDetails
+            if (productDetails != null) {
+                val productDetailsParamsList = listOf(
+                    BillingFlowParams.ProductDetailsParams.newBuilder()
+                        .setProductDetails(productDetails)
+                        .build()
+                )
 
-                // Add more debug logging to understand what's happening
-                Timber.d("DEBUG BUILD: skipVerification=$skipVerification, purchase=$purchase")
+                val billingFlowParams = BillingFlowParams.newBuilder()
+                    .setProductDetailsParamsList(productDetailsParamsList)
+                    .build()
 
-                if (skipVerification) {
-                    Timber.d("DEBUG BUILD: Skipping purchase signature verification")
-                    return true
+                Timber.d("Launching billing flow for Pro version")
+                val billingResult = billingClient.launchBillingFlow(activity, billingFlowParams)
+
+                // Log the response code immediately
+                Timber.d("Billing flow launch result: ${billingResult.responseCode} - ${billingResult.debugMessage}")
+
+                // Show feedback to user if there's an error
+                if (billingResult.responseCode != BillingResponseCode.OK) {
+                    Toast.makeText(activity, "Purchase error: ${billingResult.responseCode}", Toast.LENGTH_LONG).show()
                 }
+            } else {
+                Timber.e("Unable to launch billing flow. Product details not loaded.")
+                Toast.makeText(activity, "Product details not available. Please try again later.", Toast.LENGTH_LONG).show()
+                queryProductDetails() // Try to fetch product details again
             }
-
-            // Regular verification code continues below
-            if (purchase.purchaseToken.isEmpty()) {
-                return false
-            }
-
-            // Create a token that combines purchase information with our salt values
-            val expectedVerification = generateLocalVerificationToken(purchase)
-            val actualVerification = computeSHA256Hash(purchase.originalJson + VERIFICATION_SALT_2)
-
-            // Verify both tokens match
-            return expectedVerification == actualVerification
         } catch (e: Exception) {
-            Timber.e(e, "Error verifying purchase")
-            return false
+            Timber.e(e, "Exception during billing flow launch")
+            Toast.makeText(activity, "Error starting purchase: ${e.message}", Toast.LENGTH_LONG).show()
         }
-    }
-
-    private fun generateLocalVerificationToken(purchase: Purchase): String {
-        val baseString = purchase.originalJson + VERIFICATION_SALT_1
-        return computeSHA256Hash(baseString)
-    }
-
-    private fun computeSHA256Hash(input: String): String {
-        val bytes = input.toByteArray()
-        val md = java.security.MessageDigest.getInstance("SHA-256")
-        val digest = md.digest(bytes)
-        return digest.fold("") { str, it -> str + "%02x".format(it) }
     }
 
     private fun savePurchaseState(isPro: Boolean) {
