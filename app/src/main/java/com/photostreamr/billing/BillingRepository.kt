@@ -23,6 +23,9 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 import dagger.Lazy
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import java.io.File
 import java.io.FileWriter
 import java.util.Date
@@ -59,6 +62,9 @@ class BillingRepository @Inject constructor(
     // Add state flow for product details
     private val _productDetailsState = MutableStateFlow<ProductDetailsState>(ProductDetailsState.NotLoaded)
     val productDetailsState: StateFlow<ProductDetailsState> = _productDetailsState.asStateFlow()
+
+    private val _purchaseCompletedEvent = MutableSharedFlow<Unit>(replay = 0)
+    val purchaseCompletedEvent: SharedFlow<Unit> = _purchaseCompletedEvent.asSharedFlow()
 
     private val billingClient: BillingClient by lazy {
         BillingClient.newBuilder(context)
@@ -236,7 +242,34 @@ class BillingRepository @Inject constructor(
     override fun onPurchasesUpdated(billingResult: BillingResult, purchases: List<Purchase>?) {
         if (billingResult.responseCode == BillingResponseCode.OK && !purchases.isNullOrEmpty()) {
             Timber.d("Purchase update received - processing ${purchases.size} purchases")
+
+            // First check if any purchase is for our product and in purchased state
+            val hasPurchase = purchases.any {
+                it.products.contains(PRO_VERSION_PRODUCT_ID) &&
+                        it.purchaseState == Purchase.PurchaseState.PURCHASED
+            }
+
+            // If we have a purchase, emit Purchased status immediately to prevent race conditions
+            if (hasPurchase) {
+                // Find the purchase
+                val purchase = purchases.first {
+                    it.products.contains(PRO_VERSION_PRODUCT_ID) &&
+                            it.purchaseState == Purchase.PurchaseState.PURCHASED
+                }
+
+                // Update status before full processing to avoid UI flicker
+                _purchaseStatus.value = PurchaseStatus.Purchased(purchase)
+            }
+
+            // Now process purchases normally
             processPurchases(purchases)
+
+            // After completed purchase, do an additional refresh after a short delay
+            if (purchases.any { it.purchaseState == Purchase.PurchaseState.PURCHASED }) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    queryPurchases()
+                }, 1000) // 1 second delay
+            }
         } else if (billingResult.responseCode == BillingResponseCode.USER_CANCELED) {
             Timber.d("User canceled the purchase")
             _purchaseStatus.value = PurchaseStatus.Canceled
@@ -260,6 +293,10 @@ class BillingRepository @Inject constructor(
                             Timber.d("Pro version purchase is valid and acknowledged")
                             _purchaseStatus.value = PurchaseStatus.Purchased(purchase)
                             savePurchaseState(true)
+                            // Emit completion event
+                            coroutineScope.launch {
+                                _purchaseCompletedEvent.emit(Unit)
+                            }
                         } else {
                             acknowledgePurchase(purchase)
                         }

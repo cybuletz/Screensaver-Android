@@ -1,5 +1,6 @@
 package com.photostreamr
 
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -64,9 +65,10 @@ import android.widget.FrameLayout
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.photostreamr.version.ProVersionPromptManager
 import java.util.concurrent.TimeUnit
+import javax.inject.Singleton
 
 
-@AndroidEntryPoint
+@Singleton
 class MainActivity : AppCompatActivity() {
     private var _binding: ActivityMainBinding? = null
     private val binding get() = _binding!!
@@ -140,6 +142,8 @@ class MainActivity : AppCompatActivity() {
 
     private val PREF_FIRST_LAUNCH = "first_launch"
 
+    private var currentActivity: Activity? = null
+
     private val viewLifecycleOwner: LifecycleOwner?
         get() = try {
             val navHostFragment = supportFragmentManager
@@ -172,6 +176,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun checkForAds() {
+        // Check if we should show an ad
+        if (!appVersionManager.isProVersion() && appVersionManager.shouldShowAd()) {
+            adManager.showInterstitialAd(currentActivity)
+            appVersionManager.updateLastAdShownTime()
+        }
+    }
+
     private fun showProVersionPrompt() {
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle("Upgrade to Pro Version")
@@ -195,6 +207,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        currentActivity = this
 
         _binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -1326,11 +1339,18 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        currentActivity = this
         adManager.resumeAds()
 
         setupFullScreen()
         updateKeepScreenOn()
         initializeMusicSources()
+
+        // Check for showing ads based on app state
+        if (navController.currentDestination?.id == R.id.mainFragment) {
+            // Only show interstitial ads when on main screen, not settings
+            checkForAds()
+        }
 
         // Handle music sources auto-resume
         when (PreferenceManager.getDefaultSharedPreferences(this).getString("music_source", "spotify")) {
@@ -1438,11 +1458,13 @@ class MainActivity : AppCompatActivity() {
             _binding = null
             _navController = null
             widgetManager.cleanup()
+            currentActivity = null
             adManager.destroyAds()
             super.onDestroy()
 
         } catch (e: Exception) {
             Log.e(TAG, "Error in onDestroy", e)
+            currentActivity = null
             adManager.destroyAds()
             super.onDestroy()
 

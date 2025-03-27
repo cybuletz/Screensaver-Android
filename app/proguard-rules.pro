@@ -47,6 +47,21 @@
 -keep class com.android.billingclient.api.ProductDetails$* { *; }
 -keep class com.android.billingclient.api.Purchase { *; }
 
+# AdMob/Google Play Services
+-keep public class com.google.android.gms.ads.** {
+   public *;
+}
+
+-keep public class com.google.ads.** {
+   public *;
+}
+
+# For mediation adapters (if using)
+-keepattributes *Annotation*
+-keepclassmembers class * {
+    @com.google.android.gms.ads.annotation.AdUrlParam <fields>;
+}
+
 # Hilt and Dagger rules
 -keep class dagger.** { *; }
 -keep class javax.inject.** { *; }

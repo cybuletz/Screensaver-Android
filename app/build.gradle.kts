@@ -42,7 +42,7 @@ android {
         applicationId = "com.photostreamr"
         minSdk = 26
         targetSdk = 34
-        versionCode = 17434
+        versionCode = 17436
         versionName = autoVersionName
         manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
         manifestPlaceholders["redirectSchemeName"] = "photostreamr-spotify"

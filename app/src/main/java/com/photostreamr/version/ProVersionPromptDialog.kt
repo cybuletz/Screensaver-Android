@@ -42,6 +42,8 @@ class ProVersionPromptDialog : DialogFragment() {
 
     // Add product details receiver
     private var productDetailsReceiver: BroadcastReceiver? = null
+    private var isReturningFromPurchaseFlow = false
+
 
     // Add state flow collector
     private var productDetailsStateCollector: Job? = null
@@ -248,9 +250,18 @@ class ProVersionPromptDialog : DialogFragment() {
                 when (status) {
                     is BillingRepository.PurchaseStatus.Purchased -> {
                         Timber.d("Purchase completed successfully")
+                        // Flag that we're returning from purchase flow
+                        isReturningFromPurchaseFlow = true
+
                         // Force refresh and ensure dialog dismisses
                         appVersionManager.refreshVersionState()
                         updateLoadingState(false)
+
+                        // Hide any error messages that might be showing
+                        if (::errorTextView.isInitialized && isAdded && !isRemoving) {
+                            errorTextView.visibility = View.GONE
+                        }
+
                         // Add delay to ensure state is updated before dismissing
                         Handler(Looper.getMainLooper()).postDelayed({
                             if (isAdded && !isRemoving) {
@@ -260,22 +271,30 @@ class ProVersionPromptDialog : DialogFragment() {
                     }
                     is BillingRepository.PurchaseStatus.Failed -> {
                         Timber.e("Purchase failed: ${status.billingResult.debugMessage}")
-                        updateLoadingState(false)
-                        showError("Purchase could not be completed: ${status.billingResult.debugMessage}")
+                        // Only show error if we're not in the process of returning from a successful purchase
+                        if (!isReturningFromPurchaseFlow) {
+                            updateLoadingState(false)
+                            showError("Purchase could not be completed: ${status.billingResult.debugMessage}")
+                        }
                     }
                     is BillingRepository.PurchaseStatus.Canceled -> {
                         Timber.d("Purchase was canceled by user")
+                        isReturningFromPurchaseFlow = false
                         updateLoadingState(false)
                     }
                     is BillingRepository.PurchaseStatus.Pending,
                     is BillingRepository.PurchaseStatus.Invalid,
                     is BillingRepository.PurchaseStatus.Unknown -> {
-                        updateLoadingState(false)
+                        // If we already know we're returning from purchase flow, ignore these states
+                        if (!isReturningFromPurchaseFlow) {
+                            updateLoadingState(false)
+                        }
                     }
                     // This case ensures we handle when payment is successful
                     is BillingRepository.PurchaseStatus.NotPurchased -> {
                         // Only update UI if not purchased and dialog still showing
-                        if (isAdded && !isRemoving) {
+                        // and we're not returning from purchase flow
+                        if (!isReturningFromPurchaseFlow && isAdded && !isRemoving) {
                             updateLoadingState(false)
                         }
                     }
@@ -290,6 +309,21 @@ class ProVersionPromptDialog : DialogFragment() {
                     // Pro state detected, dismiss dialog
                     dismiss()
                 }
+            }
+        }
+
+        lifecycleScope.launch {
+            billingRepository.purchaseCompletedEvent.collect {
+                Timber.d("Received purchase completed event")
+                // Clear any error message
+                errorTextView.visibility = View.GONE
+                // Show success message briefly if needed
+                // Then dismiss
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (isAdded && !isRemoving) {
+                        dismiss()
+                    }
+                }, 300)
             }
         }
     }
