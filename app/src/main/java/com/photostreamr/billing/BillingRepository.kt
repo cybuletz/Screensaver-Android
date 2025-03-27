@@ -5,6 +5,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -21,6 +23,9 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 import dagger.Lazy
+import java.io.File
+import java.io.FileWriter
+import java.util.Date
 
 @Singleton
 class BillingRepository @Inject constructor(
@@ -51,6 +56,10 @@ class BillingRepository @Inject constructor(
     private val _billingConnectionState = MutableLiveData<BillingConnectionState>()
     val billingConnectionState: LiveData<BillingConnectionState> = _billingConnectionState
 
+    // Add state flow for product details
+    private val _productDetailsState = MutableStateFlow<ProductDetailsState>(ProductDetailsState.NotLoaded)
+    val productDetailsState: StateFlow<ProductDetailsState> = _productDetailsState.asStateFlow()
+
     private val billingClient: BillingClient by lazy {
         BillingClient.newBuilder(context)
             .setListener(this)
@@ -60,7 +69,13 @@ class BillingRepository @Inject constructor(
 
     private var proVersionDetails: ProductDetails? = null
 
+    // Track product query state
+    private var isQueryingProductDetails = false
+    private var productQueryRetryCount = 0
+    private val maxProductQueryRetries = 3
+
     init {
+        Timber.d("BillingRepository initialized at ${System.currentTimeMillis()}")
         connectToPlayBilling()
 
         context.registerReceiver(
@@ -80,13 +95,16 @@ class BillingRepository @Inject constructor(
         if (billingResult.responseCode == BillingResponseCode.OK) {
             Timber.d("Play Billing client connected successfully")
             _billingConnectionState.value = BillingConnectionState.Connected
-            // Query product details once connected
-            queryProductDetails()
+
+            // Pre-warm by immediately querying product details
+            queryProductDetails(isPreWarm = true)
+
             // Check existing purchases
             queryPurchases()
         } else {
             Timber.e("Play Billing client setup failed with code ${billingResult.responseCode}: ${billingResult.debugMessage}")
             _billingConnectionState.value = BillingConnectionState.Failed(billingResult)
+            _productDetailsState.value = ProductDetailsState.Error("Billing setup failed: ${billingResult.debugMessage}")
         }
     }
 
@@ -96,8 +114,58 @@ class BillingRepository @Inject constructor(
         // Reconnect on next purchase attempt
     }
 
-    private fun queryProductDetails() {
-        Timber.d("Querying product details for Pro version")
+    fun queryProductDetails(isPreWarm: Boolean = false) {
+        if (isQueryingProductDetails) {
+            Timber.d("Product details query already in progress, skipping")
+            return
+        }
+
+        if (!isPreWarm) {
+            // Only update state to loading if this isn't the pre-warm call
+            _productDetailsState.value = ProductDetailsState.Loading
+        }
+
+        Timber.d("Querying product details for Pro version (pre-warm: $isPreWarm)")
+        isQueryingProductDetails = true
+        productQueryRetryCount = 0
+        retryProductDetailsQuery(isPreWarm)
+    }
+
+    private fun retryProductDetailsQuery(isPreWarm: Boolean = false) {
+        if (productQueryRetryCount >= maxProductQueryRetries) {
+            Timber.e("Failed to query product details after $maxProductQueryRetries attempts")
+            isQueryingProductDetails = false
+            _productDetailsState.value = ProductDetailsState.Error("Failed after $maxProductQueryRetries attempts")
+            broadcastProductDetailsUpdate(false)
+            return
+        }
+
+        if (billingClient.connectionState != BillingClient.ConnectionState.CONNECTED) {
+            Timber.w("Billing client not connected, reconnecting...")
+            billingClient.startConnection(object : BillingClientStateListener {
+                override fun onBillingSetupFinished(billingResult: BillingResult) {
+                    if (billingResult.responseCode == BillingResponseCode.OK) {
+                        Timber.d("Billing client reconnected, querying product details")
+                        executeProductDetailsQuery(isPreWarm)
+                    } else {
+                        Timber.e("Failed to reconnect billing client: ${billingResult.debugMessage}")
+                        productQueryRetryCount++
+                        scheduleProductDetailsRetry(isPreWarm)
+                    }
+                }
+
+                override fun onBillingServiceDisconnected() {
+                    Timber.w("Billing service disconnected during product details query")
+                    productQueryRetryCount++
+                    scheduleProductDetailsRetry(isPreWarm)
+                }
+            })
+        } else {
+            executeProductDetailsQuery(isPreWarm)
+        }
+    }
+
+    private fun executeProductDetailsQuery(isPreWarm: Boolean = false) {
         val params = QueryProductDetailsParams.newBuilder()
             .setProductList(
                 listOf(
@@ -115,34 +183,35 @@ class BillingRepository @Inject constructor(
                     proVersionDetails = productDetailsList[0]
                     Timber.d("Pro version product details retrieved successfully: ${proVersionDetails?.name}")
                     Timber.d("Product price: ${proVersionDetails?.oneTimePurchaseOfferDetails?.formattedPrice}")
+                    isQueryingProductDetails = false
+                    _productDetailsState.value = ProductDetailsState.Loaded(proVersionDetails!!)
+                    broadcastProductDetailsUpdate(true)
                 } else {
-                    // Add more detailed diagnostics
-                    Timber.e("No product details found for Pro version. Check that:")
-                    Timber.e("1. Product ID '$PRO_VERSION_PRODUCT_ID' exactly matches what's in Google Play Console")
-                    Timber.e("2. Your app is published to at least an internal testing track")
-                    Timber.e("3. You're signed in with a test account that has access to the app")
-                    Timber.e("4. The in-app product is active in Google Play Console")
+                    // No product details found
+                    Timber.e("No product details found for Pro version. Response code OK but empty list.")
+                    productQueryRetryCount++
+                    _productDetailsState.value = ProductDetailsState.Error("No product details found")
+                    scheduleProductDetailsRetry(isPreWarm)
                 }
             } else {
+                // Error querying product details
                 Timber.e("Failed to query product details - Response code: ${billingResult.responseCode}")
                 Timber.e("Debug message: ${billingResult.debugMessage}")
-
-                // Translate common error codes
-                val errorMessage = when (billingResult.responseCode) {
-                    BillingResponseCode.SERVICE_DISCONNECTED -> "Google Play service is disconnected"
-                    BillingResponseCode.FEATURE_NOT_SUPPORTED -> "Billing feature not supported on this device"
-                    BillingResponseCode.SERVICE_UNAVAILABLE -> "Network connection is down"
-                    BillingResponseCode.BILLING_UNAVAILABLE -> "Billing API version not supported"
-                    BillingResponseCode.ITEM_UNAVAILABLE -> "Product is not available for purchase"
-                    BillingResponseCode.DEVELOPER_ERROR -> "Invalid arguments provided to the API"
-                    BillingResponseCode.ERROR -> "Fatal error during the API action"
-                    BillingResponseCode.ITEM_ALREADY_OWNED -> "Item already owned"
-                    BillingResponseCode.ITEM_NOT_OWNED -> "Item not owned"
-                    else -> "Unknown error code: ${billingResult.responseCode}"
-                }
-                Timber.e("Error explanation: $errorMessage")
+                productQueryRetryCount++
+                _productDetailsState.value = ProductDetailsState.Error("Error ${billingResult.responseCode}: ${billingResult.debugMessage}")
+                scheduleProductDetailsRetry(isPreWarm)
             }
         }
+    }
+
+    private fun scheduleProductDetailsRetry(isPreWarm: Boolean = false) {
+        // Exponential backoff for retries
+        val delayMillis = (1000L * (1 shl productQueryRetryCount)).coerceAtMost(10000L) // Max 10 seconds
+        Timber.d("Scheduling product details retry #${productQueryRetryCount + 1} in ${delayMillis}ms")
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            retryProductDetailsQuery(isPreWarm)
+        }, delayMillis)
     }
 
     private fun queryPurchases() {
@@ -237,8 +306,12 @@ class BillingRepository @Inject constructor(
 
     fun launchBillingFlow(activity: Activity) {
         try {
-            val productDetails = proVersionDetails
-            if (productDetails != null) {
+            // First check our current state
+            val currentState = _productDetailsState.value
+
+            if (currentState is ProductDetailsState.Loaded) {
+                val productDetails = currentState.productDetails
+
                 val productDetailsParamsList = listOf(
                     BillingFlowParams.ProductDetailsParams.newBuilder()
                         .setProductDetails(productDetails)
@@ -257,15 +330,49 @@ class BillingRepository @Inject constructor(
 
                 // Show feedback to user if there's an error
                 if (billingResult.responseCode != BillingResponseCode.OK) {
-                    Toast.makeText(activity, "Purchase error: ${billingResult.responseCode}", Toast.LENGTH_LONG).show()
+                    _purchaseStatus.value = PurchaseStatus.Failed(billingResult)
+                    Toast.makeText(activity, "Purchase error: ${getReadableErrorMessage(billingResult.responseCode)}", Toast.LENGTH_LONG).show()
+                }
+            } else if (proVersionDetails != null) {
+                // Fallback to the previous implementation if state is inconsistent
+                Timber.w("Using fallback product details because state is $currentState")
+
+                val productDetailsParamsList = listOf(
+                    BillingFlowParams.ProductDetailsParams.newBuilder()
+                        .setProductDetails(proVersionDetails!!)
+                        .build()
+                )
+
+                val billingFlowParams = BillingFlowParams.newBuilder()
+                    .setProductDetailsParamsList(productDetailsParamsList)
+                    .build()
+
+                val billingResult = billingClient.launchBillingFlow(activity, billingFlowParams)
+
+                if (billingResult.responseCode != BillingResponseCode.OK) {
+                    _purchaseStatus.value = PurchaseStatus.Failed(billingResult)
+                    Toast.makeText(activity, "Purchase error: ${getReadableErrorMessage(billingResult.responseCode)}", Toast.LENGTH_LONG).show()
                 }
             } else {
-                Timber.e("Unable to launch billing flow. Product details not loaded.")
+                Timber.e("Unable to launch billing flow. Product details not loaded. State: $currentState")
+                _purchaseStatus.value = PurchaseStatus.Failed(
+                    BillingResult.newBuilder()
+                        .setResponseCode(BillingResponseCode.ERROR)
+                        .setDebugMessage("Product details not available")
+                        .build()
+                )
                 Toast.makeText(activity, "Product details not available. Please try again later.", Toast.LENGTH_LONG).show()
-                queryProductDetails() // Try to fetch product details again
+                // Force a new query
+                queryProductDetails()
             }
         } catch (e: Exception) {
             Timber.e(e, "Exception during billing flow launch")
+            _purchaseStatus.value = PurchaseStatus.Failed(
+                BillingResult.newBuilder()
+                    .setResponseCode(BillingResponseCode.ERROR)
+                    .setDebugMessage("Exception: ${e.message}")
+                    .build()
+            )
             Toast.makeText(activity, "Error starting purchase: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
@@ -298,8 +405,14 @@ class BillingRepository @Inject constructor(
     }
 
     private fun broadcastPurchaseUpdate(isPro: Boolean) {
-        val intent = android.content.Intent("com.photostreamr.ACTION_PRO_STATUS_CHANGED")
+        val intent = Intent("com.photostreamr.ACTION_PRO_STATUS_CHANGED")
         intent.putExtra("is_pro_version", isPro)
+        context.sendBroadcast(intent)
+    }
+
+    private fun broadcastProductDetailsUpdate(success: Boolean) {
+        val intent = Intent("com.photostreamr.ACTION_PRODUCT_DETAILS_UPDATE")
+        intent.putExtra("success", success)
         context.sendBroadcast(intent)
     }
 
@@ -320,6 +433,47 @@ class BillingRepository @Inject constructor(
         return proVersionDetails?.oneTimePurchaseOfferDetails?.formattedPrice
     }
 
+    private fun getReadableErrorMessage(responseCode: Int): String {
+        return when (responseCode) {
+            BillingResponseCode.SERVICE_DISCONNECTED -> "Google Play service is disconnected"
+            BillingResponseCode.FEATURE_NOT_SUPPORTED -> "Billing feature not supported on this device"
+            BillingResponseCode.SERVICE_UNAVAILABLE -> "Network connection is down"
+            BillingResponseCode.BILLING_UNAVAILABLE -> "Billing API version not supported"
+            BillingResponseCode.ITEM_UNAVAILABLE -> "Product is not available for purchase"
+            BillingResponseCode.DEVELOPER_ERROR -> "Invalid arguments provided to the API"
+            BillingResponseCode.ERROR -> "Fatal error during the API action"
+            BillingResponseCode.ITEM_ALREADY_OWNED -> "Item already owned"
+            BillingResponseCode.ITEM_NOT_OWNED -> "Item not owned"
+            else -> "Unknown error code: $responseCode"
+        }
+    }
+
+    // Add diagnostic logging for production troubleshooting
+    fun enableDetailedLogging(isEnabled: Boolean) {
+        if (isEnabled) {
+            // Log to a file that you can retrieve later
+            val logFile = File(context.getExternalFilesDir(null), "billing_log.txt")
+            try {
+                FileWriter(logFile, true).use { writer ->
+                    writer.append("=== Billing log started at ${Date()} ===\n")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to create log file")
+            }
+        }
+    }
+
+    private fun logToFile(message: String) {
+        try {
+            val logFile = File(context.getExternalFilesDir(null), "billing_log.txt")
+            FileWriter(logFile, true).use { writer ->
+                writer.append("${Date()}: $message\n")
+            }
+        } catch (e: Exception) {
+            // Silent fail
+        }
+    }
+
     sealed class PurchaseStatus {
         object NotPurchased : PurchaseStatus()
         object Canceled : PurchaseStatus()
@@ -335,5 +489,13 @@ class BillingRepository @Inject constructor(
         object Connected : BillingConnectionState()
         object Disconnected : BillingConnectionState()
         data class Failed(val billingResult: BillingResult) : BillingConnectionState()
+    }
+
+    // Add new sealed class for product details state
+    sealed class ProductDetailsState {
+        object NotLoaded : ProductDetailsState()
+        object Loading : ProductDetailsState()
+        data class Loaded(val productDetails: ProductDetails) : ProductDetailsState()
+        data class Error(val message: String) : ProductDetailsState()
     }
 }

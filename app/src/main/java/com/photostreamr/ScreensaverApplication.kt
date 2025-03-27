@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import com.photostreamr.data.AppDataManager
 import androidx.preference.PreferenceManager
+import com.photostreamr.billing.BillingRepository
 import com.photostreamr.music.RadioManager
 import com.photostreamr.music.RadioPreferences
 import com.photostreamr.music.SpotifyManager
@@ -29,6 +30,7 @@ import com.photostreamr.music.SpotifyPreferences
 import com.photostreamr.version.AppVersionManager
 import java.io.File
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 
 
 /**
@@ -54,6 +56,9 @@ class ScreensaverApplication : Application() {
     @Inject
     lateinit var appVersionManager: AppVersionManager
 
+    @Inject
+    lateinit var billingRepository: BillingRepository
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var firebaseAnalytics: FirebaseAnalytics
 
@@ -72,6 +77,20 @@ class ScreensaverApplication : Application() {
         checkFirstInstall()
         initializeApp()
         appVersionManager.refreshVersionState()
+
+        // Pre-warm billing client
+        applicationScope.launch {
+            try {
+                // Delay slightly to ensure other app initialization is complete
+                delay(500)
+                Timber.d("Pre-warming billing client")
+                // This assumes BillingRepository is already injected elsewhere,
+                // so we're just calling the method to ensure it's ready
+                billingRepository.connectToPlayBilling()
+            } catch (e: Exception) {
+                Timber.e(e, "Error pre-warming billing client")
+            }
+        }
     }
 
     private fun initializeApp() {

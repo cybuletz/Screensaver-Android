@@ -1,6 +1,10 @@
 package com.photostreamr.version
 
 import android.app.Dialog
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +19,7 @@ import com.photostreamr.R
 import com.photostreamr.billing.BillingRepository
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,9 +38,19 @@ class ProVersionPromptDialog : DialogFragment() {
     private lateinit var cancelButton: Button
     private lateinit var priceTextView: TextView
     private lateinit var loadingView: View
+    private lateinit var errorTextView: TextView
+
+    // Add product details receiver
+    private var productDetailsReceiver: BroadcastReceiver? = null
+
+    // Add state flow collector
+    private var productDetailsStateCollector: Job? = null
+    private var purchaseStatusCollector: Job? = null
+    private var versionStateCollector: Job? = null
 
     companion object {
         private const val ARG_FEATURE = "feature"
+        private const val PRODUCT_LOAD_TIMEOUT = 5000L // 5 second timeout
 
         fun newInstance(feature: FeatureManager.Feature): ProVersionPromptDialog {
             return ProVersionPromptDialog().apply {
@@ -44,6 +59,12 @@ class ProVersionPromptDialog : DialogFragment() {
                 }
             }
         }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Force a product details refresh before the dialog UI is created
+        billingRepository.queryProductDetails()
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -59,9 +80,20 @@ class ProVersionPromptDialog : DialogFragment() {
         val featureImage = view.findViewById<ImageView>(R.id.pro_feature_image)
         priceTextView = view.findViewById(R.id.price_text)
         loadingView = view.findViewById(R.id.loading_indicator)
+        errorTextView = view.findViewById(R.id.error_message)
 
         // Initialize with loading state
         updateLoadingState(true)
+        errorTextView.visibility = View.GONE
+
+        // Add timeout for product loading
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (isAdded && !isRemoving && priceTextView.text.isNullOrEmpty() && loadingView.visibility == View.VISIBLE) {
+                // If still loading after timeout, reset UI and show error
+                updateLoadingState(false)
+                showError("Failed to load product. Please try again.")
+            }
+        }, PRODUCT_LOAD_TIMEOUT)
 
         when (feature) {
             FeatureManager.Feature.MUSIC -> {
@@ -91,26 +123,75 @@ class ProVersionPromptDialog : DialogFragment() {
         cancelButton = view.findViewById<Button>(R.id.cancel_button)
 
         upgradeButton.setOnClickListener {
-            // Show immediate visual feedback
-            updateLoadingState(true)
-            upgradeButton.isEnabled = false
-
-            // Add a small delay to ensure UI updates before launching billing flow
-            Handler(Looper.getMainLooper()).postDelayed({
-                initiateProPurchase()
-            }, 100)
+            handleUpgradeButtonClick()
         }
 
         cancelButton.setOnClickListener {
             dismiss()
         }
 
-        // Observe billing repository for price updates
+        // Register broadcast receiver for product details updates
+        productDetailsReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action == "com.photostreamr.ACTION_PRODUCT_DETAILS_UPDATE") {
+                    val success = intent.getBooleanExtra("success", false)
+                    if (!success && isAdded && !isRemoving) {
+                        updateLoadingState(false)
+                        showError("Failed to load product. Please try again.")
+                    }
+                }
+            }
+        }
+
+        requireContext().registerReceiver(
+            productDetailsReceiver,
+            IntentFilter("com.photostreamr.ACTION_PRODUCT_DETAILS_UPDATE"),
+            Context.RECEIVER_NOT_EXPORTED
+        )
+
+        // Observe billing repository state flows
         observeBillingRepository()
 
         return MaterialAlertDialogBuilder(requireContext())
             .setView(view)
             .create()
+    }
+
+    private fun handleUpgradeButtonClick() {
+        // Show immediate visual feedback
+        updateLoadingState(true)
+        upgradeButton.isEnabled = false
+
+        // Clear any previous errors
+        errorTextView.visibility = View.GONE
+
+        // Check current product details state
+        when (val currentState = billingRepository.productDetailsState.value) {
+            is BillingRepository.ProductDetailsState.Loaded -> {
+                // Product details ready, proceed with purchase
+                Timber.d("Product details loaded, launching billing flow")
+                initiateProPurchase()
+            }
+            is BillingRepository.ProductDetailsState.Loading -> {
+                // Already loading, wait a moment then check again
+                Timber.d("Product details still loading, waiting briefly...")
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (billingRepository.productDetailsState.value is BillingRepository.ProductDetailsState.Loaded) {
+                        initiateProPurchase()
+                    } else {
+                        updateLoadingState(false)
+                        showError("Product details not ready yet. Please try again.")
+                    }
+                }, 1500) // Wait 1.5 seconds and try again
+            }
+            else -> {
+                // Error or not loaded state
+                Timber.w("Product details not available (state: $currentState), requesting refresh")
+                updateLoadingState(false)
+                showError("Product details not available. Please try again in a moment.")
+                billingRepository.queryProductDetails() // Request fresh details
+            }
+        }
     }
 
     override fun onResume() {
@@ -128,14 +209,41 @@ class ProVersionPromptDialog : DialogFragment() {
     }
 
     private fun observeBillingRepository() {
-        // Get the price from billing repository
+        // Observe product details state flow
+        productDetailsStateCollector = lifecycleScope.launch {
+            billingRepository.productDetailsState.collectLatest { state ->
+                when (state) {
+                    is BillingRepository.ProductDetailsState.Loaded -> {
+                        Timber.d("Product details loaded: ${state.productDetails.name}")
+                        updatePrice(state.productDetails.oneTimePurchaseOfferDetails?.formattedPrice ?: "")
+                        updateLoadingState(false)
+                    }
+                    is BillingRepository.ProductDetailsState.Loading -> {
+                        Timber.d("Product details loading...")
+                        updateLoadingState(true)
+                    }
+                    is BillingRepository.ProductDetailsState.Error -> {
+                        Timber.e("Product details error: ${state.message}")
+                        updateLoadingState(false)
+                        showError("Failed to load product: ${state.message}")
+                    }
+                    is BillingRepository.ProductDetailsState.NotLoaded -> {
+                        // Initial state, request product details
+                        Timber.d("Product details not loaded, requesting...")
+                        billingRepository.queryProductDetails()
+                    }
+                }
+            }
+        }
+
+        // Legacy approach as fallback
         val price = billingRepository.getProductPrice()
         if (price != null) {
             updatePrice(price)
         }
 
-        // Ensure we're observing purchase status correctly
-        lifecycleScope.launch {
+        // Observe purchase status flow
+        purchaseStatusCollector = lifecycleScope.launch {
             billingRepository.purchaseStatus.collectLatest { status ->
                 when (status) {
                     is BillingRepository.PurchaseStatus.Purchased -> {
@@ -153,7 +261,7 @@ class ProVersionPromptDialog : DialogFragment() {
                     is BillingRepository.PurchaseStatus.Failed -> {
                         Timber.e("Purchase failed: ${status.billingResult.debugMessage}")
                         updateLoadingState(false)
-                        showError("Purchase could not be completed.")
+                        showError("Purchase could not be completed: ${status.billingResult.debugMessage}")
                     }
                     is BillingRepository.PurchaseStatus.Canceled -> {
                         Timber.d("Purchase was canceled by user")
@@ -175,8 +283,8 @@ class ProVersionPromptDialog : DialogFragment() {
             }
         }
 
-        // Also observe version state changes
-        lifecycleScope.launch {
+        // Observe version state changes
+        versionStateCollector = lifecycleScope.launch {
             appVersionManager.versionState.collectLatest { state ->
                 if (state is AppVersionManager.VersionState.Pro && isAdded && !isRemoving) {
                     // Pro state detected, dismiss dialog
@@ -187,30 +295,65 @@ class ProVersionPromptDialog : DialogFragment() {
     }
 
     private fun updatePrice(price: String) {
-        priceTextView.text = getString(R.string.upgrade_button_with_price, price)
-        updateLoadingState(false)
-    }
-
-    private fun updateLoadingState(isLoading: Boolean) {
-        if (::upgradeButton.isInitialized) {
-            upgradeButton.isEnabled = !isLoading
-            loadingView.visibility = if (isLoading) View.VISIBLE else View.GONE
-            upgradeButton.alpha = if (isLoading) 0.5f else 1.0f
-
-            if (!isLoading && priceTextView.text.isNullOrEmpty()) {
-                // Set default text if price is not available
+        if (isAdded && !isRemoving) {
+            if (price.isNotEmpty()) {
+                priceTextView.text = getString(R.string.upgrade_button_with_price, price)
+                updateLoadingState(false)
+            } else {
                 priceTextView.text = getString(R.string.upgrade_to_pro)
             }
         }
     }
 
+    private fun updateLoadingState(isLoading: Boolean) {
+        if (!::upgradeButton.isInitialized || !isAdded || isRemoving) {
+            return
+        }
+
+        upgradeButton.isEnabled = !isLoading
+        loadingView.visibility = if (isLoading) View.VISIBLE else View.GONE
+        upgradeButton.alpha = if (isLoading) 0.5f else 1.0f
+
+        if (!isLoading && priceTextView.text.isNullOrEmpty()) {
+            // Set default text if price is not available
+            priceTextView.text = getString(R.string.upgrade_to_pro)
+        }
+    }
+
     private fun showError(message: String) {
-        val errorTextView = view?.findViewById<TextView>(R.id.error_message)
-        errorTextView?.text = message
-        errorTextView?.visibility = View.VISIBLE
+        if (!isAdded || isRemoving) {
+            return
+        }
+
+        errorTextView.text = message
+        errorTextView.visibility = View.VISIBLE
     }
 
     private fun initiateProPurchase() {
+        if (!isAdded || isRemoving) {
+            return
+        }
+
         billingRepository.launchBillingFlow(requireActivity())
+    }
+
+    override fun onDestroyView() {
+        // Cancel all state collectors
+        productDetailsStateCollector?.cancel()
+        purchaseStatusCollector?.cancel()
+        versionStateCollector?.cancel()
+
+        // Unregister the broadcast receiver
+        if (productDetailsReceiver != null) {
+            try {
+                requireContext().unregisterReceiver(productDetailsReceiver)
+                productDetailsReceiver = null
+            } catch (e: Exception) {
+                // Receiver might not be registered, ignore
+                Timber.e(e, "Error unregistering product details receiver")
+            }
+        }
+
+        super.onDestroyView()
     }
 }

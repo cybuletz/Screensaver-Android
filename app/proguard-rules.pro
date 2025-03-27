@@ -29,9 +29,23 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# Billing Library
--keep class com.android.billingclient.** {*;}
--keep interface com.android.billingclient.** {*;}
+# Google Play Billing Library
+-keep class com.android.billingclient.** { *; }
+-keep interface com.android.billingclient.** { *; }
+
+# Keep required classes for callbacks
+-keepclassmembers class * implements com.android.billingclient.api.PurchasesUpdatedListener {
+    public void onPurchasesUpdated(com.android.billingclient.api.BillingResult, java.util.List);
+}
+-keepclassmembers class * implements com.android.billingclient.api.BillingClientStateListener {
+    public void onBillingSetupFinished(com.android.billingclient.api.BillingResult);
+    public void onBillingServiceDisconnected();
+}
+
+# Keep ProductDetails class and its components
+-keep class com.android.billingclient.api.ProductDetails { *; }
+-keep class com.android.billingclient.api.ProductDetails$* { *; }
+-keep class com.android.billingclient.api.Purchase { *; }
 
 # Hilt and Dagger rules
 -keep class dagger.** { *; }
