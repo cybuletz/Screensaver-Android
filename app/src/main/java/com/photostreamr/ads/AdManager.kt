@@ -24,7 +24,7 @@ class AdManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "AdManager"
-        private const val BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111" // Replace with your actual ad unit ID
+        private const val BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
     }
 
     private var isInitialized = false

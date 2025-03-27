@@ -414,26 +414,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private fun setupAdIntervalPreference() {
-        findPreference<SeekBarPreference>("ad_interval_minutes")?.apply {
-            isVisible = !appVersionManager.isProVersion()
-
-            setOnPreferenceChangeListener { _, newValue ->
-                val intervalMinutes = newValue as Int
-                val intervalMillis = intervalMinutes * 60 * 1000L
-                appVersionManager.setAdInterval(intervalMillis)
-                summary = "Show ads every $intervalMinutes minutes"
-                true
-            }
-
-            // Set initial summary
-            val currentIntervalMillis = appVersionManager.getAdInterval()
-            val currentIntervalMinutes = (currentIntervalMillis / (60 * 1000)).toInt()
-            summary = "Show ads every $currentIntervalMinutes minutes"
-            value = currentIntervalMinutes
-        }
-    }
-
     override fun onResume() {
         super.onResume()
         adManager.loadSettingsAd()

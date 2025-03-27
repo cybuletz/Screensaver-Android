@@ -166,10 +166,15 @@ class BillingRepository @Inject constructor(
 
     override fun onPurchasesUpdated(billingResult: BillingResult, purchases: List<Purchase>?) {
         if (billingResult.responseCode == BillingResponseCode.OK && !purchases.isNullOrEmpty()) {
+            Timber.d("Purchase update received - processing ${purchases.size} purchases")
             processPurchases(purchases)
         } else if (billingResult.responseCode == BillingResponseCode.USER_CANCELED) {
             Timber.d("User canceled the purchase")
             _purchaseStatus.value = PurchaseStatus.Canceled
+        } else if (billingResult.responseCode == BillingResponseCode.ITEM_ALREADY_OWNED) {
+            // Important - handle already owned case explicitly
+            Timber.d("Item already owned, querying purchases to confirm")
+            queryPurchases()
         } else {
             Timber.e("Purchase failed with code ${billingResult.responseCode}: ${billingResult.debugMessage}")
             _purchaseStatus.value = PurchaseStatus.Failed(billingResult)

@@ -132,45 +132,55 @@ class ProVersionPromptDialog : DialogFragment() {
         val price = billingRepository.getProductPrice()
         if (price != null) {
             updatePrice(price)
-        } else {
-            // If price isn't immediately available, observe it
-            lifecycleScope.launch {
-                billingRepository.billingConnectionState.observe(this@ProVersionPromptDialog) { state ->
-                    if (state is BillingRepository.BillingConnectionState.Connected) {
-                        val updatedPrice = billingRepository.getProductPrice()
-                        if (updatedPrice != null) {
-                            updatePrice(updatedPrice)
+        }
+
+        // Ensure we're observing purchase status correctly
+        lifecycleScope.launch {
+            billingRepository.purchaseStatus.collectLatest { status ->
+                when (status) {
+                    is BillingRepository.PurchaseStatus.Purchased -> {
+                        Timber.d("Purchase completed successfully")
+                        // Force refresh and ensure dialog dismisses
+                        appVersionManager.refreshVersionState()
+                        updateLoadingState(false)
+                        // Add delay to ensure state is updated before dismissing
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (isAdded && !isRemoving) {
+                                dismiss()
+                            }
+                        }, 500)
+                    }
+                    is BillingRepository.PurchaseStatus.Failed -> {
+                        Timber.e("Purchase failed: ${status.billingResult.debugMessage}")
+                        updateLoadingState(false)
+                        showError("Purchase could not be completed.")
+                    }
+                    is BillingRepository.PurchaseStatus.Canceled -> {
+                        Timber.d("Purchase was canceled by user")
+                        updateLoadingState(false)
+                    }
+                    is BillingRepository.PurchaseStatus.Pending,
+                    is BillingRepository.PurchaseStatus.Invalid,
+                    is BillingRepository.PurchaseStatus.Unknown -> {
+                        updateLoadingState(false)
+                    }
+                    // This case ensures we handle when payment is successful
+                    is BillingRepository.PurchaseStatus.NotPurchased -> {
+                        // Only update UI if not purchased and dialog still showing
+                        if (isAdded && !isRemoving) {
+                            updateLoadingState(false)
                         }
                     }
                 }
+            }
+        }
 
-                billingRepository.purchaseStatus.collectLatest { status ->
-                    when (status) {
-                        is BillingRepository.PurchaseStatus.Purchased -> {
-                            Timber.d("Purchase completed successfully")
-                            appVersionManager.refreshVersionState()
-                            updateLoadingState(false)
-                            dismiss()
-                        }
-                        is BillingRepository.PurchaseStatus.Failed -> {
-                            Timber.e("Purchase failed: ${status.billingResult.debugMessage}")
-                            updateLoadingState(false)
-                            showError("Purchase could not be completed.")
-                        }
-                        is BillingRepository.PurchaseStatus.Invalid -> {
-                            Timber.e("Purchase verification failed")
-                            updateLoadingState(false)
-                            showError("Purchase verification failed.")
-                        }
-                        is BillingRepository.PurchaseStatus.Canceled -> {
-                            Timber.d("Purchase was canceled by user")
-                            updateLoadingState(false)
-                        }
-                        else -> {
-                            // Other states (Pending, Unknown, NotPurchased)
-                            updateLoadingState(false)
-                        }
-                    }
+        // Also observe version state changes
+        lifecycleScope.launch {
+            appVersionManager.versionState.collectLatest { state ->
+                if (state is AppVersionManager.VersionState.Pro && isAdded && !isRemoving) {
+                    // Pro state detected, dismiss dialog
+                    dismiss()
                 }
             }
         }
