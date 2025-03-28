@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+
     <!-- Add these instead -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
@@ -21,6 +23,7 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <uses-permission android:name="com.android.vending.BILLING" />
 
     <!-- Required Permissions -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
@@ -42,11 +45,19 @@
     <!-- Queries for Google Photos and Authentication -->
     <queries>
         <package android:name="com.google.android.apps.photos" />
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.PICK" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <provider android:authorities="com.google.android.apps.photos.contentprovider" />
         <package android:name="com.spotify.music" />
         <intent>
             <action android:name="com.google.android.gms.auth.service.START" />
         </intent>
-        <provider android:authorities="com.google.android.apps.photos.contentprovider" />
     </queries>
 
     <application
@@ -64,6 +75,10 @@
         android:preserveLegacyExternalStorage="true"
         android:usesCleartextTraffic="true"
         tools:replace="android:allowBackup">
+
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-1825370608705808~7707226901" />
 
         <!-- Main Activity -->
         <activity
@@ -101,7 +116,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="com.example.screensaver"
+                    android:scheme="com.photostreamr"
                     android:host="oauth2redirect" />
             </intent-filter>
         </activity>
@@ -117,7 +132,7 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data
-                    android:scheme="screensaver-spotify"
+                    android:scheme="photostreamr-spotify"
                     android:host="callback"/>
             </intent-filter>
         </activity>
@@ -132,7 +147,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="screensaver-spotify"
+                    android:scheme="photostreamr-spotify"
                     android:host="callback"/>
             </intent-filter>
         </activity>
@@ -209,8 +224,10 @@
         </provider>
 
         <meta-data
-            android:name="com.example.screensaver.glide.PhotosGlideModule"
+            android:name="com.photostreamr.glide.PhotosGlideModule"
             android:value="GlideModule" />
+
+
 
     </application>
 </manifest>

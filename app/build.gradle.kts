@@ -12,21 +12,38 @@ kapt {
     correctErrorTypes = true
 }
 
+
+// Use ProcessBuilder to get commit count for versionCode
+val commitCount: Int = try {
+    val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+        .redirectErrorStream(true)
+        .start()
+    process.inputStream.bufferedReader().readText().trim().toInt()
+} catch (e: Exception) {
+    0 // If git fails, set commit count to 0
+}
+
+// Get current time in milliseconds since epoch
+val currentTimeMillis = System.currentTimeMillis()
+
+// Use the time in seconds (or milliseconds) as the base for versionCode
+val autoVersionCode = (currentTimeMillis / 100000000).toInt()
+
+val autoVersionName = "2.1.0.${autoVersionCode}"
+
 android {
-    namespace = "com.example.screensaver"
+    namespace = "com.photostreamr"
     compileSdk = 34
 
-    android {
-        defaultConfig {
-            applicationId = "com.example.screensaver"
-            minSdk = 23
-            targetSdk = 34
-            versionCode = 1
-            versionName = "1.0"
-            manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
-            manifestPlaceholders["redirectSchemeName"] = "screensaver-spotify"
-            manifestPlaceholders["redirectHostName"] = "callback"
-        }
+    defaultConfig {
+        applicationId = "com.photostreamr"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 17441
+        versionName = autoVersionName
+        manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
+        manifestPlaceholders["redirectSchemeName"] = "photostreamr-spotify"
+        manifestPlaceholders["redirectHostName"] = "callback"
     }
 
     signingConfigs {
@@ -73,6 +90,20 @@ android {
                 "proguard-rules.pro"
             )
         }
+
+        getByName("debug") {
+
+            versionNameSuffix = "-debug"
+            isDebuggable = true
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("String", "BUILD_TYPE", "\"debug\"")
+            buildConfigField("boolean", "DEBUG_MODE", "true")
+
+            // Add this to make Firebase use the base applicationId for the google-services plugin
+            manifestPlaceholders["appIdSuffix"] = ""
+        }
     }
 
     lint {
@@ -117,6 +148,14 @@ dependencies {
     val coroutinesVersion = "1.7.3"
     val grpcVersion = "1.58.0"
 
+    // Google AdMob
+    implementation("com.google.android.gms:play-services-ads:22.0.0")
+
+    // In-app billing (optional, for handling purchases)
+    implementation("com.android.billingclient:billing:6.0.1")
+
+    implementation("com.google.android.play:feature-delivery:2.1.0")
+    implementation("com.google.android.play:feature-delivery-ktx:2.1.0")
 
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
@@ -131,6 +170,10 @@ dependencies {
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    implementation("androidx.activity:activity:1.8.2")
+    implementation("androidx.activity:activity-compose:1.8.2")
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
+
 
     // AutoValue
     kapt("com.google.auto.value:auto-value:1.9")
@@ -183,6 +226,9 @@ dependencies {
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
     implementation("com.google.api:gax:2.19.5")
     implementation("com.google.android.gms:play-services-location:21.1.0")
+
+    implementation("com.google.android.play:app-update:2.1.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 
     // Google Photos Library
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")

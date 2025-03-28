@@ -13,10 +13,10 @@
 -keepattributes InnerClasses
 
 # Keep all your model classes
--keep class com.example.screensaver.model.** { *; }
+-keep class com.photostreamr.model.** { *; }
 
 # Keep your app's core classes
--keep class com.example.screensaver.** { *; }
+-keep class com.photostreamr.** { *; }
 
 # WebView related rules
 -keep class android.webkit.** { *; }
@@ -27,6 +27,39 @@
 }
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
+}
+
+# Google Play Billing Library
+-keep class com.android.billingclient.** { *; }
+-keep interface com.android.billingclient.** { *; }
+
+# Keep required classes for callbacks
+-keepclassmembers class * implements com.android.billingclient.api.PurchasesUpdatedListener {
+    public void onPurchasesUpdated(com.android.billingclient.api.BillingResult, java.util.List);
+}
+-keepclassmembers class * implements com.android.billingclient.api.BillingClientStateListener {
+    public void onBillingSetupFinished(com.android.billingclient.api.BillingResult);
+    public void onBillingServiceDisconnected();
+}
+
+# Keep ProductDetails class and its components
+-keep class com.android.billingclient.api.ProductDetails { *; }
+-keep class com.android.billingclient.api.ProductDetails$* { *; }
+-keep class com.android.billingclient.api.Purchase { *; }
+
+# AdMob/Google Play Services
+-keep public class com.google.android.gms.ads.** {
+   public *;
+}
+
+-keep public class com.google.ads.** {
+   public *;
+}
+
+# For mediation adapters (if using)
+-keepattributes *Annotation*
+-keepclassmembers class * {
+    @com.google.android.gms.ads.annotation.AdUrlParam <fields>;
 }
 
 # Hilt and Dagger rules
@@ -101,8 +134,8 @@
 -dontwarn reactor.blockhound.**
 
 # Keep specific fragments
--keep class com.example.screensaver.MainFragment { *; }
--keep class com.example.screensaver.fragments.** { *; }
+-keep class com.photostreamr.MainFragment { *; }
+-keep class com.photostreamr.fragments.** { *; }
 
 # Google Services and Libraries
 -keep class com.google.android.gms.** { *; }

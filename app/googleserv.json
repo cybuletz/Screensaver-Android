@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "447081188401",
+    "project_id": "screensaver-df25d",
+    "storage_bucket": "screensaver-df25d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:447081188401:android:4054ad48036b3dbad11910",
+        "android_client_info": {
+          "package_name": "com.photostreamr"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCndtZ6Ch_Y3X27KHiqHWbyimZZjjRV6z4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -6,6 +6,9 @@
     <files-path
         name="shared_files"
         path="shared/"/>
+    <files-path
+        name="cached_photos"
+        path="cached_photos/"/>
     <external-cache-path
         name="external_images"
         path="images/"/>

@@ -1,0 +1,755 @@
+<resources>
+
+
+
+    <string name="error_dialog_title">Error Details</string>
+    <string name="sign_in_message">Sign in to access your Google Photos albums</string>
+
+    <!-- Main Activity -->
+    <string name="main_title">Photo Screensaver</string>
+    <string name="select_albums">Select Albums</string>
+
+    <!-- Settings Activity -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_container_description">Settings options</string>
+    <string name="photo_interval_title">Photo Change Interval</string>
+    <string name="photo_interval_summary">Time between photo changes (in seconds)</string>
+    <string name="transition_effect_title">Transition Effect</string>
+    <string name="transition_effect_summary">Choose how photos transition</string>
+
+    <!-- Album Selection -->
+    <string name="album_selection_title">Select Albums</string>
+    <string name="no_albums_found">No albums found</string>
+
+    <!-- Preferences -->
+    <string name="pref_category_display">Display Settings</string>
+    <string name="pref_category_photos">Photo Settings</string>
+
+    <string name="confirm_selection">Confirm Selection</string>
+    <string name="retry">Retry</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Security Preferences -->
+    <string name="pref_category_security">Security</string>
+    <string name="pref_security_enabled_title">Enable App Security</string>
+    <string name="pref_security_enabled_summary">Require authentication to access app settings</string>
+    <string name="pref_auth_method_title">Authentication Method</string>
+    <string name="pref_auth_method_summary">Choose how to authenticate</string>
+    <string name="pref_passcode_title">Set Passcode</string>
+    <string name="pref_passcode_summary">Enter a 4-digit passcode</string>
+    <string name="pref_allow_biometric_title">Allow Biometric Authentication</string>
+    <string name="pref_allow_biometric_summary">Use fingerprint or face recognition when available</string>
+    <string name="authentication_required">Authentication Required</string>
+    <string name="enter_passcode_to_continue">Please enter your passcode to continue</string>
+    <string name="passcode_updated">Passcode successfully updated</string>
+    <string name="biometric_auth_failed">Biometric authentication failed. Please try again or use passcode.</string>
+    <string name="security_setup_failed">Failed to setup security</string>
+    <string name="security_enabled_message">Security enabled successfully</string>
+    <string name="error_enabling_security">Error enabling security. Please try again.</string>
+
+    <!-- Passcode Dialog -->
+    <string name="enter_passcode">Enter Passcode</string>
+    <string name="set_new_passcode">Set New Passcode</string>
+    <string name="confirm_passcode">Confirm Passcode</string>
+    <string name="passcode_hint">Enter 4-digit passcode</string>
+    <string name="invalid_passcode">Invalid passcode. Please try again.</string>
+    <string name="too_many_attempts">Too many failed attempts. Try again in %1$s</string>
+    <string name="confirm">Confirm</string>
+    <string name="set_passcode">Set Passcode</string>
+    <string name="enter_new_passcode">Enter a 4-digit passcode</string>
+    <string name="confirm_new_passcode">Re-enter your passcode to confirm</string>
+    <string name="passcode_mismatch">Passcodes do not match</string>
+    <string name="set_backup_passcode">Set Backup Passcode</string>
+    <string name="set_backup_passcode_message">Please set a backup passcode in case biometric authentication fails</string>
+    <string name="set_passcode_message">Enter a 4-digit passcode</string>
+    <string name="confirm_backup_passcode">Confirm Backup Passcode</string>
+    <string name="confirm_passcode_message">Re-enter your passcode to confirm</string>
+    <string name="passcodes_dont_match">Passcodes don\'t match. Please try again.</string>
+
+    <string name="security_enabled">Security enabled</string>
+    <string name="security_disabled">Security disabled</string>
+
+    <string name="biometric_prompt_title">Authentication Required</string>
+    <string name="biometric_prompt_subtitle">Use your fingerprint to unlock</string>
+    <string name="use_passcode">Use Passcode</string>
+
+    <string name="security_preferences_title">Security Settings</string>
+    <string name="pref_security_settings_title">Application Security</string>
+    <string name="pref_security_settings_summary">Configure lock screen security and authentication</string>
+    <string name="pref_remove_security_on_restart_title">Remove Security on Restart</string>
+    <string name="pref_remove_security_on_restart_summary">Automatically disable security when the app is restarted</string>
+    <string name="pref_remove_security_on_minimize_title">Remove Security on Minimize</string>
+    <string name="pref_remove_security_on_minimize_summary">Automatically disable security when app is minimized</string>
+
+
+    <string name="device_admin_required_title">Device Administrator Access Required</string>
+    <string name="device_admin_required_message">Lock screen mode requires device administrator access to function properly. This allows the app to control the lock screen and display photos.</string>
+    <string name="device_admin_launch_error">Unable to request device administrator access</string>
+    <string name="continue_button">Continue</string>
+
+    <string name="max_attempts_summary">Maximum failed attempts: %d</string>
+    <string name="timeout_duration_summary">Timeout duration: %d minutes</string>
+    <string name="security_check_passed">Security check passed</string>
+    <string name="security_check_cancelled">Security check cancelled</string>
+    <string name="security_check_timeout">Security check timed out</string>
+    <string name="security_compromised">Security has been compromised</string>
+
+    <!-- Photo Sources -->
+    <string name="pref_photo_sources_category">Photo Sources</string>
+    <string name="pref_photo_sources_title">Manage Photo Sources</string>
+    <string name="pref_photo_sources_summary">Choose where to get photos from</string>
+    <string name="photo_sources">Photo Sources</string>
+    <string name="photo_sources_summary">Configure local and Google Photos sources</string>
+    <string name="local_photos">Local Photos</string>
+    <string name="google_photos">Google Photos</string>
+    <string name="manage_folders">Manage Folders</string>
+    <string name="signed_in_as">Signed in as %s</string>
+    <string name="not_signed_in">Not signed in</string>
+    <string name="google_sign_in_failed">Failed to sign in to Google Photos</string>
+    <string name="sign_in_required">Sign in Required</string>
+    <string name="google_photos_sign_in_required">Please sign in to Google Photos to access your albums</string>
+    <string name="sign_in">Sign In</string>
+
+    <!-- Google Photos Settings -->
+    <string name="pref_google_photos_category">Google Photos Settings</string>
+    <string name="pref_google_photos_signin_title">Sign in to Google Photos</string>
+    <string name="pref_google_photos_signin_summary">Connect to your Google Photos account</string>
+    <string name="pref_select_albums_title">Select Google Photos Albums</string>
+    <string name="pref_select_albums_summary">Choose which albums to display</string>
+
+    <!-- Local Photos Settings -->
+    <string name="pref_local_photos_category">Local Photos Settings</string>
+    <string name="pref_select_local_photos_title">Select Local Photos</string>
+    <string name="pref_select_local_photos_summary">Choose photos from your device</string>
+    <string name="pref_photo_folders_title">Photo Folders</string>
+    <string name="pref_photo_folders_summary">Select folders to display photos from</string>
+
+    <!-- Common Settings -->
+    <string name="pref_common_settings_category">Common Settings</string>
+    <string name="pref_random_order_title">Random Order</string>
+    <string name="pref_random_order_summary">Display photos in random order</string>
+    <string name="pref_photo_scale_title">Photo Scale</string>
+    <string name="pref_photo_scale_summary">How photos should fit the screen</string>
+
+    <!-- Screensaver Settings -->
+    <string name="pref_screensaver_category">Screensaver Settings</string>
+    <string name="pref_screensaver_enabled_title">Enable Screensaver</string>
+    <string name="pref_screensaver_enabled_summary">Activate photo slideshow as screensaver</string>
+    <string name="pref_screensaver_delay_title">Start Delay</string>
+    <string name="pref_screensaver_delay_summary">Time before screensaver starts</string>
+    <string name="pref_transition_effect_title">Transition Effect</string>
+    <string name="pref_transition_effect_summary">Choose transition between photos</string>
+    <string name="pref_refresh_interval_title">Photo Change Interval</string>
+    <string name="pref_refresh_interval_summary">Time between photo changes</string>
+
+    <!-- Display Settings -->
+    <string name="pref_display_summary">Configure screen brightness, orientation and screen timeout</string>
+    <string name="pref_display_settings_category">Display Settings</string>
+    <string name="pref_keep_screen_on_title">Keep Screen On</string>
+    <string name="pref_keep_screen_on_summary">Prevent screen from turning off</string>
+    <string name="pref_brightness_title">Brightness</string>
+    <string name="pref_brightness_summary">Adjust display brightness</string>
+    <string name="pref_orientation_title">Screen Orientation</string>
+    <string name="pref_orientation_summary">Choose screen orientation</string>
+    <string name="brightness_slider_description">Adjust screen brightness</string>
+
+    <!-- Schedule Settings -->
+    <string name="pref_schedule_category">Schedule</string>
+    <string name="pref_schedule_enabled_title">Enable Schedule</string>
+    <string name="pref_schedule_enabled_summary">Set specific times for screensaver</string>
+    <string name="pref_start_time_title">Start Time</string>
+    <string name="pref_end_time_title">End Time</string>
+    <string name="pref_active_days_title">Active Days</string>
+    <string name="pref_active_days_summary">Select days when schedule is active</string>
+
+    <!-- Debug Options -->
+    <string name="pref_debug_category">Debug Options</string>
+    <string name="pref_test_screensaver_title">Test Screensaver</string>
+    <string name="pref_test_screensaver_summary">Start the screensaver manually</string>
+    <string name="pref_debug_logging_title">Debug Logging</string>
+    <string name="pref_debug_logging_summary">Enable detailed logging</string>
+    <string name="pref_view_logs_title">View Logs</string>
+    <string name="pref_view_logs_summary">Display debug logs</string>
+
+    <string name="primary_image_description">Current displayed photo</string>
+    <string name="secondary_image_description">Next photo for transition</string>
+    <string name="web_content_description">Web content</string>
+
+    <!-- Day names -->
+    <string name="day_monday">Monday</string>
+    <string name="day_tuesday">Tuesday</string>
+    <string name="day_wednesday">Wednesday</string>
+    <string name="day_thursday">Thursday</string>
+    <string name="day_friday">Friday</string>
+    <string name="day_saturday">Saturday</string>
+    <string name="day_sunday">Sunday</string>
+
+    <!-- Orientation options -->
+    <string name="orientation_auto">Auto</string>
+    <string name="orientation_portrait">Portrait</string>
+    <string name="orientation_landscape">Landscape</string>
+
+    <!-- Photo scale options -->
+    <string name="photo_scale_fit">Fit</string>
+    <string name="photo_scale_fill">Fill</string>
+    <string name="photo_scale_original">Original</string>
+
+    <!-- Photo source options -->
+    <string name="photo_source_local">Local Photos</string>
+    <string name="photo_source_google">Google Photos</string>
+
+    <!-- Refresh intervals -->
+    <string name="refresh_interval_1m">1 minute</string>
+    <string name="refresh_interval_5m">5 minutes</string>
+    <string name="refresh_interval_15m">15 minutes</string>
+
+    <string name="refresh_interval_30m">30 minutes</string>
+    <string name="refresh_interval_1h">1 hour</string>
+
+    <!-- Transition effects -->
+    <string name="transition_fade">Fade</string>
+    <string name="transition_slide">Slide</string>
+    <string name="transition_zoom">Zoom</string>
+    <string name="transition_blur">Blur</string>
+    <string name="transition_flip">Flip</string>
+    <string name="transition_rotate">Rotate</string>
+    <string name="transition_depth">Depth</string>
+    <string name="transition_cube">Cube</string>
+
+    <!-- Content descriptions -->
+    <string name="photo_content_description">Photo</string>
+    <string name="next_photo_content_description">Next photo</string>
+
+    <!-- Preference categories -->
+    <string name="pref_category_display_mode">Display Mode</string>
+    <string name="pref_category_photo_sources">Photo Sources</string>
+    <string name="pref_category_google_photos">Google Photos</string>
+    <string name="pref_category_local_photos">Local Photos</string>
+    <string name="pref_category_common">PhotoShow Settings</string>
+    <string name="common_settings_scroll_area">PhotoShow settings scroll area</string>
+    <string name="display_settings_scroll_area">Display settings scroll area</string>
+    <string name="pref_common_summary">Configure photo display settings, transitions, and timing</string>
+    <string name="pref_category_screensaver">Screensaver Settings</string>
+    <string name="pref_category_schedule">Schedule</string>
+    <string name="pref_category_debug">Debug</string>
+
+    <string name="lock_screen_admin_denied">Lock screen admin access denied</string>
+    <string name="generic_error">An error occurred</string>
+    <string name="details">Details</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="refresh">Refresh</string>
+
+    <!-- Error Handler -->
+    <string name="error_network_connection">No internet connection</string>
+    <string name="error_network_timeout">Connection timed out</string>
+    <string name="error_network_general">Network error occurred</string>
+    <string name="error_auth_unauthorized">Unauthorized access</string>
+    <string name="error_auth_forbidden">Access forbidden</string>
+    <string name="error_not_found">Resource not found</string>
+    <string name="error_rate_limit">Too many requests</string>
+    <string name="error_server">Server error</string>
+    <string name="error_api_general">API error occurred</string>
+    <string name="error_memory">Out of memory</string>
+    <string name="error_photo_load">Failed to load photo</string>
+    <string name="error_photo_general">Photo error occurred</string>
+    <string name="error_permission_storage">Storage permission required</string>
+    <string name="error_permission_notification">Notification permission required</string>
+    <string name="error_permission_general">Permission error occurred</string>
+    <string name="error_storage_access">Storage access error</string>
+    <string name="error_storage_general">Storage error occurred</string>
+    <string name="error_general">An error occurred</string>
+
+    <string name="init_failed">Failed to initialize: %s</string>
+    <string name="google_photos_init_failed">Failed to initialize Google Photos</string>
+    <string name="google_photos_init_error">Error initializing Google Photos: %s</string>
+    <string name="albums_load_error">Error loading albums: %s</string>
+    <string name="album_added">Added %s</string>
+    <string name="album_removed">Removed %s</string>
+    <string name="loading_albums">Loading albums...</string>
+
+    <string name="screensaver_not_supported">Screensaver not supported on this device</string>
+
+    <plurals name="selected_albums_count">
+        <item quantity="one">%d album selected</item>
+        <item quantity="other">%d albums selected</item>
+    </plurals>
+
+    <string name="device_admin_explanation">Device admin permission is required for lock screen functionality</string>
+
+    <string name="device_admin_error">Error managing device administrator</string>
+    <string name="device_admin_disable_warning">Disabling device administrator will stop the lock screen functionality</string>
+
+    <string name="error_storage_permission">Storage permission is required to access photos</string>
+
+    <!-- Error Messages -->
+    <string name="error_loading_config">Could not load current configuration</string>
+    <string name="error_admin_required">Device admin access required</string>
+    <string name="error_applying_security_level">Failed to apply security level</string>
+    <string name="error_changing_update_policy">Failed to change update policy</string>
+    <string name="error_saving_settings">Failed to save settings</string>
+    <string name="error_exit_code_length">Exit code must be at least 4 digits</string>
+    <string name="error_permissions_required">Required permissions must be granted</string>
+    <string name="passcode_digits_only">Passcode must be digits only</string>
+    <string name="passcode_length_error">Passcode length must be 4 digits</string>
+
+    <!-- Permission Messages -->
+    <string name="permissions_granted">Permissions granted successfully</string>
+    <string name="call_blocking_permission_explanation">Call blocking requires phone permissions to function properly.</string>
+    <string name="notification_permission_explanation">Notification blocking requires notification access permission.</string>
+    <string name="request_permission">Request Permission</string>
+    <string name="open_settings">Open Settings</string>
+
+    <string name="security_level">Security Level</string>
+    <string name="update_policy">Update Policy</string>
+    <string name="block_all_updates">Block All Updates</string>
+    <string name="block_calls">Block Phone Calls</string>
+
+
+    <string name="photo_preview">Photo Preview</string>
+    <string name="photo_preview_overlay">Photo Preview Overlay</string>
+
+    <string name="background_image">Background Photo</string>
+    <string name="overlay_image">Transitioning Photo</string>
+    <string name="swipe_to_unlock">Swipe up to unlock</string>
+    <string name="preview_mode">Preview Mode</string>
+    <string name="tap_to_exit_preview">Tap anywhere to exit preview</string>
+    <string name="swipe_up_to_unlock">Swipe up to unlock</string>
+
+    <string name="preview_button_text">Preview Screensaver</string>
+    <string name="preview_cooldown_message">Please wait %d seconds before starting another preview</string>
+    <string name="screensaver_ready_title">Screensaver Ready</string>
+    <string name="screensaver_ready_description">Your screensaver is configured and ready to use</string>
+    <string name="preview_button_text_with_count">Preview (%d remaining)</string>
+    <string name="preview_cooldown_active">Preview unavailable</string>
+    <string name="preview_limit_reached">Preview limit reached. Please wait.</string>
+    <string name="preview_available_message">Preview available (%d remaining)</string>
+    <string name="preview_loading">Loading preview...</string>
+    <string name="preview_error">Failed to load preview</string>
+    <string name="preview_no_photos">No photos available for preview</string>
+    <string name="preview_transition_error">Failed to perform transition</string>
+
+    <!-- Preview-related strings -->
+    <string name="preview_countdown">Preview ends in %d seconds</string>
+    <string name="preview_time_expired">Preview time expired</string>
+    <string name="preview_controls_hint">Swipe left/right to change photos</string>
+    <string name="preview_mode_active">Preview Mode Active</string>
+
+    <!-- Lock screen preview strings -->
+    <string name="lock_screen_preview_title">Lock Screen Preview</string>
+    <string name="lock_screen_preview_description">See how your lock screen will look</string>
+    <string name="lock_screen_preview_notice">This is a preview. Swipe up or tap to exit.</string>
+
+    <!-- Additional error messages -->
+    <string name="preview_service_error">Error starting preview service</string>
+    <string name="preview_initialization_error">Error initializing preview</string>
+
+    <!-- Preview settings -->
+    <string name="preview_settings_category">Preview Settings</string>
+    <string name="preview_duration_title">Preview Duration</string>
+    <string name="preview_duration_summary">How long preview mode stays active</string>
+    <string name="preview_controls_title">Preview Controls</string>
+    <string name="preview_controls_summary">Enable manual navigation in preview mode</string>
+
+    <!-- Preview feedback -->
+    <string name="error_loading_photos">Error loading photos</string>
+    <string name="albums_saved_successfully">Albums saved successfully</string>
+    <string name="no_photos_found">No photos found in selected albums</string>
+    <string name="save_albums_error">Error saving albums: %1$s</string>
+    <string name="initialization_failed">Failed to initialize photo manager</string>
+    <string name="initialization_error">Error initializing photos</string>
+    <string name="refresh_error">Error refreshing photos</string>
+
+    <!-- New strings -->
+    <string name="screensaver_ready">Your screensaver is ready! Try it out with preview.</string>
+    <string name="preview_screensaver">Preview</string>
+
+    <!-- Setup screen -->
+    <string name="setup_title">Set Up Your Screensaver</string>
+    <string name="setup_step1">Open Settings using the bottom navigation</string>
+    <string name="setup_step2">Sign in to Google Photos</string>
+    <string name="setup_step3">Select the albums you want to display</string>
+    <string name="setup_step4">Return here to preview your screensaver</string>
+
+    <!-- Photo Display strings -->
+    <string name="photo_preview_description">Photo preview</string>
+    <string name="photo_preview_transition_description">Photo transition overlay</string>
+    <string name="loading_photo">Loading photo</string>
+    <string name="no_photos_selected">No photos selected</string>
+    <string name="quick_settings_description">Quick access to common settings</string>
+    <string name="photo_description">Current photo</string>
+    <string name="photo_overlay_description">Photo transition overlay</string>
+    <string name="photos_load_failed">Failed to load photos</string>
+    <string name="photos_load_error">Error loading photos: %1$s</string>
+
+    <string name="loading_photos_message">Loading your photos…</string>
+    <string name="caching_photos_message">Preparing photos for display…</string>
+
+    <string name="default_photo_description">Welcome to Photo Screensaver</string>
+    <string name="photos_loading">Loading your photos…</string>
+    <string name="loading_photos_friendly">Hang on! We\'re getting your memories ready</string>
+    <string name="settings_button_description">Open Settings</string>
+    <string name="settings">Settings</string>
+    <string name="save">Save</string>
+    <string name="save_settings">Save Settings</string>
+
+    <string name="sign_in_failed">Sign in failed</string>
+
+    <string name="pref_cache_category">Cache Settings</string>
+    <string name="pref_cache_size_title">Cache Size</string>
+    <string name="pref_cache_size_summary">Number of photos to keep in cache</string>
+    <string name="pref_cache_size_default">10</string>
+
+    <string name="error_message">Error: %1$s</string>
+
+    <string name="albums_load_timeout">Album loading timed out. Please try again.</string>
+
+    <string name="save_error">Error saving album selection</string>
+
+    <string name="loading">Loading…</string>
+
+    <string name="select_at_least_one">Select at least 1 album</string>
+    <string name="keep_one_album">Please keep at least one album selected</string>
+
+    <string name="pref_category_kiosk">Kiosk Mode</string>
+
+    <!-- Local Photo Selection -->
+    <string name="permission_denied">Permission Denied</string>
+    <string name="permission_required">Permission Required</string>
+    <string name="storage_permission_rationale">Storage access is required to display your photos. Please grant the permission to continue.</string>
+    <string name="storage_permission_denied_message">Cannot access photos without storage permission. Please grant the permission in Settings.</string>
+    <string name="grant">Grant</string>
+    <string name="ok">OK</string>
+    <string name="error">Error</string>
+    <string name="photos_selected">%d photos selected</string>
+    <string name="select_photos">Select Photos</string>
+    <string name="select_photo_albums">Select Photo Albums</string>
+    <string name="no_albums_found_message">No photo albums were found on your device. Make sure you have granted storage permissions.</string>
+    <string name="loading_local_photos">Loading photos from local albums…</string>
+    <string name="cleaning_up">Cleaning up…</string>
+
+    <string name="pref_lock_screen_transition_summary_with_value">Photo transition takes %d seconds</string>
+    <string name="pref_transition_duration_title">Transition Animation Duration</string>
+    <string name="pref_transition_duration_summary">How long the animation between photos takes (in seconds)</string>
+    <string name="pref_photo_interval_title">Photo Display Duration</string>
+    <string name="pref_photo_interval_summary">How long each photo is displayed before changing (in seconds)</string>
+    <string name="pref_transition_duration_summary_format">Animation takes %d seconds</string>
+    <string name="pref_photo_interval_summary_format">Change photo every %d seconds</string>
+
+    <string name="start_on_charge_title">Start on charging</string>
+    <string name="start_on_charge_summary">Automatically start screensaver when device is plugged in</string>
+    <string name="start_on_charge_dialog_title">Enable Auto-start</string>
+    <string name="start_on_charge_dialog_message">The screensaver will automatically start when you plug in your device. This feature works with both AC and USB charging.</string>
+    <string name="start_on_charge_enabled">Auto-start on charging enabled</string>
+    <string name="start_on_charge_disabled">Auto-start on charging disabled</string>
+    <string name="enable">Enable</string>
+
+    <string name="terms_of_use">Terms of Use</string>
+    <string name="privacy_policy">Privacy Policy</string>
+    <string name="goto_settings_text">Welcome!\nTap the screen to go Settings and configure your photo sources</string>
+
+    <string name="terms_privacy_title">Welcome to Photo Screensaver</string>
+    <string name="terms_privacy_message">Please review our Terms of Use and Privacy Policy before continuing.</string>
+    <string name="accept_and_continue">Accept and Continue</string>
+
+    <!-- Widget Preferences -->
+    <string name="pref_category_widgets">Widgets</string>
+    <string name="widget_preferences_title">Widget Settings</string>
+
+    <!-- Clock Widget -->
+    <string name="pref_clock_widget_enabled_title">Enable Clock Widget</string>
+    <string name="pref_clock_widget_enabled_summary">Show clock and date on screen</string>
+    <string name="pref_date_format_title">Date Format</string>
+    <string name="pref_date_format_summary">Choose how the date should be displayed</string>
+    <string name="pref_category_clock_widget">Clock Widget</string>
+    <string name="pref_show_clock_title">Show Clock</string>
+    <string name="pref_show_clock_summary">Display the clock on screen</string>
+    <string name="pref_show_date_title">Show Date</string>
+    <string name="pref_show_date_summary">Display the date below the clock</string>
+    <string name="pref_clock_format_title">Time Format</string>
+    <string name="pref_clock_format_summary">Choose between 12-hour or 24-hour format</string>
+    <string name="pref_clock_position_title">Widget Position</string>
+    <string name="pref_clock_position_summary">Choose where to display the clock widget</string>
+    <string name="pref_widgets_title">Widget Settings</string>
+    <string name="pref_widgets_summary">Configure clock and other widgets</string>
+    <string name="pref_clock_widget_position_title">Widget Position</string>
+    <string name="pref_clock_widget_position_summary">Choose where to display the widget on screen</string>
+
+    <!-- Weather Widget Preferences -->
+    <string name="weather_icon_description">Current weather condition</string>
+    <string name="pref_category_weather_widget">Weather Widget</string>
+    <string name="pref_show_weather_title">Show Weather</string>
+    <string name="pref_show_weather_summary">Display current weather information</string>
+    <string name="pref_weather_position_title">Weather Position</string>
+    <string name="pref_weather_position_summary">Choose where to display the weather widget</string>
+    <string name="pref_weather_unit_title">Use Celsius</string>
+    <string name="pref_weather_unit_summary">Switch between Celsius and Fahrenheit</string>
+    <string name="pref_weather_update_interval_title">Update Interval</string>
+    <string name="pref_weather_update_interval_summary">How often to refresh weather data</string>
+    <string name="location_permission_denied_title">Location Permission Required</string>
+    <string name="location_permission_denied_message">Weather widget needs location permission to show local weather. You can enable it in app settings.</string>
+    <string name="location_permission_rationale_title">Location Permission</string>
+    <string name="location_permission_rationale_message">Weather widget needs location permission to show weather for your current location.</string>
+    <string name="weather_use_device_location_title">Use Device Location</string>
+    <string name="weather_use_device_location_summary">Get weather for your current location</string>
+    <string name="weather_manual_location_title">Manual Location</string>
+    <string name="weather_manual_location_summary">Enter a city name or coordinates (e.g., "London" or "51.5074,-0.1278")</string>
+    <string name="grant_permission">Grant Permission</string>
+    <string name="invalid_location">Please enter a valid location</string>
+    <string name="pref_widget_settings_title">Widget Settings</string>
+    <string name="pref_widget_settings_summary">Configure clock and weather widgets</string>
+    <string name="widget_preferences_dialog">Widget Settings Dialog</string>
+    <string name="widget_preferences_scroll_area">Widget Settings Options</string>
+    <string name="clock_widget_preferences">Clock Widget Settings</string>
+    <string name="weather_widget_preferences">Weather Widget Settings</string>
+
+    <string name="no_auth_method">No authentication method</string>
+
+    <!-- Photo Picker -->
+    <string name="processing_photos">Processing selected photos…</string>
+    <string name="saving_photos">Saving photos…</string>
+    <string name="photo_processing_error">Error processing photos: %1$s</string>
+    <string name="picker_launch_error">Could not launch photo picker</string>
+    <string name="processing_photo_progress">Processing photo %1$d of %2$d</string>
+
+    <!-- Photo Management -->
+    <string name="manage_photos">Manage Photos</string>
+    <string name="create_album">Create Album</string>
+    <string name="album_name">Album Name</string>
+    <string name="sort">Sort</string>
+    <string name="sort_date_newest">Newest First</string>
+    <string name="sort_date_oldest">Oldest First</string>
+    <string name="sort_by_source">By Source</string>
+    <string name="select_all">Select All</string>
+    <string name="deselect_all">Deselect All</string>
+    <string name="delete_album">Delete Album</string>
+    <string name="rename_album">Rename Album</string>
+    <string name="confirm_delete_album">Are you sure you want to delete this album?</string>
+    <string name="album_deleted">Album deleted</string>
+    <string name="album_renamed">Album renamed</string>
+    <string name="error_creating_album">Error creating album</string>
+    <string name="error_deleting_album">Error deleting album</string>
+    <string name="error_renaming_album">Error renaming album</string>
+    <string name="loading_photos">Loading photos…</string>
+    <string name="photo_source_virtual">Virtual Album</string>
+    <string name="pref_photo_manager_title">Photo Manager</string>
+    <string name="pref_photo_manager_summary">Manage and organize your photo collection</string>
+    <string name="photos">Photos</string>
+    <string name="albums">Albums</string>
+    <string name="dialog_create_title">Create Virtual Album</string>
+    <string name="dialog_rename_title">Rename Album</string>
+    <string name="dialog_delete_title">Delete Album</string>
+    <string name="dialog_confirm">Confirm</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="remove_selected">Remove Selected</string>
+    <string name="group_by">Group By</string>
+    <string name="group_by_source">Source</string>
+    <string name="confirm_delete">Confirm Delete</string>
+    <string name="delete">Delete</string>
+    <string name="album_options_button_description">More options for %s</string>
+    <string name="album_cover_description">Cover image of %s</string>
+    <string name="select_album_checkbox_description">Select %s for playback</string>
+    <string name="confirm_album_selection">Play Selected Albums</string>
+    <string name="albums_selection_saved">Album selections saved</string>
+    <string name="select_album_after_creation">Mark this album for playing</string>
+
+    <string name="lockout_error_message">Too many failed attempts. Please try again in %s</string>
+    <string name="invalid_passcode_attempts_remaining">Invalid passcode. %d attempts remaining</string>
+    <string name="security_disabled_lockout">Cannot modify security settings while locked out</string>
+    <string name="security_check_failed">Security check failed</string>
+    <string name="sign_out">Sign Out</string>
+    <!-- WIZARD -->
+    <string name="setup_wizard_title">Add Photos Wizard</string>
+    <string name="setup_wizard_summary">Start the guided setup to add photos</string>
+    <!-- Source Selection -->
+    <string name="select_photo_sources">Select Photo Sources</string>
+    <string name="photo_sources_explanation">Choose where you want to get photos from. You can select multiple sources.</string>
+    <string name="local_photos_description">Access photos stored on your device</string>
+    <string name="local_photos_icon">Local photos icon</string>
+    <string name="google_photos_description">Access your Google Photos library (requires sign-in)</string>
+    <string name="google_photos_icon">Google Photos icon</string>
+    <string name="help">Help</string>
+    <string name="source_selection_help">Tap on a card to enable/disable a photo source. You need to select at least one source to continue.</string>
+    <!-- Wizard Navigation -->
+    <string name="exit_setup">Exit Setup?</string>
+    <string name="exit_setup_message">Your progress will be lost. Are you sure you want to exit?</string>
+    <string name="continue_setup">Continue Setup</string>
+    <string name="exit">Exit</string>
+    <string name="error_no_source_selected">Please select at least one photo source</string>
+    <!-- Photo Selection Wizard -->
+    <string name="choose_from_sources">Choose photos from your selected sources</string>
+    <string name="select_local_photos">Select from Device Photos</string>
+    <string name="select_google_photos">Select from Google Photos</string>
+    <string name="photos_selected_count">%d photos selected</string>
+    <string name="photo_selection_description">Select photos from your chosen sources</string>
+    <!-- Quick Album Creation -->
+    <string name="organize_photos">Organize Photos</string>
+    <string name="organize_photos_description">Optionally organize your photos into albums</string>
+    <string name="create_new_album">Create New Album</string>
+    <string name="skip_album_creation">Skip Album Creation</string>
+    <string name="album_created">Album created successfully</string>
+    <!-- Photo Selection Error Messages -->
+    <string name="error_no_photos_selected">Please select at least one photo</string>
+    <string name="album_creation_error">Failed to create album</string>
+    <string name="setup_save_error">Failed to save setup</string>
+    <string name="photo_selection_failed">Failed to load selected photos</string>
+    <string name="navigation_error">Failed to navigate to next step</string>
+    <!-- Navigation -->
+    <string name="back">Back</string>
+    <string name="next">Next</string>
+    <!-- Setup Wizard -->
+    <string name="finish">Finish</string>
+    <string name="step_format">Step %1$d of %2$d</string>
+    <string name="google_photos_load_failed">Google Photos load failed</string>
+    <string name="photo_selection_cancelled">Photo Selection Cancelled</string>
+    <string name="select_local_albums">Pick Entire Local Albums</string>
+    <string name="pick_from_google_photos">Pick from Google Photos</string>
+    <string name="photo_picker_launch_failed">Photo Picker Launch failed</string>
+    <string name="photo_permission_error">Photo Permission Error</string>
+    <!-- WIZARD -->
+
+    <string name="sources">Sources</string>
+    <string name="photos_added_guidance">Photos added! Go to Photos tab to manage them.</string>
+    <string name="go_to_photos">Go to Photos</string>
+    <string name="create_default_album">Create Default Album</string>
+    <string name="default_album_explanation">Would you like to create a default album with your selected photos? You can create more albums manually later.</string>
+    <string name="create">Create</string>
+    <string name="skip">Skip</string>
+    <string name="select_photos_for_album">Select at least one photo to create an album</string>
+    <string name="create_default_album_title">Create Default Album</string>
+    <string name="create_default_album_message">Would you like to create an album with your selected photos? You can create more albums manually later.</string>
+    <string name="photo_sources_tabs">Photo source selection tabs</string>
+    <string name="tab_sources">Sources</string>
+    <string name="tab_photos">Photos</string>
+    <string name="tab_albums">Virtual Albums</string>
+    <string name="default_album_name_numbered">Default Album %d</string>
+    <string name="photos_added_title">Photos Added</string>
+    <string name="photos_added_message">Photos have been added to your default album.</string>
+    <string name="add_more_photos">Add More Photos</string>
+    <string name="default_album_name_with_timestamp">Default Album (%1$s by %2$s)</string>
+    <string name="default_album_name">Default Album</string>
+
+    <!-- Spotify -->
+    <string name="music_widget_previous">Previous track</string>
+    <string name="music_widget_play">Play</string>
+    <string name="music_widget_pause">Pause</string>
+    <string name="music_widget_next">Next track</string>
+    <string name="music_widget_no_track">No track playing</string>
+    <string name="pref_show_music_title">Show Music Widget</string>
+    <string name="pref_show_music_summary">Display currently playing music information</string>
+    <string name="pref_music_position_title">Widget Position</string>
+    <string name="pref_music_position_summary">Choose where to display the music widget</string>
+    <string name="pref_show_music_controls_title">Show Controls</string>
+    <string name="pref_show_music_controls_summary">Display playback control buttons</string>
+    <string name="pref_show_music_progress_title">Show Progress</string>
+    <string name="pref_show_music_progress_summary">Display song progress and duration</string>
+    <string name="music_widget_preferences">Music Widget Settings</string>
+    <string name="spotify_not_installed_title">Spotify Not Installed</string>
+    <string name="spotify_not_installed_message">The Spotify app is required for music playback. Would you like to install it now?</string>
+    <string name="install">Install</string>
+    <string name="spotify_premium_required_title">Spotify Premium Required</string>
+    <string name="spotify_premium_required_message">This feature requires a Spotify Premium account. Please upgrade your Spotify account to use this feature.</string>
+    <string name="upgrade">Upgrade</string>
+    <string name="not_now">Not Now</string>
+    <string name="pref_category_music_widget">Music Widget</string>
+    <string name="pref_music_widget_enabled_summary">Music controls are enabled</string>
+    <string name="pref_music_widget">Music Widget</string>
+    <string name="play_pause">Play/Pause</string>
+    <string name="next_track">Next track</string>
+    <string name="previous_track">Previous track</string>
+    <string name="pref_show_music_artwork_title">Show Album Artwork</string>
+    <string name="pref_show_music_artwork_summary">Display album artwork or station logo overlay on photos</string>
+    <string name="track_name_description">Currently playing track name</string>
+    <string name="artist_name_description">Current track artist name</string>
+    <string name="no_track_playing">No track playing</string>
+    <string name="no_artist">No artist</string>
+    <string name="pref_category_music">Music Settings</string>
+    <string name="pref_spotify_enabled_title">Enable Spotify</string>
+    <string name="pref_spotify_enabled_summary">Play music from Spotify while screensaver is active</string>
+    <string name="pref_spotify_account_title">Spotify Account</string>
+    <string name="pref_spotify_account_summary">Connect your Spotify Premium account</string>
+    <string name="pref_spotify_autoplay_title">Autoplay</string>
+    <string name="pref_spotify_autoplay_summary">Automatically start playing when screensaver activates</string>
+    <string name="pref_spotify_playlist_title">Select Playlist</string>
+    <string name="pref_spotify_playlist_summary">Choose which playlist to play</string>
+    <string name="favorite_button_description">Toggle favorite station</string>
+    <string name="add_to_favorites_description">Add %s to favorites</string>
+    <string name="remove_from_favorites_description">Remove %s from favorites</string>
+    <string name="station_item_description">Radio station %1$s, Genre: %2$s. Double tap to play.</string>
+    <string name="station_logo_description">Logo for station %s</string>
+
+    <!-- Music Sources Dialog -->
+    <string name="music_sources_title">Music Sources</string>
+    <string name="pref_music_source_title">Select Music Source</string>
+    <string name="pref_local_music_folder_title">Local Music Folder</string>
+    <string name="pref_local_music_folder_summary">Select folder containing your music files</string>
+    <string name="pref_radio_url_title">Radio Stream URL</string>
+    <string name="pref_radio_url_summary">Enter the URL of your internet radio stream</string>
+    <string name="pref_music_sources_title">Music Sources</string>
+    <string name="pref_music_sources_summary">Configure Spotify, local music, or radio streaming</string>
+    <string name="music_sources_scroll_area">Music sources scroll area</string>
+
+    <string name="photo_show_settings_scroll_area">Photo show settings scroll area</string>
+    <string name="security_preferences_scroll_area">Security preferences scroll area</string>
+    <string name="settings_subtitle">Customize your screensaver experience</string>
+    <string name="photo_picker_error">Error launching photo picker</string>
+
+    <string name="select_pictures">select pictures</string>
+    <string name="securing_permissions">Securing Photo Permissions</string>
+    <string name="saving_selected_albums">Saving Selected Albums</string>
+    <string name="error_processing_photos">Error Processing photos</string>
+    <string name="error_launching_picker">Could not launch photo picker</string>
+
+
+
+    <string name="error_too_many_failures">Too many errors occurred while displaying photos.</string>
+    <string name="retrying_photo_load">Retrying photo load (Attempt %1$d)</string>
+    <string name="recovering_photo_access">Recovering photo access...</string>
+    <string name="error_photo_access_lost">Lost access to photos</string>
+    <string name="error_loading_photo">Error loading photo</string>
+
+    <string name="caching_google_photos">Caching Google Photos...</string>
+    <string name="creating_media_items">Creating media items…</string>
+    <string name="caching_photos_progress">Caching photos: %1$d/%2$d (%3$d%%)</string>
+    <string name="photos_cached_success">Successfully cached %1$d of %2$d photos</string>
+    <string name="caching_photos">Caching selected photos...</string>
+    <string name="photos_cached_error">Failed to cache %1$d photos. %2$d errors occurred.</string>
+    <string name="photos_cached_error_general">Error caching photos: %1$s</string>
+    <string name="processing_local_photos">Processing Local Photos</string>
+    <string name="local_photos_added_success">Succesfully added local photos</string>
+    <string name="error_saving_photos">Error Saving Photos</string>
+    <string name="no_stations_found">No Stations found</string>
+    <string name="search">Search</string>
+    <string name="search_stations_hint">Type a station name</string>
+
+    <!-- Pro Version -->
+    <string name="pro_feature_title">Upgrade to Pro Version</string>
+    <string name="pro_feature_description">Unlock premium features and remove ads</string>
+    <string name="pro_feature_image_description">Premium feature preview</string>
+    <string name="upgrade_to_pro">Upgrade to Pro</string>
+    <string name="upgrade_button_with_price">Upgrade to Pro (%1$s)</string>
+    <string name="feature_image_description">Feature illustration</string>
+
+    <!-- Music Feature -->
+    <string name="music_feature_title">Music Integration</string>
+    <string name="music_feature_description">Enhance your slideshow with seamless music integration. Connect Spotify or internet radio to create the perfect atmosphere.</string>
+
+    <!-- Widgets Feature -->
+    <string name="widgets_feature_title">Custom Widgets</string>
+    <string name="widgets_feature_description">Add beautiful, customizable widgets to your slideshow. Display time, weather, and other useful information.</string>
+
+    <!-- Security Feature -->
+    <string name="security_feature_title">Security Features</string>
+    <string name="security_feature_description">Protect your slideshow with biometric authentication and passcode locks. Keep your content private and secure.</string>
+
+    <!-- Ad Settings -->
+    <string name="ad_settings_title">Ad Settings</string>
+    <string name="ad_interval_title">Ad Display Interval</string>
+    <string name="ad_interval_summary">Set how often ads appear (in minutes)</string>
+    <string name="version_settings">Version Settings</string>
+    <string name="pro_version_title">Pro Version</string>
+    <string name="pro_version_summary">Unlock all premium features</string>
+    <string name="upgrade_to_pro_summary">Get access to Music, Widgets, and Security features</string>
+    <string name="developer_mode">Developer Mode</string>
+
+
+</resources>

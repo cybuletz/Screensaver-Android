@@ -5,11 +5,11 @@
 
     <data>
         <import type="android.view.View"/>
-        <import type="com.example.screensaver.models.MediaItem"/>
+        <import type="com.photostreamr.models.MediaItem"/>
         <import type="java.util.Date"/>
         <variable
             name="viewModel"
-            type="com.example.screensaver.viewmodels.PhotoViewModel" />
+            type="com.photostreamr.viewmodels.PhotoViewModel" />
     </data>
 
     <androidx.constraintlayout.widget.ConstraintLayout

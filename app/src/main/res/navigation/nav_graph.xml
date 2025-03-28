@@ -7,7 +7,7 @@
 
     <fragment
         android:id="@+id/mainFragment"
-        android:name="com.example.screensaver.MainFragment"
+        android:name="com.photostreamr.MainFragment"
         android:label="Main"
         tools:layout="@layout/fragment_main">
         <action
@@ -21,7 +21,7 @@
 
     <fragment
         android:id="@+id/settingsFragment"
-        android:name="com.example.screensaver.settings.SettingsFragment"
+        android:name="com.photostreamr.settings.SettingsFragment"
         android:label="Settings"
         tools:layout="@layout/fragment_settings">
         <action
@@ -44,7 +44,7 @@
 
     <fragment
         android:id="@+id/albumFragment"
-        android:name="com.example.screensaver.AlbumSelectionActivity"
+        android:name="com.photostreamr.AlbumSelectionActivity"
         android:label="Albums"
         tools:layout="@layout/activity_album_selection">
         <action
