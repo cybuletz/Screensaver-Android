@@ -27,7 +27,7 @@ val commitCount: Int = try {
 val currentTimeMillis = System.currentTimeMillis()
 
 // Use the time in seconds (or milliseconds) as the base for versionCode
-val autoVersionCode = (currentTimeMillis / 100000000).toInt()
+val autoVersionCode = (currentTimeMillis / 1000).toInt()
 
 val autoVersionName = "2.1.0.${autoVersionCode}"
 
@@ -39,7 +39,7 @@ android {
         applicationId = "com.photostreamr"
         minSdk = 26
         targetSdk = 34
-        versionCode = 17441
+        versionCode = autoVersionCode
         versionName = autoVersionName
         manifestPlaceholders["google_oauth_client_id"] = "@string/google_oauth_client_id"
         manifestPlaceholders["redirectSchemeName"] = "photostreamr-spotify"

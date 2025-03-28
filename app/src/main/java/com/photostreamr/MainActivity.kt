@@ -392,28 +392,46 @@ class MainActivity : AppCompatActivity() {
                         if (container is ConstraintLayout) {
                             Log.d(TAG, "Setting up widgets in ConstraintLayout")
 
-                            // Set up all widgets
+                            // Set up all widgets with proper logging
                             widgetManager.setupClockWidget(container)
                             widgetManager.setupWeatherWidget(container)
+
+                            // Setup music widget with proper logging
+                            Log.d(TAG, "Setting up music widget")
                             widgetManager.setupMusicWidget(container)
 
-                            // Immediately show widgets based on preferences
+                            // Show widgets based on preferences with proper checks
                             val showClock = preferences.isShowClock()
                             if (showClock) {
+                                Log.d(TAG, "Showing clock widget")
                                 widgetManager.showWidget(WidgetType.CLOCK)
                             }
 
                             val showWeather = preferences.getBoolean("show_weather", false)
                             if (showWeather) {
+                                Log.d(TAG, "Showing weather widget")
                                 widgetManager.showWidget(WidgetType.WEATHER)
                             }
 
-                            val showMusic = spotifyPreferences.isEnabled()
+                            // Check both Spotify and general music preference
+                            val showMusic = spotifyPreferences.isEnabled() ||
+                                    preferences.getBoolean("show_music_controls", false)
                             if (showMusic) {
+                                Log.d(TAG, "Music is enabled, showing music widget")
+                                // Force update music config first
+                                widgetManager.updateMusicConfig()
+                                // Then show the widget
                                 widgetManager.showWidget(WidgetType.MUSIC)
+                            } else {
+                                Log.d(TAG, "Music is not enabled")
                             }
 
-                            Log.d(TAG, "Widgets initialized - Clock: $showClock, Weather: $showWeather, Music: $showMusic")
+                            Log.d(TAG, """
+                            Widgets initialized:
+                            - Clock: $showClock
+                            - Weather: $showWeather
+                            - Music: $showMusic (Spotify: ${spotifyPreferences.isEnabled()})
+                        """.trimIndent())
                         } else {
                             Log.e(TAG, "Container is not a ConstraintLayout, it is: ${container.javaClass.simpleName}")
                         }
@@ -1263,33 +1281,34 @@ class MainActivity : AppCompatActivity() {
                     R.id.mainFragment -> {
                         Log.d(TAG, "Returned to main fragment, updating widgets")
                         ensureBinding()
-                        binding.screensaverContainer?.post {
-                            try {
-                                binding.screensaverContainer?.let { container ->
-                                    if (container is ConstraintLayout) {
-                                        val showClock = preferences.isShowClock()
-                                        if (showClock) {
-                                            widgetManager.reinitializeClockWidget(container)
-                                            widgetManager.showWidget(WidgetType.CLOCK)
-                                        }
+                        binding.screensaverContainer?.findViewById<ConstraintLayout>(R.id.widgets_layer)?.let { widgetsLayer ->
+                            // Store the widgets_layer reference in WidgetManager
+                            widgetManager.setContainer(widgetsLayer)
 
-                                        val showWeather = preferences.getBoolean("show_weather", false)
-                                        if (showWeather) {
-                                            widgetManager.reinitializeWeatherWidget(container)
-                                            widgetManager.showWidget(WidgetType.WEATHER)
-                                        }
+                            Log.d(TAG, "Found widgets_layer, setting up widgets")
 
-                                        val showMusic = spotifyPreferences.isEnabled()
-                                        if (showMusic) {
-                                            widgetManager.updateMusicConfig()
-                                            widgetManager.showWidget(WidgetType.MUSIC)
-                                        }
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error in navigation post callback", e)
+                            // Set up all widgets first
+                            widgetManager.setupClockWidget(widgetsLayer)
+                            widgetManager.setupWeatherWidget(widgetsLayer)
+                            widgetManager.setupMusicWidget(widgetsLayer)
+
+                            // Then show them based on preferences
+                            if (preferences.isShowClock()) {
+                                widgetManager.showWidget(WidgetType.CLOCK)
                             }
-                        }
+
+                            if (preferences.getBoolean("show_weather", false)) {
+                                widgetManager.showWidget(WidgetType.WEATHER)
+                            }
+
+                            val showMusic = spotifyPreferences.isEnabled() ||
+                                    preferences.getBoolean("show_music_controls", false)
+                            if (showMusic) {
+                                Log.d(TAG, "Reinitializing music widget")
+                                widgetManager.updateMusicConfig()
+                                widgetManager.showWidget(WidgetType.MUSIC)
+                            }
+                        } ?: Log.e(TAG, "Could not find widgets_layer")
                     }
                 }
             }
