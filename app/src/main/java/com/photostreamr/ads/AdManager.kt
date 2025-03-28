@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -224,6 +225,7 @@ class AdManager @Inject constructor(
     fun setupSettingsFragmentAd(container: FrameLayout) {
         if (appVersionManager.isProVersion()) {
             Log.d(TAG, "Pro version, not showing ads")
+            container.visibility = View.GONE
             return
         }
 
@@ -238,7 +240,16 @@ class AdManager @Inject constructor(
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         Log.d(TAG, "Settings fragment ad loaded")
-                        container.visibility = ViewGroup.VISIBLE
+                        container.post {
+                            container.visibility = ViewGroup.VISIBLE
+
+                            // Ensure proper margins after ad loads
+                            container.parent?.let { parent ->
+                                if (parent is ViewGroup) {
+                                    parent.requestLayout()
+                                }
+                            }
+                        }
                     }
 
                     override fun onAdFailedToLoad(error: LoadAdError) {
@@ -248,14 +259,18 @@ class AdManager @Inject constructor(
                 }
             }
 
+            // Setup container
             container.removeAllViews()
             container.addView(settingsAdView)
+
+            // Set initial visibility
             container.visibility = ViewGroup.GONE
 
-            // Load ad immediately for settings fragment
+            // Load ad
             loadSettingsAd()
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up settings fragment ad", e)
+            container.visibility = ViewGroup.GONE
         }
     }
 

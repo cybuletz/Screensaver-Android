@@ -1269,8 +1269,11 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "Navigation destination changed to: ${destination.id}")
                 handleNavigationVisibility(destination.id)
 
+                // Handle ad container visibility based on destination
                 when (destination.id) {
                     R.id.settingsFragment -> {
+                        // Hide main activity ad container when in settings
+                        adContainer.visibility = View.GONE
                         if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
                             navController.navigateUp()
                             checkSecurityWithCallback {
@@ -1279,6 +1282,8 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     R.id.mainFragment -> {
+                        // Show main activity ad container when returning to main
+                        adContainer.visibility = View.VISIBLE
                         Log.d(TAG, "Returned to main fragment, updating widgets")
                         ensureBinding()
                         binding.screensaverContainer?.findViewById<ConstraintLayout>(R.id.widgets_layer)?.let { widgetsLayer ->
