@@ -199,6 +199,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+            // Add top margin to the entire content layout to account for ad space
+            setPadding(0, resources.getDimensionPixelSize(R.dimen.ad_height_with_margin), 0, 0)
         }
 
         // Create the title TextView
@@ -219,21 +221,21 @@ class SettingsFragment : PreferenceFragmentCompat() {
             setBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface))
         }
 
-        // Create a new container for the ad
+        // Create a new container for the ad at the top
         adContainer = FrameLayout(requireContext()).apply {
             id = View.generateViewId()
             layoutParams = CoordinatorLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.BOTTOM
+                gravity = Gravity.TOP
             }
             visibility = View.GONE
+            elevation = 10f  // Ensure ad stays on top
         }
-        coordinator.addView(adContainer)
 
-        // Initialize ad manager for settings
-        adManager.setupSettingsFragmentAd(adContainer)
+        // Add views in the correct order
+        coordinator.addView(adContainer)  // Ad container first
 
         // Add the preferences view with Material You styling
         view.apply {
@@ -270,6 +272,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
         coordinator.addView(fab)
+
+        // Initialize ad manager for settings
+        adManager.setupSettingsFragmentAd(adContainer)
 
         return coordinator
     }
