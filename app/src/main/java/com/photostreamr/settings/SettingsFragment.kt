@@ -114,6 +114,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     private var widgetPreferenceFragment: WidgetPreferenceFragment? = null
 
+    private var contentLayoutId: Int = View.NO_ID
+
     companion object {
         private const val TAG = "SettingsFragment"
         private const val REQUEST_SELECT_PHOTOS = 1001
@@ -192,15 +194,20 @@ class SettingsFragment : PreferenceFragmentCompat() {
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val view = super.onCreateView(inflater, container, savedInstanceState)
 
+        // Store contentLayout ID for later use
+        contentLayoutId = View.generateViewId()
+
         // Create a LinearLayout to hold the title and preferences
         val contentLayout = LinearLayout(requireContext()).apply {
+            id = contentLayoutId  // Use the stored ID
             orientation = LinearLayout.VERTICAL
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            // Add top margin to the entire content layout to account for ad space
-            setPadding(0, resources.getDimensionPixelSize(R.dimen.ad_height_with_margin), 0, 0)
+            // Only add padding if not pro version
+            setPadding(0, if (!appVersionManager.isProVersion())
+                resources.getDimensionPixelSize(R.dimen.ad_height_with_margin) else 0, 0, 0)
         }
 
         // Create the title TextView
@@ -222,20 +229,21 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
 
         // Create a new container for the ad at the top
-        adContainer = FrameLayout(requireContext()).apply {
-            id = View.generateViewId()
-            layoutParams = CoordinatorLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.TOP
+        if (!appVersionManager.isProVersion()) {
+            adContainer = FrameLayout(requireContext()).apply {
+                id = View.generateViewId()
+                layoutParams = CoordinatorLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = Gravity.TOP
+                }
+                visibility = View.GONE
+                elevation = 10f  // Ensure ad stays on top
             }
-            visibility = View.GONE
-            elevation = 10f  // Ensure ad stays on top
+            // Add ad container only if not pro version
+            coordinator.addView(adContainer)
         }
-
-        // Add views in the correct order
-        coordinator.addView(adContainer)  // Ad container first
 
         // Add the preferences view with Material You styling
         view.apply {
@@ -273,8 +281,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
         coordinator.addView(fab)
 
-        // Initialize ad manager for settings
-        adManager.setupSettingsFragmentAd(adContainer)
+        // Initialize ad manager for settings only if not pro version
+        if (!appVersionManager.isProVersion()) {
+            adManager.setupSettingsFragmentAd(adContainer)
+        }
 
         return coordinator
     }
@@ -303,6 +313,42 @@ class SettingsFragment : PreferenceFragmentCompat() {
         // Then initialize all components
         setupPhotoDisplayManager()
         observeAppState()
+
+        // Add version state observation
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                appVersionManager.versionState.collect { state ->
+                    when (state) {
+                        is AppVersionManager.VersionState.Pro -> {
+                            // Immediately remove ads and adjust layout
+                            if (::adContainer.isInitialized) {
+                                adContainer.removeAllViews()
+                                adContainer.visibility = View.GONE
+                                // Destroy the ad
+                                adManager.destroyAds()
+                            }
+                            view.findViewById<LinearLayout>(contentLayoutId)?.apply {
+                                setPadding(0, 0, 0, 0)
+                                // Force layout update
+                                requestLayout()
+                            }
+                        }
+                        is AppVersionManager.VersionState.Free -> {
+                            if (::adContainer.isInitialized) {
+                                adContainer.visibility = View.VISIBLE
+                                // Reinitialize ads
+                                adManager.setupSettingsFragmentAd(adContainer)
+                            }
+                            view.findViewById<LinearLayout>(contentLayoutId)?.apply {
+                                setPadding(0, resources.getDimensionPixelSize(R.dimen.ad_height_with_margin), 0, 0)
+                                // Force layout update
+                                requestLayout()
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {

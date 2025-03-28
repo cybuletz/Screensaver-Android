@@ -232,11 +232,35 @@ class MainActivity : AppCompatActivity() {
         // Initialize ad container now that binding is set up
         adContainer = binding.adContainer
 
+        // Add version state observation
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                appVersionManager.versionState.collect { state ->
+                    when (state) {
+                        is AppVersionManager.VersionState.Pro -> {
+                            // Immediately remove ads and cleanup
+                            adContainer.removeAllViews()
+                            adContainer.visibility = View.GONE
+                            // Destroy all ads immediately
+                            adManager.destroyAds()
+                        }
+                        is AppVersionManager.VersionState.Free -> {
+                            // Only setup ads if not already set up
+                            if (adContainer.childCount == 0) {
+                                adContainer.visibility = View.VISIBLE
+                                adManager.setupMainActivityAd(adContainer)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Initialize ad manager - FIX: Wrap in try-catch and add null check for container
         try {
             adManager.initialize()
-            // Only setup ads if container exists
-            if (adContainer != null && !isDestroyed) {
+            // Only setup ads if container exists and not pro version
+            if (!appVersionManager.isProVersion() && adContainer != null && !isDestroyed) {
                 // Post to main thread to ensure view is ready
                 adContainer.post {
                     try {
