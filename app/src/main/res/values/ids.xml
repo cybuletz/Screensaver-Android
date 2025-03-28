@@ -3,4 +3,6 @@
     <item name="widget_preferences_container" type="id"/>
     <item name="settings_content_layout" type="id"/>
     <item name="settings_ad_container" type="id"/>
+    <item name="pro_badge" type="id"/>
+
 </resources>

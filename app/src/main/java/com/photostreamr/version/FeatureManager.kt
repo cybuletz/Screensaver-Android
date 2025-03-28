@@ -17,7 +17,8 @@ class FeatureManager @Inject constructor(
         PHOTO_SLIDESHOW,
         MUSIC,
         WIDGETS,
-        SECURITY
+        SECURITY,
+        TRANSITION_EFFECTS
     }
 
     // Maps features to their descriptions for UI
@@ -25,7 +26,8 @@ class FeatureManager @Inject constructor(
         Feature.PHOTO_SLIDESHOW to "Display photo slideshows from various sources",
         Feature.MUSIC to "Background music from Spotify during slideshow",
         Feature.WIDGETS to "Custom information widgets during slideshow",
-        Feature.SECURITY to "Lock screen and privacy protection features"
+        Feature.SECURITY to "Lock screen and privacy protection features",
+        Feature.TRANSITION_EFFECTS to "Beautiful transition effects between photos"
     )
 
     fun isFeatureAvailable(feature: Feature): Boolean {
