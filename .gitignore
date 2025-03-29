@@ -26,4 +26,9 @@
 .cxx
 local.properties
 /app/src/main/res/values/secrets.xml
-app/google-services.json
+/app/google-services.json
+/app/release
+/gradle
+.gitignore
+app/release
+gradle
