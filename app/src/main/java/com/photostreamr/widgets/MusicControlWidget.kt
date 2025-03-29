@@ -593,29 +593,42 @@ class MusicControlWidget(
                     ConstraintLayout.LayoutParams.WRAP_CONTENT,
                     ConstraintLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
+                    val margin = resources.getDimensionPixelSize(R.dimen.widget_margin)
+                    val adSpace = 100 // Space for ad
+
+                    // Apply constraints based on position
                     when (config.position) {
-                        WidgetPosition.BOTTOM_CENTER -> {
-                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        WidgetPosition.TOP_START -> {
+                            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            setMargins(margin, margin, 0, 0)
+                        }
+                        WidgetPosition.TOP_CENTER -> {
+                            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                             startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                             endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                            setMargins(0, 0, 0, 100) // Leave space for ad
+                            setMargins(margin, margin, margin, 0)
+                        }
+                        WidgetPosition.TOP_END -> {
+                            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            setMargins(0, margin, margin, 0)
                         }
                         WidgetPosition.BOTTOM_START -> {
                             bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                             startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                            setMargins(16, 0, 0, 100) // Left and bottom margins
+                            setMargins(margin, 0, 0, margin + adSpace)
+                        }
+                        WidgetPosition.BOTTOM_CENTER -> {
+                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            setMargins(margin, 0, margin, margin + adSpace)
                         }
                         WidgetPosition.BOTTOM_END -> {
                             bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                             endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                            setMargins(0, 0, 16, 100) // Right and bottom margins
-                        }
-                        else -> {
-                            // Default to bottom center if position not handled
-                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                            setMargins(0, 0, 0, 100) // Leave space for ad
+                            setMargins(0, 0, margin, margin + adSpace)
                         }
                     }
                 }
@@ -764,7 +777,8 @@ class MusicControlWidget(
             }
 
             // Get standard margin
-            val margin = view.resources.getDimensionPixelSize(R.dimen.widget_margin)
+            val marginValue = view.resources.getDimensionPixelSize(R.dimen.widget_margin)
+            val adSpace = 100 // Extra space for ad at bottom
 
             // Apply new constraints based on position
             when (position) {
@@ -772,17 +786,44 @@ class MusicControlWidget(
                     params.apply {
                         topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(margin, margin, 0, 0)
+                        setMargins(marginValue, marginValue, 0, 0)
                     }
                 }
-                // Add other positions similar to your ClockWidget implementation
-                else -> {
-                    // Default to BOTTOM_CENTER
+                WidgetPosition.TOP_CENTER -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(marginValue, marginValue, marginValue, 0)
+                    }
+                }
+                WidgetPosition.TOP_END -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(0, marginValue, marginValue, 0)
+                    }
+                }
+                WidgetPosition.BOTTOM_START -> {
+                    params.apply {
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(marginValue, 0, 0, marginValue + adSpace)
+                    }
+                }
+                WidgetPosition.BOTTOM_CENTER -> {
                     params.apply {
                         bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                         endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(margin, 0, margin, margin)
+                        setMargins(marginValue, 0, marginValue, marginValue + adSpace)
+                    }
+                }
+                WidgetPosition.BOTTOM_END -> {
+                    params.apply {
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(0, 0, marginValue, marginValue + adSpace)
                     }
                 }
             }
@@ -792,6 +833,8 @@ class MusicControlWidget(
 
             view.layoutParams = params
             view.requestLayout()
+
+            Log.d(TAG, "Music widget position updated to: $position")
         }
     }
 

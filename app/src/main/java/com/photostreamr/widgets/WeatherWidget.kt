@@ -460,19 +460,20 @@ class WeatherWidget(
         lastKnownWeatherState = currentWeatherState
         lastKnownIconCode = currentWeatherCode
 
-        binding?.getRootView()?.let { view ->
-            val params = view.layoutParams as ConstraintLayout.LayoutParams
+        // Reference to the parent before removing
+        val parent = binding?.getRootView()?.parent as? ViewGroup
 
-            // Clear existing constraints
-            params.apply {
-                topToTop = ConstraintLayout.LayoutParams.UNSET
-                bottomToBottom = ConstraintLayout.LayoutParams.UNSET
-                startToStart = ConstraintLayout.LayoutParams.UNSET
-                endToEnd = ConstraintLayout.LayoutParams.UNSET
-            }
+        binding?.getRootView()?.let { view ->
+            // Remove view from parent to avoid duplications when re-adding
+            parent?.removeView(view)
+
+            val params = ConstraintLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
 
             // Get standard margin
-            val margin = view.resources.getDimensionPixelSize(R.dimen.widget_margin)
+            val marginValue = view.resources.getDimensionPixelSize(R.dimen.widget_margin)
 
             // Apply new constraints based on position
             when (position) {
@@ -480,7 +481,7 @@ class WeatherWidget(
                     params.apply {
                         topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(margin, margin, 0, 0)
+                        setMargins(marginValue, marginValue, 0, 0)
                     }
                 }
                 WidgetPosition.TOP_CENTER -> {
@@ -488,21 +489,21 @@ class WeatherWidget(
                         topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                         endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(margin, margin, margin, 0)
+                        setMargins(marginValue, marginValue, marginValue, 0)
                     }
                 }
                 WidgetPosition.TOP_END -> {
                     params.apply {
                         topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                         endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(0, margin, margin, 0)
+                        setMargins(0, marginValue, marginValue, 0)
                     }
                 }
                 WidgetPosition.BOTTOM_START -> {
                     params.apply {
                         bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(margin, 0, 0, margin)
+                        setMargins(marginValue, 0, 0, marginValue)
                     }
                 }
                 WidgetPosition.BOTTOM_CENTER -> {
@@ -510,24 +511,20 @@ class WeatherWidget(
                         bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                         endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(margin, 0, margin, margin)
+                        setMargins(marginValue, 0, marginValue, marginValue)
                     }
                 }
                 WidgetPosition.BOTTOM_END -> {
                     params.apply {
                         bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                         endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(0, 0, margin, margin)
+                        setMargins(0, 0, marginValue, marginValue)
                     }
                 }
             }
 
-            // Ensure widget stays within bounds
-            params.width = ViewGroup.LayoutParams.WRAP_CONTENT
-            params.height = ViewGroup.LayoutParams.WRAP_CONTENT
-
-            view.layoutParams = params
-            view.requestLayout()
+            // Add the view back to the container with new parameters
+            (container as? ConstraintLayout)?.addView(view, params)
 
             // Restore the state after position update
             lastKnownWeatherState?.let { state ->
@@ -540,6 +537,8 @@ class WeatherWidget(
                     }
                 }
             }
+
+            view.requestLayout()
         }
     }
 
