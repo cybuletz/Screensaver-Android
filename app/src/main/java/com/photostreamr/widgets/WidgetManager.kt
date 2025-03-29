@@ -82,9 +82,32 @@ class WidgetManager @Inject constructor(
     fun hideWidget(type: WidgetType) {
         widgets[type]?.apply {
             hide()
-            cleanup() // Add cleanup to fully remove the widget
+            // Don't call cleanup here; it will be called separately when needed
         }
         updateWidgetState(type, WidgetState.Hidden)
+    }
+
+    fun cleanupAndRemoveWidget(type: WidgetType) {
+        Log.d(TAG, "Cleaning up and removing widget: $type")
+        try {
+            // First hide the widget
+            hideWidget(type)
+
+            // Then perform extra cleanup
+            widgets[type]?.apply {
+                cleanup()
+            }
+
+            // Finally remove from widgets map
+            widgets.remove(type)
+
+            // Update state to hidden
+            updateWidgetState(type, WidgetState.Hidden)
+
+            Log.d(TAG, "Widget successfully cleaned up and removed: $type")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning up and removing widget: $type", e)
+        }
     }
 
     fun setupClockWidget(container: ViewGroup) {
@@ -93,13 +116,24 @@ class WidgetManager @Inject constructor(
         Log.d(TAG, "Loaded clock config: $config")
 
         try {
-            // Save states of other widgets before setting up clock
-            val weatherWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
-            val weatherState = weatherWidget?.currentWeatherState
+            // Only proceed if the clock is enabled in config
+            if (!config.showClock) {
+                Log.d(TAG, "Clock widget is disabled in config, not setting up")
+                // Make sure any existing widget is removed
+                widgets[WidgetType.CLOCK]?.apply {
+                    cleanup()
+                }
+                widgets.remove(WidgetType.CLOCK)
+                return
+            }
 
-            // Save music widget state
-            val musicWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
-            val musicConfig = musicWidget?.config
+            // First, clean up any existing clock widget to avoid duplicates
+            val existingWidget = widgets[WidgetType.CLOCK] as? ClockWidget
+            if (existingWidget != null) {
+                Log.d(TAG, "Cleaning up existing clock widget")
+                existingWidget.cleanup()
+                widgets.remove(WidgetType.CLOCK)
+            }
 
             // Create and setup the clock widget
             val clockWidget = ClockWidget(container, config)
@@ -115,16 +149,6 @@ class WidgetManager @Inject constructor(
             if (config.showClock) {
                 showWidget(WidgetType.CLOCK)
                 Log.d(TAG, "Show clock widget called")
-            }
-
-            // Restore weather widget state if needed
-            weatherState?.let { state ->
-                weatherWidget?.updateState(state)
-            }
-
-            // Restore music widget if it was previously enabled
-            if (musicConfig?.enabled == true) {
-                setupMusicWidget(container)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up clock widget", e)
@@ -506,6 +530,7 @@ class WidgetManager @Inject constructor(
 
     fun updateMusicVisibility(visible: Boolean) {
         Log.d(TAG, "Updating music visibility: $visible")
+        preferences.edit { putBoolean("show_music", visible) }  // Store preference correctly
         spotifyPreferences.setEnabled(visible)
 
         val currentWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
@@ -514,6 +539,9 @@ class WidgetManager @Inject constructor(
                 currentWidget.show()
             } else {
                 currentWidget.hide()
+                // Important: Clean up after hiding
+                currentWidget.cleanup()
+                widgets.remove(WidgetType.MUSIC)
             }
         } else if (visible) {
             Log.d(TAG, "No music widget exists, creating new one")
@@ -540,14 +568,20 @@ class WidgetManager @Inject constructor(
             // Load music config
             val config = loadMusicConfig().also {
                 Log.d(TAG, """
-                Loading music config:
-                - enabled: ${it.enabled}
-                - position: ${it.position}
-                - showControls: ${it.showControls}
-                - showProgress: ${it.showProgress}
-                - showArtwork: ${it.showArtwork}
-                - autoplay: ${it.autoplay}
-            """.trimIndent())
+            Loading music config:
+            - enabled: ${it.enabled}
+            - position: ${it.position}
+            - showControls: ${it.showControls}
+            - showProgress: ${it.showProgress}
+            - showArtwork: ${it.showArtwork}
+            - autoplay: ${it.autoplay}
+        """.trimIndent())
+            }
+
+            // Important: Check if widget should actually be shown
+            if (!config.enabled) {
+                Log.d(TAG, "Music widget is disabled, not creating it")
+                return
             }
 
             // Save container reference
@@ -555,6 +589,7 @@ class WidgetManager @Inject constructor(
 
             // Clean up existing widget if present
             (widgets[WidgetType.MUSIC] as? MusicControlWidget)?.cleanup()
+            widgets.remove(WidgetType.MUSIC)
 
             // Create new widget with widgets_layer as container
             val musicWidget = MusicControlWidget(

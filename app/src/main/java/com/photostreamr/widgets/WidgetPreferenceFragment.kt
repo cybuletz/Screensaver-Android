@@ -145,7 +145,7 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
         ))
     }
 
-    override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
+    override fun onPreferenceChange(preference: Preference, newValue: Any): Boolean {
         return when (preference.key) {
             "weather_position" -> {
                 try {
@@ -177,7 +177,8 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
                 if (enabled) {
                     widgetManager.showWidget(WidgetType.CLOCK)
                 } else {
-                    widgetManager.hideWidget(WidgetType.CLOCK)
+                    // Use the cleanup method we'll add to WidgetManager
+                    widgetManager.cleanupAndRemoveWidget(WidgetType.CLOCK)
                 }
                 true
             }
@@ -200,22 +201,13 @@ class WidgetPreferenceFragment : PreferenceFragmentCompat(), Preference.OnPrefer
             }
             "show_music" -> {
                 val enabled = newValue as Boolean
-                widgetManager.updateMusicVisibility(enabled)  // Use this instead of show/hideWidget
+                // Important: Use updateMusicVisibility to properly handle cleanup
+                widgetManager.updateMusicVisibility(enabled)
                 true
             }
             "show_music_controls", "show_music_progress" -> {
-                widgetManager.updateMusicWidgetSetting(preference.key, newValue as Boolean)  // Use this instead of direct config update
+                widgetManager.updateMusicWidgetSetting(preference.key, newValue as Boolean)
                 true
-            }
-            "music_position" -> {
-                try {
-                    val position = WidgetPosition.valueOf(newValue.toString())
-                    widgetManager.updateMusicPosition(position)
-                    true
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error updating music position", e)
-                    false
-                }
             }
             else -> true
         }
