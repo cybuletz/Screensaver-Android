@@ -12,4 +12,7 @@
     <dimen name="settings_card_corner_radius">12dp</dimen>
     <dimen name="settings_card_elevation">1dp</dimen>
     <dimen name="settings_card_margin_vertical">4dp</dimen>
+
+    <dimen name="ad_container_height">50dp</dimen>
+    <dimen name="ad_height_with_margin">25dp</dimen>
 </resources>

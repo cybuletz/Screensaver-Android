@@ -588,19 +588,49 @@ class MusicControlWidget(
                 // Remove from parent if already attached
                 (parent as? ViewGroup)?.removeView(this)
 
-                // Add to container
-                container.addView(this)
+                // Create layout params
+                val params = ConstraintLayout.LayoutParams(
+                    ConstraintLayout.LayoutParams.WRAP_CONTENT,
+                    ConstraintLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    when (config.position) {
+                        WidgetPosition.BOTTOM_CENTER -> {
+                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            setMargins(0, 0, 0, 100) // Leave space for ad
+                        }
+                        WidgetPosition.BOTTOM_START -> {
+                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            setMargins(16, 0, 0, 100) // Left and bottom margins
+                        }
+                        WidgetPosition.BOTTOM_END -> {
+                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            setMargins(0, 0, 16, 100) // Right and bottom margins
+                        }
+                        else -> {
+                            // Default to bottom center if position not handled
+                            bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            setMargins(0, 0, 0, 100) // Leave space for ad
+                        }
+                    }
+                }
+
+                // Add to container with params
+                (container as? ConstraintLayout)?.addView(this, params)
 
                 // Configure view
                 post {
                     visibility = View.VISIBLE
-                    background = ContextCompat.getDrawable(context, R.drawable.widget_background)
+                    elevation = 5f
                     alpha = 1f
-                    bringToFront()
-                    updatePosition(config.position)
                     requestLayout()
                     invalidate()
-                    Log.d(TAG, "Music widget view configured and visible")
+                    Log.d(TAG, "Music widget view configured and visible at ${config.position}")
                 }
             }
         }

@@ -10,6 +10,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
 import android.view.ViewGroup
+import androidx.constraintlayout.widget.ConstraintLayout
 import com.photostreamr.music.RadioManager
 import com.photostreamr.music.RadioPreferences
 import com.photostreamr.music.SpotifyManager
@@ -17,6 +18,7 @@ import com.photostreamr.music.SpotifyPreferences
 import java.text.SimpleDateFormat
 import java.util.Locale
 import androidx.preference.PreferenceManager
+import com.photostreamr.R
 
 
 @Singleton
@@ -504,7 +506,7 @@ class WidgetManager @Inject constructor(
 
     fun updateMusicVisibility(visible: Boolean) {
         Log.d(TAG, "Updating music visibility: $visible")
-        spotifyPreferences.setEnabled(visible)  // Use SpotifyPreferences instead
+        spotifyPreferences.setEnabled(visible)
 
         val currentWidget = widgets[WidgetType.MUSIC] as? MusicControlWidget
         if (currentWidget != null) {
@@ -514,45 +516,72 @@ class WidgetManager @Inject constructor(
                 currentWidget.hide()
             }
         } else if (visible) {
+            Log.d(TAG, "No music widget exists, creating new one")
             lastKnownContainer?.let { container ->
-                setupMusicWidget(container)
-            }
+                // Get the widgets_layer
+                val widgetsLayer = container.findViewById<ConstraintLayout>(R.id.widgets_layer)
+                if (widgetsLayer != null) {
+                    Log.d(TAG, "Setting up new music widget")
+                    setupMusicWidget(widgetsLayer)
+                } else {
+                    Log.e(TAG, "widgets_layer not found in container")
+                }
+            } ?: Log.e(TAG, "No container available to create music widget")
         }
     }
 
     fun setupMusicWidget(container: ViewGroup) {
         Log.d(TAG, "Setting up music widget")
-        val config = loadMusicConfig()
-        Log.d(TAG, "Loaded music config: $config")
-
         try {
+            // Get the widgets_layer
+            val widgetsLayer = container.findViewById<ConstraintLayout>(R.id.widgets_layer)
+                ?: throw IllegalStateException("widgets_layer not found")
+
+            // Load music config
+            val config = loadMusicConfig().also {
+                Log.d(TAG, """
+                Loading music config:
+                - enabled: ${it.enabled}
+                - position: ${it.position}
+                - showControls: ${it.showControls}
+                - showProgress: ${it.showProgress}
+                - showArtwork: ${it.showArtwork}
+                - autoplay: ${it.autoplay}
+            """.trimIndent())
+            }
+
             // Save container reference
-            lastKnownContainer = container
+            lastKnownContainer = widgetsLayer
 
             // Clean up existing widget if present
             (widgets[WidgetType.MUSIC] as? MusicControlWidget)?.cleanup()
 
-            // Create new widget
+            // Create new widget with widgets_layer as container
             val musicWidget = MusicControlWidget(
-                container = container,
+                container = widgetsLayer,
                 config = config,
                 spotifyManager = spotifyManager,
                 spotifyPreferences = spotifyPreferences,
                 radioManager = radioManager,
                 radioPreferences = radioPreferences
-            )
+            ).also {
+                Log.d(TAG, "Created MusicControlWidget instance")
+            }
 
-            // Initialize before registering
+            // Initialize and register
             musicWidget.init()
+            Log.d(TAG, "MusicWidget initialized")
 
-            // Register after initialization
             registerWidget(WidgetType.MUSIC, musicWidget)
+            Log.d(TAG, "MusicWidget registered")
 
             // Force visibility update based on config
             if (config.enabled) {
+                Log.d(TAG, "Music widget enabled, showing widget")
                 musicWidget.show()
                 updateWidgetState(WidgetType.MUSIC, WidgetState.Active)
             } else {
+                Log.d(TAG, "Music widget disabled, hiding widget")
                 musicWidget.hide()
                 updateWidgetState(WidgetType.MUSIC, WidgetState.Hidden)
             }
@@ -575,10 +604,18 @@ class WidgetManager @Inject constructor(
             } else {
                 currentWidget.hide()
             }
-        } else {
+        } else if (config.enabled) {
+            Log.d(TAG, "No music widget exists but config is enabled, creating new one")
             lastKnownContainer?.let { container ->
-                setupMusicWidget(container)
-            }
+                // Get the widgets_layer
+                val widgetsLayer = container.findViewById<ConstraintLayout>(R.id.widgets_layer)
+                if (widgetsLayer != null) {
+                    Log.d(TAG, "Setting up new music widget")
+                    setupMusicWidget(widgetsLayer)
+                } else {
+                    Log.e(TAG, "widgets_layer not found in container")
+                }
+            } ?: Log.e(TAG, "No container available to create music widget")
         }
     }
 
@@ -596,6 +633,11 @@ class WidgetManager @Inject constructor(
         preferences.setString("music_position", position.name)
 
         Log.d(TAG, "Music position updated: $position")
+    }
+
+    fun setContainer(container: ConstraintLayout) {
+        Log.d(TAG, "Setting new container reference")
+        lastKnownContainer = container
     }
 
     fun cleanup() {

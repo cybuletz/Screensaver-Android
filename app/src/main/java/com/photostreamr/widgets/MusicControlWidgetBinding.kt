@@ -30,49 +30,66 @@ class MusicControlWidgetBinding(
 
     fun inflate(): View {
         try {
-            Log.e(TAG, "Starting inflate() for MusicControlWidgetBinding")
+            Log.d(TAG, "Starting inflate() for MusicControlWidgetBinding")
             if (rootView == null) {
+                Log.d(TAG, "Inflating new root view")
                 rootView = LayoutInflater.from(container.context)
                     .inflate(R.layout.widget_music_controls, container, false)
-                Log.e(TAG, "Layout inflated")
+                Log.d(TAG, "Layout inflated successfully")
 
-                trackArtworkBackground = rootView?.findViewById(R.id.track_artwork_background)
+                // Find views
+                trackArtworkBackground = rootView?.findViewById<ImageView>(R.id.track_artwork_background)?.also {
+                    Log.d(TAG, "Found track_artwork_background view")
+                }
 
                 trackNameView = rootView?.findViewById<TextView>(R.id.track_name)?.also {
-                    Log.e(TAG, "Found track_name view")
+                    Log.d(TAG, "Found track_name view")
                 }
+
                 artistNameView = rootView?.findViewById<TextView>(R.id.artist_name)?.also {
-                    Log.e(TAG, "Found artist_name view")
+                    Log.d(TAG, "Found artist_name view")
                 }
+
                 playPauseButton = rootView?.findViewById<ImageButton>(R.id.play_pause_button)?.also {
-                    Log.e(TAG, "Found play_pause_button")
+                    Log.d(TAG, "Found play_pause_button")
                 }
+
                 previousButton = rootView?.findViewById<ImageButton>(R.id.previous_button)?.also {
-                    Log.e(TAG, "Found previous_button")
+                    Log.d(TAG, "Found previous_button")
                 }
+
                 nextButton = rootView?.findViewById<ImageButton>(R.id.next_button)?.also {
-                    Log.e(TAG, "Found next_button")
+                    Log.d(TAG, "Found next_button")
                 }
-                controlsContainer = rootView?.findViewById(R.id.controls_container)
 
-                Log.e(TAG, "Views found and initialized:" +
-                        "\nTrack name view: ${trackNameView != null}" +
-                        "\nArtist name view: ${artistNameView != null}" +
-                        "\nPlay/Pause button: ${playPauseButton != null}" +
-                        "\nPrevious button: ${previousButton != null}" +
-                        "\nNext button: ${nextButton != null}")
+                controlsContainer = rootView?.findViewById<ViewGroup>(R.id.controls_container)?.also {
+                    Log.d(TAG, "Found controls_container")
+                }
 
-                // Create params but DON'T add to container
+                // Create params
                 val params = ConstraintLayout.LayoutParams(
                     ConstraintLayout.LayoutParams.WRAP_CONTENT,
                     ConstraintLayout.LayoutParams.WRAP_CONTENT
                 )
                 rootView?.layoutParams = params
-                Log.e(TAG, "Root view parameters set")
+                Log.d(TAG, "Layout parameters set for root view")
+
+                Log.d(TAG, """
+                    Views initialization complete:
+                    - Track artwork: ${trackArtworkBackground != null}
+                    - Track name: ${trackNameView != null}
+                    - Artist name: ${artistNameView != null}
+                    - Play/Pause: ${playPauseButton != null}
+                    - Previous: ${previousButton != null}
+                    - Next: ${nextButton != null}
+                    - Controls container: ${controlsContainer != null}
+                """.trimIndent())
+            } else {
+                Log.d(TAG, "Root view already exists, reusing")
             }
             return rootView!!
         } catch (e: Exception) {
-            Log.e(TAG, "Error in inflate()", e)
+            Log.e(TAG, "Error inflating music control widget", e)
             throw e
         }
     }

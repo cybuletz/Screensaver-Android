@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -38,8 +39,8 @@ class AdManager @Inject constructor(
         private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
 
         // Production ad units - replace with your actual ad unit IDs
-        private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY"
-        private const val PRODUCTION_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ"
+        private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111"
+        private const val PRODUCTION_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
 
         // Auto-detect whether we're in debug or release mode
         private val IS_DEBUG = BuildConfig.DEBUG
@@ -158,8 +159,8 @@ class AdManager @Inject constructor(
 
             // Create new AdView with the correct size
             mainAdView = AdView(context).apply {
-                setAdSize(adSize)  // Use setter method instead of property assignment
-                setAdUnitId(BANNER_AD_UNIT_ID)  // Use setter method instead of property assignment
+                setAdSize(adSize)
+                setAdUnitId(BANNER_AD_UNIT_ID)
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         Log.d(TAG, "Main activity ad loaded")
@@ -186,7 +187,11 @@ class AdManager @Inject constructor(
                     if (container.isAttachedToWindow) {
                         container.removeAllViews()
                         container.addView(mainAdView)
-                        container.visibility = ViewGroup.GONE
+                        // Don't set to GONE here, let the ad listener handle visibility
+
+                        // Load the ad immediately after adding to container
+                        mainAdView?.loadAd(AdRequest.Builder().build())
+                        Log.d(TAG, "Main activity ad loading requested")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error setting up ad container view", e)
@@ -220,6 +225,7 @@ class AdManager @Inject constructor(
     fun setupSettingsFragmentAd(container: FrameLayout) {
         if (appVersionManager.isProVersion()) {
             Log.d(TAG, "Pro version, not showing ads")
+            container.visibility = View.GONE
             return
         }
 
@@ -234,7 +240,16 @@ class AdManager @Inject constructor(
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         Log.d(TAG, "Settings fragment ad loaded")
-                        container.visibility = ViewGroup.VISIBLE
+                        container.post {
+                            container.visibility = ViewGroup.VISIBLE
+
+                            // Ensure proper margins after ad loads
+                            container.parent?.let { parent ->
+                                if (parent is ViewGroup) {
+                                    parent.requestLayout()
+                                }
+                            }
+                        }
                     }
 
                     override fun onAdFailedToLoad(error: LoadAdError) {
@@ -244,14 +259,18 @@ class AdManager @Inject constructor(
                 }
             }
 
+            // Setup container
             container.removeAllViews()
             container.addView(settingsAdView)
+
+            // Set initial visibility
             container.visibility = ViewGroup.GONE
 
-            // Load ad immediately for settings fragment
+            // Load ad
             loadSettingsAd()
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up settings fragment ad", e)
+            container.visibility = ViewGroup.GONE
         }
     }
 

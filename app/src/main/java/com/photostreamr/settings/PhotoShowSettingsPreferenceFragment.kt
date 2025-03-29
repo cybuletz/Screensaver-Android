@@ -1,17 +1,34 @@
 package com.photostreamr.settings
 
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.*
 import com.photostreamr.ui.PhotoDisplayManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.photostreamr.R
+import com.photostreamr.version.AppVersionManager
+import com.photostreamr.version.FeatureManager
+import com.photostreamr.version.ProVersionPromptDialog
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class PhotoShowSettingsPreferenceFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
+
+    @Inject
+    lateinit var featureManager: FeatureManager
 
     private var initialPreferences: Bundle? = null
 
@@ -22,6 +39,84 @@ class PhotoShowSettingsPreferenceFragment : PreferenceFragmentCompat() {
         }
 
         setupPreferences()
+        setupProFeatures()
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        observeProState()
+    }
+
+    private fun getPreferenceIndex(parent: PreferenceGroup, preference: Preference): Int {
+        for (i in 0 until parent.preferenceCount) {
+            if (parent.getPreference(i) == preference) {
+                return i
+            }
+        }
+        return -1
+    }
+
+    private fun setupProFeatures() {
+        val proFeatures = listOf(
+            findPreference<ListPreference>("transition_effect"),
+          //  findPreference<SeekBarPreference>("transition_duration")
+        )
+
+        proFeatures.forEach { originalPref ->
+            originalPref?.let { pref ->
+                if (!featureManager.isFeatureAvailable(FeatureManager.Feature.TRANSITION_EFFECTS)) {
+                    // Create Pro badge preference
+                    ProBadgePreference(requireContext()).apply {
+                        key = pref.key
+                        title = pref.title
+                        summary = pref.summary
+                        order = pref.order
+                        isEnabled = false
+                        layoutResource = pref.layoutResource // This helps with badge display
+
+                        setOnPreferenceClickListener {
+                            ProVersionPromptDialog.newInstance(FeatureManager.Feature.TRANSITION_EFFECTS)
+                                .show(parentFragmentManager, "pro_version_prompt")
+                            true
+                        }
+
+                        // Get the parent and replace the preference
+                        val parent = pref.parent as PreferenceGroup
+                        val index = getPreferenceIndex(parent, pref)
+                        parent.removePreference(pref)
+                        parent.addPreference(this)
+                        if (index >= 0) {
+                            order = pref.order
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun observeProState() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            featureManager.getProVersionStateFlow().collectLatest { state ->
+                when (state) {
+                    is AppVersionManager.VersionState.Pro -> {
+                        val proFeatures = listOf(
+                            findPreference<ListPreference>("transition_effect")
+                            // "transition_duration" -> SeekBarPreference(requireContext())
+                        )
+
+                        proFeatures.forEach { pref ->
+                            pref?.apply {
+                                isEnabled = true
+                                onPreferenceClickListener = null
+                                // The PRO badge will be automatically removed since we're replacing
+                                // the entire preference
+                            }
+                        }
+                    }
+                    else -> { /* Free version state handled in setupProFeatures */ }
+                }
+            }
+        }
     }
 
     private fun setupPreferences() {
