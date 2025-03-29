@@ -8,11 +8,15 @@ import android.view.ViewGroup
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.constraintlayout.widget.ConstraintLayout
-import com.photostreamr.R
+import com.photostreamr.widgets.WidgetConfig
 import java.util.Date
 import java.util.Locale
 import java.util.Calendar
 import androidx.core.content.ContextCompat
+import com.photostreamr.R
+import com.photostreamr.widgets.ClockWidgetBinding
+import com.photostreamr.widgets.ScreenWidget
+import com.photostreamr.widgets.WidgetPosition
 
 class ClockWidget(
     private val container: ViewGroup,
@@ -39,10 +43,6 @@ class ClockWidget(
     override fun init() {
         try {
             Log.d(TAG, "Initializing ClockWidget with config: $config")
-            // Make sure any existing binding is properly cleaned up
-            binding?.cleanup()
-            binding = null
-
             binding = ClockWidgetBinding(container).apply {
                 Log.d(TAG, "Creating binding for container: $container")
                 inflate()
@@ -77,9 +77,7 @@ class ClockWidget(
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
             rootView.layoutParams = layoutParams
-
-            // Don't add to container here - that will be done in show()
-
+            container.addView(rootView)
             updatePosition(config.position)
             rootView.visibility = if (isVisible) View.VISIBLE else View.GONE
 
@@ -123,57 +121,27 @@ class ClockWidget(
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
                     set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
                 }
-                val delay = calendar.timeInMillis - System.currentTimeMillis()
-                dateUpdateHandler?.postDelayed(this, delay)
+
+                dateUpdateHandler?.postAtTime(this, calendar.timeInMillis)
             }
         }
 
-        // Run first update
+        // Start the updates
         updateRunnable.run()
-    }
-
-    override fun updateConfiguration(config: WidgetConfig) {
-        if (config !is WidgetConfig.ClockConfig) return
-
-        val oldConfig = this.config
-        this.config = config
-
-        // Only update the clock format and date visibility
-        binding?.getClockView()?.apply {
-            format24Hour = if (config.use24Hour) "HH:mm" else "HH:mm"
-            format12Hour = if (config.use24Hour) "HH:mm" else "hh:mm a"
-        }
-
-        binding?.getDateView()?.apply {
-            visibility = if (config.showDate) View.VISIBLE else View.GONE
-        }
-
-        // Update position if changed
-        if (oldConfig.position != config.position) {
-            updatePosition(config.position)
-        }
-
-        // Update visibility if changed
-        if (oldConfig.showClock != config.showClock) {
-            if (config.showClock) show() else hide()
-        }
     }
 
     override fun updatePosition(position: WidgetPosition) {
         binding?.getRootView()?.let { view ->
-            // Create new params for the view
-            val params = ConstraintLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            val params = view.layoutParams as ConstraintLayout.LayoutParams
 
-            // Clear all constraints
-            params.topToTop = ConstraintLayout.LayoutParams.UNSET
-            params.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
-            params.startToStart = ConstraintLayout.LayoutParams.UNSET
-            params.endToEnd = ConstraintLayout.LayoutParams.UNSET
+            // Clear existing constraints
+            params.apply {
+                topToTop = ConstraintLayout.LayoutParams.UNSET
+                bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+                startToStart = ConstraintLayout.LayoutParams.UNSET
+                endToEnd = ConstraintLayout.LayoutParams.UNSET
+            }
 
             // Get standard margin
             val margin = view.resources.getDimensionPixelSize(R.dimen.widget_margin)
@@ -226,25 +194,12 @@ class ClockWidget(
                 }
             }
 
-            // Apply the new layout params
+            // Ensure widget stays within bounds
+            params.width = ViewGroup.LayoutParams.WRAP_CONTENT
+            params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+
             view.layoutParams = params
             view.requestLayout()
-        }
-    }
-
-    private fun updateDateText() {
-        binding?.getDateView()?.text = getCurrentDate()
-    }
-
-    private fun updateDateTime() {
-        // Clock updates automatically via TextClock, only need to update date if configured
-        if (config.showDate) {
-            binding?.getDateView()?.apply {
-                visibility = View.VISIBLE
-                text = getCurrentDate()
-            }
-        } else {
-            binding?.getDateView()?.visibility = View.GONE
         }
     }
 
@@ -252,56 +207,158 @@ class ClockWidget(
         updateDateTime()
     }
 
-    override fun show() {
-        if (isVisible) {
-            Log.d(TAG, "Clock widget already visible")
-            return
-        }
+    override fun updateConfiguration(config: WidgetConfig) {
+        Log.d(TAG, "Updating configuration: $config")
+        try {
+            if (config !is WidgetConfig.ClockConfig) {
+                Log.e(TAG, "Invalid config type")
+                return
+            }
 
+            this.config = config
+
+            binding?.getClockView()?.apply {
+                format24Hour = "HH:mm"
+                format12Hour = "hh:mm a"
+                // Use TextClock's built-in 24-hour format setting
+                setFormat12Hour(if (config.use24Hour) null else "hh:mm a")
+                setFormat24Hour(if (config.use24Hour) "HH:mm" else null)
+                visibility = if (config.showClock) View.VISIBLE else View.GONE
+                Log.d(TAG, "Clock format updated - 24hour: ${config.use24Hour}")
+            }
+
+            // Update date format
+            dateFormatter.applyPattern(config.dateFormat)
+
+            binding?.getDateView()?.apply {
+                visibility = if (config.showDate) View.VISIBLE else View.GONE
+                if (config.showDate) {
+                    text = getCurrentDate()
+                    Log.d(TAG, "Date updated to: $text")
+                }
+            }
+
+            // Update position if widget is visible
+            if (isVisible) {
+                updatePosition(config.position)
+            }
+
+            // Start or stop updates based on visibility
+            if (isVisible) {
+                startUpdates()
+                startDateUpdates()
+            } else {
+                stopUpdates()
+                dateUpdateHandler?.removeCallbacksAndMessages(null)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating configuration", e)
+        }
+    }
+
+    private fun updateDateText() {
+        binding?.getDateView()?.apply {
+            try {
+                val dateStr = SimpleDateFormat(config.dateFormat, Locale.getDefault()).format(Date())
+                text = dateStr
+                visibility = if (config.showDate) View.VISIBLE else View.GONE
+                Log.d(TAG, "Date updated to: $dateStr (TextView text is now: $text, visibility: $visibility)")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating date text", e)
+            }
+        } ?: Log.e(TAG, "Date view is null")
+    }
+
+    private fun updateDateTime() {
+        if (!isVisible) return
+
+        binding?.let { binding ->
+            binding.getDateView()?.text = dateFormatter.format(Date())
+        }
+    }
+
+
+    override fun show() {
+        Log.d(TAG, "show() called with config: $config")
         isVisible = true
         binding?.let { binding ->
-            Log.d(TAG, "Showing clock widget")
+            Log.d(TAG, "Binding exists")
             val rootView = binding.getRootView()
             rootView?.apply {
-                // First check if the view is already in a parent
-                val parent = parent as? ViewGroup
-                if (parent != null) {
-                    // If it's already in the container, just make sure it's visible
-                    if (parent == container) {
-                        visibility = View.VISIBLE
-                        background = ContextCompat.getDrawable(context, R.drawable.widget_background)
-                        alpha = 1f
-                        requestLayout()
-                        invalidate()
-
-                        Log.d(TAG, "Clock widget already in container, made visible")
-                        return@apply
-                    }
-
-                    // If it's in another container, remove it first
-                    parent.removeView(this)
-                    Log.d(TAG, "Removed clock widget from previous parent")
+                // Ensure the view is added to container if it was removed
+                if (parent == null) {
+                    container.addView(this)
                 }
 
-                // Add to container only if not already there
-                container.addView(this)
-                Log.d(TAG, "Added clock widget to container")
-
-                // Configure appearance
                 post {
                     visibility = View.VISIBLE
                     background = ContextCompat.getDrawable(context, R.drawable.widget_background)
                     alpha = 1f
+                    bringToFront()
+
+                    val params = layoutParams as? ConstraintLayout.LayoutParams
+                    params?.apply {
+                        // Update constraints based on position
+                        clearAllConstraints()
+
+                        // Set new constraints based on position
+                        when (config.position) {
+                            WidgetPosition.TOP_START -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.TOP_CENTER -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.TOP_END -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.BOTTOM_START -> {
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.BOTTOM_CENTER -> {
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.BOTTOM_END -> {
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                        }
+
+                        // Set margins for all positions
+                        setMargins(32, 32, 32, 32)
+                    }
+                    layoutParams = params
+
                     requestLayout()
                     invalidate()
-                    Log.d(TAG, "Clock widget configured and made visible")
+
+                    (parent as? ViewGroup)?.invalidate()
+                    Log.d(TAG, "Root view layout updated on UI thread")
                 }
+            } ?: Log.e(TAG, "Root view is null")
+
+            // Show clock if enabled
+            binding.getClockView()?.apply {
+                visibility = if (config.showClock) View.VISIBLE else View.GONE
+                Log.d(TAG, "Clock visibility set to: ${if (config.showClock) "VISIBLE" else "GONE"}")
             }
 
-            // Start time updates
-            handler.removeCallbacks(updateRunnable)
-            handler.post(updateRunnable)
-        }
+            // Update date view with current date and proper visibility
+            binding.getDateView()?.apply {
+                text = getCurrentDate() // Make sure the date is set before showing
+                visibility = if (config.showDate) View.VISIBLE else View.GONE
+                Log.d(TAG, "Date visibility set to: ${if (config.showDate) "VISIBLE" else "GONE"}, text: $text")
+            }
+        } ?: Log.e(TAG, "Binding is null in show()")
+
+        startUpdates()
     }
 
     private fun ConstraintLayout.LayoutParams.clearAllConstraints() {
@@ -315,6 +372,28 @@ class ClockWidget(
         endToEnd = ConstraintLayout.LayoutParams.UNSET
     }
 
+
+    override fun hide() {
+        isVisible = false
+        binding?.let { binding ->
+            binding.getRootView()?.apply {
+                // Remove the view from parent when hiding
+                (parent as? ViewGroup)?.removeView(this)
+                visibility = View.GONE
+                background = null // Clear the background
+                alpha = 0f
+            }
+
+            // Hide all child views
+            binding.getClockView()?.visibility = View.GONE
+            binding.getDateView()?.visibility = View.GONE
+        }
+        stopUpdates()
+        dateUpdateHandler?.removeCallbacksAndMessages(null)
+        Log.d(TAG, "Clock widget hidden and removed from parent")
+    }
+
+
     private fun startUpdates() {
         stopUpdates()
         handler.post(updateRunnable)
@@ -324,54 +403,22 @@ class ClockWidget(
         handler.removeCallbacks(updateRunnable)
     }
 
-    override fun hide() {
-        isVisible = false
-        binding?.let { binding ->
-            // Stop updates
-            handler.removeCallbacks(updateRunnable)
-
-            binding.getRootView()?.apply {
-                // Remove from parent when hiding
-                (parent as? ViewGroup)?.removeView(this)
-                visibility = View.GONE
-                background = null
-                alpha = 0f
-            }
-        }
-        Log.d(TAG, "Clock widget hidden and removed from parent")
-    }
-
     override fun cleanup() {
-        try {
-            Log.d(TAG, "Starting clock widget cleanup")
-            // Stop all handlers
-            handler.removeCallbacksAndMessages(null)
-            dateUpdateHandler?.removeCallbacksAndMessages(null)
+        Log.d(TAG, "Starting cleanup")
+        // Stop all updates
+        stopUpdates()
+        dateUpdateHandler?.removeCallbacksAndMessages(null)
+        dateUpdateHandler = null
+        handler.removeCallbacksAndMessages(null)
 
-            // Get the parent ViewGroup and remove our view
-            binding?.getRootView()?.let { view ->
-                try {
-                    val parent = view.parent as? ViewGroup
-                    if (parent != null) {
-                        parent.removeView(view)
-                        Log.d(TAG, "Successfully removed view from parent")
-                    }
-                    // Clear background and reset alpha
-                    view.background = null
-                    view.alpha = 0f
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error removing view from parent", e)
-                }
-            }
-
-            // Clean up binding and reset all state
-            binding?.cleanup()
-            binding = null
-            isVisible = false
-
-            Log.d(TAG, "Clock widget cleanup complete")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during clock widget cleanup", e)
+        // Clean up binding
+        binding?.apply {
+            getRootView()?.visibility = View.GONE
+            cleanup()
         }
+        binding = null
+
+        isVisible = false
+        Log.d(TAG, "Widget cleaned up")
     }
 }

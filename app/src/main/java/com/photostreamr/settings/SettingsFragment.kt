@@ -36,7 +36,6 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceCategory
 import androidx.preference.MultiSelectListPreference
 import com.photostreamr.PhotoRepository
-import com.photostreamr.widgets.WidgetPreferenceFragment
 import com.photostreamr.widgets.WidgetState
 import com.photostreamr.widgets.WidgetType
 import com.photostreamr.widgets.WidgetManager
@@ -59,8 +58,8 @@ import com.photostreamr.version.AppVersionManager
 import com.photostreamr.version.FeatureManager
 import com.photostreamr.version.ProVersionPromptDialog
 import android.widget.FrameLayout
+import com.photostreamr.widgets.WidgetPreferenceFragment
 import com.photostreamr.R
-
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat() {

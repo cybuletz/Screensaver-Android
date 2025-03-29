@@ -82,32 +82,9 @@ class WidgetManager @Inject constructor(
     fun hideWidget(type: WidgetType) {
         widgets[type]?.apply {
             hide()
-            // Don't call cleanup here; it will be called separately when needed
+            cleanup() // Add cleanup to fully remove the widget
         }
         updateWidgetState(type, WidgetState.Hidden)
-    }
-
-    fun cleanupAndRemoveWidget(type: WidgetType) {
-        Log.d(TAG, "Cleaning up and removing widget: $type")
-        try {
-            // First hide the widget
-            hideWidget(type)
-
-            // Then perform extra cleanup
-            widgets[type]?.apply {
-                cleanup()
-            }
-
-            // Finally remove from widgets map
-            widgets.remove(type)
-
-            // Update state to hidden
-            updateWidgetState(type, WidgetState.Hidden)
-
-            Log.d(TAG, "Widget successfully cleaned up and removed: $type")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error cleaning up and removing widget: $type", e)
-        }
     }
 
     fun setupClockWidget(container: ViewGroup) {
