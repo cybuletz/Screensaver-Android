@@ -28,3 +28,5 @@ local.properties
 /src/main/res/values/secrets.xml
 /google-services.json
 /release
+/debug
+.gitignore
