@@ -30,3 +30,5 @@ local.properties
 /app/release
 /gradle
 .gitignore
+app/release
+gradle

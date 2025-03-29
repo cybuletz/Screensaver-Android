@@ -30,3 +30,7 @@ local.properties
 /release
 /debug
 .gitignore
+app/release
+/app/release
+release
+debug
