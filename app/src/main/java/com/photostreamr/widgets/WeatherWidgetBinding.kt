@@ -24,9 +24,10 @@ class WeatherWidgetBinding(
         try {
             Log.d(TAG, "Starting inflate() for WeatherWidgetBinding")
 
-            // Always clean up existing view first
+            // Always clean up existing view first to avoid duplicates
             cleanup()
 
+            // Inflate the layout but DON'T attach it to the container yet
             rootView = LayoutInflater.from(container.context)
                 .inflate(R.layout.widget_weather, container, false)
             Log.d(TAG, "Layout inflated")
@@ -35,23 +36,15 @@ class WeatherWidgetBinding(
             temperatureView = rootView?.findViewById(R.id.temperatureView)
             Log.d(TAG, "Views found - Icon: ${weatherIcon != null}, Temperature: ${temperatureView != null}")
 
-            // Set initial visibility to GONE
-            rootView?.visibility = View.GONE
-
-            // IMPORTANT: Match the Clock Widget's parameter setup
+            // Configure initial view parameters without adding to container
             val params = ConstraintLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
             rootView?.layoutParams = params
 
-            // Remove view from any existing parent
-            rootView?.parent?.let { parent ->
-                (parent as? ViewGroup)?.removeView(rootView)
-            }
-
-            container.addView(rootView)
-            Log.d(TAG, "Root view added to container with params")
+            // Set initial visibility to GONE
+            rootView?.visibility = View.GONE
 
             return rootView!!
         } catch (e: Exception) {

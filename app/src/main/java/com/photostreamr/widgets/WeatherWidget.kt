@@ -94,17 +94,16 @@ class WeatherWidget(
             }
             updateConfiguration(config)
 
-            // Remove any existing instances of this view from the container
-            binding?.getRootView()?.let { view ->
-                (view.parent as? ViewGroup)?.removeView(view)
-            }
-
-            // Show if enabled
+            // Force show if needed
             if (config.enabled) {
+                Log.d(TAG, "Config shows weather is enabled, showing widget")
                 show()
             } else {
+                Log.d(TAG, "Config shows weather is disabled, hiding widget")
                 hide()
             }
+
+            Log.d(TAG, "Weather widget initialization complete")
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing WeatherWidget", e)
         }
@@ -116,15 +115,13 @@ class WeatherWidget(
     }
 
     override fun show() {
+        Log.d(TAG, "show() called with config: $config")
         isVisible = true
         binding?.let { binding ->
-            Log.d(TAG, "Showing weather widget")
+            Log.d(TAG, "Binding exists")
             val rootView = binding.getRootView()
             rootView?.apply {
-                // Remove from current parent if exists
-                (parent as? ViewGroup)?.removeView(this)
-
-                // Only add to container if not already added
+                // Ensure the view is added to container if it was removed
                 if (parent == null) {
                     container.addView(this)
                 }
@@ -135,44 +132,97 @@ class WeatherWidget(
                     alpha = 1f
                     bringToFront()
 
-                    // Update position with clean constraints
-                    updatePosition(config.position)
+                    val params = layoutParams as? ConstraintLayout.LayoutParams
+                    params?.apply {
+                        // Update constraints based on position
+                        clearAllConstraints()
 
-                    // Request layout update
+                        // Set new constraints based on position
+                        when (config.position) {
+                            WidgetPosition.TOP_START -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.TOP_CENTER -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.TOP_END -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.CENTER_START -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.CENTER -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.CENTER_END -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.BOTTOM_START -> {
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.BOTTOM_CENTER -> {
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.BOTTOM_END -> {
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                        }
+
+                        // Set margins for all positions
+                        setMargins(32, 32, 32, 32)
+                    }
+                    layoutParams = params
+
                     requestLayout()
                     invalidate()
+
+                    (parent as? ViewGroup)?.invalidate()
+                    Log.d(TAG, "Root view layout updated on UI thread")
                 }
+            } ?: Log.e(TAG, "Root view is null")
+
+            // Show weather icon
+            binding.getWeatherIcon()?.apply {
+                visibility = View.VISIBLE
+                Log.d(TAG, "Weather icon visibility set to: VISIBLE")
             }
 
-            // Restore last known state if available
-            currentWeatherState?.let { state ->
-                binding.apply {
-                    getTemperatureView()?.text = "${state.temperature}° ${if (config.useCelsius) "C" else "F"}"
-                    if (currentWeatherCode != -1) {
-                        updateWeatherIcon(currentWeatherCode)
-                    }
-                }
+            // Show temperature view
+            binding.getTemperatureView()?.apply {
+                visibility = View.VISIBLE
+                Log.d(TAG, "Temperature visibility set to: VISIBLE")
             }
+        } ?: Log.e(TAG, "Binding is null in show()")
 
-            // Start updates if enabled
-            if (config.enabled) {
-                startWeatherUpdates()
-            }
-        }
+        // Start weather updates
+        startWeatherUpdates()
     }
 
-    fun restoreState(temperature: String, weatherCode: Int) {
-        val iconResource = getWeatherIconResource(weatherCode)
-        val state = WeatherState(
-            temperature = temperature,
-            weatherCode = weatherCode,
-            description = getWeatherDescription(weatherCode),
-            iconResource = iconResource
-        )
-        updateState(state)
-        this.currentWeatherCode = weatherCode
+    private fun ConstraintLayout.LayoutParams.clearAllConstraints() {
+        topToTop = ConstraintLayout.LayoutParams.UNSET
+        topToBottom = ConstraintLayout.LayoutParams.UNSET
+        bottomToTop = ConstraintLayout.LayoutParams.UNSET
+        bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+        startToStart = ConstraintLayout.LayoutParams.UNSET
+        startToEnd = ConstraintLayout.LayoutParams.UNSET
+        endToStart = ConstraintLayout.LayoutParams.UNSET
+        endToEnd = ConstraintLayout.LayoutParams.UNSET
     }
-
 
     override fun hide() {
         isVisible = false
@@ -460,20 +510,19 @@ class WeatherWidget(
         lastKnownWeatherState = currentWeatherState
         lastKnownIconCode = currentWeatherCode
 
-        // Reference to the parent before removing
-        val parent = binding?.getRootView()?.parent as? ViewGroup
-
         binding?.getRootView()?.let { view ->
-            // Remove view from parent to avoid duplications when re-adding
-            parent?.removeView(view)
+            val params = view.layoutParams as ConstraintLayout.LayoutParams
 
-            val params = ConstraintLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            // Clear existing constraints
+            params.apply {
+                topToTop = ConstraintLayout.LayoutParams.UNSET
+                bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+                startToStart = ConstraintLayout.LayoutParams.UNSET
+                endToEnd = ConstraintLayout.LayoutParams.UNSET
+            }
 
             // Get standard margin
-            val marginValue = view.resources.getDimensionPixelSize(R.dimen.widget_margin)
+            val margin = view.resources.getDimensionPixelSize(R.dimen.widget_margin)
 
             // Apply new constraints based on position
             when (position) {
@@ -481,7 +530,7 @@ class WeatherWidget(
                     params.apply {
                         topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(marginValue, marginValue, 0, 0)
+                        setMargins(margin, margin, 0, 0)
                     }
                 }
                 WidgetPosition.TOP_CENTER -> {
@@ -489,21 +538,46 @@ class WeatherWidget(
                         topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                         endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(marginValue, marginValue, marginValue, 0)
+                        setMargins(margin, margin, margin, 0)
                     }
                 }
                 WidgetPosition.TOP_END -> {
                     params.apply {
                         topToTop = ConstraintLayout.LayoutParams.PARENT_ID
                         endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(0, marginValue, marginValue, 0)
+                        setMargins(0, margin, margin, 0)
+                    }
+                }
+                WidgetPosition.CENTER_START -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, 0, 0, 0)
+                    }
+                }
+                WidgetPosition.CENTER -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, 0, margin, 0)
+                    }
+                }
+                WidgetPosition.CENTER_END -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(0, 0, margin, 0)
                     }
                 }
                 WidgetPosition.BOTTOM_START -> {
                     params.apply {
                         bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(marginValue, 0, 0, marginValue)
+                        setMargins(margin, 0, 0, margin)
                     }
                 }
                 WidgetPosition.BOTTOM_CENTER -> {
@@ -511,20 +585,24 @@ class WeatherWidget(
                         bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                         startToStart = ConstraintLayout.LayoutParams.PARENT_ID
                         endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(marginValue, 0, marginValue, marginValue)
+                        setMargins(margin, 0, margin, margin)
                     }
                 }
                 WidgetPosition.BOTTOM_END -> {
                     params.apply {
                         bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                         endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-                        setMargins(0, 0, marginValue, marginValue)
+                        setMargins(0, 0, margin, margin)
                     }
                 }
             }
 
-            // Add the view back to the container with new parameters
-            (container as? ConstraintLayout)?.addView(view, params)
+            // Ensure widget stays within bounds
+            params.width = ViewGroup.LayoutParams.WRAP_CONTENT
+            params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+
+            view.layoutParams = params
+            view.requestLayout()
 
             // Restore the state after position update
             lastKnownWeatherState?.let { state ->
@@ -537,9 +615,19 @@ class WeatherWidget(
                     }
                 }
             }
-
-            view.requestLayout()
         }
+    }
+
+    fun restoreState(temperature: String, weatherCode: Int) {
+        val iconResource = getWeatherIconResource(weatherCode)
+        val state = WeatherState(
+            temperature = temperature,
+            weatherCode = weatherCode,
+            description = getWeatherDescription(weatherCode),
+            iconResource = iconResource
+        )
+        updateState(state)
+        this.currentWeatherCode = weatherCode
     }
 
     private fun updateWeatherIcon(weatherCode: Int) {
@@ -548,17 +636,7 @@ class WeatherWidget(
         animationInProgress = true
         currentWeatherCode = weatherCode
 
-        val newIconResource = when (weatherCode) {
-            0 -> if (isDaytime()) R.drawable.ic_weather_clear else R.drawable.ic_weather_clear_night
-            1, 2 -> if (isDaytime()) R.drawable.ic_weather_cloudy else R.drawable.ic_weather_cloudy_night
-            3 -> R.drawable.ic_weather_overcast
-            45, 48 -> R.drawable.ic_weather_foggy
-            51, 53, 55 -> R.drawable.ic_weather_drizzle
-            61, 63, 65 -> R.drawable.ic_weather_rain
-            71, 73, 75 -> R.drawable.ic_weather_snow
-            95 -> R.drawable.ic_weather_thunderstorm
-            else -> R.drawable.ic_weather_default
-        }
+        val newIconResource = getWeatherIconResource(weatherCode)
 
         binding?.getWeatherIcon()?.let { iconView ->
             fadeOut.setAnimationListener(object : Animation.AnimationListener {

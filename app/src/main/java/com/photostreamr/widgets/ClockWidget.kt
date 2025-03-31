@@ -170,6 +170,31 @@ class ClockWidget(
                         setMargins(0, margin, margin, 0)
                     }
                 }
+                WidgetPosition.CENTER_START -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, 0, 0, 0)
+                    }
+                }
+                WidgetPosition.CENTER -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(margin, 0, margin, 0)
+                    }
+                }
+                WidgetPosition.CENTER_END -> {
+                    params.apply {
+                        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                        setMargins(0, 0, margin, 0)
+                    }
+                }
                 WidgetPosition.BOTTOM_START -> {
                     params.apply {
                         bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
@@ -314,6 +339,22 @@ class ClockWidget(
                             }
                             WidgetPosition.TOP_END -> {
                                 topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.CENTER_START -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.CENTER -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                                startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                                endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                            }
+                            WidgetPosition.CENTER_END -> {
+                                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                                bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
                                 endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
                             }
                             WidgetPosition.BOTTOM_START -> {

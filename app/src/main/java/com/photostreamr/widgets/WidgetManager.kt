@@ -250,13 +250,43 @@ class WidgetManager @Inject constructor(
         val config = loadWeatherConfig()
         Log.d(TAG, "Loaded weather config: $config")
 
-        val weatherWidget = WeatherWidget(container, config)
-        registerWidget(WidgetType.WEATHER, weatherWidget)
-        weatherWidget.init()
+        try {
+            // Only proceed if weather is enabled in config
+            if (!config.enabled) {
+                Log.d(TAG, "Weather widget is disabled in config, not setting up")
+                // Make sure any existing widget is removed
+                widgets[WidgetType.WEATHER]?.apply {
+                    cleanup()
+                }
+                widgets.remove(WidgetType.WEATHER)
+                return
+            }
 
-        // Show the widget if enabled
-        if (config.enabled) {
-            showWidget(WidgetType.WEATHER)
+            // First, clean up any existing weather widget to avoid duplicates
+            val existingWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
+            if (existingWidget != null) {
+                Log.d(TAG, "Cleaning up existing weather widget")
+                existingWidget.cleanup()
+                widgets.remove(WidgetType.WEATHER)
+            }
+
+            // Create and setup the weather widget
+            val weatherWidget = WeatherWidget(container, config)
+            Log.d(TAG, "Created WeatherWidget instance")
+
+            registerWidget(WidgetType.WEATHER, weatherWidget)
+            Log.d(TAG, "Weather widget registered")
+
+            weatherWidget.init()
+            Log.d(TAG, "Weather widget initialized")
+
+            // Show the weather widget if enabled in config
+            if (config.enabled) {
+                showWidget(WidgetType.WEATHER)
+                Log.d(TAG, "Show weather widget called")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up weather widget", e)
         }
     }
 
@@ -289,15 +319,20 @@ class WidgetManager @Inject constructor(
         val currentWidget = widgets[WidgetType.WEATHER] as? WeatherWidget
 
         if (currentWidget != null) {
-            // If we have an existing widget, just update its config
+            // If we have an existing widget, update its config
             updateWidgetConfig(WidgetType.WEATHER, config)
+
+            // Handle visibility based on enabled state
             if (config.enabled) {
                 currentWidget.show()
             } else {
                 currentWidget.hide()
+                // Clean up after hiding to prevent memory leaks
+                currentWidget.cleanup()
+                widgets.remove(WidgetType.WEATHER)
             }
-        } else {
-            // If no widget exists and we have a container, create a new one
+        } else if (config.enabled) {
+            // If no widget exists but it should be enabled, create a new one
             lastKnownContainer?.let { container ->
                 setupWeatherWidget(container)
             }
@@ -313,32 +348,48 @@ class WidgetManager @Inject constructor(
             val weatherCode = currentWidget?.currentWeatherCode ?: -1
             val currentConfig = loadWeatherConfig()
 
+            // Fix: Check if config is enabled before continuing
+            if (!currentConfig.enabled) {
+                Log.d(TAG, "Weather widget is disabled in config, not reinitializing")
+                return
+            }
+
+            // Use the container parameter if provided, otherwise use lastKnownContainer
+            val targetContainer = container ?: lastKnownContainer
+
+            // Critical fix: Check if we have a valid container to work with
+            if (targetContainer == null) {
+                Log.e(TAG, "Cannot reinitialize weather widget: No container available")
+                return
+            }
+
+            // Get the widgets_layer from the container (important fix!)
+            val widgetsLayer = targetContainer.findViewById<ConstraintLayout>(R.id.widgets_layer)
+                ?: targetContainer as? ConstraintLayout
+                ?: run {
+                    Log.e(TAG, "No widgets_layer found and container is not a ConstraintLayout")
+                    return
+                }
+
             // Only clean up if we need to recreate
-            if (currentWidget != null && container != null) {
+            if (currentWidget != null) {
                 currentWidget.cleanup()
                 widgets.remove(WidgetType.WEATHER)
             }
 
-            if (currentConfig.enabled && container != null) {
-                // Create and setup new widget
-                val weatherWidget = WeatherWidget(container, currentConfig).apply {
-                    registerWidget(WidgetType.WEATHER, this)
-                    init()
+            // Always create a new widget if config is enabled and we have a container
+            val weatherWidget = WeatherWidget(widgetsLayer, currentConfig)
+            registerWidget(WidgetType.WEATHER, weatherWidget)
+            weatherWidget.init()
 
-                    // Restore previous state if available
-                    if (weatherState != null) {
-                        restoreState(weatherState.temperature, weatherCode)
-                    }
-
-                    // Show the widget
-                    if (currentConfig.enabled) {
-                        show()
-                    }
-                }
-                Log.d(TAG, "Weather widget reinitialized and shown")
-            } else {
-                Log.d(TAG, "Weather widget not enabled or container is null")
+            // Restore previous state if available
+            if (weatherState != null) {
+                weatherWidget.restoreState(weatherState.temperature, weatherCode)
             }
+
+            // Show the widget
+            weatherWidget.show()
+            Log.d(TAG, "Weather widget reinitialized and shown")
         } catch (e: Exception) {
             Log.e(TAG, "Error reinitializing weather widget", e)
         }
@@ -376,17 +427,27 @@ class WidgetManager @Inject constructor(
     }
 
     fun updateWeatherPosition(position: WidgetPosition) {
-        val widget = widgets[WidgetType.WEATHER] as? WeatherWidget ?: return
-        val currentConfig = widget.config as? WidgetConfig.WeatherConfig ?: return
+        Log.d(TAG, "Updating weather widget position to: $position")
 
-        // Update config with new position
+        // Get current widget and config
+        val widget = widgets[WidgetType.WEATHER] as? WeatherWidget
+        val currentConfig = widget?.config as? WidgetConfig.WeatherConfig
+
+        if (widget == null || currentConfig == null) {
+            Log.e(TAG, "Cannot update weather position: widget or config is null")
+            return
+        }
+
+        // Important: Do NOT reinitialize the widget, just update its position
         val newConfig = currentConfig.copy(position = position)
 
-        // Update widget position without reinitialization
+        // First update the config
+        updateWidgetConfig(WidgetType.WEATHER, newConfig)
+
+        // Then update the position directly
         widget.updatePosition(position)
 
-        // Update config and save preference
-        updateWidgetConfig(WidgetType.WEATHER, newConfig)
+        // Update preferences
         preferences.setString("weather_position", position.name)
 
         Log.d(TAG, "Weather position updated: $position")
