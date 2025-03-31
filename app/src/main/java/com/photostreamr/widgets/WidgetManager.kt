@@ -376,22 +376,17 @@ class WidgetManager @Inject constructor(
     }
 
     fun updateWeatherPosition(position: WidgetPosition) {
-        Log.d(TAG, "Updating weather widget position to: $position")
+        val widget = widgets[WidgetType.WEATHER] as? WeatherWidget ?: return
+        val currentConfig = widget.config as? WidgetConfig.WeatherConfig ?: return
 
-        // Get current widget and config
-        val currentWidget = widgets[WidgetType.WEATHER] as? WeatherWidget ?: return
-        val currentConfig = currentWidget.config as? WidgetConfig.WeatherConfig ?: return
-
-        // Create a new config with the updated position
+        // Update config with new position
         val newConfig = currentConfig.copy(position = position)
 
-        // Important: First update the configuration to set the new position
-        currentWidget.updateConfiguration(newConfig)
+        // Update widget position without reinitialization
+        widget.updatePosition(position)
 
-        // Then explicitly update the widget's position
-        currentWidget.updatePosition(position)
-
-        // Update preferences
+        // Update config and save preference
+        updateWidgetConfig(WidgetType.WEATHER, newConfig)
         preferences.setString("weather_position", position.name)
 
         Log.d(TAG, "Weather position updated: $position")
