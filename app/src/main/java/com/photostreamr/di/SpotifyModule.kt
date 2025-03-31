@@ -5,6 +5,8 @@ import com.photostreamr.music.SpotifyManager
 import com.photostreamr.music.SpotifyAuthManager
 import com.photostreamr.music.SpotifyPreferences
 import com.photostreamr.data.SecureStorage
+import com.photostreamr.music.LocalMusicManager
+import com.photostreamr.music.LocalMusicPreferences
 import com.photostreamr.music.RadioManager
 import com.photostreamr.music.RadioPreferences
 import com.photostreamr.music.SpotifyTokenManager
@@ -77,5 +79,14 @@ object SpotifyModule {
         radioPreferences: RadioPreferences
     ): RadioManager {
         return RadioManager(context, radioPreferences)
+    }
+
+    @Provides
+    @Singleton
+    fun provideLocalMusicManager(
+        context: android.content.Context,
+        localMusicPreferences: LocalMusicPreferences
+    ): LocalMusicManager {
+        return LocalMusicManager(context, localMusicPreferences)
     }
 }

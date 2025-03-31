@@ -176,15 +176,6 @@ class MusicControlWidget(
             .getString("music_source", MUSIC_SOURCE_SPOTIFY) ?: MUSIC_SOURCE_SPOTIFY
     }
 
-    private fun isMusicSourceEnabled(): Boolean {
-        val source = getMusicSource()
-        return when (source) {
-            MUSIC_SOURCE_SPOTIFY -> spotifyPreferences.isEnabled()
-            MUSIC_SOURCE_RADIO -> radioPreferences.isEnabled()
-            else -> false
-        }
-    }
-
     private fun handleSpotifyPlayPause() {
         when (spotifyManager.connectionState.value) {
             !is SpotifyManager.ConnectionState.Connected -> {

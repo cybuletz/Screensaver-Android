@@ -741,15 +741,17 @@
     <string name="security_feature_title">Security Features</string>
     <string name="security_feature_description">Protect your slideshow with biometric authentication and passcode locks. Keep your content private and secure.</string>
 
-    <!-- Ad Settings -->
-    <string name="ad_settings_title">Ad Settings</string>
-    <string name="ad_interval_title">Ad Display Interval</string>
-    <string name="ad_interval_summary">Set how often ads appear (in minutes)</string>
-    <string name="version_settings">Version Settings</string>
-    <string name="pro_version_title">Pro Version</string>
-    <string name="pro_version_summary">Unlock all premium features</string>
-    <string name="upgrade_to_pro_summary">Get access to Music, Widgets, and Security features</string>
-    <string name="developer_mode">Developer Mode</string>
-
+    <!-- Local Music Strings -->
+    <string name="pref_local_music_folder_title">Music Folder</string>
+    <string name="pref_local_music_folder_summary">Select folder containing your music files</string>
+    <string name="pref_local_music_enabled_title">Enable Local Music</string>
+    <string name="pref_local_music_enabled_summary">Play music from your device while screensaver is active</string>
+    <string name="pref_local_music_autoplay_title">Autoplay</string>
+    <string name="pref_local_music_autoplay_summary">Automatically start playing when screensaver activates</string>
+    <string name="pref_local_music_shuffle_title">Shuffle Playback</string>
+    <string name="pref_local_music_shuffle_summary">Randomly shuffle tracks during playback</string>
+    <string name="error_no_music_folder">No music folder selected</string>
+    <string name="error_playing_local_music">Error playing local music</string>
+    <string name="local_music_no_tracks">No music tracks found in selected folder</string>
 
 </resources>

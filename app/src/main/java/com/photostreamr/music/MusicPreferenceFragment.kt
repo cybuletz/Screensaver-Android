@@ -35,6 +35,7 @@ import com.photostreamr.widgets.WidgetManager
 import android.widget.ImageView
 import android.widget.BaseAdapter
 import android.view.ViewGroup
+import androidx.documentfile.provider.DocumentFile
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.Dispatchers
 import java.io.IOException
@@ -69,12 +70,27 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
     lateinit var radioPreferences: RadioPreferences
 
     @Inject
+    lateinit var localMusicPreferences: LocalMusicPreferences
+
+    @Inject
+    lateinit var localMusicManager: LocalMusicManager
+
+    @Inject
     lateinit var widgetManager: WidgetManager
 
     private var currentMusicSource: String = MUSIC_SOURCE_SPOTIFY
 
     private var onPreferenceChangeCallback: (() -> Unit)? = null
 
+    private val directoryPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                handleMusicFolderSelection(uri)
+            }
+        }
+    }
 
     private val spotifyAuthLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -123,6 +139,90 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         updateSpotifyLoginSummary()
     }
 
+    private fun handleMusicFolderSelection(uri: Uri) {
+        try {
+            // Take persistable permission
+            val contentResolver = requireContext().contentResolver
+            val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            contentResolver.takePersistableUriPermission(uri, takeFlags)
+
+            // Get the folder name
+            val folder = DocumentFile.fromTreeUri(requireContext(), uri)
+            val folderName = folder?.name ?: uri.lastPathSegment ?: "Unknown Folder"
+
+            // Save to preferences
+            localMusicPreferences.setMusicFolderUri(uri)
+            localMusicPreferences.setMusicFolderName(folderName)
+            localMusicPreferences.setEnabled(true)
+
+            // Update the preference summary
+            findPreference<Preference>("local_music_folder")?.summary = folderName
+
+            // Update widget manager
+            widgetManager.updateMusicWidgetBasedOnSource()
+
+            // Show toast
+            Toast.makeText(
+                requireContext(),
+                "Selected folder: $folderName",
+                Toast.LENGTH_SHORT
+            ).show()
+        } catch (e: Exception) {
+            Timber.e(e, "Error selecting music folder")
+            Toast.makeText(
+                requireContext(),
+                "Error selecting music folder",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun setupLocalMusicPreferences() {
+        findPreference<Preference>("local_music_folder")?.apply {
+            // Set initial summary if folder is already selected
+            localMusicPreferences.getMusicFolderName()?.let { folderName ->
+                summary = folderName
+            }
+
+            setOnPreferenceClickListener {
+                // Launch folder picker
+                try {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                        addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    directoryPickerLauncher.launch(intent)
+                } catch (e: Exception) {
+                    Timber.e(e, "Error launching folder picker")
+                    Toast.makeText(
+                        requireContext(),
+                        "Error launching folder picker",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                true
+            }
+        }
+
+        // Set up local music configuration preferences if needed
+        findPreference<SwitchPreferenceCompat>("local_music_shuffle")?.apply {
+            isChecked = localMusicPreferences.isShuffleEnabled()
+            setOnPreferenceChangeListener { _, newValue ->
+                val shuffleEnabled = newValue as Boolean
+                localMusicPreferences.setShuffleEnabled(shuffleEnabled)
+                true
+            }
+        }
+
+        findPreference<SwitchPreferenceCompat>("local_music_autoplay")?.apply {
+            isChecked = localMusicPreferences.isAutoplayEnabled()
+            setOnPreferenceChangeListener { _, newValue ->
+                localMusicPreferences.setAutoplayEnabled(newValue as Boolean)
+                true
+            }
+        }
+    }
 
     fun setOnPreferenceChangeCallback(callback: () -> Unit) {
         onPreferenceChangeCallback = callback
@@ -174,6 +274,12 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                             findPreference<SwitchPreferenceCompat>("radio_enabled")?.isChecked = false
                         }
                     }
+                    MUSIC_SOURCE_LOCAL -> {
+                        if (localMusicPreferences.isEnabled()) {
+                            localMusicPreferences.setEnabled(false)
+                            localMusicManager.disconnect()
+                        }
+                    }
                 }
 
                 // Update current source AFTER disabling previous source
@@ -189,6 +295,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         findPreference<Preference>("radio_recent")?.isVisible = false
                         // Hide local music
                         findPreference<Preference>("local_music_folder")?.isVisible = false
+                        findPreference<SwitchPreferenceCompat>("local_music_shuffle")?.isVisible = false
+                        findPreference<SwitchPreferenceCompat>("local_music_autoplay")?.isVisible = false
 
                         // Show Spotify switch but hide other options until enabled
                         findPreference<SwitchPreferenceCompat>("spotify_enabled")?.apply {
@@ -204,10 +312,12 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isVisible = false
                         findPreference<Preference>("spotify_login")?.isVisible = false
                         findPreference<Preference>("spotify_playlist")?.isVisible = false
-                        findPreference<Preference>("spotify_shuffle")?.isVisible = false  // Add this line
+                        findPreference<Preference>("spotify_shuffle")?.isVisible = false
                         findPreference<Preference>("spotify_autoplay")?.isVisible = false
                         // Hide local music
                         findPreference<Preference>("local_music_folder")?.isVisible = false
+                        findPreference<SwitchPreferenceCompat>("local_music_shuffle")?.isVisible = false
+                        findPreference<SwitchPreferenceCompat>("local_music_autoplay")?.isVisible = false
 
                         // Show radio switch but hide other options until enabled
                         findPreference<SwitchPreferenceCompat>("radio_enabled")?.apply {
@@ -223,15 +333,23 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         findPreference<SwitchPreferenceCompat>("spotify_enabled")?.isVisible = false
                         findPreference<Preference>("spotify_login")?.isVisible = false
                         findPreference<Preference>("spotify_playlist")?.isVisible = false
-                        findPreference<Preference>("spotify_shuffle")?.isVisible = false  // Add this line
+                        findPreference<Preference>("spotify_shuffle")?.isVisible = false
                         findPreference<Preference>("spotify_autoplay")?.isVisible = false
                         // Hide all radio options
                         findPreference<SwitchPreferenceCompat>("radio_enabled")?.isVisible = false
                         findPreference<Preference>("radio_station_search")?.isVisible = false
                         findPreference<Preference>("radio_favorites")?.isVisible = false
                         findPreference<Preference>("radio_recent")?.isVisible = false
-                        // Show local music
+
+                        // Show local music options
                         findPreference<Preference>("local_music_folder")?.isVisible = true
+                        findPreference<SwitchPreferenceCompat>("local_music_shuffle")?.isVisible = true
+                        findPreference<SwitchPreferenceCompat>("local_music_autoplay")?.isVisible = true
+
+                        // Set initial folder summary if exists
+                        localMusicPreferences.getMusicFolderName()?.let { folderName ->
+                            findPreference<Preference>("local_music_folder")?.summary = folderName
+                        }
                     }
                 }
 
@@ -254,7 +372,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             findPreference<Preference>("spotify_login")?.isVisible = enabled
             findPreference<Preference>("spotify_playlist")?.isVisible = enabled
             findPreference<Preference>("spotify_autoplay")?.isVisible = enabled
-            findPreference<Preference>("spotify_shuffle")?.isVisible = enabled  // Add this line
+            findPreference<Preference>("spotify_shuffle")?.isVisible = enabled
             onPreferenceChangeCallback?.invoke()
             true
         }
@@ -271,7 +389,9 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
         // Initialize preferences based on current source
         updateVisiblePreferences(currentMusicSource)
+        setupSpotifyPreferences()
         setupRadioPreferences()
+        setupLocalMusicPreferences()
 
         // Check initial state for widget visibility
         widgetManager.updateMusicWidgetBasedOnSource()
@@ -382,9 +502,13 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         findPreference<Preference>("spotify_enabled")?.isVisible = false
         findPreference<Preference>("spotify_login")?.isVisible = false
         findPreference<Preference>("spotify_playlist")?.isVisible = false
-        findPreference<Preference>("spotify_shuffle")?.isVisible = false  // Add this line
+        findPreference<Preference>("spotify_shuffle")?.isVisible = false
         findPreference<Preference>("spotify_autoplay")?.isVisible = false
+
         findPreference<Preference>("local_music_folder")?.isVisible = false
+        findPreference<SwitchPreferenceCompat>("local_music_shuffle")?.isVisible = false
+        findPreference<SwitchPreferenceCompat>("local_music_autoplay")?.isVisible = false
+
         findPreference<Preference>("radio_enabled")?.isVisible = false
         findPreference<Preference>("radio_station_search")?.isVisible = false
         findPreference<Preference>("radio_favorites")?.isVisible = false
@@ -399,7 +523,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                     val showSpotifyOptions = isChecked
                     findPreference<Preference>("spotify_login")?.isVisible = showSpotifyOptions
                     findPreference<Preference>("spotify_playlist")?.isVisible = showSpotifyOptions
-                    findPreference<Preference>("spotify_shuffle")?.isVisible = showSpotifyOptions  // Add this line
+                    findPreference<Preference>("spotify_shuffle")?.isVisible = showSpotifyOptions
                     findPreference<Preference>("spotify_autoplay")?.isVisible = showSpotifyOptions
                 }
             }
@@ -414,7 +538,18 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                 }
             }
             MUSIC_SOURCE_LOCAL -> {
+                // Show local music options
                 findPreference<Preference>("local_music_folder")?.isVisible = true
+
+                // Show additional options if folder is selected
+                val folderSelected = localMusicPreferences.getMusicFolderUri() != null
+                findPreference<SwitchPreferenceCompat>("local_music_shuffle")?.isVisible = folderSelected
+                findPreference<SwitchPreferenceCompat>("local_music_autoplay")?.isVisible = folderSelected
+
+                // Set folder summary if exists
+                localMusicPreferences.getMusicFolderName()?.let { folderName ->
+                    findPreference<Preference>("local_music_folder")?.summary = folderName
+                }
             }
         }
     }
@@ -1129,6 +1264,43 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
     fun applyChanges() {
         Timber.d("Applying music source changes")
+
+        // Handle source-specific changes
+        when (currentMusicSource) {
+            MUSIC_SOURCE_SPOTIFY -> {
+                // Disconnect other sources
+                radioManager.disconnect()
+                localMusicManager.disconnect()
+
+                // Connect to Spotify if enabled
+                if (spotifyPreferences.isEnabled()) {
+                    spotifyManager.connect()
+                }
+            }
+            MUSIC_SOURCE_RADIO -> {
+                // Disconnect other sources
+                spotifyManager.disconnect()
+                localMusicManager.disconnect()
+
+                // Connect to radio if enabled
+                if (radioPreferences.isEnabled()) {
+                    radioManager.connect()
+                }
+            }
+            MUSIC_SOURCE_LOCAL -> {
+                // Disconnect other sources
+                spotifyManager.disconnect()
+                radioManager.disconnect()
+
+                // Connect to local music if enabled and folder is selected
+                if (localMusicPreferences.isEnabled() && localMusicPreferences.getMusicFolderUri() != null) {
+                    localMusicManager.connect()
+                }
+            }
+        }
+
+        // Update widget display
+        widgetManager.updateMusicWidgetBasedOnSource()
     }
 
     fun cancelChanges() {

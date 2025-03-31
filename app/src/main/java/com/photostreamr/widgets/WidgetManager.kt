@@ -19,6 +19,8 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import androidx.preference.PreferenceManager
 import com.photostreamr.R
+import com.photostreamr.music.LocalMusicManager
+import com.photostreamr.music.LocalMusicPreferences
 
 
 @Singleton
@@ -38,6 +40,12 @@ class WidgetManager @Inject constructor(
 
     @Inject
     lateinit var radioPreferences: RadioPreferences
+
+    @Inject
+    lateinit var localMusicManager: LocalMusicManager
+
+    @Inject
+    lateinit var localMusicPreferences: LocalMusicPreferences
 
     private val widgets = mutableMapOf<WidgetType, ScreenWidget>()
     private val _widgetStates = MutableStateFlow<Map<WidgetType, WidgetData>>(emptyMap())
@@ -474,16 +482,26 @@ class WidgetManager @Inject constructor(
         val showControls = preferences.getBoolean("show_music_controls", true)
         val showProgress = preferences.getBoolean("show_music_progress", true)
         val showArtwork = preferences.getBoolean("show_music_artwork", true)
-        val autoplay = spotifyPreferences.isAutoplayEnabled()
+
+        // Get autoplay setting based on the current source
+        val currentSource = PreferenceManager.getDefaultSharedPreferences(context)
+            .getString("music_source", "spotify") ?: "spotify"
+
+        val autoplay = when (currentSource) {
+            "spotify" -> spotifyPreferences.isAutoplayEnabled()
+            "local" -> localMusicPreferences.isAutoplayEnabled()
+            else -> false
+        }
 
         Log.d(TAG, """
-        Loading music config:
-        - enabled: $enabled
-        - position: $position
-        - showControls: $showControls
-        - showProgress: $showProgress
-        - showArtwork: $showArtwork
-        - autoplay: $autoplay
+    Loading music config:
+    - enabled: $enabled
+    - position: $position
+    - showControls: $showControls
+    - showProgress: $showProgress
+    - showArtwork: $showArtwork
+    - autoplay: $autoplay
+    - source: $currentSource
     """.trimIndent())
 
         return WidgetConfig.MusicConfig(
@@ -491,7 +509,7 @@ class WidgetManager @Inject constructor(
             position = position,
             showControls = showControls,
             showProgress = showProgress,
-            showArtwork = showArtwork, // Add this line
+            showArtwork = showArtwork,
             autoplay = autoplay
         )
     }
@@ -530,6 +548,7 @@ class WidgetManager @Inject constructor(
         val isSourceEnabled = when (currentSource) {
             "spotify" -> spotifyPreferences.isEnabled()
             "radio" -> radioPreferences.isEnabled()
+            "local" -> localMusicPreferences.isEnabled()
             else -> false
         }
 
@@ -544,6 +563,31 @@ class WidgetManager @Inject constructor(
             updateWidgetConfig(WidgetType.MUSIC, newConfig)
             if (isSourceEnabled) {
                 currentWidget.show()
+
+                // Connect to the appropriate music source based on selection
+                when (currentSource) {
+                    "spotify" -> {
+                        radioManager.disconnect()
+                        localMusicManager.disconnect()
+                        if (spotifyPreferences.isEnabled()) {
+                            spotifyManager.connect()
+                        }
+                    }
+                    "radio" -> {
+                        spotifyManager.disconnect()
+                        localMusicManager.disconnect()
+                        if (radioPreferences.isEnabled()) {
+                            radioManager.connect()
+                        }
+                    }
+                    "local" -> {
+                        spotifyManager.disconnect()
+                        radioManager.disconnect()
+                        if (localMusicPreferences.isEnabled()) {
+                            localMusicManager.connect()
+                        }
+                    }
+                }
             } else {
                 currentWidget.hide()
                 // Clean up when hiding
@@ -558,12 +602,12 @@ class WidgetManager @Inject constructor(
         }
 
         Log.d(TAG, """
-            Music widget update:
-            - Current source: $currentSource
-            - Source enabled: $isSourceEnabled
-            - Widget exists: ${currentWidget != null}
-            - Config enabled: ${newConfig.enabled}
-        """.trimIndent())
+        Music widget update:
+        - Current source: $currentSource
+        - Source enabled: $isSourceEnabled
+        - Widget exists: ${currentWidget != null}
+        - Config enabled: ${newConfig.enabled}
+    """.trimIndent())
     }
 
     fun updateMusicVisibility(visible: Boolean) {
@@ -629,6 +673,10 @@ class WidgetManager @Inject constructor(
             (widgets[WidgetType.MUSIC] as? MusicControlWidget)?.cleanup()
             widgets.remove(WidgetType.MUSIC)
 
+            // Get the current music source
+            val currentSource = PreferenceManager.getDefaultSharedPreferences(context)
+                .getString("music_source", "spotify") ?: "spotify"
+
             // Create new widget with widgets_layer as container
             val musicWidget = MusicControlWidget(
                 container = widgetsLayer,
@@ -636,9 +684,36 @@ class WidgetManager @Inject constructor(
                 spotifyManager = spotifyManager,
                 spotifyPreferences = spotifyPreferences,
                 radioManager = radioManager,
-                radioPreferences = radioPreferences
+                radioPreferences = radioPreferences,
+                localMusicManager = localMusicManager,
+                localMusicPreferences = localMusicPreferences
             ).also {
                 Log.d(TAG, "Created MusicControlWidget instance")
+            }
+
+            // Initialize the widget based on the selected music source
+            when (currentSource) {
+                "spotify" -> {
+                    radioManager.disconnect()
+                    localMusicManager.disconnect()
+                    if (spotifyPreferences.isEnabled()) {
+                        spotifyManager.connect()
+                    }
+                }
+                "radio" -> {
+                    spotifyManager.disconnect()
+                    localMusicManager.disconnect()
+                    if (radioPreferences.isEnabled()) {
+                        radioManager.connect()
+                    }
+                }
+                "local" -> {
+                    spotifyManager.disconnect()
+                    radioManager.disconnect()
+                    if (localMusicPreferences.isEnabled()) {
+                        localMusicManager.connect()
+                    }
+                }
             }
 
             // Initialize and register
