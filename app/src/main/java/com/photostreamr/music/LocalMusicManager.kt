@@ -1,0 +1,562 @@
+package com.photostreamr.music
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.AudioAttributes
+import android.media.MediaMetadataRetriever
+import android.media.MediaPlayer
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import timber.log.Timber
+import java.io.File
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.random.Random
+
+@Singleton
+class LocalMusicManager @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val preferences: LocalMusicPreferences
+) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var mediaPlayer: MediaPlayer? = null
+    private var currentPlaylist: List<LocalTrack> = emptyList()
+    private var currentTrackIndex: Int = 0
+    private var isScreensaverActive = false
+    private var wasPlayingBeforeScreensaver = false
+    private val handler = Handler(Looper.getMainLooper())
+    private var updatePositionTask: Runnable? = null
+    private var isShuffleEnabled = false
+    private var repeatMode = RepeatMode.OFF
+
+    // State flows
+    private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val _playbackState = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
+    val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
+
+    private val _currentTrack = MutableStateFlow<LocalTrack?>(null)
+    val currentTrack: StateFlow<LocalTrack?> = _currentTrack.asStateFlow()
+
+    companion object {
+        private const val TAG = "LocalMusicManager"
+        private const val POSITION_UPDATE_INTERVAL = 1000L // 1 second
+    }
+
+    enum class RepeatMode {
+        OFF, ONE, ALL
+    }
+
+    // Data classes
+    data class LocalTrack(
+        val id: String,
+        val title: String,
+        val artist: String,
+        val album: String,
+        val duration: Long,
+        val path: String,
+        val albumArtPath: String? = null
+    )
+
+    data class Playlist(
+        val id: String,
+        val name: String,
+        val tracks: List<LocalTrack>
+    )
+
+    // Connection states
+    sealed class ConnectionState {
+        object Connected : ConnectionState()
+        object Disconnected : ConnectionState()
+        data class Error(val error: Throwable) : ConnectionState()
+    }
+
+    // Playback states
+    sealed class PlaybackState {
+        object Idle : PlaybackState()
+        object Loading : PlaybackState()
+        data class Playing(
+            val trackName: String,
+            val artistName: String,
+            val albumName: String,
+            val isPlaying: Boolean,
+            val trackDuration: Long,
+            val playbackPosition: Long,
+            val playlistName: String? = null,
+            val coverArt: Bitmap? = null
+        ) : PlaybackState()
+    }
+
+    // Error states
+    sealed class LocalMusicError {
+        object NoMusicFound : LocalMusicError()
+        data class PlaybackFailed(val exception: Throwable) : LocalMusicError()
+        data class PermissionRequired(val permission: String) : LocalMusicError()
+    }
+
+    init {
+        setupMediaPlayer()
+    }
+
+    fun initialize() {
+        Timber.d("Initializing LocalMusic Manager")
+        val isEnabled = preferences.isEnabled()
+        val wasPlaying = preferences.wasPlaying()
+
+        Timber.d("LocalMusic preferences - enabled: $isEnabled, wasPlaying: $wasPlaying")
+
+        if (isEnabled) {
+            _connectionState.value = ConnectionState.Connected
+            restoreLastPlaybackState()
+        } else {
+            _connectionState.value = ConnectionState.Disconnected
+        }
+    }
+
+    private fun restoreLastPlaybackState() {
+        val lastTrack = preferences.getLastTrack()
+        val wasPlaying = preferences.wasPlaying()
+
+        lastTrack?.let { track ->
+            _currentTrack.value = track
+            if (wasPlaying && preferences.isAutoplayEnabled()) {
+                playTrack(track)
+            } else {
+                // Just show track info without playing
+                updatePlaybackStateWithTrack(track, false)
+            }
+        }
+    }
+
+    fun initializeState() {
+        if (!preferences.isEnabled()) return
+
+        // On full app start, always read from preferences
+        preferences.getLastTrack()?.let { track ->
+            _currentTrack.value = track
+            val wasPlaying = preferences.wasPlaying()
+
+            _connectionState.value = ConnectionState.Connected
+            updatePlaybackStateWithTrack(track, false)
+            Timber.d("Initialized state with last track: ${track.title}, wasPlaying: $wasPlaying")
+        }
+    }
+
+    private fun setupMediaPlayer() {
+        mediaPlayer?.release()
+        mediaPlayer = MediaPlayer().apply {
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
+
+            setOnPreparedListener {
+                Timber.d("MediaPlayer prepared")
+                start()
+                _connectionState.value = ConnectionState.Connected
+
+                // Update to playing state
+                _currentTrack.value?.let { track ->
+                    updatePlaybackStateWithTrack(track, true)
+                    preferences.setWasPlaying(true)
+                    startPositionUpdates()
+                }
+            }
+
+            setOnErrorListener { _, what, extra ->
+                val error = Exception("MediaPlayer error: what=$what, extra=$extra")
+                Timber.e(error, "MediaPlayer error")
+                _connectionState.value = ConnectionState.Error(error)
+                true
+            }
+
+            setOnCompletionListener {
+                Timber.d("MediaPlayer completed")
+                handleTrackCompletion()
+            }
+        }
+    }
+
+    private fun handleTrackCompletion() {
+        when (repeatMode) {
+            RepeatMode.ONE -> {
+                // Replay the current track
+                _currentTrack.value?.let { playTrack(it) }
+            }
+            RepeatMode.ALL -> {
+                // Play next track, or loop back to first if at end
+                playNextTrack()
+            }
+            RepeatMode.OFF -> {
+                // Play next track, or stop if at end
+                if (currentTrackIndex < currentPlaylist.size - 1) {
+                    playNextTrack()
+                } else {
+                    // Stop playback
+                    updatePlaybackStateWithTrack(_currentTrack.value!!, false)
+                    preferences.setWasPlaying(false)
+                    stopPositionUpdates()
+                }
+            }
+        }
+    }
+
+    private fun startPositionUpdates() {
+        updatePositionTask?.let { handler.removeCallbacks(it) }
+        updatePositionTask = object : Runnable {
+            override fun run() {
+                mediaPlayer?.let { player ->
+                    if (player.isPlaying) {
+                        val currentPosition = player.currentPosition.toLong()
+                        _currentTrack.value?.let { track ->
+                            updatePlaybackStateWithTrack(track, true, currentPosition)
+                        }
+                    }
+                    handler.postDelayed(this, POSITION_UPDATE_INTERVAL)
+                }
+            }
+        }
+        handler.post(updatePositionTask!!)
+    }
+
+    private fun stopPositionUpdates() {
+        updatePositionTask?.let { handler.removeCallbacks(it) }
+        updatePositionTask = null
+    }
+
+    fun playTrack(track: LocalTrack) {
+        Log.d(TAG, "Playing track: ${track.title}")
+        scope.launch {
+            try {
+                // Clear any existing state
+                mediaPlayer?.reset()
+
+                // Update states to show loading
+                _playbackState.value = PlaybackState.Loading
+                _currentTrack.value = track
+                _connectionState.value = ConnectionState.Connected
+
+                // Save track but don't mark as playing yet
+                preferences.setLastTrack(track)
+
+                // Prepare media player
+                withContext(Dispatchers.IO) {
+                    mediaPlayer?.apply {
+                        setDataSource(context, Uri.parse(track.path))
+                        prepareAsync() // This will trigger onPrepared when ready
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error playing track", e)
+                _connectionState.value = ConnectionState.Error(e)
+                _playbackState.value = PlaybackState.Idle
+            }
+        }
+    }
+
+    private fun updatePlaybackStateWithTrack(
+        track: LocalTrack,
+        isPlaying: Boolean,
+        playbackPosition: Long = 0
+    ) {
+        val coverArt = loadAlbumArt(track.path)
+        _playbackState.value = PlaybackState.Playing(
+            trackName = track.title,
+            artistName = track.artist,
+            albumName = track.album,
+            isPlaying = isPlaying,
+            trackDuration = track.duration,
+            playbackPosition = if (isPlaying) playbackPosition else 0,
+            playlistName = preferences.getSelectedPlaylistName(),
+            coverArt = coverArt
+        )
+    }
+
+    fun loadAlbumArt(filePath: String): Bitmap? {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(filePath)
+            val art = retriever.embeddedPicture
+            if (art != null) {
+                BitmapFactory.decodeByteArray(art, 0, art.size)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error loading album art")
+            null
+        }
+    }
+
+    fun scanMusicFiles(callback: (List<LocalTrack>) -> Unit) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val musicDirectory = File(preferences.getMusicDirectory())
+                val tracks = scanDirectory(musicDirectory)
+
+                withContext(Dispatchers.Main) {
+                    callback(tracks)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error scanning music files")
+                withContext(Dispatchers.Main) {
+                    callback(emptyList())
+                }
+            }
+        }
+    }
+
+    private fun scanDirectory(directory: File): List<LocalTrack> {
+        val tracks = mutableListOf<LocalTrack>()
+
+        if (!directory.exists() || !directory.isDirectory) {
+            return emptyList()
+        }
+
+        directory.listFiles()?.forEach { file ->
+            if (file.isDirectory) {
+                tracks.addAll(scanDirectory(file))
+            } else if (isMusicFile(file.name)) {
+                extractTrackMetadata(file)?.let { tracks.add(it) }
+            }
+        }
+
+        return tracks
+    }
+
+    private fun isMusicFile(fileName: String): Boolean {
+        val supportedExtensions = listOf(".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a")
+        return supportedExtensions.any { fileName.lowercase().endsWith(it) }
+    }
+
+    private fun extractTrackMetadata(file: File): LocalTrack? {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(file.absolutePath)
+
+            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: file.nameWithoutExtension
+            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
+            val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Unknown Album"
+            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION) ?: "0"
+            val duration = durationStr.toLongOrNull() ?: 0L
+
+            LocalTrack(
+                id = file.absolutePath.hashCode().toString(),
+                title = title,
+                artist = artist,
+                album = album,
+                duration = duration,
+                path = file.absolutePath
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "Error extracting metadata from ${file.absolutePath}")
+            null
+        }
+    }
+
+    fun setPlaylist(tracks: List<LocalTrack>, startIndex: Int = 0) {
+        currentPlaylist = if (isShuffleEnabled) {
+            tracks.shuffled()
+        } else {
+            tracks
+        }
+
+        if (currentPlaylist.isNotEmpty()) {
+            currentTrackIndex = startIndex.coerceIn(0, currentPlaylist.size - 1)
+            playTrack(currentPlaylist[currentTrackIndex])
+        }
+    }
+
+    fun onScreensaverStarted() {
+        isScreensaverActive = true
+        if (preferences.isAutoplayEnabled()) {
+            scope.launch {
+                try {
+                    // Store current playing state
+                    wasPlayingBeforeScreensaver = (playbackState.value as? PlaybackState.Playing)?.isPlaying ?: false
+
+                    // Start playback with selected playlist or resume current track
+                    val selectedPlaylistId = preferences.getSelectedPlaylistId()
+                    if (selectedPlaylistId != null) {
+                        loadAndPlayPlaylist(selectedPlaylistId)
+                    } else {
+                        // If there's a current track but not playing, resume it
+                        _currentTrack.value?.let { track ->
+                            if (!wasPlayingBeforeScreensaver) {
+                                playTrack(track)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error starting screensaver playback")
+                }
+            }
+        }
+    }
+
+    fun onScreensaverStopped() {
+        isScreensaverActive = false
+        if (preferences.isAutoplayEnabled() && !wasPlayingBeforeScreensaver) {
+            pause()
+        }
+        // Reset state
+        wasPlayingBeforeScreensaver = false
+    }
+
+    private fun loadAndPlayPlaylist(playlistId: String) {
+        scope.launch(Dispatchers.IO) {
+            val playlist = preferences.getPlaylist(playlistId)
+            if (playlist != null && playlist.tracks.isNotEmpty()) {
+                withContext(Dispatchers.Main) {
+                    setPlaylist(playlist.tracks)
+                }
+            }
+        }
+    }
+
+    fun resume() {
+        Log.d(TAG, "Resuming playback")
+        mediaPlayer?.let { player ->
+            if (!player.isPlaying) {
+                player.start()
+                _currentTrack.value?.let { track ->
+                    updatePlaybackStateWithTrack(track, true, player.currentPosition.toLong())
+                    preferences.setWasPlaying(true)
+                    startPositionUpdates()
+                }
+            }
+        } ?: run {
+            // If no media player or current track, try to restore from last session
+            _currentTrack.value?.let { playTrack(it) }
+        }
+    }
+
+    fun pause() {
+        Log.d(TAG, "Pausing playback")
+        mediaPlayer?.let { player ->
+            if (player.isPlaying) {
+                player.pause()
+                _currentTrack.value?.let { track ->
+                    updatePlaybackStateWithTrack(track, false, player.currentPosition.toLong())
+                    preferences.setWasPlaying(false)
+                    stopPositionUpdates()
+                }
+            }
+        }
+    }
+
+    fun playNextTrack() {
+        if (currentPlaylist.isEmpty()) return
+
+        currentTrackIndex = when {
+            repeatMode == RepeatMode.ALL && currentTrackIndex >= currentPlaylist.size - 1 -> 0
+            else -> (currentTrackIndex + 1) % currentPlaylist.size
+        }
+
+        playTrack(currentPlaylist[currentTrackIndex])
+    }
+
+    fun playPreviousTrack() {
+        if (currentPlaylist.isEmpty()) return
+
+        // If we're more than 3 seconds into a track, restart it instead of going to previous
+        val currentPosition = mediaPlayer?.currentPosition ?: 0
+        if (currentPosition > 3000) {
+            mediaPlayer?.seekTo(0)
+            return
+        }
+
+        currentTrackIndex = when {
+            currentTrackIndex > 0 -> currentTrackIndex - 1
+            repeatMode == RepeatMode.ALL -> currentPlaylist.size - 1
+            else -> 0
+        }
+
+        playTrack(currentPlaylist[currentTrackIndex])
+    }
+
+    fun setShuffleMode(enabled: Boolean) {
+        if (isShuffleEnabled != enabled) {
+            isShuffleEnabled = enabled
+            preferences.setShuffleEnabled(enabled)
+
+            // If we have a current playlist, shuffle it while keeping current track as first
+            if (currentPlaylist.isNotEmpty() && _currentTrack.value != null) {
+                val currentTrack = _currentTrack.value!!
+                val newPlaylist = if (enabled) {
+                    val remainingTracks = currentPlaylist.filter { it != currentTrack }.shuffled()
+                    listOf(currentTrack) + remainingTracks
+                } else {
+                    // Restore original order (this is simplified, would need to store original order)
+                    preferences.getPlaylist(preferences.getSelectedPlaylistId() ?: "")?.tracks
+                        ?: currentPlaylist
+                }
+
+                currentPlaylist = newPlaylist
+                currentTrackIndex = 0 // Current track is now at index 0
+            }
+        }
+    }
+
+    fun setRepeatMode(mode: RepeatMode) {
+        repeatMode = mode
+        preferences.setRepeatMode(mode.name)
+    }
+
+    fun seekTo(position: Long) {
+        mediaPlayer?.seekTo(position.toInt())
+    }
+
+    fun disconnect() {
+        // Store state before ANY changes
+        val currentTrack = _currentTrack.value
+        val isCurrentlyPlaying = (playbackState.value as? PlaybackState.Playing)?.isPlaying ?: false
+
+        // Always update preferences first
+        preferences.setWasPlaying(isCurrentlyPlaying)
+        currentTrack?.let { track ->
+            preferences.setLastTrack(track)
+            Timber.d("Storing last track on disconnect: ${track.title}, wasPlaying: $isCurrentlyPlaying")
+        }
+
+        // Stop position updates
+        stopPositionUpdates()
+
+        // Now safe to disconnect
+        mediaPlayer?.apply {
+            if (isPlaying) {
+                stop()
+            }
+            reset()
+        }
+
+        // Update states but maintain track info
+        _connectionState.value = ConnectionState.Disconnected
+        if (currentTrack != null) {
+            updatePlaybackStateWithTrack(currentTrack, false)
+        } else {
+            _playbackState.value = PlaybackState.Idle
+        }
+    }
+
+    fun cleanup() {
+        stopPositionUpdates()
+        mediaPlayer?.release()
+        mediaPlayer = null
+    }
+}
