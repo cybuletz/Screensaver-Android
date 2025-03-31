@@ -1120,13 +1120,6 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         favoritesAdapter.submitList(radioPreferences.getFavoriteStations())
     }
 
-    private fun disableRadio() {
-        if (radioPreferences.isEnabled()) {
-            radioPreferences.setEnabled(false)
-            radioManager.disconnect()
-        }
-    }
-
     fun applyChanges() {
         Timber.d("Applying music source changes")
     }
