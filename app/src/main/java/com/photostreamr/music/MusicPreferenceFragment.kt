@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
 import java.util.concurrent.TimeUnit
 import android.app.Activity
+import android.content.ContentResolver
 import androidx.documentfile.provider.DocumentFile
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -90,6 +91,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
     private var currentMusicSource: String = MUSIC_SOURCE_SPOTIFY
 
     private var onPreferenceChangeCallback: (() -> Unit)? = null
+
+    private var localMusicDialog: AlertDialog? = null
 
 
     private val spotifyAuthLauncher = registerForActivityResult(
@@ -173,21 +176,40 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
         // Setup scan button
         scanButton.setOnClickListener {
+            // Show loading state
             loadingIndicator.visibility = View.VISIBLE
             tracksList.visibility = View.GONE
             noTracksText.visibility = View.GONE
 
-            localMusicManager.scanMusicFiles { tracks ->
-                requireActivity().runOnUiThread {
-                    loadingIndicator.visibility = View.GONE
+            // Use a coroutine for scanning
+            lifecycleScope.launch {
+                try {
+                    val musicDirectory = localMusicPreferences.getMusicDirectory()
+                    Timber.d("Scanning music directory: $musicDirectory")
 
-                    if (tracks.isEmpty()) {
+                    localMusicManager.scanMusicFiles { tracks ->
+                        // Make sure we update UI on main thread
+                        requireActivity().runOnUiThread {
+                            loadingIndicator.visibility = View.GONE
+
+                            if (tracks.isEmpty()) {
+                                Timber.d("No music files found")
+                                noTracksText.visibility = View.VISIBLE
+                                tracksList.visibility = View.GONE
+                            } else {
+                                Timber.d("Found ${tracks.size} music files")
+                                noTracksText.visibility = View.GONE
+                                tracksList.visibility = View.VISIBLE
+                                tracksAdapter.submitList(tracks)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error scanning for music files")
+                    requireActivity().runOnUiThread {
+                        loadingIndicator.visibility = View.GONE
                         noTracksText.visibility = View.VISIBLE
-                        tracksList.visibility = View.GONE
-                    } else {
-                        noTracksText.visibility = View.GONE
-                        tracksList.visibility = View.VISIBLE
-                        tracksAdapter.submitList(tracks)
+                        noTracksText.text = "Error scanning: ${e.message}"
                     }
                 }
             }
@@ -195,11 +217,9 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
         // Browse button listener
         browseButton.setOnClickListener {
-            // Show directory picker
-            // This is a simplified implementation - you might want to use a proper file picker library
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             try {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 startActivityForResult(intent, REQUEST_CODE_DIRECTORY)
             } catch (e: ActivityNotFoundException) {
                 Toast.makeText(
@@ -220,17 +240,20 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             localMusicPreferences.setAutoplayEnabled(isChecked)
         }
 
-        val dialog = MaterialAlertDialogBuilder(requireContext())
+        // Create and save dialog reference
+        localMusicDialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Local Music")
             .setView(dialogView)
             .setPositiveButton("Close", null)
             .create()
 
-        dialog.show()
+        localMusicDialog?.show()
 
         // Initial scan if folder exists
         scanButton.performClick()
     }
+
+
 
     private fun setupLocalMusicPreferences() {
         findPreference<Preference>("local_music_folder")?.apply {
@@ -254,37 +277,28 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
         if (requestCode == REQUEST_CODE_DIRECTORY && resultCode == Activity.RESULT_OK) {
             data?.data?.let { uri ->
-                // Get the path from URI
                 try {
-                    // Just store the URI string directly
+                    // Take persistent permission - use only valid flags
+                    val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    requireContext().contentResolver.takePersistableUriPermission(uri, takeFlags)
+
+                    // Store the URI directly as the music directory path
                     val uriString = uri.toString()
+                    Timber.d("Selected directory URI: $uriString")
+
+                    // Update preferences with URI string
                     localMusicPreferences.setMusicDirectory(uriString)
-                    findPreference<Preference>("local_music_folder")?.summary = uriString
-                    showLocalMusicDialog()
+
+                    // Update dialog if it's showing
+                    localMusicDialog?.findViewById<TextView>(R.id.directory_text)?.text = uriString
+
+                    // Trigger scan in the existing dialog
+                    localMusicDialog?.findViewById<MaterialButton>(R.id.scan_button)?.performClick()
                 } catch (e: Exception) {
-                    Timber.e(e, "Error accessing URI")
-                    Toast.makeText(requireContext(), "Failed to access selected folder", Toast.LENGTH_SHORT).show()
-                }
-
-                // Convert URI to path
-                val path = getPathFromUri(uri)
-
-                if (path != null) {
-                    localMusicPreferences.setMusicDirectory(path)
-                    findPreference<Preference>("local_music_folder")?.summary = path
-                    // Trigger scan
-                    showLocalMusicDialog()
+                    Timber.e(e, "Error accessing directory: $uri")
+                    Toast.makeText(requireContext(), "Failed to access selected folder: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
-        }
-    }
-
-    private fun getPathFromUri(uri: Uri): String? {
-        return try {
-            DocumentFile.fromTreeUri(requireContext(), uri)?.uri?.path
-        } catch (e: Exception) {
-            Timber.e(e, "Error getting path from URI")
-            null
         }
     }
 

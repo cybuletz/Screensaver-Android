@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -257,7 +258,13 @@ class LocalMusicManager @Inject constructor(
                 // Prepare media player
                 withContext(Dispatchers.IO) {
                     mediaPlayer?.apply {
-                        setDataSource(context, Uri.parse(track.path))
+                        if (track.path.startsWith("content://")) {
+                            // It's a URI path
+                            setDataSource(context, Uri.parse(track.path))
+                        } else {
+                            // It's a file system path
+                            setDataSource(context, Uri.parse("file://${track.path}"))
+                        }
                         prepareAsync() // This will trigger onPrepared when ready
                     }
                 }
@@ -306,11 +313,25 @@ class LocalMusicManager @Inject constructor(
     fun scanMusicFiles(callback: (List<LocalTrack>) -> Unit) {
         scope.launch(Dispatchers.IO) {
             try {
-                val musicDirectory = File(preferences.getMusicDirectory())
-                val tracks = scanDirectory(musicDirectory)
+                val musicDirectoryPath = preferences.getMusicDirectory()
+                Timber.d("Starting music scan of directory: $musicDirectoryPath")
 
-                withContext(Dispatchers.Main) {
-                    callback(tracks)
+                // Check if the path is a URI
+                if (musicDirectoryPath.startsWith("content://")) {
+                    val uri = Uri.parse(musicDirectoryPath)
+                    val tracks = scanDocumentUri(uri)
+                    Timber.d("Scanned document URI, found ${tracks.size} tracks")
+                    withContext(Dispatchers.Main) {
+                        callback(tracks)
+                    }
+                } else {
+                    // Regular file system path
+                    val musicDirectory = File(musicDirectoryPath)
+                    val tracks = scanDirectory(musicDirectory)
+                    Timber.d("Scanned file directory, found ${tracks.size} tracks")
+                    withContext(Dispatchers.Main) {
+                        callback(tracks)
+                    }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error scanning music files")
@@ -551,6 +572,86 @@ class LocalMusicManager @Inject constructor(
             updatePlaybackStateWithTrack(currentTrack, false)
         } else {
             _playbackState.value = PlaybackState.Idle
+        }
+    }
+
+    private fun scanDocumentUri(treeUri: Uri): List<LocalTrack> {
+        val tracks = mutableListOf<LocalTrack>()
+
+        try {
+            // Get the DocumentFile from the tree URI
+            val documentFile = DocumentFile.fromTreeUri(context, treeUri)
+            if (documentFile == null || !documentFile.exists() || !documentFile.isDirectory) {
+                Timber.e("Invalid document tree URI: $treeUri")
+                return emptyList()
+            }
+
+            // Scan all files in the directory tree
+            scanDocumentDirectory(documentFile, tracks)
+
+            Timber.d("Found ${tracks.size} music files in document tree")
+            return tracks
+        } catch (e: Exception) {
+            Timber.e(e, "Error scanning document tree: $treeUri")
+            return emptyList()
+        }
+    }
+
+    private fun scanDocumentDirectory(directory: DocumentFile, tracks: MutableList<LocalTrack>) {
+        try {
+            // Process all files in this directory
+            directory.listFiles().forEach { file ->
+                if (file.isDirectory) {
+                    // Recursively scan subdirectories
+                    scanDocumentDirectory(file, tracks)
+                } else if (isMusicFile(file.name ?: "")) {
+                    // Process music file
+                    extractDocumentTrackMetadata(file)?.let {
+                        tracks.add(it)
+                        Timber.d("Added track: ${it.title}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error scanning directory: ${directory.uri}")
+        }
+    }
+
+    private fun extractDocumentTrackMetadata(file: DocumentFile): LocalTrack? {
+        return try {
+            val retriever = MediaMetadataRetriever()
+
+            context.contentResolver.openFileDescriptor(file.uri, "r")?.use { pfd ->
+                retriever.setDataSource(pfd.fileDescriptor)
+
+                val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    ?: file.name?.substringBeforeLast('.')
+                    ?: "Unknown Title"
+
+                val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    ?: "Unknown Artist"
+
+                val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                    ?: "Unknown Album"
+
+                val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?: "0"
+
+                val duration = durationStr.toLongOrNull() ?: 0L
+
+                // Create track with URI as path
+                LocalTrack(
+                    id = file.uri.toString().hashCode().toString(),
+                    title = title,
+                    artist = artist,
+                    album = album,
+                    duration = duration,
+                    path = file.uri.toString()
+                )
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error extracting metadata from: ${file.uri}")
+            null
         }
     }
 
