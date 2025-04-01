@@ -530,6 +530,7 @@ class WidgetManager @Inject constructor(
         val isSourceEnabled = when (currentSource) {
             "spotify" -> spotifyPreferences.isEnabled()
             "radio" -> radioPreferences.isEnabled()
+            "local" -> localMusicPreferences.isEnabled()  // Add local music check
             else -> false
         }
 
@@ -558,12 +559,12 @@ class WidgetManager @Inject constructor(
         }
 
         Log.d(TAG, """
-            Music widget update:
-            - Current source: $currentSource
-            - Source enabled: $isSourceEnabled
-            - Widget exists: ${currentWidget != null}
-            - Config enabled: ${newConfig.enabled}
-        """.trimIndent())
+        Music widget update:
+        - Current source: $currentSource
+        - Source enabled: $isSourceEnabled
+        - Widget exists: ${currentWidget != null}
+        - Config enabled: ${newConfig.enabled}
+    """.trimIndent())
     }
 
     fun updateMusicVisibility(visible: Boolean) {
@@ -606,14 +607,14 @@ class WidgetManager @Inject constructor(
             // Load music config
             val config = loadMusicConfig().also {
                 Log.d(TAG, """
-            Loading music config:
-            - enabled: ${it.enabled}
-            - position: ${it.position}
-            - showControls: ${it.showControls}
-            - showProgress: ${it.showProgress}
-            - showArtwork: ${it.showArtwork}
-            - autoplay: ${it.autoplay}
-        """.trimIndent())
+        Loading music config:
+        - enabled: ${it.enabled}
+        - position: ${it.position}
+        - showControls: ${it.showControls}
+        - showProgress: ${it.showProgress}
+        - showArtwork: ${it.showArtwork}
+        - autoplay: ${it.autoplay}
+    """.trimIndent())
             }
 
             // Important: Check if widget should actually be shown
@@ -636,7 +637,9 @@ class WidgetManager @Inject constructor(
                 spotifyManager = spotifyManager,
                 spotifyPreferences = spotifyPreferences,
                 radioManager = radioManager,
-                radioPreferences = radioPreferences
+                radioPreferences = radioPreferences,
+                localMusicManager = localMusicManager,
+                localMusicPreferences = localMusicPreferences
             ).also {
                 Log.d(TAG, "Created MusicControlWidget instance")
             }
@@ -663,6 +666,7 @@ class WidgetManager @Inject constructor(
             updateWidgetState(WidgetType.MUSIC, WidgetState.Error(e.message ?: "Unknown error"))
         }
     }
+
 
     fun updateMusicConfig() {
         Log.d(TAG, "Updating music widget config")
