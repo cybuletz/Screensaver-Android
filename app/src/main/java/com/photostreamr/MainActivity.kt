@@ -186,11 +186,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkForAds() {
-        // For MainActivity, we no longer show interstitials,
-        // Those are only for SettingsFragment now.
-        // Just update the last ad shown time
+        // For MainActivity, simply ensure the banner is loaded
         if (!appVersionManager.isProVersion() && appVersionManager.shouldShowAd()) {
-            // DO NOT call showInterstitialAd here anymore
             appVersionManager.updateLastAdShownTime()
         }
     }
@@ -271,7 +268,7 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize ad manager - FIX: Wrap in try-catch and add null check for container
         try {
-            adManager.initialize()
+            adManager.initialize() // No parameters
             // Only setup ads if container exists and not pro version
             if (!appVersionManager.isProVersion() && adContainer != null && !isDestroyed) {
                 // Post to main thread to ensure view is ready
@@ -734,6 +731,11 @@ class MainActivity : AppCompatActivity() {
             .edit()
             .putBoolean(PREF_FIRST_LAUNCH, false)
             .apply()
+
+        // Preload interstitial ads right before navigating to settings
+        if (!appVersionManager.isProVersion()) {
+            adManager.preloadInterstitialForSettings()
+        }
 
         navController.navigate(R.id.action_mainFragment_to_settingsFragment)
         settingsButtonController.hide()

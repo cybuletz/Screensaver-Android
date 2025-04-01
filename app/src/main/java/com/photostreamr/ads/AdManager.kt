@@ -54,7 +54,7 @@ class AdManager @Inject constructor(
         private const val MINIMUM_AD_INTERVAL = 180000L // 3 minutes minimum between ads
 
         // Banner refresh interval (10 minutes)
-        private const val BANNER_REFRESH_INTERVAL = 600000L // 10 minutes in milliseconds
+        private const val BANNER_REFRESH_INTERVAL = 60000L // 10 minutes in milliseconds
     }
 
     private var isInitialized = false
@@ -72,6 +72,9 @@ class AdManager @Inject constructor(
     private var isInterstitialShowing = false
     private var isLoadingInterstitial = false
 
+    // Flag to track whether to show interstitial in settings
+    private var showInterstitialInSettings = true
+
     fun initialize() {
         if (isInitialized) return
 
@@ -80,19 +83,21 @@ class AdManager @Inject constructor(
                 Log.d(TAG, "Mobile Ads initialized: $initializationStatus")
                 isInitialized = true
 
-                // Pre-load interstitial ad after initialization
-                preloadInterstitialAd()
+                // DO NOT LOAD INTERSTITIAL ADS HERE
+                // This is the key change - removing preloadInterstitialAd()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing AdManager", e)
         }
     }
 
-    private fun preloadInterstitialAd() {
+    // Only call this method when navigating to settings
+    fun preloadInterstitialForSettings() {
         if (appVersionManager.isProVersion() || isLoadingInterstitial) {
             return
         }
 
+        showInterstitialInSettings = true
         isLoadingInterstitial = true
 
         val adRequest = AdRequest.Builder().build()
@@ -109,29 +114,20 @@ class AdManager @Inject constructor(
                             Log.d(TAG, "Interstitial ad dismissed")
                             interstitialAd = null
                             isInterstitialShowing = false
-
-                            // Preload next ad for future use
-                            preloadInterstitialAd()
+                            showInterstitialInSettings = false
                         }
 
                         override fun onAdFailedToShowFullScreenContent(adError: AdError) {
                             Log.e(TAG, "Interstitial ad failed to show: ${adError.message}")
                             interstitialAd = null
                             isInterstitialShowing = false
+                            showInterstitialInSettings = false
                         }
 
                         override fun onAdShowedFullScreenContent() {
                             Log.d(TAG, "Interstitial ad showed successfully")
                             lastInterstitialAdTime = System.currentTimeMillis()
                             isInterstitialShowing = true
-
-                            // Auto-dismiss after duration if needed
-                            mainHandler.postDelayed({
-                                if (isInterstitialShowing && interstitialAd != null) {
-                                    // Let the user dismiss it themselves
-                                    // We don't force-dismiss ads as this could violate policy
-                                }
-                            }, INTERSTITIAL_AD_DISPLAY_DURATION)
                         }
                     }
                 }
@@ -140,11 +136,7 @@ class AdManager @Inject constructor(
                     Log.e(TAG, "Interstitial ad failed to load: ${adError.message}")
                     interstitialAd = null
                     isLoadingInterstitial = false
-
-                    // Retry after delay
-                    mainHandler.postDelayed({
-                        preloadInterstitialAd()
-                    }, 60000) // Retry after 1 minute
+                    showInterstitialInSettings = false
                 }
             })
     }
@@ -182,11 +174,7 @@ class AdManager @Inject constructor(
 
                     override fun onAdFailedToLoad(error: LoadAdError) {
                         Log.e(TAG, "Main activity banner ad failed to load: ${error.message}")
-                        container.post {
-                            if (container.isAttachedToWindow) {
-                                container.visibility = ViewGroup.GONE
-                            }
-                        }
+                        // Don't hide the container on failure, we'll retry
 
                         // If ad fails to load, retry after a short delay
                         mainHandler.postDelayed({
@@ -207,7 +195,7 @@ class AdManager @Inject constructor(
                     if (container.isAttachedToWindow) {
                         container.removeAllViews()
                         container.addView(mainAdView)
-                        // Don't set to GONE here, let the ad listener handle visibility
+                        container.visibility = ViewGroup.VISIBLE
 
                         // Load the ad immediately after adding to container
                         mainAdView?.loadAd(AdRequest.Builder().build())
@@ -226,8 +214,6 @@ class AdManager @Inject constructor(
     }
 
     // Setup a timer to refresh banner ads every 10 minutes
-    // This is compliant with AdMob policies that allow refreshing ads
-    // at a reasonable interval (not too frequent)
     private fun setupBannerRefreshTimer() {
         // Cancel any existing refresh timer
         bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
@@ -313,29 +299,8 @@ class AdManager @Inject constructor(
             loadSettingsAd()
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up settings fragment ad", e)
-            container.visibility = View.GONE
+            container.visibility = ViewGroup.GONE
         }
-    }
-
-    private fun scheduleAdDisplay() {
-        // Cancel any existing timer
-        timerRunnable?.let { mainHandler.removeCallbacks(it) }
-
-        timerRunnable = object : Runnable {
-            override fun run() {
-                if (appVersionManager.shouldShowAd()) {
-                    // We no longer automatically show interstitial ads in MainActivity
-                    // Those are now only for SettingsFragment and explicitly called
-                    appVersionManager.updateLastAdShownTime()
-                }
-
-                // Schedule next check
-                mainHandler.postDelayed(this, 60000) // Check every minute
-            }
-        }
-
-        // Start the timer
-        mainHandler.post(timerRunnable!!)
     }
 
     private fun shouldShowInterstitial(): Boolean {
@@ -343,12 +308,13 @@ class AdManager @Inject constructor(
         val timeSinceLastAd = System.currentTimeMillis() - lastInterstitialAdTime
         return interstitialAd != null &&
                 timeSinceLastAd > MINIMUM_AD_INTERVAL &&
-                !isInterstitialShowing
+                !isInterstitialShowing &&
+                showInterstitialInSettings
     }
 
     // This is now primarily used for SettingsFragment
     fun showInterstitialAd(activity: Activity? = null) {
-        if (appVersionManager.isProVersion() || isInterstitialShowing) {
+        if (appVersionManager.isProVersion() || isInterstitialShowing || !showInterstitialInSettings) {
             return
         }
 
@@ -356,10 +322,11 @@ class AdManager @Inject constructor(
         if (ad != null && activity != null) {
             Log.d(TAG, "Showing interstitial ad")
             ad.show(activity)
+            // After showing, reset the flag
+            showInterstitialInSettings = false
         } else if (ad == null) {
             Log.d(TAG, "Interstitial ad not loaded yet")
-            // Load a new one for next time
-            preloadInterstitialAd()
+            showInterstitialInSettings = false
         }
     }
 
@@ -393,11 +360,6 @@ class AdManager @Inject constructor(
         bannerRefreshRunnable?.let { runnable ->
             mainHandler.removeCallbacks(runnable)
             mainHandler.postDelayed(runnable, BANNER_REFRESH_INTERVAL)
-        }
-
-        // Make sure we have an interstitial ready
-        if (interstitialAd == null && !isLoadingInterstitial) {
-            preloadInterstitialAd()
         }
     }
 
