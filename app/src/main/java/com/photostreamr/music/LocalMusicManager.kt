@@ -149,18 +149,38 @@ class LocalMusicManager @Inject constructor(
 
     private fun restorePlaybackState() {
         try {
-            // Get saved playlist - use direct methods instead of chunking
+            // Get saved playlist
             val savedPlaylist = preferences.getCurrentPlaylist()
             val originalPlaylist = preferences.getOriginalPlaylist()
             val savedIndex = preferences.getCurrentTrackIndex()
             val lastTrack = preferences.getLastTrack()
             val wasPlaying = preferences.wasPlaying()
 
-            Timber.d("Restoring playlist - saved playlist size: ${savedPlaylist.size}, " +
-                    "original playlist size: ${originalPlaylist.size}, saved index: $savedIndex")
+            Timber.d("Restoring playback state:")
+            Timber.d("- Saved playlist size: ${savedPlaylist.size}")
+            Timber.d("- Original playlist size: ${originalPlaylist.size}")
+            Timber.d("- Saved index: $savedIndex")
+            Timber.d("- Last track: ${lastTrack?.title}")
+            Timber.d("- Was playing: $wasPlaying")
 
-            if (savedPlaylist.isNotEmpty() && savedIndex < savedPlaylist.size) {
-                // We have a valid saved playlist
+            // Determine which playlist to use
+            if (originalPlaylist.size > savedPlaylist.size) {
+                // The original playlist has more tracks than the current one - use it
+                Timber.d("Using original playlist (${originalPlaylist.size} tracks) as it's larger than current (${savedPlaylist.size} tracks)")
+                currentPlaylist = originalPlaylist
+                originalPlaylistOrder = originalPlaylist
+
+                // Find correct index - either from saved index or find the last track in the playlist
+                currentTrackIndex = if (savedIndex < originalPlaylist.size) {
+                    savedIndex
+                } else if (lastTrack != null) {
+                    val index = originalPlaylist.indexOfFirst { it.id == lastTrack.id }
+                    if (index >= 0) index else 0
+                } else {
+                    0
+                }
+            } else if (savedPlaylist.isNotEmpty() && savedIndex < savedPlaylist.size) {
+                // We have a valid saved playlist and it's at least as large as the original
                 currentPlaylist = savedPlaylist
                 currentTrackIndex = savedIndex
 
@@ -171,11 +191,27 @@ class LocalMusicManager @Inject constructor(
                     originalPlaylistOrder = savedPlaylist
                 }
 
-                // Get the current track
+                Timber.d("Using saved playlist with ${currentPlaylist.size} tracks, index: $currentTrackIndex")
+            } else if (lastTrack != null) {
+                // Fall back to just the last track if nothing else works
+                Timber.d("Using last track only: ${lastTrack.title}")
+                _currentTrack.value = lastTrack
+                currentPlaylist = listOf(lastTrack)
+                currentTrackIndex = 0
+                originalPlaylistOrder = currentPlaylist
+            } else {
+                // No playlist or last track
+                Timber.d("No playlist or last track available - nothing to restore")
+                _playbackState.value = PlaybackState.Idle
+                return
+            }
+
+            // At this point we've selected a playlist - get the current track
+            if (currentTrackIndex >= 0 && currentTrackIndex < currentPlaylist.size) {
                 val currentTrack = currentPlaylist[currentTrackIndex]
                 _currentTrack.value = currentTrack
 
-                Timber.d("Restored playlist with ${currentPlaylist.size} tracks, current track: ${currentTrack.title}")
+                Timber.d("Current track set to: ${currentTrack.title} (index $currentTrackIndex of ${currentPlaylist.size})")
 
                 // Resume playback if needed
                 if (wasPlaying && preferences.isAutoplayEnabled()) {
@@ -184,44 +220,13 @@ class LocalMusicManager @Inject constructor(
                     // Just show track info
                     updatePlaybackStateWithTrack(currentTrack, false)
                 }
-            } else if (lastTrack != null) {
-                // Fall back to just the last track
-                _currentTrack.value = lastTrack
-                currentPlaylist = listOf(lastTrack)
-                currentTrackIndex = 0
-                originalPlaylistOrder = currentPlaylist
-
-                Timber.d("Restored with last track only: ${lastTrack.title}")
-
-                // Resume playback if needed
-                if (wasPlaying && preferences.isAutoplayEnabled()) {
-                    playTrack(lastTrack)
-                } else {
-                    // Just show track info
-                    updatePlaybackStateWithTrack(lastTrack, false)
-                }
             } else {
-                // No playlist or last track
+                Timber.e("Invalid track index $currentTrackIndex for playlist with ${currentPlaylist.size} tracks")
                 _playbackState.value = PlaybackState.Idle
-                Timber.d("No playlist or last track available")
             }
         } catch (e: Exception) {
-            Timber.e(e, "Error restoring playback state")
+            Timber.e(e, "Error restoring playback state: ${e.message}")
             _playbackState.value = PlaybackState.Idle
-        }
-    }
-
-    fun initializeState() {
-        if (!preferences.isEnabled()) return
-
-        // On full app start, always read from preferences
-        preferences.getLastTrack()?.let { track ->
-            _currentTrack.value = track
-            val wasPlaying = preferences.wasPlaying()
-
-            _connectionState.value = ConnectionState.Connected
-            updatePlaybackStateWithTrack(track, false)
-            Timber.d("Initialized state with last track: ${track.title}, wasPlaying: $wasPlaying")
         }
     }
 
@@ -312,7 +317,7 @@ class LocalMusicManager @Inject constructor(
     }
 
     fun playTrack(track: LocalTrack) {
-        Log.d(TAG, "Playing track: ${track.title}")
+        Timber.d("Playing track: ${track.title}")
         scope.launch {
             try {
                 // Clear any existing state
@@ -326,74 +331,78 @@ class LocalMusicManager @Inject constructor(
                 // Save track
                 preferences.setLastTrack(track)
 
-                // Make sure the track is in the playlist for next/previous functionality
-                if (!currentPlaylist.contains(track)) {
-                    // If we have an empty playlist or it doesn't contain this track,
-                    // initialize a new playlist with this track
-                    currentPlaylist = listOf(track)
-                    currentTrackIndex = 0
-                    originalPlaylistOrder = currentPlaylist
+                // IMPORTANT: Check if this is restoring from a single track and we need to load all tracks
+                if (currentPlaylist.size <= 1 && originalPlaylistOrder.size <= 1) {
+                    Timber.d("Only single track available, will try to load directory")
 
-                    // Save even this minimal playlist
-                    preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
-                    preferences.saveOriginalPlaylist(originalPlaylistOrder)
+                    // Try to load tracks from directory first
+                    val directory = if (track.path.startsWith("content://")) {
+                        // For content URIs, try to extract document directory
+                        Timber.d("Track is from content URI, need to find directory")
+                        null
+                    } else {
+                        // For file paths, get the parent directory
+                        val file = File(track.path)
+                        Timber.d("Looking for more tracks in directory: ${file.parent}")
+                        file.parentFile
+                    }
 
-                    // Try to load more tracks from the same directory
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            // Extract the directory from the track path
-                            val trackPath = track.path
-                            val directory = if (trackPath.startsWith("content://")) {
-                                // For content URIs, we'll need to load the playlist differently
-                                null
-                            } else {
-                                // For file paths, get the parent directory
-                                File(trackPath).parentFile
-                            }
-
-                            if (directory != null && directory.exists()) {
-                                // Scan the directory for more tracks
+                    if (directory != null && directory.exists()) {
+                        // Note: we're deliberately not awaiting this scan to prevent blocking playback
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                Timber.d("Scanning directory for more tracks: ${directory.absolutePath}")
                                 val tracks = scanDirectory(directory)
-                                if (tracks.isNotEmpty()) {
-                                    // Update playlist, keeping current track as the current index
+                                if (tracks.size > 1) {
+                                    Timber.d("Found ${tracks.size} tracks in directory")
+
                                     withContext(Dispatchers.Main) {
+                                        // Now we can update the playlist with all tracks
                                         val currentIndex = tracks.indexOfFirst { it.id == track.id }
                                         if (currentIndex >= 0) {
-                                            // Set original playlist
+                                            // We found the current track in the directory
+                                            currentPlaylist = tracks
+                                            currentTrackIndex = currentIndex
                                             originalPlaylistOrder = tracks
-
-                                            // Apply shuffle if needed
-                                            if (isShuffleEnabled) {
-                                                // Ensure current track is first when shuffled
-                                                val otherTracks = tracks.filter { it.id != track.id }.shuffled()
-                                                currentPlaylist = listOf(track) + otherTracks
-                                                currentTrackIndex = 0
-                                            } else {
-                                                // Keep tracks in original order
-                                                currentPlaylist = tracks
-                                                currentTrackIndex = currentIndex
-                                            }
 
                                             // Save the expanded playlist
                                             preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
                                             preferences.saveOriginalPlaylist(originalPlaylistOrder)
 
-                                            Log.d(TAG, "Updated playlist from directory with ${currentPlaylist.size} tracks")
+                                            Timber.d("Updated playlist with ${tracks.size} tracks from directory, current track at index $currentIndex")
                                         }
                                     }
                                 }
+                            } catch (e: Exception) {
+                                Timber.e(e, "Error loading tracks from directory: ${e.message}")
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error loading additional tracks for playlist", e)
                         }
                     }
+
+                    // Initialize a temporary single-track playlist
+                    if (currentPlaylist.isEmpty() || !currentPlaylist.contains(track)) {
+                        currentPlaylist = listOf(track)
+                        currentTrackIndex = 0
+                        originalPlaylistOrder = listOf(track)
+                        Timber.d("Initialized temporary single-track playlist")
+                    }
+                } else if (!currentPlaylist.contains(track)) {
+                    // Track is not in current playlist but we have a playlist - add it
+                    Timber.d("Track not in current playlist (${currentPlaylist.size} tracks) - adding it")
+                    currentPlaylist = listOf(track) + currentPlaylist.filter { it.id != track.id }
+                    currentTrackIndex = 0
+                    // Leave originalPlaylistOrder unchanged
                 } else {
-                    // Track is already in playlist, update index
+                    // Track is in playlist, just update index
                     currentTrackIndex = currentPlaylist.indexOfFirst { it.id == track.id }
                     if (currentTrackIndex < 0) currentTrackIndex = 0
+                    Timber.d("Track found in current playlist at index $currentTrackIndex")
+                }
 
-                    // Save current position
-                    preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
+                // Save current position
+                preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
+                if (originalPlaylistOrder.isNotEmpty()) {
+                    preferences.saveOriginalPlaylist(originalPlaylistOrder)
                 }
 
                 // Prepare media player
@@ -410,7 +419,7 @@ class LocalMusicManager @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error playing track", e)
+                Timber.e(e, "Error playing track: ${e.message}")
                 _connectionState.value = ConnectionState.Error(e)
                 _playbackState.value = PlaybackState.Idle
             }
@@ -851,7 +860,7 @@ class LocalMusicManager @Inject constructor(
         // Always update preferences first
         preferences.setWasPlaying(isCurrentlyPlaying)
 
-        // Save playlist state
+        // Save playlist state - IMPORTANT: make sure we keep the entire playlist
         if (currentPlaylist.isNotEmpty()) {
             preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
             preferences.saveOriginalPlaylist(originalPlaylistOrder)
