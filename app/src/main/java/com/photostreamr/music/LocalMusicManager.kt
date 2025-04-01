@@ -148,56 +148,65 @@ class LocalMusicManager @Inject constructor(
     }
 
     private fun restorePlaybackState() {
-        // Get saved playlist
-        val savedPlaylist = preferences.getCurrentPlaylist()
-        val originalPlaylist = preferences.getOriginalPlaylist()
-        val savedIndex = preferences.getCurrentTrackIndex()
-        val lastTrack = preferences.getLastTrack()
-        val wasPlaying = preferences.wasPlaying()
+        try {
+            // Get saved playlist - use direct methods instead of chunking
+            val savedPlaylist = preferences.getCurrentPlaylist()
+            val originalPlaylist = preferences.getOriginalPlaylist()
+            val savedIndex = preferences.getCurrentTrackIndex()
+            val lastTrack = preferences.getLastTrack()
+            val wasPlaying = preferences.wasPlaying()
 
-        if (savedPlaylist.isNotEmpty() && savedIndex < savedPlaylist.size) {
-            // We have a valid saved playlist
-            currentPlaylist = savedPlaylist
-            currentTrackIndex = savedIndex
+            Timber.d("Restoring playlist - saved playlist size: ${savedPlaylist.size}, " +
+                    "original playlist size: ${originalPlaylist.size}, saved index: $savedIndex")
 
-            // Set original playlist if available
-            if (originalPlaylist.isNotEmpty()) {
-                originalPlaylistOrder = originalPlaylist
+            if (savedPlaylist.isNotEmpty() && savedIndex < savedPlaylist.size) {
+                // We have a valid saved playlist
+                currentPlaylist = savedPlaylist
+                currentTrackIndex = savedIndex
+
+                // Set original playlist if available
+                if (originalPlaylist.isNotEmpty()) {
+                    originalPlaylistOrder = originalPlaylist
+                } else {
+                    originalPlaylistOrder = savedPlaylist
+                }
+
+                // Get the current track
+                val currentTrack = currentPlaylist[currentTrackIndex]
+                _currentTrack.value = currentTrack
+
+                Timber.d("Restored playlist with ${currentPlaylist.size} tracks, current track: ${currentTrack.title}")
+
+                // Resume playback if needed
+                if (wasPlaying && preferences.isAutoplayEnabled()) {
+                    playTrack(currentTrack)
+                } else {
+                    // Just show track info
+                    updatePlaybackStateWithTrack(currentTrack, false)
+                }
+            } else if (lastTrack != null) {
+                // Fall back to just the last track
+                _currentTrack.value = lastTrack
+                currentPlaylist = listOf(lastTrack)
+                currentTrackIndex = 0
+                originalPlaylistOrder = currentPlaylist
+
+                Timber.d("Restored with last track only: ${lastTrack.title}")
+
+                // Resume playback if needed
+                if (wasPlaying && preferences.isAutoplayEnabled()) {
+                    playTrack(lastTrack)
+                } else {
+                    // Just show track info
+                    updatePlaybackStateWithTrack(lastTrack, false)
+                }
             } else {
-                originalPlaylistOrder = savedPlaylist
+                // No playlist or last track
+                _playbackState.value = PlaybackState.Idle
+                Timber.d("No playlist or last track available")
             }
-
-            // Get the current track
-            val currentTrack = currentPlaylist[currentTrackIndex]
-            _currentTrack.value = currentTrack
-
-            Timber.d("Restored playlist with ${currentPlaylist.size} tracks, current track: ${currentTrack.title}")
-
-            // Resume playback if needed
-            if (wasPlaying && preferences.isAutoplayEnabled()) {
-                playTrack(currentTrack)
-            } else {
-                // Just show track info
-                updatePlaybackStateWithTrack(currentTrack, false)
-            }
-        } else if (lastTrack != null) {
-            // Fall back to just the last track
-            _currentTrack.value = lastTrack
-            currentPlaylist = listOf(lastTrack)
-            currentTrackIndex = 0
-            originalPlaylistOrder = currentPlaylist
-
-            Timber.d("Restored with last track only: ${lastTrack.title}")
-
-            // Resume playback if needed
-            if (wasPlaying && preferences.isAutoplayEnabled()) {
-                playTrack(lastTrack)
-            } else {
-                // Just show track info
-                updatePlaybackStateWithTrack(lastTrack, false)
-            }
-        } else {
-            // No playlist or last track
+        } catch (e: Exception) {
+            Timber.e(e, "Error restoring playback state")
             _playbackState.value = PlaybackState.Idle
         }
     }
@@ -617,7 +626,7 @@ class LocalMusicManager @Inject constructor(
 
         currentTrackIndex = if (isShuffleEnabled) 0 else startIndex.coerceIn(0, currentPlaylist.size - 1)
 
-        // Save the playlist state immediately
+        // Save the playlist state immediately - use direct methods
         preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
         preferences.saveOriginalPlaylist(originalPlaylistOrder)
 
@@ -821,8 +830,7 @@ class LocalMusicManager @Inject constructor(
                 }
 
                 // Save the updated playlist state
-                preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
-            }
+                preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)            }
         }
     }
 

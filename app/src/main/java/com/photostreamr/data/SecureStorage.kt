@@ -249,4 +249,13 @@ class SecureStorage @Inject constructor(
             throw SecurityException("Failed to remove value securely", e)
         }
     }
+
+    fun getAllKeys(): List<String> {
+        return try {
+            securePreferences.all.keys.toList()
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to retrieve secure storage keys")
+            emptyList()
+        }
+    }
 }
