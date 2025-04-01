@@ -46,6 +46,7 @@ class LocalMusicManager @Inject constructor(
     private var repeatMode = RepeatMode.OFF
 
     private val albumArtCache = HashMap<String, Bitmap?>()
+    private var originalPlaylistOrder: List<LocalTrack> = emptyList()
 
     // State flows
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -498,6 +499,9 @@ class LocalMusicManager @Inject constructor(
 
         Log.d(TAG, "Setting playlist with ${tracks.size} tracks, starting at index $startIndex")
 
+        // Store the original playlist order for un-shuffling later
+        originalPlaylistOrder = tracks
+
         currentPlaylist = if (isShuffleEnabled) {
             // If shuffle is enabled, we need to ensure the selected track is first
             val selectedTrack = tracks.getOrNull(startIndex)
@@ -683,23 +687,34 @@ class LocalMusicManager @Inject constructor(
 
     fun setShuffleMode(enabled: Boolean) {
         if (isShuffleEnabled != enabled) {
+            Log.d(TAG, "Setting shuffle mode to $enabled")
             isShuffleEnabled = enabled
             preferences.setShuffleEnabled(enabled)
 
             // If we have a current playlist, shuffle it while keeping current track as first
             if (currentPlaylist.isNotEmpty() && _currentTrack.value != null) {
                 val currentTrack = _currentTrack.value!!
-                val newPlaylist = if (enabled) {
-                    val remainingTracks = currentPlaylist.filter { it != currentTrack }.shuffled()
-                    listOf(currentTrack) + remainingTracks
+
+                if (enabled) {
+                    // Shuffle mode enabled - current track first, rest shuffled
+                    val remainingTracks = currentPlaylist.filter { it.id != currentTrack.id }.shuffled()
+                    currentPlaylist = listOf(currentTrack) + remainingTracks
+                    currentTrackIndex = 0 // Current track is now at index 0
+                    Log.d(TAG, "Playlist shuffled with ${currentPlaylist.size} tracks, current track as first")
                 } else {
-                    // Restore original order (this is simplified, would need to store original order)
-                    preferences.getPlaylist(preferences.getSelectedPlaylistId() ?: "")?.tracks
-                        ?: currentPlaylist
+                    // Shuffle mode disabled - restore original order
+                    currentPlaylist = originalPlaylistOrder
+                    // Find where the current track is in the original order
+                    currentTrackIndex = currentPlaylist.indexOfFirst { it.id == currentTrack.id }
+                    if (currentTrackIndex < 0) currentTrackIndex = 0
+                    Log.d(TAG, "Restored original playlist order, current track at index $currentTrackIndex")
                 }
 
-                currentPlaylist = newPlaylist
-                currentTrackIndex = 0 // Current track is now at index 0
+                // Update UI but don't change the playing track
+                _currentTrack.value?.let { track ->
+                    val isPlaying = (playbackState.value as? PlaybackState.Playing)?.isPlaying ?: false
+                    updatePlaybackStateWithTrack(track, isPlaying, mediaPlayer?.currentPosition?.toLong() ?: 0)
+                }
             }
         }
     }
