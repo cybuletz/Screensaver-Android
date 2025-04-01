@@ -700,9 +700,25 @@ class MusicControlWidget(
                 }
             }
 
-            when (getMusicSource()) {
-                MUSIC_SOURCE_SPOTIFY -> spotifyManager.disconnect()
-                MUSIC_SOURCE_RADIO -> radioManager.disconnect()
+            // 👇 THIS IS THE IMPORTANT CHANGE 👇
+            // Only disconnect music services if we're not in the middle of navigation
+            // or a configuration change
+            val isPlaying = when (getMusicSource()) {
+                MUSIC_SOURCE_SPOTIFY ->
+                    spotifyManager.playbackState.value is SpotifyManager.PlaybackState.Playing &&
+                            (spotifyManager.playbackState.value as? SpotifyManager.PlaybackState.Playing)?.isPlaying == true
+                MUSIC_SOURCE_RADIO ->
+                    radioManager.playbackState.value is RadioManager.PlaybackState.Playing &&
+                            (radioManager.playbackState.value as? RadioManager.PlaybackState.Playing)?.isPlaying == true
+                else -> false
+            }
+
+            // Only disconnect if not playing (this preserves active playback)
+            if (!isPlaying) {
+                when (getMusicSource()) {
+                    MUSIC_SOURCE_SPOTIFY -> spotifyManager.disconnect()
+                    MUSIC_SOURCE_RADIO -> radioManager.disconnect()
+                }
             }
 
             binding?.getRootView()?.let { view ->
