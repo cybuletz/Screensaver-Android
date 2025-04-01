@@ -741,15 +741,6 @@
     <string name="security_feature_title">Security Features</string>
     <string name="security_feature_description">Protect your slideshow with biometric authentication and passcode locks. Keep your content private and secure.</string>
 
-    <!-- Ad Settings -->
-    <string name="ad_settings_title">Ad Settings</string>
-    <string name="ad_interval_title">Ad Display Interval</string>
-    <string name="ad_interval_summary">Set how often ads appear (in minutes)</string>
-    <string name="version_settings">Version Settings</string>
-    <string name="pro_version_title">Pro Version</string>
-    <string name="pro_version_summary">Unlock all premium features</string>
-    <string name="upgrade_to_pro_summary">Get access to Music, Widgets, and Security features</string>
-    <string name="developer_mode">Developer Mode</string>
 
 
 </resources>

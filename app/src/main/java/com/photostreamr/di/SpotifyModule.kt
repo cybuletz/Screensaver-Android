@@ -98,4 +98,5 @@ object SpotifyModule {
     ): LocalMusicManager {
         return LocalMusicManager(context, preferences)
     }
+
 }

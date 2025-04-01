@@ -2,6 +2,7 @@ package com.photostreamr.music
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -35,14 +36,21 @@ import com.photostreamr.widgets.WidgetManager
 import android.widget.ImageView
 import android.widget.BaseAdapter
 import android.view.ViewGroup
+import androidx.appcompat.widget.SwitchCompat
 import com.google.android.material.button.MaterialButton
+import com.photostreamr.version.FeatureManager
 import kotlinx.coroutines.Dispatchers
 import java.io.IOException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
-
+import java.util.concurrent.TimeUnit
+import android.app.Activity
+import androidx.documentfile.provider.DocumentFile
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
+import com.photostreamr.databinding.ItemLocalTrackBinding
 
 @AndroidEntryPoint
 class MusicPreferenceFragment : PreferenceFragmentCompat() {
@@ -51,6 +59,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         private const val MUSIC_SOURCE_SPOTIFY = "spotify"
         private const val MUSIC_SOURCE_LOCAL = "local"
         private const val MUSIC_SOURCE_RADIO = "radio"
+        private const val REQUEST_CODE_DIRECTORY = 1002
+
     }
 
     @Inject
@@ -67,6 +77,12 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var radioPreferences: RadioPreferences
+
+    @Inject
+    lateinit var localMusicManager: LocalMusicManager
+
+    @Inject
+    lateinit var localMusicPreferences: LocalMusicPreferences
 
     @Inject
     lateinit var widgetManager: WidgetManager
@@ -123,6 +139,154 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         updateSpotifyLoginSummary()
     }
 
+    private fun showLocalMusicDialog() {
+        val dialogView = LayoutInflater.from(requireContext())
+            .inflate(R.layout.dialog_local_music, null)
+
+        val directoryText = dialogView.findViewById<TextView>(R.id.directory_text)
+        val browseButton = dialogView.findViewById<MaterialButton>(R.id.browse_button)
+        val scanButton = dialogView.findViewById<MaterialButton>(R.id.scan_button)
+        val tracksList = dialogView.findViewById<RecyclerView>(R.id.tracks_list)
+        val loadingIndicator = dialogView.findViewById<ProgressBar>(R.id.loading_indicator)
+        val noTracksText = dialogView.findViewById<TextView>(R.id.no_tracks_text)
+        val shuffleSwitch = dialogView.findViewById<SwitchCompat>(R.id.shuffle_switch)
+        val autoplaySwitch = dialogView.findViewById<SwitchCompat>(R.id.autoplay_switch)
+
+        // Initialize switches
+        shuffleSwitch.isChecked = localMusicPreferences.isShuffleEnabled()
+        autoplaySwitch.isChecked = localMusicPreferences.isAutoplayEnabled()
+
+        // Set current directory
+        directoryText.text = localMusicPreferences.getMusicDirectory()
+
+        // Setup RecyclerView
+        val tracksAdapter = LocalMusicAdapter(
+            onTrackClick = { track ->
+                localMusicManager.playTrack(track)
+                localMusicPreferences.setLastTrack(track)
+                localMusicPreferences.setWasPlaying(true)
+            }
+        )
+
+        tracksList.layoutManager = LinearLayoutManager(requireContext())
+        tracksList.adapter = tracksAdapter
+
+        // Setup scan button
+        scanButton.setOnClickListener {
+            loadingIndicator.visibility = View.VISIBLE
+            tracksList.visibility = View.GONE
+            noTracksText.visibility = View.GONE
+
+            localMusicManager.scanMusicFiles { tracks ->
+                requireActivity().runOnUiThread {
+                    loadingIndicator.visibility = View.GONE
+
+                    if (tracks.isEmpty()) {
+                        noTracksText.visibility = View.VISIBLE
+                        tracksList.visibility = View.GONE
+                    } else {
+                        noTracksText.visibility = View.GONE
+                        tracksList.visibility = View.VISIBLE
+                        tracksAdapter.submitList(tracks)
+                    }
+                }
+            }
+        }
+
+        // Browse button listener
+        browseButton.setOnClickListener {
+            // Show directory picker
+            // This is a simplified implementation - you might want to use a proper file picker library
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            try {
+                startActivityForResult(intent, REQUEST_CODE_DIRECTORY)
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(
+                    requireContext(),
+                    "No file browser available",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
+        // Switch listeners
+        shuffleSwitch.setOnCheckedChangeListener { _, isChecked ->
+            localMusicPreferences.setShuffleEnabled(isChecked)
+            localMusicManager.setShuffleMode(isChecked)
+        }
+
+        autoplaySwitch.setOnCheckedChangeListener { _, isChecked ->
+            localMusicPreferences.setAutoplayEnabled(isChecked)
+        }
+
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Local Music")
+            .setView(dialogView)
+            .setPositiveButton("Close", null)
+            .create()
+
+        dialog.show()
+
+        // Initial scan if folder exists
+        scanButton.performClick()
+    }
+
+    private fun setupLocalMusicPreferences() {
+        findPreference<Preference>("local_music_folder")?.apply {
+            isVisible = currentMusicSource == MUSIC_SOURCE_LOCAL
+            val musicDirectory = localMusicPreferences.getMusicDirectory()
+            summary = musicDirectory
+
+            setOnPreferenceClickListener {
+                localMusicPreferences.setEnabled(true) // Enable the local music feature
+                showLocalMusicDialog()
+                return@setOnPreferenceClickListener true
+
+                showLocalMusicDialog()
+                true
+            }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == REQUEST_CODE_DIRECTORY && resultCode == Activity.RESULT_OK) {
+            data?.data?.let { uri ->
+                // Get the path from URI
+                try {
+                    // Just store the URI string directly
+                    val uriString = uri.toString()
+                    localMusicPreferences.setMusicDirectory(uriString)
+                    findPreference<Preference>("local_music_folder")?.summary = uriString
+                    showLocalMusicDialog()
+                } catch (e: Exception) {
+                    Timber.e(e, "Error accessing URI")
+                    Toast.makeText(requireContext(), "Failed to access selected folder", Toast.LENGTH_SHORT).show()
+                }
+
+                // Convert URI to path
+                val path = getPathFromUri(uri)
+
+                if (path != null) {
+                    localMusicPreferences.setMusicDirectory(path)
+                    findPreference<Preference>("local_music_folder")?.summary = path
+                    // Trigger scan
+                    showLocalMusicDialog()
+                }
+            }
+        }
+    }
+
+    private fun getPathFromUri(uri: Uri): String? {
+        return try {
+            DocumentFile.fromTreeUri(requireContext(), uri)?.uri?.path
+        } catch (e: Exception) {
+            Timber.e(e, "Error getting path from URI")
+            null
+        }
+    }
 
     fun setOnPreferenceChangeCallback(callback: () -> Unit) {
         onPreferenceChangeCallback = callback
@@ -272,6 +436,7 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         // Initialize preferences based on current source
         updateVisiblePreferences(currentMusicSource)
         setupRadioPreferences()
+        setupLocalMusicPreferences()
 
         // Check initial state for widget visibility
         widgetManager.updateMusicWidgetBasedOnSource()
@@ -1131,5 +1296,127 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
     override fun onResume() {
         super.onResume()
         spotifyManager.checkAndRefreshTokenIfNeeded()
+    }
+
+    class LocalMusicAdapter(
+        private val onTrackClick: (LocalMusicManager.LocalTrack) -> Unit
+    ) : ListAdapter<LocalMusicManager.LocalTrack, LocalMusicAdapter.TrackViewHolder>(
+        object : DiffUtil.ItemCallback<LocalMusicManager.LocalTrack>() {
+            override fun areItemsTheSame(
+                oldItem: LocalMusicManager.LocalTrack,
+                newItem: LocalMusicManager.LocalTrack
+            ): Boolean {
+                return oldItem.id == newItem.id
+            }
+
+            override fun areContentsTheSame(
+                oldItem: LocalMusicManager.LocalTrack,
+                newItem: LocalMusicManager.LocalTrack
+            ): Boolean {
+                return oldItem == newItem
+            }
+        }
+    ) {
+
+        class TrackViewHolder(val binding: ItemLocalTrackBinding) :
+            RecyclerView.ViewHolder(binding.root)
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TrackViewHolder {
+            val binding = ItemLocalTrackBinding.inflate(
+                LayoutInflater.from(parent.context), parent, false
+            )
+            return TrackViewHolder(binding)
+        }
+
+        override fun onBindViewHolder(holder: TrackViewHolder, position: Int) {
+            val track = getItem(position)
+            holder.binding.apply {
+                trackTitle.text = track.title
+                artistName.text = track.artist
+                albumName.text = track.album
+
+                // Format duration
+                val minutes = TimeUnit.MILLISECONDS.toMinutes(track.duration)
+                val seconds = TimeUnit.MILLISECONDS.toSeconds(track.duration) % 60
+                trackDuration.text = String.format("%d:%02d", minutes, seconds)
+
+                // Load album art if available
+                track.albumArtPath?.let { path ->
+                    val bitmap = BitmapFactory.decodeFile(path)
+                    if (bitmap != null) {
+                        albumArt.setImageBitmap(bitmap)
+                        albumArt.visibility = View.VISIBLE
+                    } else {
+                        albumArt.setImageResource(R.drawable.ic_music_note)
+                    }
+                } ?: run {
+                    albumArt.setImageResource(R.drawable.ic_music_note)
+                }
+
+                // Click listener
+                root.setOnClickListener {
+                    onTrackClick(track)
+                }
+            }
+        }
+    }
+
+    class LocalMusicTrackAdapter(
+        private val onTrackClick: (LocalMusicManager.LocalTrack) -> Unit
+    ) : RecyclerView.Adapter<LocalMusicTrackAdapter.TrackViewHolder>() {
+
+        private var tracks: List<LocalMusicManager.LocalTrack> = emptyList()
+
+        fun submitList(newTracks: List<LocalMusicManager.LocalTrack>) {
+            tracks = newTracks
+            notifyDataSetChanged()
+        }
+
+        override fun getItemCount(): Int = tracks.size
+
+        class TrackViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            val titleText: TextView = itemView.findViewById(R.id.track_title)
+            val artistText: TextView = itemView.findViewById(R.id.artist_name)
+            val albumText: TextView = itemView.findViewById(R.id.album_name)
+            val durationText: TextView = itemView.findViewById(R.id.track_duration)
+            val albumArt: ImageView = itemView.findViewById(R.id.album_art)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TrackViewHolder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_local_track, parent, false)
+            return TrackViewHolder(view)
+        }
+
+        override fun onBindViewHolder(holder: TrackViewHolder, position: Int) {
+            val track = tracks[position]
+
+            holder.titleText.text = track.title
+            holder.artistText.text = track.artist
+            holder.albumText.text = track.album
+
+            // Format duration
+            val minutes = TimeUnit.MILLISECONDS.toMinutes(track.duration)
+            val seconds = TimeUnit.MILLISECONDS.toSeconds(track.duration) % 60
+            holder.durationText.text = String.format("%d:%02d", minutes, seconds)
+
+            // Load album art if available
+            track.albumArtPath?.let { path ->
+                val bitmap = BitmapFactory.decodeFile(path)
+                if (bitmap != null) {
+                    holder.albumArt.setImageBitmap(bitmap)
+                    holder.albumArt.visibility = View.VISIBLE
+                } else {
+                    holder.albumArt.setImageResource(R.drawable.ic_music_note)
+                }
+            } ?: run {
+                holder.albumArt.setImageResource(R.drawable.ic_music_note)
+            }
+
+            // Click listener
+            holder.itemView.setOnClickListener {
+                onTrackClick(track)
+            }
+        }
     }
 }
