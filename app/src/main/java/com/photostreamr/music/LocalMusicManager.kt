@@ -3,6 +3,7 @@ package com.photostreamr.music
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.media.AudioAttributes
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
@@ -10,7 +11,9 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
+import com.photostreamr.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -295,19 +298,60 @@ class LocalMusicManager @Inject constructor(
     }
 
     fun loadAlbumArt(filePath: String): Bitmap? {
-        return try {
+        try {
             val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(filePath)
-            val art = retriever.embeddedPicture
-            if (art != null) {
-                BitmapFactory.decodeByteArray(art, 0, art.size)
+
+            // Check if it's a content URI
+            if (filePath.startsWith("content://")) {
+                try {
+                    // Use content resolver to open the file
+                    val uri = Uri.parse(filePath)
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                        retriever.setDataSource(pfd.fileDescriptor)
+                        val art = retriever.embeddedPicture
+                        if (art != null) {
+                            return BitmapFactory.decodeByteArray(art, 0, art.size)
+                        }
+                    }
+                    // No embedded art found - return music note drawable
+                    return getBitmapFromDrawable(R.drawable.ic_music_note)
+                } catch (e: Exception) {
+                    Timber.e(e, "Error loading album art from content URI")
+                    return getBitmapFromDrawable(R.drawable.ic_music_note)
+                }
             } else {
-                null
+                // Regular file path
+                try {
+                    retriever.setDataSource(filePath)
+                    val art = retriever.embeddedPicture
+                    if (art != null) {
+                        return BitmapFactory.decodeByteArray(art, 0, art.size)
+                    }
+                    // No embedded art found - return music note drawable
+                    return getBitmapFromDrawable(R.drawable.ic_music_note)
+                } catch (e: Exception) {
+                    Timber.e(e, "Error loading album art from file path")
+                    return getBitmapFromDrawable(R.drawable.ic_music_note)
+                }
             }
         } catch (e: Exception) {
             Timber.e(e, "Error loading album art")
-            null
+            return getBitmapFromDrawable(R.drawable.ic_music_note)
         }
+    }
+
+    // Helper method to convert a drawable resource into a bitmap
+    private fun getBitmapFromDrawable(drawableId: Int): Bitmap {
+        val drawable = ContextCompat.getDrawable(context, drawableId)
+        val bitmap = Bitmap.createBitmap(
+            drawable?.intrinsicWidth ?: 200,
+            drawable?.intrinsicHeight ?: 200,
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        drawable?.setBounds(0, 0, canvas.width, canvas.height)
+        drawable?.draw(canvas)
+        return bitmap
     }
 
     fun scanMusicFiles(callback: (List<LocalTrack>) -> Unit) {
