@@ -131,24 +131,74 @@ class LocalMusicManager @Inject constructor(
 
         if (isEnabled) {
             _connectionState.value = ConnectionState.Connected
-            restoreLastPlaybackState()
+
+            // Restore shuffle and repeat mode
+            isShuffleEnabled = preferences.isShuffleEnabled()
+            repeatMode = try {
+                RepeatMode.valueOf(preferences.getRepeatMode())
+            } catch (e: Exception) {
+                RepeatMode.OFF
+            }
+
+            // Try to restore playlist
+            restorePlaybackState()
         } else {
             _connectionState.value = ConnectionState.Disconnected
         }
     }
 
-    private fun restoreLastPlaybackState() {
+    private fun restorePlaybackState() {
+        // Get saved playlist
+        val savedPlaylist = preferences.getCurrentPlaylist()
+        val originalPlaylist = preferences.getOriginalPlaylist()
+        val savedIndex = preferences.getCurrentTrackIndex()
         val lastTrack = preferences.getLastTrack()
         val wasPlaying = preferences.wasPlaying()
 
-        lastTrack?.let { track ->
-            _currentTrack.value = track
-            if (wasPlaying && preferences.isAutoplayEnabled()) {
-                playTrack(track)
+        if (savedPlaylist.isNotEmpty() && savedIndex < savedPlaylist.size) {
+            // We have a valid saved playlist
+            currentPlaylist = savedPlaylist
+            currentTrackIndex = savedIndex
+
+            // Set original playlist if available
+            if (originalPlaylist.isNotEmpty()) {
+                originalPlaylistOrder = originalPlaylist
             } else {
-                // Just show track info without playing
-                updatePlaybackStateWithTrack(track, false)
+                originalPlaylistOrder = savedPlaylist
             }
+
+            // Get the current track
+            val currentTrack = currentPlaylist[currentTrackIndex]
+            _currentTrack.value = currentTrack
+
+            Timber.d("Restored playlist with ${currentPlaylist.size} tracks, current track: ${currentTrack.title}")
+
+            // Resume playback if needed
+            if (wasPlaying && preferences.isAutoplayEnabled()) {
+                playTrack(currentTrack)
+            } else {
+                // Just show track info
+                updatePlaybackStateWithTrack(currentTrack, false)
+            }
+        } else if (lastTrack != null) {
+            // Fall back to just the last track
+            _currentTrack.value = lastTrack
+            currentPlaylist = listOf(lastTrack)
+            currentTrackIndex = 0
+            originalPlaylistOrder = currentPlaylist
+
+            Timber.d("Restored with last track only: ${lastTrack.title}")
+
+            // Resume playback if needed
+            if (wasPlaying && preferences.isAutoplayEnabled()) {
+                playTrack(lastTrack)
+            } else {
+                // Just show track info
+                updatePlaybackStateWithTrack(lastTrack, false)
+            }
+        } else {
+            // No playlist or last track
+            _playbackState.value = PlaybackState.Idle
         }
     }
 
@@ -264,7 +314,7 @@ class LocalMusicManager @Inject constructor(
                 _currentTrack.value = track
                 _connectionState.value = ConnectionState.Connected
 
-                // Save track but don't mark as playing yet
+                // Save track
                 preferences.setLastTrack(track)
 
                 // Make sure the track is in the playlist for next/previous functionality
@@ -273,6 +323,11 @@ class LocalMusicManager @Inject constructor(
                     // initialize a new playlist with this track
                     currentPlaylist = listOf(track)
                     currentTrackIndex = 0
+                    originalPlaylistOrder = currentPlaylist
+
+                    // Save even this minimal playlist
+                    preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
+                    preferences.saveOriginalPlaylist(originalPlaylistOrder)
 
                     // Try to load more tracks from the same directory
                     scope.launch(Dispatchers.IO) {
@@ -281,7 +336,6 @@ class LocalMusicManager @Inject constructor(
                             val trackPath = track.path
                             val directory = if (trackPath.startsWith("content://")) {
                                 // For content URIs, we'll need to load the playlist differently
-                                // For now, just use the single track
                                 null
                             } else {
                                 // For file paths, get the parent directory
@@ -296,8 +350,26 @@ class LocalMusicManager @Inject constructor(
                                     withContext(Dispatchers.Main) {
                                         val currentIndex = tracks.indexOfFirst { it.id == track.id }
                                         if (currentIndex >= 0) {
-                                            currentPlaylist = tracks
-                                            currentTrackIndex = currentIndex
+                                            // Set original playlist
+                                            originalPlaylistOrder = tracks
+
+                                            // Apply shuffle if needed
+                                            if (isShuffleEnabled) {
+                                                // Ensure current track is first when shuffled
+                                                val otherTracks = tracks.filter { it.id != track.id }.shuffled()
+                                                currentPlaylist = listOf(track) + otherTracks
+                                                currentTrackIndex = 0
+                                            } else {
+                                                // Keep tracks in original order
+                                                currentPlaylist = tracks
+                                                currentTrackIndex = currentIndex
+                                            }
+
+                                            // Save the expanded playlist
+                                            preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
+                                            preferences.saveOriginalPlaylist(originalPlaylistOrder)
+
+                                            Log.d(TAG, "Updated playlist from directory with ${currentPlaylist.size} tracks")
                                         }
                                     }
                                 }
@@ -306,6 +378,13 @@ class LocalMusicManager @Inject constructor(
                             Log.e(TAG, "Error loading additional tracks for playlist", e)
                         }
                     }
+                } else {
+                    // Track is already in playlist, update index
+                    currentTrackIndex = currentPlaylist.indexOfFirst { it.id == track.id }
+                    if (currentTrackIndex < 0) currentTrackIndex = 0
+
+                    // Save current position
+                    preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
                 }
 
                 // Prepare media player
@@ -538,6 +617,10 @@ class LocalMusicManager @Inject constructor(
 
         currentTrackIndex = if (isShuffleEnabled) 0 else startIndex.coerceIn(0, currentPlaylist.size - 1)
 
+        // Save the playlist state immediately
+        preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
+        preferences.saveOriginalPlaylist(originalPlaylistOrder)
+
         // Log the playlist for debugging
         Log.d(TAG, "Playlist set with ${currentPlaylist.size} tracks:")
         currentPlaylist.forEachIndexed { index, track ->
@@ -736,6 +819,9 @@ class LocalMusicManager @Inject constructor(
                     val isPlaying = (playbackState.value as? PlaybackState.Playing)?.isPlaying ?: false
                     updatePlaybackStateWithTrack(track, isPlaying, mediaPlayer?.currentPosition?.toLong() ?: 0)
                 }
+
+                // Save the updated playlist state
+                preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
             }
         }
     }
@@ -756,6 +842,15 @@ class LocalMusicManager @Inject constructor(
 
         // Always update preferences first
         preferences.setWasPlaying(isCurrentlyPlaying)
+
+        // Save playlist state
+        if (currentPlaylist.isNotEmpty()) {
+            preferences.saveCurrentPlaylist(currentPlaylist, currentTrackIndex)
+            preferences.saveOriginalPlaylist(originalPlaylistOrder)
+            Timber.d("Saved playlist state: ${currentPlaylist.size} tracks, index: $currentTrackIndex")
+        }
+
+        // Save last track
         currentTrack?.let { track ->
             preferences.setLastTrack(track)
             Timber.d("Storing last track on disconnect: ${track.title}, wasPlaying: $isCurrentlyPlaying")

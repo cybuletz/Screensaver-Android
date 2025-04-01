@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.os.Environment
 import androidx.preference.PreferenceManager
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.photostreamr.data.SecureStorage
 import timber.log.Timber
@@ -16,8 +17,14 @@ class LocalMusicPreferences @Inject constructor(
     private val context: Context,
     private val secureStorage: SecureStorage
 ) {
-    private val prefs: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
-    private val gson = Gson()
+
+    private val prefs: SharedPreferences by lazy {
+        PreferenceManager.getDefaultSharedPreferences(context)
+    }
+
+    private val gson: Gson by lazy {
+        GsonBuilder().create()
+    }
 
     companion object {
         private const val KEY_ENABLED = "local_music_enabled"
@@ -30,7 +37,10 @@ class LocalMusicPreferences @Inject constructor(
         private const val KEY_SELECTED_PLAYLIST_NAME = "local_music_selected_playlist_name"
         private const val KEY_PLAYLISTS = "local_music_playlists"
         private const val KEY_MUSIC_DIRECTORY = "local_music_directory"
-        private const val DEFAULT_MUSIC_DIRECTORY = "Music" // Relative to external storage
+            private const val DEFAULT_MUSIC_DIRECTORY = "Music" // Relative to external storage
+        private const val KEY_CURRENT_PLAYLIST = "current_playlist"
+        private const val KEY_CURRENT_TRACK_INDEX = "current_track_index"
+        private const val KEY_ORIGINAL_PLAYLIST = "local_music_original_playlist"
     }
 
     fun isEnabled(): Boolean {
@@ -47,6 +57,61 @@ class LocalMusicPreferences @Inject constructor(
 
     fun setAutoplayEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTOPLAY, enabled).apply()
+    }
+
+    fun saveCurrentPlaylist(playlist: List<LocalMusicManager.LocalTrack>, currentIndex: Int) {
+        try {
+            val playlistJson = gson.toJson(playlist)
+            secureStorage.saveSecurely(KEY_CURRENT_PLAYLIST, playlistJson)
+            prefs.edit().putInt(KEY_CURRENT_TRACK_INDEX, currentIndex).apply()
+
+            Timber.d("Saved current playlist with ${playlist.size} tracks, index: $currentIndex")
+        } catch (e: Exception) {
+            Timber.e(e, "Error saving current playlist")
+        }
+    }
+
+    fun saveOriginalPlaylist(playlist: List<LocalMusicManager.LocalTrack>) {
+        try {
+            val playlistJson = gson.toJson(playlist)
+            secureStorage.saveSecurely(KEY_ORIGINAL_PLAYLIST, playlistJson)
+
+            Timber.d("Saved original playlist with ${playlist.size} tracks")
+        } catch (e: Exception) {
+            Timber.e(e, "Error saving original playlist")
+        }
+    }
+
+    fun getCurrentPlaylist(): List<LocalMusicManager.LocalTrack> {
+        try {
+            val playlistJson = secureStorage.getSecurely(KEY_CURRENT_PLAYLIST) ?: return emptyList()
+            val type = object : TypeToken<List<LocalMusicManager.LocalTrack>>() {}.type
+            val playlist = gson.fromJson<List<LocalMusicManager.LocalTrack>>(playlistJson, type)
+
+            Timber.d("Retrieved current playlist with ${playlist.size} tracks")
+            return playlist
+        } catch (e: Exception) {
+            Timber.e(e, "Error retrieving current playlist")
+            return emptyList()
+        }
+    }
+
+    fun getOriginalPlaylist(): List<LocalMusicManager.LocalTrack> {
+        try {
+            val playlistJson = secureStorage.getSecurely(KEY_ORIGINAL_PLAYLIST) ?: return emptyList()
+            val type = object : TypeToken<List<LocalMusicManager.LocalTrack>>() {}.type
+            val playlist = gson.fromJson<List<LocalMusicManager.LocalTrack>>(playlistJson, type)
+
+            Timber.d("Retrieved original playlist with ${playlist.size} tracks")
+            return playlist
+        } catch (e: Exception) {
+            Timber.e(e, "Error retrieving original playlist")
+            return emptyList()
+        }
+    }
+
+    fun getCurrentTrackIndex(): Int {
+        return prefs.getInt(KEY_CURRENT_TRACK_INDEX, 0)
     }
 
     fun getLastTrack(): LocalMusicManager.LocalTrack? {
