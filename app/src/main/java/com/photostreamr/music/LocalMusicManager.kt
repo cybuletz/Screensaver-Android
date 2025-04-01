@@ -260,15 +260,56 @@ class LocalMusicManager @Inject constructor(
                 // Save track but don't mark as playing yet
                 preferences.setLastTrack(track)
 
+                // Make sure the track is in the playlist for next/previous functionality
+                if (!currentPlaylist.contains(track)) {
+                    // If we have an empty playlist or it doesn't contain this track,
+                    // initialize a new playlist with this track
+                    currentPlaylist = listOf(track)
+                    currentTrackIndex = 0
+
+                    // Try to load more tracks from the same directory
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            // Extract the directory from the track path
+                            val trackPath = track.path
+                            val directory = if (trackPath.startsWith("content://")) {
+                                // For content URIs, we'll need to load the playlist differently
+                                // For now, just use the single track
+                                null
+                            } else {
+                                // For file paths, get the parent directory
+                                File(trackPath).parentFile
+                            }
+
+                            if (directory != null && directory.exists()) {
+                                // Scan the directory for more tracks
+                                val tracks = scanDirectory(directory)
+                                if (tracks.isNotEmpty()) {
+                                    // Update playlist, keeping current track as the current index
+                                    withContext(Dispatchers.Main) {
+                                        val currentIndex = tracks.indexOfFirst { it.id == track.id }
+                                        if (currentIndex >= 0) {
+                                            currentPlaylist = tracks
+                                            currentTrackIndex = currentIndex
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error loading additional tracks for playlist", e)
+                        }
+                    }
+                }
+
                 // Prepare media player
                 withContext(Dispatchers.IO) {
                     mediaPlayer?.apply {
                         if (track.path.startsWith("content://")) {
-                            // It's a URI path
+                            // Handle content URI
                             setDataSource(context, Uri.parse(track.path))
                         } else {
-                            // It's a file system path
-                            setDataSource(context, Uri.parse("file://${track.path}"))
+                            // Handle file path
+                            setDataSource(track.path)
                         }
                         prepareAsync() // This will trigger onPrepared when ready
                     }
@@ -532,33 +573,66 @@ class LocalMusicManager @Inject constructor(
     }
 
     fun playNextTrack() {
-        if (currentPlaylist.isEmpty()) return
-
-        currentTrackIndex = when {
-            repeatMode == RepeatMode.ALL && currentTrackIndex >= currentPlaylist.size - 1 -> 0
-            else -> (currentTrackIndex + 1) % currentPlaylist.size
+        if (currentPlaylist.isEmpty()) {
+            Log.d(TAG, "Cannot play next track - playlist is empty")
+            return
         }
 
-        playTrack(currentPlaylist[currentTrackIndex])
+        Log.d(TAG, "Playing next track. Current index: $currentTrackIndex, Playlist size: ${currentPlaylist.size}")
+
+        currentTrackIndex = when {
+            repeatMode == RepeatMode.ALL && currentTrackIndex >= currentPlaylist.size - 1 -> {
+                Log.d(TAG, "Looping back to first track (repeat ALL mode)")
+                0
+            }
+            else -> {
+                val newIndex = (currentTrackIndex + 1) % currentPlaylist.size
+                Log.d(TAG, "Moving to next track at index $newIndex")
+                newIndex
+            }
+        }
+
+        val nextTrack = currentPlaylist[currentTrackIndex]
+        Log.d(TAG, "Next track: ${nextTrack.title} by ${nextTrack.artist}")
+        playTrack(nextTrack)
     }
 
     fun playPreviousTrack() {
-        if (currentPlaylist.isEmpty()) return
+        if (currentPlaylist.isEmpty()) {
+            Log.d(TAG, "Cannot play previous track - playlist is empty")
+            return
+        }
+
+        Log.d(TAG, "Playing previous track. Current index: $currentTrackIndex, Playlist size: ${currentPlaylist.size}")
 
         // If we're more than 3 seconds into a track, restart it instead of going to previous
         val currentPosition = mediaPlayer?.currentPosition ?: 0
         if (currentPosition > 3000) {
+            Log.d(TAG, "Current position > 3 seconds, restarting current track")
             mediaPlayer?.seekTo(0)
             return
         }
 
         currentTrackIndex = when {
-            currentTrackIndex > 0 -> currentTrackIndex - 1
-            repeatMode == RepeatMode.ALL -> currentPlaylist.size - 1
-            else -> 0
+            currentTrackIndex > 0 -> {
+                val newIndex = currentTrackIndex - 1
+                Log.d(TAG, "Moving to previous track at index $newIndex")
+                newIndex
+            }
+            repeatMode == RepeatMode.ALL -> {
+                val newIndex = currentPlaylist.size - 1
+                Log.d(TAG, "Looping to last track (repeat ALL mode)")
+                newIndex
+            }
+            else -> {
+                Log.d(TAG, "At first track, staying at index 0")
+                0
+            }
         }
 
-        playTrack(currentPlaylist[currentTrackIndex])
+        val prevTrack = currentPlaylist[currentTrackIndex]
+        Log.d(TAG, "Previous track: ${prevTrack.title} by ${prevTrack.artist}")
+        playTrack(prevTrack)
     }
 
     fun setShuffleMode(enabled: Boolean) {

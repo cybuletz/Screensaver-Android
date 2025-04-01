@@ -329,12 +329,24 @@ class MusicControlWidget(
                         isClickable = true
                         isFocusable = true
                         visibility = View.VISIBLE
+
+                        // Make sure we have the right click listener
+                        setOnClickListener {
+                            Log.d(TAG, "Previous button click from update")
+                            localMusicManager.playPreviousTrack()
+                        }
                     }
                     getNextButton()?.apply {
                         isEnabled = true
                         isClickable = true
                         isFocusable = true
                         visibility = View.VISIBLE
+
+                        // Make sure we have the right click listener
+                        setOnClickListener {
+                            Log.d(TAG, "Next button click from update")
+                            localMusicManager.playNextTrack()
+                        }
                     }
 
                     // Update progress bar
