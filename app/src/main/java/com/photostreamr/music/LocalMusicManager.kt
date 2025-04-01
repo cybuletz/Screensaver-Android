@@ -45,6 +45,8 @@ class LocalMusicManager @Inject constructor(
     private var isShuffleEnabled = false
     private var repeatMode = RepeatMode.OFF
 
+    private val albumArtCache = HashMap<String, Bitmap?>()
+
     // State flows
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -284,7 +286,11 @@ class LocalMusicManager @Inject constructor(
         isPlaying: Boolean,
         playbackPosition: Long = 0
     ) {
-        val coverArt = loadAlbumArt(track.path)
+        // Load album art only if we don't have it cached already
+        val coverArt = albumArtCache.getOrPut(track.id) {
+            loadAlbumArt(track.path)
+        }
+
         _playbackState.value = PlaybackState.Playing(
             trackName = track.title,
             artistName = track.artist,

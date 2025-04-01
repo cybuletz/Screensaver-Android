@@ -44,6 +44,8 @@ class MusicControlWidget(
     private var wasRadioPlaying: Boolean = false
 
     private var currentTrackUri: String? = null
+    private var currentLocalTrackId: String? = null
+
 
     companion object {
         private const val TAG = "MusicControlWidget"
@@ -253,37 +255,51 @@ class MusicControlWidget(
                     // Hide loading indicator
                     getLoadingIndicator()?.visibility = View.GONE
 
-                    // Show artwork if available
-                    if (config.showArtwork) {
-                        val coverArt = state.coverArt
-                        if (coverArt != null) {
-                            getTrackArtworkBackground()?.apply {
-                                post {
-                                    setImageBitmap(coverArt)
-                                    alpha = 0f
-                                    visibility = View.VISIBLE
-                                    animate()
-                                        .alpha(1.0f)
-                                        .setDuration(300)
-                                        .start()
+                    // Get track ID from current track
+                    val trackId = localMusicManager.currentTrack.value?.id
+
+                    // Only update artwork if the track has changed
+                    if (trackId != currentLocalTrackId) {
+                        currentLocalTrackId = trackId
+
+                        // Show artwork if available and enabled
+                        if (config.showArtwork) {
+                            val coverArt = state.coverArt
+                            if (coverArt != null) {
+                                getTrackArtworkBackground()?.apply {
+                                    // Stop any running animations
+                                    animate().cancel()
+
+                                    post {
+                                        setImageBitmap(coverArt)
+                                        alpha = 0f
+                                        visibility = View.VISIBLE
+                                        animate()
+                                            .alpha(1.0f)
+                                            .setDuration(300)
+                                            .start()
+                                    }
+                                }
+                            } else {
+                                // Use generic music note icon
+                                getTrackArtworkBackground()?.apply {
+                                    // Stop any running animations
+                                    animate().cancel()
+
+                                    post {
+                                        setImageResource(R.drawable.ic_music_note)
+                                        alpha = 0f
+                                        visibility = View.VISIBLE
+                                        animate()
+                                            .alpha(1.0f)
+                                            .setDuration(300)
+                                            .start()
+                                    }
                                 }
                             }
                         } else {
-                            // Use generic music note icon
-                            getTrackArtworkBackground()?.apply {
-                                post {
-                                    setImageResource(R.drawable.ic_music_note)
-                                    alpha = 0f
-                                    visibility = View.VISIBLE
-                                    animate()
-                                        .alpha(1.0f)
-                                        .setDuration(300)
-                                        .start()
-                                }
-                            }
+                            getTrackArtworkBackground()?.visibility = View.GONE
                         }
-                    } else {
-                        getTrackArtworkBackground()?.visibility = View.GONE
                     }
 
                     // Update text views
