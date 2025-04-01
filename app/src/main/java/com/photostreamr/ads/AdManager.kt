@@ -52,6 +52,9 @@ class AdManager @Inject constructor(
         // Configure ad display timing (in milliseconds)
         private const val INTERSTITIAL_AD_DISPLAY_DURATION = 10000L // 10 seconds
         private const val MINIMUM_AD_INTERVAL = 180000L // 3 minutes minimum between ads
+
+        // Banner refresh interval (10 minutes)
+        private const val BANNER_REFRESH_INTERVAL = 600000L // 10 minutes in milliseconds
     }
 
     private var isInitialized = false
@@ -60,6 +63,9 @@ class AdManager @Inject constructor(
     private var interstitialAd: InterstitialAd? = null
     private var timerRunnable: Runnable? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // Add a refresh handler for banner ads
+    private var bannerRefreshRunnable: Runnable? = null
 
     // Track when ads were shown
     private var lastInterstitialAdTime = 0L
@@ -154,6 +160,9 @@ class AdManager @Inject constructor(
                 initialize()
             }
 
+            // Cancel any existing refresh runnable
+            bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
+
             // Get the ad size before creating the AdView
             val adSize = getAdSizeForContainer(container)
 
@@ -163,7 +172,7 @@ class AdManager @Inject constructor(
                 setAdUnitId(BANNER_AD_UNIT_ID)
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
-                        Log.d(TAG, "Main activity ad loaded")
+                        Log.d(TAG, "Main activity banner ad loaded")
                         container.post {
                             if (container.isAttachedToWindow) {
                                 container.visibility = ViewGroup.VISIBLE
@@ -172,12 +181,23 @@ class AdManager @Inject constructor(
                     }
 
                     override fun onAdFailedToLoad(error: LoadAdError) {
-                        Log.e(TAG, "Main activity ad failed to load: ${error.message}")
+                        Log.e(TAG, "Main activity banner ad failed to load: ${error.message}")
                         container.post {
                             if (container.isAttachedToWindow) {
                                 container.visibility = ViewGroup.GONE
                             }
                         }
+
+                        // If ad fails to load, retry after a short delay
+                        mainHandler.postDelayed({
+                            if (!appVersionManager.isProVersion() && mainAdView != null) {
+                                loadMainActivityAd()
+                            }
+                        }, 60000) // Retry after 1 minute
+                    }
+
+                    override fun onAdClosed() {
+                        Log.d(TAG, "Main activity banner ad closed")
                     }
                 }
             }
@@ -191,18 +211,41 @@ class AdManager @Inject constructor(
 
                         // Load the ad immediately after adding to container
                         mainAdView?.loadAd(AdRequest.Builder().build())
-                        Log.d(TAG, "Main activity ad loading requested")
+                        Log.d(TAG, "Main activity banner ad loading requested")
+
+                        // Setup the refresh timer for 10 minutes
+                        setupBannerRefreshTimer()
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error setting up ad container view", e)
                 }
             }
-
-            // Schedule ad display
-            scheduleAdDisplay()
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up main activity ad", e)
         }
+    }
+
+    // Setup a timer to refresh banner ads every 10 minutes
+    // This is compliant with AdMob policies that allow refreshing ads
+    // at a reasonable interval (not too frequent)
+    private fun setupBannerRefreshTimer() {
+        // Cancel any existing refresh timer
+        bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
+
+        bannerRefreshRunnable = object : Runnable {
+            override fun run() {
+                if (!appVersionManager.isProVersion() && mainAdView != null) {
+                    Log.d(TAG, "Refreshing banner ad after 10 minute interval")
+                    loadMainActivityAd()
+                }
+
+                // Schedule next refresh
+                mainHandler.postDelayed(this, BANNER_REFRESH_INTERVAL)
+            }
+        }
+
+        // Start the refresh timer
+        mainHandler.postDelayed(bannerRefreshRunnable!!, BANNER_REFRESH_INTERVAL)
     }
 
     // Helper method to calculate the optimal ad size
@@ -270,7 +313,7 @@ class AdManager @Inject constructor(
             loadSettingsAd()
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up settings fragment ad", e)
-            container.visibility = ViewGroup.GONE
+            container.visibility = View.GONE
         }
     }
 
@@ -281,12 +324,8 @@ class AdManager @Inject constructor(
         timerRunnable = object : Runnable {
             override fun run() {
                 if (appVersionManager.shouldShowAd()) {
-                    // Show interstitial if available, otherwise show banner
-                    if (shouldShowInterstitial()) {
-                        showInterstitialAd()
-                    } else {
-                        loadMainActivityAd()
-                    }
+                    // We no longer automatically show interstitial ads in MainActivity
+                    // Those are now only for SettingsFragment and explicitly called
                     appVersionManager.updateLastAdShownTime()
                 }
 
@@ -307,6 +346,7 @@ class AdManager @Inject constructor(
                 !isInterstitialShowing
     }
 
+    // This is now primarily used for SettingsFragment
     fun showInterstitialAd(activity: Activity? = null) {
         if (appVersionManager.isProVersion() || isInterstitialShowing) {
             return
@@ -320,9 +360,6 @@ class AdManager @Inject constructor(
             Log.d(TAG, "Interstitial ad not loaded yet")
             // Load a new one for next time
             preloadInterstitialAd()
-
-            // Fall back to banner ad
-            loadMainActivityAd()
         }
     }
 
@@ -342,6 +379,7 @@ class AdManager @Inject constructor(
         mainAdView?.pause()
         settingsAdView?.pause()
         timerRunnable?.let { mainHandler.removeCallbacks(it) }
+        bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
     }
 
     fun resumeAds() {
@@ -350,6 +388,12 @@ class AdManager @Inject constructor(
         mainAdView?.resume()
         settingsAdView?.resume()
         timerRunnable?.let { mainHandler.post(it) }
+
+        // Resume banner refresh
+        bannerRefreshRunnable?.let { runnable ->
+            mainHandler.removeCallbacks(runnable)
+            mainHandler.postDelayed(runnable, BANNER_REFRESH_INTERVAL)
+        }
 
         // Make sure we have an interstitial ready
         if (interstitialAd == null && !isLoadingInterstitial) {
@@ -361,6 +405,7 @@ class AdManager @Inject constructor(
         mainAdView?.destroy()
         settingsAdView?.destroy()
         timerRunnable?.let { mainHandler.removeCallbacks(it) }
+        bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
         interstitialAd = null
         mainAdView = null
         settingsAdView = null

@@ -186,9 +186,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkForAds() {
-        // Check if we should show an ad
+        // For MainActivity, we no longer show interstitials,
+        // Those are only for SettingsFragment now.
+        // Just update the last ad shown time
         if (!appVersionManager.isProVersion() && appVersionManager.shouldShowAd()) {
-            adManager.showInterstitialAd(currentActivity)
+            // DO NOT call showInterstitialAd here anymore
             appVersionManager.updateLastAdShownTime()
         }
     }
@@ -240,6 +242,8 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize ad container now that binding is set up
         adContainer = binding.adContainer
+        // Make sure the ad container is visible
+        adContainer.visibility = View.VISIBLE
 
         // Add version state observation
         lifecycleScope.launch {
@@ -284,6 +288,7 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing ad manager", e)
         }
+
 
         if (securityPreferences.isSecurityEnabled) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1368,7 +1373,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        adManager.pauseAds()
+        // Make sure ads are properly paused
+        try {
+            adManager.pauseAds()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error pausing ads", e)
+        }
 
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         brightnessManager.stopMonitoring()
@@ -1424,11 +1434,18 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         currentActivity = this
-        adManager.resumeAds()
+        try {
+            adManager.resumeAds()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resuming ads", e)
+        }
 
         setupFullScreen()
         updateKeepScreenOn()
         initializeMusicSources()
+
+        // Make sure ads are properly resumed
+
 
         // Check for showing ads based on app state
         if (navController.currentDestination?.id == R.id.mainFragment) {
@@ -1529,8 +1546,11 @@ class MainActivity : AppCompatActivity() {
         try {
             isDestroyed = true
 
-            // Call ad cleanup BEFORE nulling bindings
-            adManager.destroyAds()
+            try {
+                adManager.destroyAds()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error destroying ads", e)
+            }
 
             viewLifecycleOwner?.lifecycleScope?.launch(Dispatchers.Main) {
                 withContext(NonCancellable) {

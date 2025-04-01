@@ -26,7 +26,7 @@ val commitCount: Int = try {
 // Get current time in milliseconds since epoch
 val currentTimeMillis = System.currentTimeMillis()
 
-// Use the time in seconds (or milliseconds) as the base for versionCode
+// Use the time in seconds (or milliseconds) as the base for versionCodew
 val autoVersionCode = (currentTimeMillis / 1000).toInt()
 
 val autoVersionName = "2.1.0.${autoVersionCode}"
