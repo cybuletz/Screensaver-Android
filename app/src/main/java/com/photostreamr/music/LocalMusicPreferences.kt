@@ -236,10 +236,10 @@ class LocalMusicPreferences @Inject constructor(
             val chunkCount = prefs.getInt("playlist_chunk_count", 0)
             val expectedSize = prefs.getInt("playlist_total_size", 0)
 
-            Timber.d("Reading playlist from $chunkCount chunks (expecting $expectedSize tracks)")
+            Timber.d("LOAD PLAYLIST: Reading playlist from $chunkCount chunks (expecting $expectedSize tracks)")
 
             if (chunkCount == 0 || expectedSize == 0) {
-                Timber.d("No saved playlist found (chunk count = $chunkCount, expected size = $expectedSize)")
+                Timber.d("LOAD PLAYLIST: No saved playlist found (chunk count = $chunkCount, expected size = $expectedSize)")
                 return emptyList()
             }
 
@@ -247,35 +247,46 @@ class LocalMusicPreferences @Inject constructor(
             val fullPlaylist = ArrayList<LocalMusicManager.LocalTrack>(expectedSize)
             val type = object : TypeToken<List<LocalMusicManager.LocalTrack>>() {}.type
 
+            var totalLoaded = 0
+
             // Read each chunk
             for (i in 0 until chunkCount) {
                 val chunkKey = "$KEY_CURRENT_PLAYLIST:$i"
                 val chunkJson = secureStorage.getSecurely(chunkKey)
 
                 if (chunkJson == null) {
-                    Timber.e("Missing chunk $i when reading playlist")
+                    Timber.e("LOAD PLAYLIST: Missing chunk $i when reading playlist")
                     continue
                 }
 
                 try {
                     val chunk = gson.fromJson<List<LocalMusicManager.LocalTrack>>(chunkJson, type)
-                    Timber.d("Read chunk $i with ${chunk.size} tracks")
+                    Timber.d("LOAD PLAYLIST: Read chunk $i with ${chunk.size} tracks")
                     fullPlaylist.addAll(chunk)
+                    totalLoaded += chunk.size
                 } catch (e: Exception) {
-                    Timber.e(e, "Error parsing chunk $i: ${e.message}")
+                    Timber.e(e, "LOAD PLAYLIST: Error parsing chunk $i: ${e.message}")
                 }
             }
 
-            Timber.d("Successfully loaded ${fullPlaylist.size} tracks from $chunkCount chunks")
+            Timber.d("LOAD PLAYLIST: Successfully loaded $totalLoaded tracks from $chunkCount chunks")
 
             // Verify we got expected size
             if (fullPlaylist.size != expectedSize) {
-                Timber.w("Playlist size mismatch: loaded ${fullPlaylist.size} tracks, expected $expectedSize")
+                Timber.w("LOAD PLAYLIST: Playlist size mismatch: loaded ${fullPlaylist.size} tracks, expected $expectedSize")
+            }
+
+            // Log the first few tracks for debugging
+            if (fullPlaylist.isNotEmpty()) {
+                Timber.d("LOAD PLAYLIST: First track is: ${fullPlaylist[0].title}")
+                if (fullPlaylist.size > 1) {
+                    Timber.d("LOAD PLAYLIST: Second track is: ${fullPlaylist[1].title}")
+                }
             }
 
             return fullPlaylist
         } catch (e: Exception) {
-            Timber.e(e, "Critical error retrieving playlist: ${e.message}")
+            Timber.e(e, "LOAD PLAYLIST: Critical error retrieving playlist: ${e.message}")
             return emptyList()
         }
     }
@@ -324,10 +335,10 @@ class LocalMusicPreferences @Inject constructor(
             val chunkCount = prefs.getInt("orig_playlist_chunk_count", 0)
             val expectedSize = prefs.getInt("orig_playlist_total_size", 0)
 
-            Timber.d("Reading original playlist from $chunkCount chunks (expecting $expectedSize tracks)")
+            Timber.d("LOAD ORIGINAL: Reading original playlist from $chunkCount chunks (expecting $expectedSize tracks)")
 
             if (chunkCount == 0 || expectedSize == 0) {
-                Timber.d("No saved original playlist found (chunk count = $chunkCount, expected size = $expectedSize)")
+                Timber.d("LOAD ORIGINAL: No saved original playlist found (chunk count = $chunkCount, expected size = $expectedSize)")
                 return emptyList()
             }
 
@@ -335,35 +346,46 @@ class LocalMusicPreferences @Inject constructor(
             val fullPlaylist = ArrayList<LocalMusicManager.LocalTrack>(expectedSize)
             val type = object : TypeToken<List<LocalMusicManager.LocalTrack>>() {}.type
 
+            var totalLoaded = 0
+
             // Read each chunk
             for (i in 0 until chunkCount) {
                 val chunkKey = "$KEY_ORIGINAL_PLAYLIST:$i"
                 val chunkJson = secureStorage.getSecurely(chunkKey)
 
                 if (chunkJson == null) {
-                    Timber.e("Missing chunk $i when reading original playlist")
+                    Timber.e("LOAD ORIGINAL: Missing chunk $i when reading original playlist")
                     continue
                 }
 
                 try {
                     val chunk = gson.fromJson<List<LocalMusicManager.LocalTrack>>(chunkJson, type)
-                    Timber.d("Read original playlist chunk $i with ${chunk.size} tracks")
+                    Timber.d("LOAD ORIGINAL: Read original playlist chunk $i with ${chunk.size} tracks")
                     fullPlaylist.addAll(chunk)
+                    totalLoaded += chunk.size
                 } catch (e: Exception) {
-                    Timber.e(e, "Error parsing original playlist chunk $i: ${e.message}")
+                    Timber.e(e, "LOAD ORIGINAL: Error parsing original playlist chunk $i: ${e.message}")
                 }
             }
 
-            Timber.d("Successfully loaded ${fullPlaylist.size} tracks from $chunkCount chunks for original playlist")
+            Timber.d("LOAD ORIGINAL: Successfully loaded $totalLoaded tracks from $chunkCount chunks for original playlist")
 
             // Verify we got expected size
             if (fullPlaylist.size != expectedSize) {
-                Timber.w("Original playlist size mismatch: loaded ${fullPlaylist.size} tracks, expected $expectedSize")
+                Timber.w("LOAD ORIGINAL: Original playlist size mismatch: loaded ${fullPlaylist.size} tracks, expected $expectedSize")
+            }
+
+            // Log the first few tracks for debugging
+            if (fullPlaylist.isNotEmpty()) {
+                Timber.d("LOAD ORIGINAL: First track is: ${fullPlaylist[0].title}")
+                if (fullPlaylist.size > 1) {
+                    Timber.d("LOAD ORIGINAL: Second track is: ${fullPlaylist[1].title}")
+                }
             }
 
             return fullPlaylist
         } catch (e: Exception) {
-            Timber.e(e, "Critical error retrieving original playlist: ${e.message}")
+            Timber.e(e, "LOAD ORIGINAL: Critical error retrieving original playlist: ${e.message}")
             return emptyList()
         }
     }
