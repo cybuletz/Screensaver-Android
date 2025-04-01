@@ -41,6 +41,7 @@ class LocalMusicPreferences @Inject constructor(
         private const val KEY_CURRENT_PLAYLIST = "current_playlist"
         private const val KEY_CURRENT_TRACK_INDEX = "current_track_index"
         private const val KEY_ORIGINAL_PLAYLIST = "local_music_original_playlist"
+        private const val MAX_CHUNK_SIZE = 20
     }
 
     fun isEnabled(): Boolean {
@@ -57,57 +58,6 @@ class LocalMusicPreferences @Inject constructor(
 
     fun setAutoplayEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTOPLAY, enabled).apply()
-    }
-
-    fun saveCurrentPlaylist(playlist: List<LocalMusicManager.LocalTrack>, currentIndex: Int) {
-        try {
-            val playlistJson = gson.toJson(playlist)
-            secureStorage.saveSecurely(KEY_CURRENT_PLAYLIST, playlistJson)
-            prefs.edit().putInt(KEY_CURRENT_TRACK_INDEX, currentIndex).apply()
-
-            Timber.d("Saved current playlist with ${playlist.size} tracks, index: $currentIndex")
-        } catch (e: Exception) {
-            Timber.e(e, "Error saving current playlist")
-        }
-    }
-
-    fun saveOriginalPlaylist(playlist: List<LocalMusicManager.LocalTrack>) {
-        try {
-            val playlistJson = gson.toJson(playlist)
-            secureStorage.saveSecurely(KEY_ORIGINAL_PLAYLIST, playlistJson)
-
-            Timber.d("Saved original playlist with ${playlist.size} tracks")
-        } catch (e: Exception) {
-            Timber.e(e, "Error saving original playlist")
-        }
-    }
-
-    fun getCurrentPlaylist(): List<LocalMusicManager.LocalTrack> {
-        try {
-            val playlistJson = secureStorage.getSecurely(KEY_CURRENT_PLAYLIST) ?: return emptyList()
-            val type = object : TypeToken<List<LocalMusicManager.LocalTrack>>() {}.type
-            val playlist = gson.fromJson<List<LocalMusicManager.LocalTrack>>(playlistJson, type)
-
-            Timber.d("Retrieved current playlist with ${playlist.size} tracks")
-            return playlist
-        } catch (e: Exception) {
-            Timber.e(e, "Error retrieving current playlist")
-            return emptyList()
-        }
-    }
-
-    fun getOriginalPlaylist(): List<LocalMusicManager.LocalTrack> {
-        try {
-            val playlistJson = secureStorage.getSecurely(KEY_ORIGINAL_PLAYLIST) ?: return emptyList()
-            val type = object : TypeToken<List<LocalMusicManager.LocalTrack>>() {}.type
-            val playlist = gson.fromJson<List<LocalMusicManager.LocalTrack>>(playlistJson, type)
-
-            Timber.d("Retrieved original playlist with ${playlist.size} tracks")
-            return playlist
-        } catch (e: Exception) {
-            Timber.e(e, "Error retrieving original playlist")
-            return emptyList()
-        }
     }
 
     fun getCurrentTrackIndex(): Int {
@@ -236,5 +186,138 @@ class LocalMusicPreferences @Inject constructor(
             remove(KEY_SELECTED_PLAYLIST_NAME)
             // Don't remove playlists or other settings
         }.apply()
+    }
+
+
+    fun saveCurrentPlaylist(playlist: List<LocalMusicManager.LocalTrack>, currentIndex: Int) {
+        try {
+            // Clear any existing chunks
+            clearPlaylistChunks()
+
+            // Save current index
+            prefs.edit().putInt(KEY_CURRENT_TRACK_INDEX, currentIndex).apply()
+
+            // Save the total size
+            prefs.edit().putInt("playlist_total_size", playlist.size).apply()
+
+            // Split playlist into chunks and save each chunk
+            val chunks = playlist.chunked(MAX_CHUNK_SIZE)
+            chunks.forEachIndexed { index, chunk ->
+                val chunkJson = gson.toJson(chunk)
+                val chunkKey = "$KEY_CURRENT_PLAYLIST:$index"
+                secureStorage.saveSecurely(chunkKey, chunkJson)
+            }
+
+            // Save how many chunks we have
+            prefs.edit().putInt("playlist_chunk_count", chunks.size).apply()
+
+            Timber.d("Saved current playlist with ${playlist.size} tracks in ${chunks.size} chunks, index: $currentIndex")
+        } catch (e: Exception) {
+            Timber.e(e, "Error saving current playlist: ${e.message}")
+        }
+    }
+
+    fun getCurrentPlaylist(): List<LocalMusicManager.LocalTrack> {
+        try {
+            // Get the number of chunks
+            val chunkCount = prefs.getInt("playlist_chunk_count", 0)
+            if (chunkCount == 0) return emptyList()
+
+            // Rebuild playlist from chunks
+            val fullPlaylist = mutableListOf<LocalMusicManager.LocalTrack>()
+            val type = object : TypeToken<List<LocalMusicManager.LocalTrack>>() {}.type
+
+            for (i in 0 until chunkCount) {
+                val chunkKey = "$KEY_CURRENT_PLAYLIST:$i"
+                val chunkJson = secureStorage.getSecurely(chunkKey) ?: continue
+
+                try {
+                    val chunk = gson.fromJson<List<LocalMusicManager.LocalTrack>>(chunkJson, type)
+                    fullPlaylist.addAll(chunk)
+                } catch (e: Exception) {
+                    Timber.e(e, "Error deserializing chunk $i: ${e.message}")
+                }
+            }
+
+            val expectedSize = prefs.getInt("playlist_total_size", 0)
+            Timber.d("Retrieved current playlist with ${fullPlaylist.size} tracks (expected $expectedSize)")
+
+            return fullPlaylist
+        } catch (e: Exception) {
+            Timber.e(e, "Error retrieving current playlist: ${e.message}")
+            return emptyList()
+        }
+    }
+
+    private fun clearPlaylistChunks() {
+        val chunkCount = prefs.getInt("playlist_chunk_count", 0)
+        for (i in 0 until chunkCount) {
+            secureStorage.removeSecurely("$KEY_CURRENT_PLAYLIST:$i")
+        }
+    }
+
+    // Similarly update saveOriginalPlaylist and getOriginalPlaylist methods
+    fun saveOriginalPlaylist(playlist: List<LocalMusicManager.LocalTrack>) {
+        try {
+            // Clear any existing chunks
+            clearOriginalPlaylistChunks()
+
+            // Save the total size
+            prefs.edit().putInt("orig_playlist_total_size", playlist.size).apply()
+
+            // Split playlist into chunks and save each chunk
+            val chunks = playlist.chunked(MAX_CHUNK_SIZE)
+            chunks.forEachIndexed { index, chunk ->
+                val chunkJson = gson.toJson(chunk)
+                val chunkKey = "$KEY_ORIGINAL_PLAYLIST:$index"
+                secureStorage.saveSecurely(chunkKey, chunkJson)
+            }
+
+            // Save how many chunks we have
+            prefs.edit().putInt("orig_playlist_chunk_count", chunks.size).apply()
+
+            Timber.d("Saved original playlist with ${playlist.size} tracks in ${chunks.size} chunks")
+        } catch (e: Exception) {
+            Timber.e(e, "Error saving original playlist: ${e.message}")
+        }
+    }
+
+    fun getOriginalPlaylist(): List<LocalMusicManager.LocalTrack> {
+        try {
+            // Get the number of chunks
+            val chunkCount = prefs.getInt("orig_playlist_chunk_count", 0)
+            if (chunkCount == 0) return emptyList()
+
+            // Rebuild playlist from chunks
+            val fullPlaylist = mutableListOf<LocalMusicManager.LocalTrack>()
+            val type = object : TypeToken<List<LocalMusicManager.LocalTrack>>() {}.type
+
+            for (i in 0 until chunkCount) {
+                val chunkKey = "$KEY_ORIGINAL_PLAYLIST:$i"
+                val chunkJson = secureStorage.getSecurely(chunkKey) ?: continue
+
+                try {
+                    val chunk = gson.fromJson<List<LocalMusicManager.LocalTrack>>(chunkJson, type)
+                    fullPlaylist.addAll(chunk)
+                } catch (e: Exception) {
+                    Timber.e(e, "Error deserializing chunk $i: ${e.message}")
+                }
+            }
+
+            val expectedSize = prefs.getInt("orig_playlist_total_size", 0)
+            Timber.d("Retrieved original playlist with ${fullPlaylist.size} tracks (expected $expectedSize)")
+
+            return fullPlaylist
+        } catch (e: Exception) {
+            Timber.e(e, "Error retrieving original playlist: ${e.message}")
+            return emptyList()
+        }
+    }
+
+    private fun clearOriginalPlaylistChunks() {
+        val chunkCount = prefs.getInt("orig_playlist_chunk_count", 0)
+        for (i in 0 until chunkCount) {
+            secureStorage.removeSecurely("$KEY_ORIGINAL_PLAYLIST:$i")
+        }
     }
 }
