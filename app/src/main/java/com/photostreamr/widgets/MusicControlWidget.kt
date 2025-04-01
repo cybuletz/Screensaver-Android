@@ -224,16 +224,6 @@ class MusicControlWidget(
             .getString("music_source", MUSIC_SOURCE_SPOTIFY) ?: MUSIC_SOURCE_SPOTIFY
     }
 
-    private fun isMusicSourceEnabled(): Boolean {
-        val source = getMusicSource()
-        return when (source) {
-            MUSIC_SOURCE_SPOTIFY -> spotifyPreferences.isEnabled()
-            MUSIC_SOURCE_RADIO -> radioPreferences.isEnabled()
-            MUSIC_SOURCE_LOCAL -> localMusicPreferences.isEnabled()
-            else -> false
-        }
-    }
-
     private fun handleLocalMusicPlayPause() {
         when (val state = localMusicManager.playbackState.value) {
             is LocalMusicManager.PlaybackState.Playing -> {

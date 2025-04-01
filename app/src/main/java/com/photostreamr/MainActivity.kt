@@ -63,6 +63,8 @@ import com.photostreamr.version.FeatureManager
 import com.photostreamr.version.ProVersionPromptDialog
 import android.widget.FrameLayout
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.photostreamr.music.LocalMusicManager
+import com.photostreamr.music.LocalMusicPreferences
 import com.photostreamr.version.ProVersionPromptManager
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
@@ -115,6 +117,13 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var radioManager: RadioManager
+
+
+    @Inject
+    lateinit var localMusicManager: LocalMusicManager
+
+    @Inject
+    lateinit var localMusicPreferences: LocalMusicPreferences
 
     @Inject
     lateinit var brightnessManager: BrightnessManager
@@ -388,13 +397,24 @@ class MainActivity : AppCompatActivity() {
             }
             "radio" -> {
                 if (radioPreferences.isEnabled()) {
-                    // First ensure state is initialized
                     radioManager.initializeState()
-                    // Then try auto-resume in a coroutine
                     lifecycleScope.launch {
-                        delay(100) // Small delay to ensure proper initialization
+                        delay(100)
                         radioManager.tryAutoResume()
                         Log.d(TAG, "Called radio auto-resume")
+                    }
+                }
+            }
+            "local" -> {  // Add this case
+                if (localMusicPreferences.isEnabled()) {
+                    localMusicManager.initialize()
+                    // Auto-resume if needed
+                    if (localMusicPreferences.wasPlaying() && localMusicPreferences.isAutoplayEnabled()) {
+                        lifecycleScope.launch {
+                            delay(100)
+                            localMusicManager.resume()
+                            Log.d(TAG, "Auto-resumed local music playback")
+                        }
                     }
                 }
             }

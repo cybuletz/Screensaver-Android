@@ -19,6 +19,8 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import androidx.preference.PreferenceManager
 import com.photostreamr.R
+import com.photostreamr.music.LocalMusicManager
+import com.photostreamr.music.LocalMusicPreferences
 
 
 @Singleton
@@ -38,6 +40,12 @@ class WidgetManager @Inject constructor(
 
     @Inject
     lateinit var radioPreferences: RadioPreferences
+
+    @Inject
+    lateinit var localMusicManager: LocalMusicManager
+
+    @Inject
+    lateinit var localMusicPreferences: LocalMusicPreferences
 
     private val widgets = mutableMapOf<WidgetType, ScreenWidget>()
     private val _widgetStates = MutableStateFlow<Map<WidgetType, WidgetData>>(emptyMap())
@@ -530,7 +538,7 @@ class WidgetManager @Inject constructor(
         val isSourceEnabled = when (currentSource) {
             "spotify" -> spotifyPreferences.isEnabled()
             "radio" -> radioPreferences.isEnabled()
-            "local" -> localMusicPreferences.isEnabled()  // Add local music check
+            "local" -> localMusicPreferences.isEnabled()
             else -> false
         }
 
