@@ -45,6 +45,8 @@ class MusicControlWidget(
 
     private var currentTrackUri: String? = null
     private var currentLocalTrackId: String? = null
+    private var cachedTrackName: String? = null
+    private var cachedArtistName: String? = null
 
 
     companion object {
@@ -220,6 +222,11 @@ class MusicControlWidget(
         }
     }
 
+    private fun updateProgressBarOnly(newPosition: Int) {
+        binding?.getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
+            progress = newPosition
+        }
+    }
 
     private fun getMusicSource(): String {
         return PreferenceManager.getDefaultSharedPreferences(container.context)
@@ -262,6 +269,10 @@ class MusicControlWidget(
                     if (trackId != currentLocalTrackId) {
                         currentLocalTrackId = trackId
 
+                        // Reset text caches when track changes
+                        cachedTrackName = null
+                        cachedArtistName = null
+
                         // Show artwork if available and enabled
                         if (config.showArtwork) {
                             val coverArt = state.coverArt
@@ -302,14 +313,20 @@ class MusicControlWidget(
                         }
                     }
 
-                    // Update text views
+                    // Update text views only if they've changed
                     getTrackNameView()?.apply {
-                        text = state.trackName
-                        isSelected = true  // For marquee effect
+                        if (cachedTrackName != state.trackName) {
+                            cachedTrackName = state.trackName
+                            text = state.trackName
+                            isSelected = true  // For marquee effect
+                        }
                     }
                     getArtistNameView()?.apply {
-                        text = state.artistName
-                        isSelected = true  // For marquee effect
+                        if (cachedArtistName != state.artistName) {
+                            cachedArtistName = state.artistName
+                            text = state.artistName
+                            isSelected = true  // For marquee effect
+                        }
                     }
 
                     // Update play/pause button
@@ -365,6 +382,10 @@ class MusicControlWidget(
                 }
 
                 is LocalMusicManager.PlaybackState.Idle -> {
+                    // Reset caches
+                    cachedTrackName = null
+                    cachedArtistName = null
+
                     // Hide loading indicator
                     getLoadingIndicator()?.visibility = View.GONE
 
@@ -421,6 +442,10 @@ class MusicControlWidget(
                 }
 
                 LocalMusicManager.PlaybackState.Loading -> {
+                    // Reset caches
+                    cachedTrackName = null
+                    cachedArtistName = null
+
                     // Show loading indicator
                     getLoadingIndicator()?.visibility = View.VISIBLE
 
@@ -491,10 +516,10 @@ class MusicControlWidget(
     }
 
     private fun updatePlaybackState(state: SpotifyManager.PlaybackState) {
-        Log.e(TAG, "Updating Spotify playback state: $state")
+        Log.d(TAG, "Updating Spotify playback state: $state")
 
         if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
-            Log.e(TAG, "Not updating state - Spotify not connected")
+            Log.d(TAG, "Not updating state - Spotify not connected")
             stopProgressUpdates()
             binding?.getTrackArtworkBackground()?.visibility = View.GONE
             return
@@ -505,6 +530,11 @@ class MusicControlWidget(
                 is SpotifyManager.PlaybackState.Playing -> {
                     if (state.trackUri != currentTrackUri) {
                         currentTrackUri = state.trackUri
+
+                        // Reset text caches when track changes
+                        cachedTrackName = null
+                        cachedArtistName = null
+
                         state.trackUri?.let { uri ->
                             // Only load and show artwork if enabled
                             if (config.showArtwork) {
@@ -529,17 +559,26 @@ class MusicControlWidget(
                         }
                     }
 
-                    Log.e(TAG, "Setting up Spotify Playing state UI")
+                    Log.d(TAG, "Setting up Spotify Playing state UI")
+
+                    // Update text views only if content changed
                     getTrackNameView()?.apply {
-                        text = state.trackName
-                        isSelected = true
+                        if (cachedTrackName != state.trackName) {
+                            cachedTrackName = state.trackName
+                            text = state.trackName
+                            isSelected = true
+                        }
                     }
                     getArtistNameView()?.apply {
-                        text = state.artistName
-                        isSelected = true
+                        if (cachedArtistName != state.artistName) {
+                            cachedArtistName = state.artistName
+                            text = state.artistName
+                            isSelected = true
+                        }
                     }
+
                     getPlayPauseButton()?.apply {
-                        Log.e(TAG, "Configuring play/pause button - isEnabled will be true")
+                        Log.d(TAG, "Configuring play/pause button - isEnabled will be true")
                         setImageResource(
                             if (state.isPlaying) R.drawable.ic_music_pause
                             else R.drawable.ic_music_play
@@ -549,14 +588,14 @@ class MusicControlWidget(
                         isFocusable = true
                     }
                     getPreviousButton()?.apply {
-                        Log.e(TAG, "Configuring previous button - isEnabled will be true")
+                        Log.d(TAG, "Configuring previous button - isEnabled will be true")
                         isEnabled = true
                         isClickable = true
                         isFocusable = true
                         visibility = View.VISIBLE
                     }
                     getNextButton()?.apply {
-                        Log.e(TAG, "Configuring next button - isEnabled will be true")
+                        Log.d(TAG, "Configuring next button - isEnabled will be true")
                         isEnabled = true
                         isClickable = true
                         isFocusable = true
@@ -567,7 +606,7 @@ class MusicControlWidget(
                         max = state.trackDuration.toInt()
                         progress = state.playbackPosition.toInt()
                         visibility = if (config.showProgress) View.VISIBLE else View.GONE
-                        Log.e(TAG, "Progress bar updated - duration: ${state.trackDuration}, position: ${state.playbackPosition}")
+                        Log.d(TAG, "Progress bar updated - duration: ${state.trackDuration}, position: ${state.playbackPosition}")
                     }
 
                     if (state.isPlaying) {
@@ -577,6 +616,10 @@ class MusicControlWidget(
                     }
                 }
                 SpotifyManager.PlaybackState.Idle -> {
+                    // Reset caches
+                    cachedTrackName = null
+                    cachedArtistName = null
+
                     getTrackArtworkBackground()?.apply {
                         animate()
                             .alpha(0f)
@@ -589,7 +632,7 @@ class MusicControlWidget(
                     }
                     currentTrackUri = null
 
-                    Log.e(TAG, "Setting up Spotify Idle state UI")
+                    Log.d(TAG, "Setting up Spotify Idle state UI")
                     stopProgressUpdates()
                     getTrackNameView()?.apply {
                         text = if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected)
@@ -604,7 +647,7 @@ class MusicControlWidget(
                     }
                     getPlayPauseButton()?.apply {
                         val shouldBeEnabled = spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected
-                        Log.e(TAG, "Configuring play/pause button - isEnabled will be $shouldBeEnabled")
+                        Log.d(TAG, "Configuring play/pause button - isEnabled will be $shouldBeEnabled")
                         setImageResource(R.drawable.ic_music_play)
                         isEnabled = shouldBeEnabled
                         isClickable = shouldBeEnabled
@@ -624,11 +667,11 @@ class MusicControlWidget(
                     getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
                         progress = 0
                         visibility = if (config.showProgress) View.VISIBLE else View.GONE
-                        Log.e(TAG, "Progress bar reset to 0")
+                        Log.d(TAG, "Progress bar reset to 0")
                     }
                 }
             }
-        } ?: Log.e(TAG, "Binding is null during updatePlaybackState!")
+        } ?: Log.d(TAG, "Binding is null during updatePlaybackState!")
     }
 
     private fun updateRadioPlaybackState(state: RadioManager.PlaybackState) {
@@ -671,14 +714,23 @@ class MusicControlWidget(
                         getTrackArtworkBackground()?.visibility = View.GONE
                     }
 
+                    // Update text views only if content changed
                     getTrackNameView()?.apply {
-                        text = state.stationName
-                        isSelected = true
+                        if (cachedTrackName != state.stationName) {
+                            cachedTrackName = state.stationName
+                            text = state.stationName
+                            isSelected = true
+                        }
                     }
                     getArtistNameView()?.apply {
-                        text = state.genre ?: ""
-                        isSelected = true
+                        val genre = state.genre ?: ""
+                        if (cachedArtistName != genre) {
+                            cachedArtistName = genre
+                            text = genre
+                            isSelected = true
+                        }
                     }
+
                     getPlayPauseButton()?.apply {
                         setImageResource(
                             if (state.isPlaying) R.drawable.ic_music_pause
@@ -697,6 +749,10 @@ class MusicControlWidget(
                 }
 
                 RadioManager.PlaybackState.Loading -> {
+                    // Reset caches
+                    cachedTrackName = null
+                    cachedArtistName = null
+
                     // Show loading indicator
                     getLoadingIndicator()?.visibility = View.VISIBLE
 
@@ -738,6 +794,10 @@ class MusicControlWidget(
                 }
 
                 RadioManager.PlaybackState.Idle -> {
+                    // Reset caches
+                    cachedTrackName = null
+                    cachedArtistName = null
+
                     // Hide loading indicator
                     getLoadingIndicator()?.visibility = View.GONE
 
@@ -997,7 +1057,6 @@ class MusicControlWidget(
         }
     }
 
-
     override fun updateConfiguration(config: WidgetConfig) {
         if (config !is WidgetConfig.MusicConfig) return
 
@@ -1153,7 +1212,9 @@ class MusicControlWidget(
                 binding?.getRootView()?.findViewById<ProgressBar>(R.id.track_progress)?.apply {
                     val currentState = spotifyManager.playbackState.value
                     if (currentState is SpotifyManager.PlaybackState.Playing && currentState.isPlaying) {
-                        progress = (progress + 1000).coerceAtMost(max) // Update every second
+                        // Only update the progress, not the whole state
+                        val newProgress = (progress + 1000).coerceAtMost(max)
+                        updateProgressBarOnly(newProgress)
                     }
                 }
                 delay(1000) // Update every second

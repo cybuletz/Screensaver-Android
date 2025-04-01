@@ -229,11 +229,13 @@ class LocalMusicManager @Inject constructor(
                 mediaPlayer?.let { player ->
                     if (player.isPlaying) {
                         val currentPosition = player.currentPosition.toLong()
-                        _currentTrack.value?.let { track ->
-                            updatePlaybackStateWithTrack(track, true, currentPosition)
-                        }
+                        // Instead of calling updatePlaybackStateWithTrack which updates everything,
+                        // just update the progress
+                        _playbackState.value = (_playbackState.value as? PlaybackState.Playing)?.copy(
+                            playbackPosition = currentPosition
+                        ) ?: _playbackState.value
+                        handler.postDelayed(this, POSITION_UPDATE_INTERVAL)
                     }
-                    handler.postDelayed(this, POSITION_UPDATE_INTERVAL)
                 }
             }
         }

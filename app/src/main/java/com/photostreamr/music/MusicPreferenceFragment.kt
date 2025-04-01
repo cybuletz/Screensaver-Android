@@ -142,6 +142,49 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         updateSpotifyLoginSummary()
     }
 
+    private fun formatDisplayPath(path: String): String {
+        // Handle content:// URIs
+        if (path.startsWith("content://")) {
+            // Extract the relevant part after the last /tree/ or /document/ segment
+            val treeIndex = path.indexOf("/tree/")
+            val docIndex = path.indexOf("/document/")
+
+            val startIndex = when {
+                treeIndex >= 0 -> treeIndex + 6 // +6 to skip "/tree/"
+                docIndex >= 0 -> docIndex + 10 // +10 to skip "/document/"
+                else -> return "Selected Directory" // Fallback if pattern not found
+            }
+
+            // Decode URI components and replace encoded characters
+            var decodedPath = path.substring(startIndex)
+                .replace("%2F", "/")
+                .replace("%20", " ")
+                .replace("%3A", ":")
+
+            // Remove primary: prefix if present (common in SAF URIs)
+            if (decodedPath.startsWith("primary:")) {
+                decodedPath = decodedPath.substring(8) // "primary:".length
+            }
+
+            return decodedPath
+        }
+
+        // Handle filesystem paths
+        else if (path.contains("/storage/emulated/0/")) {
+            // Remove the /storage/emulated/0/ prefix
+            return path.replace("/storage/emulated/0/", "")
+        }
+
+        // Just return the last two segments of the path for other cases
+        else {
+            val segments = path.split("/")
+            if (segments.size > 2) {
+                return segments.takeLast(2).joinToString("/")
+            }
+            return path
+        }
+    }
+
     private fun showLocalMusicDialog() {
         val dialogView = LayoutInflater.from(requireContext())
             .inflate(R.layout.dialog_local_music, null)
@@ -154,6 +197,10 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         val noTracksText = dialogView.findViewById<TextView>(R.id.no_tracks_text)
         val shuffleSwitch = dialogView.findViewById<SwitchCompat>(R.id.shuffle_switch)
         val autoplaySwitch = dialogView.findViewById<SwitchCompat>(R.id.autoplay_switch)
+
+        // Set formatted directory path
+        val rawPath = localMusicPreferences.getMusicDirectory()
+        directoryText.text = formatDisplayPath(rawPath)
 
         lateinit var tracksAdapter: LocalMusicAdapter
 
@@ -300,8 +347,14 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                     // Update preferences with URI string
                     localMusicPreferences.setMusicDirectory(uriString)
 
+                    // Format the path for display
+                    val formattedPath = formatDisplayPath(uriString)
+
                     // Update dialog if it's showing
-                    localMusicDialog?.findViewById<TextView>(R.id.directory_text)?.text = uriString
+                    localMusicDialog?.findViewById<TextView>(R.id.directory_text)?.text = formattedPath
+
+                    // Update preference summary with formatted path
+                    findPreference<Preference>("local_music_folder")?.summary = formattedPath
 
                     // Trigger scan in the existing dialog
                     localMusicDialog?.findViewById<MaterialButton>(R.id.scan_button)?.performClick()

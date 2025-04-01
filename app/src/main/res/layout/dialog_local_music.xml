@@ -6,37 +6,25 @@
     android:orientation="vertical"
     android:padding="16dp">
 
-    <TextView
+    <!-- Browse button moved above the directory text -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/browse_button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Music Folder"
-        android:textStyle="bold"
-        android:textSize="16sp"
+        android:text="Browse"
+        android:textSize="14sp"
+        style="@style/Widget.Material3.Button.OutlinedButton"
         android:layout_marginBottom="8dp"/>
 
-    <LinearLayout
+    <!-- Directory path now below the browse button -->
+    <TextView
+        android:id="@+id/directory_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="16dp">
-
-        <TextView
-            android:id="@+id/directory_text"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:ellipsize="middle"
-            android:singleLine="true"
-            android:text="/storage/emulated/0/Music" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/browse_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Browse"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_marginStart="8dp"/>
-    </LinearLayout>
+        android:ellipsize="middle"
+        android:singleLine="true"
+        android:layout_marginBottom="16dp"
+        android:text="/storage/emulated/0/Music" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -49,6 +37,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Scan for Music"
+            android:textSize="14sp"
             style="@style/Widget.Material3.Button"/>
 
         <Space
@@ -124,5 +113,4 @@
             android:text="No music files found."
             android:visibility="gone"/>
     </FrameLayout>
-
 </LinearLayout>
