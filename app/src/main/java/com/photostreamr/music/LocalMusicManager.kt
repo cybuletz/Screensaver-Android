@@ -405,24 +405,31 @@ class LocalMusicManager @Inject constructor(
         scope.launch(Dispatchers.IO) {
             try {
                 val musicDirectoryPath = preferences.getMusicDirectory()
-                Timber.d("Starting music scan of directory: $musicDirectoryPath")
+                Timber.d("Scanning music directory: $musicDirectoryPath")
 
-                // Check if the path is a URI
-                if (musicDirectoryPath.startsWith("content://")) {
-                    val uri = Uri.parse(musicDirectoryPath)
-                    val tracks = scanDocumentUri(uri)
-                    Timber.d("Scanned document URI, found ${tracks.size} tracks")
-                    withContext(Dispatchers.Main) {
-                        callback(tracks)
-                    }
+                val tracks = if (musicDirectoryPath.startsWith("content://")) {
+                    // Handle content URI
+                    scanDocumentUri(Uri.parse(musicDirectoryPath))
                 } else {
-                    // Regular file system path
+                    // Handle normal file path
                     val musicDirectory = File(musicDirectoryPath)
-                    val tracks = scanDirectory(musicDirectory)
-                    Timber.d("Scanned file directory, found ${tracks.size} tracks")
+                    scanDirectory(musicDirectory)
+                }
+
+                // Sort tracks alphabetically by title for consistent ordering
+                val sortedTracks = tracks.sortedBy { it.title }
+
+                // Store the track list for playback
+                if (sortedTracks.isNotEmpty()) {
+                    // We can store this as our "detected" playlist
                     withContext(Dispatchers.Main) {
-                        callback(tracks)
+                        // Don't actually set as current playlist yet - we'll do that when a track is selected
+                        Log.d(TAG, "Scanned ${sortedTracks.size} tracks")
                     }
+                }
+
+                withContext(Dispatchers.Main) {
+                    callback(sortedTracks)
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error scanning music files")
@@ -482,16 +489,37 @@ class LocalMusicManager @Inject constructor(
     }
 
     fun setPlaylist(tracks: List<LocalTrack>, startIndex: Int = 0) {
+        if (tracks.isEmpty()) {
+            Log.d(TAG, "Attempted to set empty playlist - ignoring")
+            return
+        }
+
+        Log.d(TAG, "Setting playlist with ${tracks.size} tracks, starting at index $startIndex")
+
         currentPlaylist = if (isShuffleEnabled) {
-            tracks.shuffled()
+            // If shuffle is enabled, we need to ensure the selected track is first
+            val selectedTrack = tracks.getOrNull(startIndex)
+            if (selectedTrack != null) {
+                val remainingTracks = tracks.filter { it != selectedTrack }.shuffled()
+                listOf(selectedTrack) + remainingTracks
+            } else {
+                tracks.shuffled()
+            }
         } else {
             tracks
         }
 
-        if (currentPlaylist.isNotEmpty()) {
-            currentTrackIndex = startIndex.coerceIn(0, currentPlaylist.size - 1)
-            playTrack(currentPlaylist[currentTrackIndex])
+        currentTrackIndex = if (isShuffleEnabled) 0 else startIndex.coerceIn(0, currentPlaylist.size - 1)
+
+        // Log the playlist for debugging
+        Log.d(TAG, "Playlist set with ${currentPlaylist.size} tracks:")
+        currentPlaylist.forEachIndexed { index, track ->
+            Log.d(TAG, "[$index] ${track.title} by ${track.artist}")
         }
+        Log.d(TAG, "Current track index: $currentTrackIndex")
+
+        // Play the track at the current index
+        playTrack(currentPlaylist[currentTrackIndex])
     }
 
     fun onScreensaverStarted() {
@@ -573,6 +601,14 @@ class LocalMusicManager @Inject constructor(
     }
 
     fun playNextTrack() {
+        // Dump the current playlist state for debugging
+        Log.d(TAG, "playNextTrack called")
+        Log.d(TAG, "Current playlist has ${currentPlaylist.size} tracks")
+        Log.d(TAG, "Current track index: $currentTrackIndex")
+        currentPlaylist.forEachIndexed { index, track ->
+            Log.d(TAG, "Playlist[$index]: ${track.title} by ${track.artist}")
+        }
+
         if (currentPlaylist.isEmpty()) {
             Log.d(TAG, "Cannot play next track - playlist is empty")
             return
@@ -598,6 +634,14 @@ class LocalMusicManager @Inject constructor(
     }
 
     fun playPreviousTrack() {
+        // Dump the current playlist state for debugging
+        Log.d(TAG, "playPreviousTrack called")
+        Log.d(TAG, "Current playlist has ${currentPlaylist.size} tracks")
+        Log.d(TAG, "Current track index: $currentTrackIndex")
+        currentPlaylist.forEachIndexed { index, track ->
+            Log.d(TAG, "Playlist[$index]: ${track.title} by ${track.artist}")
+        }
+
         if (currentPlaylist.isEmpty()) {
             Log.d(TAG, "Cannot play previous track - playlist is empty")
             return

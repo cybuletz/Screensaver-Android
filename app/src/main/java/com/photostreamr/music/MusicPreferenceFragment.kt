@@ -155,6 +155,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         val shuffleSwitch = dialogView.findViewById<SwitchCompat>(R.id.shuffle_switch)
         val autoplaySwitch = dialogView.findViewById<SwitchCompat>(R.id.autoplay_switch)
 
+        lateinit var tracksAdapter: LocalMusicAdapter
+
         // Initialize switches
         shuffleSwitch.isChecked = localMusicPreferences.isShuffleEnabled()
         autoplaySwitch.isChecked = localMusicPreferences.isAutoplayEnabled()
@@ -162,10 +164,19 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         // Set current directory
         directoryText.text = localMusicPreferences.getMusicDirectory()
 
-        // Setup RecyclerView
-        val tracksAdapter = LocalMusicAdapter(
+        // Setup RecyclerView with proper local variable declaration
+        tracksAdapter = LocalMusicAdapter(
             onTrackClick = { track ->
-                localMusicManager.playTrack(track)
+                // Now we can safely reference tracksAdapter because it's already initialized
+                val allTracks = tracksAdapter.currentList
+
+                val selectedIndex = allTracks.indexOf(track)
+                if (selectedIndex >= 0) {
+                    localMusicManager.setPlaylist(allTracks, selectedIndex)
+                } else {
+                    localMusicManager.playTrack(track)
+                }
+
                 localMusicPreferences.setLastTrack(track)
                 localMusicPreferences.setWasPlaying(true)
             }
