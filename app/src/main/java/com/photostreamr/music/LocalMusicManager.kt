@@ -17,10 +17,12 @@ import com.photostreamr.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -57,6 +59,8 @@ class LocalMusicManager @Inject constructor(
 
     private val _currentTrack = MutableStateFlow<LocalTrack?>(null)
     val currentTrack: StateFlow<LocalTrack?> = _currentTrack.asStateFlow()
+
+    private var activeScans = mutableListOf<Job>()
 
     companion object {
         private const val TAG = "LocalMusicManager"
@@ -404,8 +408,8 @@ class LocalMusicManager @Inject constructor(
         return bitmap
     }
 
-    fun scanMusicFiles(callback: (List<LocalTrack>) -> Unit) {
-        scope.launch(Dispatchers.IO) {
+    fun scanMusicFiles(callback: (List<LocalTrack>) -> Unit): Job {
+        val job = scope.launch(Dispatchers.IO) {
             try {
                 val musicDirectoryPath = preferences.getMusicDirectory()
                 Timber.d("Scanning music directory: $musicDirectoryPath")
@@ -432,15 +436,32 @@ class LocalMusicManager @Inject constructor(
                 }
 
                 withContext(Dispatchers.Main) {
-                    callback(sortedTracks)
+                    if (isActive) { // Only call callback if job is still active
+                        callback(sortedTracks)
+                    }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Error scanning music files")
                 withContext(Dispatchers.Main) {
-                    callback(emptyList())
+                    if (isActive) { // Only call callback if job is still active
+                        callback(emptyList())
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    // Use explicit cast to solve the type inference issue
+                    activeScans.remove(this@launch as Job)
                 }
             }
         }
+
+        activeScans.add(job)
+        return job
+    }
+
+    fun cancelActiveScans() {
+        activeScans.forEach { it.cancel() }
+        activeScans.clear()
     }
 
     private fun scanDirectory(directory: File): List<LocalTrack> {

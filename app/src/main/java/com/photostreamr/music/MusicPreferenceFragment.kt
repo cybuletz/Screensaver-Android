@@ -93,6 +93,8 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
     private var onPreferenceChangeCallback: (() -> Unit)? = null
 
     private var localMusicDialog: AlertDialog? = null
+    private var scanJob: Job? = null
+
 
 
     private val spotifyAuthLauncher = registerForActivityResult(
@@ -239,35 +241,42 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
             tracksList.visibility = View.GONE
             noTracksText.visibility = View.GONE
 
+            // Cancel any previous scan
+            scanJob?.cancel()
+
             // Use a coroutine for scanning
-            lifecycleScope.launch {
+            scanJob = lifecycleScope.launch {
                 try {
                     val musicDirectory = localMusicPreferences.getMusicDirectory()
                     Timber.d("Scanning music directory: $musicDirectory")
 
                     localMusicManager.scanMusicFiles { tracks ->
                         // Make sure we update UI on main thread
-                        requireActivity().runOnUiThread {
-                            loadingIndicator.visibility = View.GONE
+                        if (isAdded && !isDetached && context != null) {
+                            activity?.runOnUiThread {
+                                loadingIndicator?.visibility = View.GONE
 
-                            if (tracks.isEmpty()) {
-                                Timber.d("No music files found")
-                                noTracksText.visibility = View.VISIBLE
-                                tracksList.visibility = View.GONE
-                            } else {
-                                Timber.d("Found ${tracks.size} music files")
-                                noTracksText.visibility = View.GONE
-                                tracksList.visibility = View.VISIBLE
-                                tracksAdapter.submitList(tracks)
+                                if (tracks.isEmpty()) {
+                                    Timber.d("No music files found")
+                                    noTracksText?.visibility = View.VISIBLE
+                                    tracksList?.visibility = View.GONE
+                                } else {
+                                    Timber.d("Found ${tracks.size} music files")
+                                    noTracksText?.visibility = View.GONE
+                                    tracksList?.visibility = View.VISIBLE
+                                    tracksAdapter.submitList(tracks)
+                                }
                             }
                         }
                     }
                 } catch (e: Exception) {
                     Timber.e(e, "Error scanning for music files")
-                    requireActivity().runOnUiThread {
-                        loadingIndicator.visibility = View.GONE
-                        noTracksText.visibility = View.VISIBLE
-                        noTracksText.text = "Error scanning: ${e.message}"
+                    if (isAdded && !isDetached && view != null) {
+                        activity?.runOnUiThread {
+                            loadingIndicator?.visibility = View.GONE
+                            noTracksText?.visibility = View.VISIBLE
+                            noTracksText?.text = "Error scanning: ${e.message}"
+                        }
                     }
                 }
             }
@@ -351,19 +360,39 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                     val formattedPath = formatDisplayPath(uriString)
 
                     // Update dialog if it's showing
-                    localMusicDialog?.findViewById<TextView>(R.id.directory_text)?.text = formattedPath
+                    if (localMusicDialog?.isShowing == true) {
+                        localMusicDialog?.findViewById<TextView>(R.id.directory_text)?.text = formattedPath
+
+                        // Trigger scan in the existing dialog safely
+                        if (isAdded && context != null) {
+                            localMusicDialog?.findViewById<MaterialButton>(R.id.scan_button)?.performClick()
+                        }
+                    }
 
                     // Update preference summary with formatted path
                     findPreference<Preference>("local_music_folder")?.summary = formattedPath
-
-                    // Trigger scan in the existing dialog
-                    localMusicDialog?.findViewById<MaterialButton>(R.id.scan_button)?.performClick()
                 } catch (e: Exception) {
                     Timber.e(e, "Error accessing directory: $uri")
-                    Toast.makeText(requireContext(), "Failed to access selected folder: ${e.message}", Toast.LENGTH_SHORT).show()
+                    if (isAdded && context != null) {
+                        Toast.makeText(context, "Failed to access selected folder: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
+    }
+
+    override fun onDestroyView() {
+        // Cancel any ongoing operations
+        scanJob?.cancel()
+        scanJob = null
+
+        // Release dialog reference
+        localMusicDialog = null
+
+        // Clean up any active jobs in the manager
+        localMusicManager.cancelActiveScans()
+
+        super.onDestroyView()
     }
 
     fun setOnPreferenceChangeCallback(callback: () -> Unit) {
@@ -763,23 +792,27 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         findPreference<Preference>("spotify_playlist")?.apply {
             setOnPreferenceClickListener {
                 if (!spotifyPreferences.isEnabled()) {
-                    activity?.runOnUiThread {
-                        Toast.makeText(
-                            requireContext(),
-                            "Please enable and connect to Spotify first",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                    if (isAdded && !isDetached && context != null) {
+                        activity?.runOnUiThread {
+                            Toast.makeText(
+                                context,
+                                "Please enable and connect to Spotify first",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                     return@setOnPreferenceClickListener true
                 }
 
                 if (spotifyManager.connectionState.value !is SpotifyManager.ConnectionState.Connected) {
-                    activity?.runOnUiThread {
-                        Toast.makeText(
-                            requireContext(),
-                            "Connecting to Spotify...",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                    if (isAdded && !isDetached && context != null) {
+                        activity?.runOnUiThread {
+                            Toast.makeText(
+                                context,
+                                "Connecting to Spotify...",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                     spotifyManager.retry()
                     return@setOnPreferenceClickListener true
@@ -794,101 +827,119 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
 
                 spotifyManager.getPlaylists(
                     callback = { playlists ->
-                        activity?.runOnUiThread {
-                            loadingDialog.dismiss()
-                            Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})" }}")
+                        if (isAdded && !isDetached && context != null) {
+                            activity?.runOnUiThread {
+                                loadingDialog.dismiss()
+                                Timber.d("Available playlists: ${playlists.map { "${it.title} (${it.uri})" }}")
 
-                            // Create a custom adapter for the dialog
-                            val adapter = object : BaseAdapter() {
-                                override fun getCount(): Int = playlists.size
-                                override fun getItem(position: Int): Any = playlists[position]
-                                override fun getItemId(position: Int): Long = position.toLong()
+                                // Create a custom adapter for the dialog
+                                val adapter = object : BaseAdapter() {
+                                    override fun getCount(): Int = playlists.size
+                                    override fun getItem(position: Int): Any = playlists[position]
+                                    override fun getItemId(position: Int): Long = position.toLong()
 
-                                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                                    val view = convertView ?: LayoutInflater.from(parent.context)
-                                        .inflate(R.layout.item_playlist, parent, false)
+                                    override fun getView(
+                                        position: Int,
+                                        convertView: View?,
+                                        parent: ViewGroup
+                                    ): View {
+                                        val view =
+                                            convertView ?: LayoutInflater.from(parent.context)
+                                                .inflate(R.layout.item_playlist, parent, false)
 
-                                    val playlist = playlists[position]
-                                    val titleView = view.findViewById<TextView>(R.id.playlist_title)
-                                    val coverView = view.findViewById<ImageView>(R.id.playlist_cover)
+                                        val playlist = playlists[position]
+                                        val titleView =
+                                            view.findViewById<TextView>(R.id.playlist_title)
+                                        val coverView =
+                                            view.findViewById<ImageView>(R.id.playlist_cover)
 
-                                    titleView.text = playlist.title
+                                        titleView.text = playlist.title
 
-                                    // Check specifically for Liked Songs
-                                    if (playlist.uri.contains(":saved:tracks")) {
-                                        Timber.d("Found Liked Songs playlist: ${playlist.title} - Setting custom gradient icon")
-                                        activity?.runOnUiThread {
-                                            coverView.setImageResource(R.drawable.ic_spotify_liked_songs)
-                                        }
-                                    } else {
-                                        Timber.d("Regular playlist: ${playlist.title} - Loading cover image")
-                                        spotifyManager.getPlaylistCover(playlist) { bitmap ->
+                                        // Check specifically for Liked Songs
+                                        if (playlist.uri.contains(":saved:tracks")) {
+                                            Timber.d("Found Liked Songs playlist: ${playlist.title} - Setting custom gradient icon")
                                             activity?.runOnUiThread {
-                                                if (bitmap != null) {
-                                                    coverView.setImageBitmap(bitmap)
-                                                } else {
-                                                    coverView.setImageResource(R.drawable.ic_spotify_logo)
+                                                coverView.setImageResource(R.drawable.ic_spotify_liked_songs)
+                                            }
+                                        } else {
+                                            Timber.d("Regular playlist: ${playlist.title} - Loading cover image")
+                                            spotifyManager.getPlaylistCover(playlist) { bitmap ->
+                                                if (isAdded && !isDetached && context != null) {
+                                                    activity?.runOnUiThread {
+                                                        if (bitmap != null) {
+                                                            coverView.setImageBitmap(bitmap)
+                                                        } else {
+                                                            coverView.setImageResource(R.drawable.ic_spotify_logo)
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
 
-                                    return view
+                                        return view
+                                    }
                                 }
+
+                                val dialog = MaterialAlertDialogBuilder(requireContext())
+                                    .setTitle("Select Playlist")
+                                    .setAdapter(adapter) { _, which ->
+                                        val selectedPlaylist = playlists[which]
+                                        Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
+
+                                        // Save playlist selection
+                                        spotifyPreferences.setSelectedPlaylistWithTitle(
+                                            selectedPlaylist.uri,
+                                            selectedPlaylist.title
+                                        )
+                                        summary = selectedPlaylist.title
+
+                                        // First pause current playback
+                                        spotifyManager.pause()
+
+                                        // Play the playlist directly - let SpotifyManager handle the section logic
+                                        spotifyManager.playPlaylist(selectedPlaylist.uri)
+
+                                        if (isAdded && !isDetached && context != null) {
+                                            activity?.runOnUiThread {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Selected: ${selectedPlaylist.title}",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    }
+                                    .setNegativeButton("Cancel", null)
+                                    .create()
+
+                                dialog.show()
                             }
-
-                            val dialog = MaterialAlertDialogBuilder(requireContext())
-                                .setTitle("Select Playlist")
-                                .setAdapter(adapter) { _, which ->
-                                    val selectedPlaylist = playlists[which]
-                                    Timber.d("Selected playlist: ${selectedPlaylist.title} with URI: ${selectedPlaylist.uri}")
-
-                                    // Save playlist selection
-                                    spotifyPreferences.setSelectedPlaylistWithTitle(selectedPlaylist.uri, selectedPlaylist.title)
-                                    summary = selectedPlaylist.title
-
-                                    // First pause current playback
-                                    spotifyManager.pause()
-
-                                    // Play the playlist directly - let SpotifyManager handle the section logic
-                                    spotifyManager.playPlaylist(selectedPlaylist.uri)
-
-                                    activity?.runOnUiThread {
-                                        Toast.makeText(
-                                            requireContext(),
-                                            "Selected: ${selectedPlaylist.title}",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                }
-                                .setNegativeButton("Cancel", null)
-                                .create()
-
-                            dialog.show()
                         }
                     },
                     errorCallback = { error ->
-                        activity?.runOnUiThread {
-                            loadingDialog.dismiss()
-                            Timber.e(error, "Failed to load playlists")
+                        if (isAdded && !isDetached && context != null) {
+                            activity?.runOnUiThread {
+                                loadingDialog.dismiss()
+                                Timber.e(error, "Failed to load playlists")
 
-                            val errorMessage = when {
-                                error is IOException && error.message?.contains("401") == true -> {
-                                    // Token expired, try to refresh
-                                    spotifyManager.checkAndRefreshTokenIfNeeded()
-                                    "Your Spotify session has expired. Please reconnect to Spotify."
+                                val errorMessage = when {
+                                    error is IOException && error.message?.contains("401") == true -> {
+                                        // Token expired, try to refresh
+                                        spotifyManager.checkAndRefreshTokenIfNeeded()
+                                        "Your Spotify session has expired. Please reconnect to Spotify."
+                                    }
+                                    error is IOException ->
+                                        "Connection error. Please check your internet connection."
+                                    else ->
+                                        "Error loading playlists: ${error.message}"
                                 }
-                                error is IOException ->
-                                    "Connection error. Please check your internet connection."
-                                else ->
-                                    "Error loading playlists: ${error.message}"
-                            }
 
-                            Toast.makeText(
-                                requireContext(),
-                                errorMessage,
-                                Toast.LENGTH_LONG
-                            ).show()
+                                Toast.makeText(
+                                    context,
+                                    errorMessage,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         }
                     }
                 )
@@ -905,13 +956,17 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                         spotifyManager.getPlaylistInfo(
                             uri = uri,
                             callback = { playlist ->
-                                val summary = playlist?.title ?: "Select playlist"
-                                spotifyPreferences.setPlaylistSummary(summary)  // Save the summary
-                                findPreference<Preference>("spotify_playlist")?.setSummary(summary)
+                                if (isAdded && !isDetached && context != null) {
+                                    val summary = playlist?.title ?: "Select playlist"
+                                    spotifyPreferences.setPlaylistSummary(summary)  // Save the summary
+                                    findPreference<Preference>("spotify_playlist")?.setSummary(summary)
+                                }
                             },
                             errorCallback = { error ->
-                                activity?.runOnUiThread {
-                                    findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                                if (isAdded && !isDetached && context != null) {
+                                    activity?.runOnUiThread {
+                                        findPreference<Preference>("spotify_playlist")?.setSummary("Select playlist")
+                                    }
                                 }
                             }
                         )
@@ -939,25 +994,29 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
                     spotifyManager.getCurrentUser(
                         callback = { user ->
                             // Ensure we update UI on main thread
-                            Handler(Looper.getMainLooper()).post {
-                                // Double check we're still connected when callback returns
-                                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
-                                    val displayName = user?.displayName ?: user?.id
-                                    summary = if (displayName != null) {
-                                        "Connected as $displayName"
-                                    } else {
-                                        "Connected to Spotify"
+                            if (isAdded && !isDetached && context != null) {
+                                Handler(Looper.getMainLooper()).post {
+                                    // Double check we're still connected when callback returns
+                                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                                        val displayName = user?.displayName ?: user?.id
+                                        summary = if (displayName != null) {
+                                            "Connected as $displayName"
+                                        } else {
+                                            "Connected to Spotify"
+                                        }
+                                        isEnabled = true
                                     }
-                                    isEnabled = true
                                 }
                             }
                         },
                         errorCallback = { error ->
-                            Handler(Looper.getMainLooper()).post {
-                                Timber.e(error, "Failed to get Spotify user info")
-                                if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
-                                    summary = "Connected to Spotify"
-                                    isEnabled = true
+                            if (isAdded && !isDetached && context != null) {
+                                Handler(Looper.getMainLooper()).post {
+                                    Timber.e(error, "Failed to get Spotify user info")
+                                    if (spotifyManager.connectionState.value is SpotifyManager.ConnectionState.Connected) {
+                                        summary = "Connected to Spotify"
+                                        isEnabled = true
+                                    }
                                 }
                             }
                         }
