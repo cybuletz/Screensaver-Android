@@ -233,14 +233,13 @@ class AdManager @Inject constructor(
             }
             adView.callToActionView = callToActionView
 
-            // Set the image view
-            val imageView = adView.findViewById<ImageView>(R.id.ad_image)
-            val images = nativeAd.images
-            if (images != null && images.isNotEmpty() && images[0] != null) {
-                imageView.setImageDrawable(images[0].drawable)
-                imageView.visibility = View.VISIBLE
+
+            val mediaView = adView.findViewById<MediaView>(R.id.ad_media)
+            if (mediaView != null) {
+                adView.mediaView = mediaView // This is the key line to register the MediaView
+                mediaView.visibility = View.VISIBLE
             } else {
-                imageView.visibility = View.GONE
+                Log.e(TAG, "MediaView not found in layout")
             }
 
             // Register the native ad view
