@@ -64,6 +64,12 @@ class AdManager @Inject constructor(
     private var timerRunnable: Runnable? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private var fullScreenInterstitialAd: InterstitialAd? = null
+    private var isFullScreenInterstitialLoading = false
+    private var lastFullScreenInterstitialTime = 0L
+    private val FULL_SCREEN_INTERSTITIAL_INTERVAL = 600000L // 10 minutes
+    private val FULL_SCREEN_INTERSTITIAL_DISPLAY_DURATION = 20000L // 20 seconds
+
     // Add a refresh handler for banner ads
     private var bannerRefreshRunnable: Runnable? = null
 
@@ -88,6 +94,92 @@ class AdManager @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing AdManager", e)
+        }
+    }
+
+    fun loadAndShowFullScreenInterstitial(activity: Activity) {
+        // Don't show ad if pro version or if interval hasn't passed
+        if (appVersionManager.isProVersion()) {
+            return
+        }
+
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastFullScreenInterstitialTime < FULL_SCREEN_INTERSTITIAL_INTERVAL) {
+            Log.d(TAG, "Full screen interstitial interval not elapsed yet")
+            return
+        }
+
+        if (isFullScreenInterstitialLoading) {
+            Log.d(TAG, "Full screen interstitial is already loading")
+            return
+        }
+
+        isFullScreenInterstitialLoading = true
+
+        val adRequest = AdRequest.Builder().build()
+        InterstitialAd.load(context, INTERSTITIAL_AD_UNIT_ID, adRequest,
+            object : InterstitialAdLoadCallback() {
+                override fun onAdLoaded(ad: InterstitialAd) {
+                    Log.d(TAG, "Full screen interstitial ad loaded successfully")
+                    fullScreenInterstitialAd = ad
+                    isFullScreenInterstitialLoading = false
+
+                    // Set full screen content callbacks
+                    fullScreenInterstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
+                        override fun onAdDismissedFullScreenContent() {
+                            Log.d(TAG, "Full screen interstitial dismissed")
+                            fullScreenInterstitialAd = null
+                        }
+
+                        override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                            Log.e(TAG, "Full screen interstitial failed to show: ${adError.message}")
+                            fullScreenInterstitialAd = null
+                        }
+
+                        override fun onAdShowedFullScreenContent() {
+                            Log.d(TAG, "Full screen interstitial showed successfully")
+                            lastFullScreenInterstitialTime = System.currentTimeMillis()
+
+                            // Automatically dismiss the ad after 20 seconds
+                            mainHandler.postDelayed({
+                                try {
+                                    if (activity.isFinishing || activity.isDestroyed) {
+                                        return@postDelayed
+                                    }
+
+                                    // Check if the interstitial is still showing
+                                    if (fullScreenInterstitialAd != null) {
+                                        Log.d(TAG, "Auto-dismissing full screen interstitial after 20 seconds")
+                                        // Simulate back press to dismiss the ad
+                                        activity.onBackPressed()
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error auto-dismissing interstitial", e)
+                                }
+                            }, FULL_SCREEN_INTERSTITIAL_DISPLAY_DURATION)
+                        }
+                    }
+
+                    // Show the ad immediately
+                    if (!activity.isFinishing && !activity.isDestroyed) {
+                        fullScreenInterstitialAd?.show(activity)
+                    }
+                }
+
+                override fun onAdFailedToLoad(adError: LoadAdError) {
+                    Log.e(TAG, "Full screen interstitial failed to load: ${adError.message}")
+                    fullScreenInterstitialAd = null
+                    isFullScreenInterstitialLoading = false
+                }
+            }
+        )
+    }
+
+    // method to check and show full screen interstitial based on timer
+    fun checkAndShowFullScreenInterstitial(activity: Activity) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastFullScreenInterstitialTime >= FULL_SCREEN_INTERSTITIAL_INTERVAL) {
+            loadAndShowFullScreenInterstitial(activity)
         }
     }
 

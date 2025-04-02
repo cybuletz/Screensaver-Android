@@ -150,6 +150,7 @@ class MainActivity : AppCompatActivity() {
     private var isAuthenticating = false
 
     private val PREF_FIRST_LAUNCH = "first_launch"
+    private val FULL_SCREEN_AD_CHECK_INTERVAL = 60000L
 
     private var currentActivity: Activity? = null
 
@@ -211,6 +212,29 @@ class MainActivity : AppCompatActivity() {
 
         // Update the last prompt time
         proVersionPromptManager.updateLastPromptTime()
+    }
+
+    private fun setupFullScreenInterstitialTimer() {
+        if (appVersionManager.isProVersion()) {
+            return
+        }
+
+        // Schedule periodic checks for full screen interstitial
+        val handler = Handler(Looper.getMainLooper())
+        val runnable = object : Runnable {
+            override fun run() {
+                if (!isDestroyed && !appVersionManager.isProVersion()) {
+                    // Check if it's time to show a full screen interstitial
+                    adManager.checkAndShowFullScreenInterstitial(this@MainActivity)
+                }
+
+                // Schedule the next check
+                handler.postDelayed(this, FULL_SCREEN_AD_CHECK_INTERVAL)
+            }
+        }
+
+        // Start the periodic check
+        handler.postDelayed(runnable, FULL_SCREEN_AD_CHECK_INTERVAL)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -286,6 +310,13 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error initializing ad manager", e)
         }
 
+        setupFullScreenInterstitialTimer()
+
+        //force full screen ad
+        //lifecycleScope.launch {
+        //    delay(3000) // Wait a few seconds after app start
+        //    adManager.checkAndShowFullScreenInterstitial(this@MainActivity)
+        //}
 
         if (securityPreferences.isSecurityEnabled) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
