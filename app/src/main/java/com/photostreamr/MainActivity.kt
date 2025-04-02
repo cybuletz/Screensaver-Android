@@ -143,8 +143,6 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var proVersionPromptManager: ProVersionPromptManager
 
-    private lateinit var adContainer: FrameLayout
-
     private var isDestroyed = false
 
     private var isAuthenticating = false
@@ -261,63 +259,38 @@ class MainActivity : AppCompatActivity() {
 
         enableFullScreen()
 
-        // Initialize ad container now that binding is set up
-        adContainer = binding.adContainer
-        // Hide the banner ad container in MainActivity, we'll only show full-screen interstitials
-        adContainer.visibility = View.GONE
-
         // Add version state observation
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 appVersionManager.versionState.collect { state ->
                     when (state) {
                         is AppVersionManager.VersionState.Pro -> {
-                            // Immediately remove ads and cleanup
-                            adContainer.removeAllViews()
-                            adContainer.visibility = View.GONE
                             // Destroy all ads immediately
                             adManager.destroyAds()
                         }
                         is AppVersionManager.VersionState.Free -> {
-                            // Keep the banner ad container hidden in MainActivity
-                            adContainer.visibility = View.GONE
+                            // We're not setting up banner ads anymore
                         }
                     }
                 }
             }
         }
 
-        // Initialize ad manager - FIX: Wrap in try-catch and add null check for container
+        // Initialize ad manager - only for interstitial ads now
         try {
             adManager.initialize() // No parameters
-
-            // For MainActivity we're not setting up the banner ad, only the interstitial
-            // Note: setupMainActivityAd will detect MainActivity and automatically hide the banner
-            // The original call is kept for compatibility, but the method contains the check
-            if (!appVersionManager.isProVersion() && adContainer != null && !isDestroyed) {
-                // Post to main thread to ensure view is ready
-                adContainer.post {
-                    try {
-                        if (adContainer.isAttachedToWindow) {
-                            // This will be handled by the check in setupMainActivityAd
-                            adManager.setupMainActivityAd(adContainer)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error setting up ad container", e)
-                    }
-                }
-            }
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing ad manager", e)
         }
 
+        // Set up interstitial ads timer - Keeping this for full-screen interstitials
         setupFullScreenInterstitialTimer()
 
-        //force full screen ad
-        //lifecycleScope.launch {
-        //    delay(3000) // Wait a few seconds after app start
-        //    adManager.checkAndShowFullScreenInterstitial(this@MainActivity)
-        //}
+        // Uncomment if you want to force interstitial ad at startup
+        lifecycleScope.launch {
+            delay(3000) // Wait a few seconds after app start
+            adManager.checkAndShowFullScreenInterstitial(this@MainActivity)
+        }
 
         if (securityPreferences.isSecurityEnabled) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1355,8 +1328,6 @@ class MainActivity : AppCompatActivity() {
                 // Handle ad container visibility based on destination
                 when (destination.id) {
                     R.id.settingsFragment -> {
-                        // Hide main activity ad container when in settings
-                        adContainer.visibility = View.GONE
                         if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
                             navController.navigateUp()
                             checkSecurityWithCallback {
@@ -1365,8 +1336,6 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     R.id.mainFragment -> {
-                        // Show main activity ad container when returning to main
-                        adContainer.visibility = View.VISIBLE
                         Log.d(TAG, "Returned to main fragment, updating widgets")
                         ensureBinding()
                         binding.screensaverContainer?.findViewById<ConstraintLayout>(R.id.widgets_layer)?.let { widgetsLayer ->
