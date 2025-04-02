@@ -713,7 +713,6 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
         }
     }
 
-    // Update getTargetView method to be more accurate
     override fun getTargetView(viewId: Int): View? {
         Log.d(TAG, "Looking for preference with viewId: $viewId")
 
@@ -737,33 +736,57 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
             )
 
             if (recyclerView != null) {
-                // Find the view for this preference by matching the title
-                val prefTitle = preference?.title?.toString() ?: return null
+                // Add debug information for view finding
+                Log.d(TAG, "RecyclerView found with ${recyclerView.childCount} visible children")
 
+                // Look through all visible items in the RecyclerView
                 for (i in 0 until recyclerView.childCount) {
                     val itemView = recyclerView.getChildAt(i)
                     val titleView = itemView.findViewById<TextView>(android.R.id.title)
 
-                    if (titleView != null && titleView.text == prefTitle) {
-                        Log.d(TAG, "Found exact match for: $prefTitle")
+                    Log.d(TAG, "Checking child $i: ${titleView?.text}")
+
+                    if (titleView != null && preference != null &&
+                        titleView.text.toString() == preference.title.toString()) {
+                        Log.d(TAG, "Found exact match for: ${preference.title}")
                         return itemView
                     }
                 }
 
-                // If we can't find the exact preference, find any preference with a similar layout
-                // This helps when categories are expanded/collapsed
+                // If we couldn't find it by title, try to find by position based on preference order
+                val allPreferences = preferenceScreen?.preferenceCount ?: 0
+                var targetPosition = -1
+
+                // Find position of the target preference in the hierarchy
+                for (i in 0 until allPreferences) {
+                    val pref = preferenceScreen?.getPreference(i)
+                    if (pref?.key == prefKey) {
+                        targetPosition = i
+                        break
+                    }
+                }
+
+                if (targetPosition >= 0 && targetPosition < recyclerView.childCount) {
+                    val itemView = recyclerView.getChildAt(targetPosition)
+                    Log.d(TAG, "Found preference by position: $targetPosition")
+                    return itemView
+                }
+
+                // As a last resort, just return the first preference item that has a title
                 for (i in 0 until recyclerView.childCount) {
                     val itemView = recyclerView.getChildAt(i)
-                    // Only consider preference items, not categories
                     if (itemView.findViewById<TextView>(android.R.id.title) != null) {
-                        Log.d(TAG, "Using visible preference at position $i as fallback")
+                        Log.d(TAG, "Returning first titled child at position $i as fallback")
                         return itemView
                     }
                 }
+            } else {
+                Log.e(TAG, "RecyclerView not found!")
             }
         }
 
         // If all else fails, return the entire preferences view
+        Log.w(TAG, "Falling back to entire view as target")
         return view
     }
 

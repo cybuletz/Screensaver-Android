@@ -84,22 +84,13 @@
             nextButton.setOnClickListener { moveToNextStep() }
             closeButton.setOnClickListener { closeTutorial() }
 
-            // Start with the first step
-            showStep(0)
+            // Remove the initial test cutout section
+            // We don't need to set a temporary rectangle in the middle of the screen
 
-            // Set an initial transparent area in the center of the screen to verify transparency works
-            val screenWidth = resources.displayMetrics.widthPixels
-            val screenHeight = resources.displayMetrics.heightPixels
-            val initialRect = RectF(
-                screenWidth * 0.4f,
-                screenHeight * 0.4f,
-                screenWidth * 0.6f,
-                screenHeight * 0.6f
-            )
-            overlayView.setTargetRect(initialRect)
-
-            // Start with the first step
-            showStep(0)
+            // Start with the first step with a delay to ensure the UI is fully prepared
+            view.postDelayed({
+                showStep(0)
+            }, 500)
         }
 
         // Add this utility method to dump the view hierarchy for debugging
@@ -127,7 +118,9 @@
             // Show/hide next button on last step
             nextButton.visibility = if (stepIndex == tutorialSteps.size - 1) View.GONE else View.VISIBLE
 
-            // Set an initial rect in the center of the screen if none exists yet
+            // Do NOT set an initial rect - wait for the actual target to be found
+            // Remove this block to avoid the initial test cutout in the middle
+            /*
             if (overlayView.getTargetRect() == null) {
                 val screenWidth = resources.displayMetrics.widthPixels
                 val screenHeight = resources.displayMetrics.heightPixels
@@ -139,16 +132,32 @@
                 )
                 overlayView.setTargetRect(initialRect)
             }
+            */
 
-            // Find target view with a delay
+            // Increase delay to make sure the UI is fully laid out
             view?.postDelayed({
                 findAndHighlightTargetView(step.targetViewId)
-            }, 300)
+            }, 500) // Increase from 300ms to 500ms
         }
 
-        // Add a new method to find preferences more accurately
         private fun findAndHighlightTargetView(viewId: Int) {
             Log.d(TAG, "Trying to find view for ID: $viewId")
+
+            // Remove the initial test cutout to avoid confusion
+            // Let's comment out this block that sets an initial test rect
+            /*
+            if (overlayView.getTargetRect() == null) {
+                val screenWidth = resources.displayMetrics.widthPixels
+                val screenHeight = resources.displayMetrics.heightPixels
+                val initialRect = RectF(
+                    screenWidth * 0.4f,
+                    screenHeight * 0.4f,
+                    screenWidth * 0.6f,
+                    screenHeight * 0.6f
+                )
+                overlayView.setTargetRect(initialRect)
+            }
+            */
 
             // Get the preference key based on the tutorial ID
             val prefKey = when (viewId) {
@@ -165,7 +174,7 @@
                 // Ask the fragment to scroll to make the preference visible if needed
                 tutorialCallback?.scrollToPreference(prefKey)
 
-                // Short delay to allow scrolling to complete
+                // Increase delay to give more time for scrolling to complete and views to stabilize
                 view?.postDelayed({
                     // Now try to find the view
                     val targetView = tutorialCallback?.getTargetView(viewId)
@@ -173,27 +182,37 @@
                         Log.d(TAG, "Found target view: $targetView")
                         highlightView(targetView)
                     } else {
-                        Log.d(TAG, "No view found for preference $prefKey, showing fallback")
+                        Log.e(TAG, "No view found for preference $prefKey, showing fallback")
                         showFallbackHighlight()
                     }
-                }, 300)
+                }, 500) // Increase from 300ms to 500ms for more stability
             } else {
                 showFallbackHighlight()
             }
         }
 
         private fun highlightView(targetView: View) {
+            // Add detailed logging
+            Log.d(TAG, "Target view: ${targetView.javaClass.simpleName}, width=${targetView.width}, height=${targetView.height}, visibility=${targetView.visibility}")
+
             // Get screen location of view
             val location = IntArray(2)
             targetView.getLocationInWindow(location)
 
-            // Get dimensions
+            // Get dimensions with additional logging
             val targetRect = RectF(
                 location[0].toFloat(),
                 location[1].toFloat(),
                 (location[0] + targetView.width).toFloat(),
                 (location[1] + targetView.height).toFloat()
             )
+
+            // Verify the rect is valid (non-zero dimensions)
+            if (targetRect.width() <= 0 || targetRect.height() <= 0) {
+                Log.e(TAG, "Invalid target rect with zero dimension: $targetRect")
+                showFallbackHighlight()
+                return
+            }
 
             // Add padding
             val padding = resources.getDimensionPixelSize(R.dimen.tutorial_highlight_padding)
@@ -230,23 +249,42 @@
             val containerLayoutParams = hintContainer.layoutParams as ConstraintLayout.LayoutParams
 
             // Position the hint container based on the target view's position
-            // If target is in top half, place hint at bottom, otherwise at top
             val screenHeight = resources.displayMetrics.heightPixels
+
+            // Use more distinct positioning to avoid overlap
             if (targetRect.centerY() < screenHeight / 2) {
-                containerLayoutParams.topToBottom = ConstraintLayout.LayoutParams.UNSET
-                containerLayoutParams.bottomToTop = ConstraintLayout.LayoutParams.UNSET
-                containerLayoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                containerLayoutParams.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
-                containerLayoutParams.topMargin = (targetRect.bottom + resources.getDimensionPixelSize(R.dimen.tutorial_hint_margin)).toInt()
-            } else {
+                // Target is in the top half of the screen, place hint at the bottom
                 containerLayoutParams.topToBottom = ConstraintLayout.LayoutParams.UNSET
                 containerLayoutParams.bottomToTop = ConstraintLayout.LayoutParams.UNSET
                 containerLayoutParams.topToTop = ConstraintLayout.LayoutParams.UNSET
                 containerLayoutParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                containerLayoutParams.bottomMargin = (screenHeight - targetRect.top + resources.getDimensionPixelSize(R.dimen.tutorial_hint_margin)).toInt()
+                containerLayoutParams.topMargin = 0
+                containerLayoutParams.bottomMargin = resources.getDimensionPixelSize(R.dimen.tutorial_hint_margin)
+            } else {
+                // Target is in the bottom half of the screen, place hint at the top
+                containerLayoutParams.topToBottom = ConstraintLayout.LayoutParams.UNSET
+                containerLayoutParams.bottomToTop = ConstraintLayout.LayoutParams.UNSET
+                containerLayoutParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                containerLayoutParams.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+                containerLayoutParams.topMargin = resources.getDimensionPixelSize(R.dimen.tutorial_hint_margin)
+                containerLayoutParams.bottomMargin = 0
             }
 
+            // Add horizontal centering
+            containerLayoutParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            containerLayoutParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+
+            // Set horizontal margins instead of using the non-existent horizontalMargin property
+            containerLayoutParams.marginStart = resources.getDimensionPixelSize(R.dimen.tutorial_hint_margin)
+            containerLayoutParams.marginEnd = resources.getDimensionPixelSize(R.dimen.tutorial_hint_margin)
+
+            // Ensure width is appropriate
+            containerLayoutParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+
             hintContainer.layoutParams = containerLayoutParams
+
+            // Force layout update to ensure positioning is applied immediately
+            hintContainer.requestLayout()
         }
 
         // Replace the animateHighlight method
