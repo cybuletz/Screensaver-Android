@@ -23,6 +23,14 @@ class TutorialManager @Inject constructor(
 ) {
     private val prefs: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
 
+    companion object {
+        // Define tutorial step IDs - these are just arbitrary constants
+        const val ID_MANAGE_PHOTOS = 1001
+        const val ID_COMMON_SETTINGS = 1002
+        const val ID_DISPLAY_SETTINGS = 1003
+        const val ID_SECURITY_PREFERENCES = 1004
+    }
+
     fun shouldShowTutorial(type: TutorialType): Boolean {
         return !prefs.getBoolean("tutorial_shown_${type.name}", false)
     }
@@ -57,19 +65,19 @@ class TutorialManager @Inject constructor(
     private fun getSettingsTutorialSteps(): List<TutorialStep> {
         return listOf(
             TutorialStep(
-                R.id.manage_photos,
+                ID_MANAGE_PHOTOS,
                 context.getString(R.string.tutorial_manage_photos)
             ),
             TutorialStep(
-                R.id.common_settings,
+                ID_COMMON_SETTINGS,
                 context.getString(R.string.tutorial_common_settings)
             ),
             TutorialStep(
-                R.id.display_settings,
+                ID_DISPLAY_SETTINGS,
                 context.getString(R.string.tutorial_display_settings)
             ),
             TutorialStep(
-                R.id.security_preferences,
+                ID_SECURITY_PREFERENCES,
                 context.getString(R.string.tutorial_security_preferences)
             )
         )

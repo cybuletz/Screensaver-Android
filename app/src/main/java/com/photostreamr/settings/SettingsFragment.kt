@@ -355,6 +355,12 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                 }
             }
         }
+        // Check if it's the first login and show tutorial if needed
+        view.post {
+            if (tutorialManager.isFirstLogin() && tutorialManager.shouldShowTutorial(TutorialType.SETTINGS)) {
+                showTutorial()
+            }
+        }
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -697,27 +703,55 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
     }
 
     override fun getTargetView(viewId: Int): View? {
-        return view?.findViewById(viewId) ?: findPreference<Preference>(getPreferenceKeyById(viewId))?.let {
-            it.context?.let { ctx ->
-                preferenceScreen.onCreateRecyclerView(LayoutInflater.from(ctx), view as ViewGroup, null)
-                    .findViewHolderForItemId(it.order.toLong())?.itemView
+        // For preferences, we need to locate the view that represents the preference in the RecyclerView
+        val prefKey = getPreferenceKeyById(viewId)
+        if (prefKey.isNotEmpty()) {
+            val pref = findPreference<Preference>(prefKey)
+            // The preference is rendered as a ViewHolder in the RecyclerView
+            // We need to find its view in the hierarchy
+
+            val recyclerView = view?.findViewById<androidx.recyclerview.widget.RecyclerView>(
+                androidx.preference.R.id.recycler_view
+            )
+
+            if (recyclerView != null) {
+                // Look through all visible views to find the one containing our preference
+                for (i in 0 until recyclerView.childCount) {
+                    val itemView = recyclerView.getChildAt(i)
+
+                    // Try to find the title TextView which contains the preference title
+                    val titleView = itemView.findViewById<TextView>(android.R.id.title)
+                    if (titleView != null && titleView.text == pref?.title) {
+                        return itemView
+                    }
+                }
             }
         }
+        return null
     }
 
     override fun onTutorialClosed() {
         // Do nothing for now, but you can add logic here if needed
     }
 
-    private fun getPreferenceKeyById(viewId: Int): String? {
-        return when (viewId) {
-            R.id.manage_photos -> "manage_photos"
-            R.id.common_settings -> "common_settings"
-            R.id.display_settings -> "display_settings"
-            R.id.security_preferences -> "security_preferences"
-            // Add more mappings as needed
-            else -> null
+    private fun getPreferenceKeyById(viewId: Int): String {
+        // Since preferences don't have view IDs in R.id, we'll use a different approach
+        // We'll map our tutorial step index to preference keys instead
+        val prefKeyMapping = mapOf(
+            0 to "manage_photos",
+            1 to "common_settings",
+            2 to "display_settings",
+            3 to "security_preferences"
+        )
+
+        // Find which index in our tutorial this viewId corresponds to
+        for ((index, stepViewId) in tutorialManager.getTutorialSteps(TutorialType.SETTINGS)
+            .mapIndexed { i, step -> i to step.targetViewId }) {
+            if (stepViewId == viewId) {
+                return prefKeyMapping[index] ?: ""
+            }
         }
+        return ""
     }
 
     // Add this method to show the tutorial
