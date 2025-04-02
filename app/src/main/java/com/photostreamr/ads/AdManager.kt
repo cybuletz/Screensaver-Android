@@ -239,6 +239,15 @@ class AdManager @Inject constructor(
             return
         }
 
+        // Check if we're in MainActivity by looking at the current context
+        val contextName = container.context.javaClass.simpleName
+        if (contextName == "MainActivity") {
+            Log.d(TAG, "Skipping banner ad in MainActivity - only showing full screen interstitials")
+            container.removeAllViews()
+            container.visibility = View.GONE
+            return
+        }
+
         try {
             if (!isInitialized) {
                 initialize()

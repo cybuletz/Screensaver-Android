@@ -263,8 +263,8 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize ad container now that binding is set up
         adContainer = binding.adContainer
-        // Make sure the ad container is visible
-        adContainer.visibility = View.VISIBLE
+        // Hide the banner ad container in MainActivity, we'll only show full-screen interstitials
+        adContainer.visibility = View.GONE
 
         // Add version state observation
         lifecycleScope.launch {
@@ -279,11 +279,8 @@ class MainActivity : AppCompatActivity() {
                             adManager.destroyAds()
                         }
                         is AppVersionManager.VersionState.Free -> {
-                            // Only setup ads if not already set up
-                            if (adContainer.childCount == 0) {
-                                adContainer.visibility = View.VISIBLE
-                                adManager.setupMainActivityAd(adContainer)
-                            }
+                            // Keep the banner ad container hidden in MainActivity
+                            adContainer.visibility = View.GONE
                         }
                     }
                 }
@@ -293,12 +290,16 @@ class MainActivity : AppCompatActivity() {
         // Initialize ad manager - FIX: Wrap in try-catch and add null check for container
         try {
             adManager.initialize() // No parameters
-            // Only setup ads if container exists and not pro version
+
+            // For MainActivity we're not setting up the banner ad, only the interstitial
+            // Note: setupMainActivityAd will detect MainActivity and automatically hide the banner
+            // The original call is kept for compatibility, but the method contains the check
             if (!appVersionManager.isProVersion() && adContainer != null && !isDestroyed) {
                 // Post to main thread to ensure view is ready
                 adContainer.post {
                     try {
                         if (adContainer.isAttachedToWindow) {
+                            // This will be handled by the check in setupMainActivityAd
                             adManager.setupMainActivityAd(adContainer)
                         }
                     } catch (e: Exception) {
