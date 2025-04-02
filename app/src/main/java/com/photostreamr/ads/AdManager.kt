@@ -73,17 +73,18 @@ class AdManager @Inject constructor(
         private const val MINIMUM_AD_INTERVAL = 180000L // 3 minutes minimum between ads
 
         // Banner refresh interval (10 minutes)
-        private const val BANNER_REFRESH_INTERVAL = 6000L // 10 minutes in milliseconds
+        private const val BANNER_REFRESH_INTERVAL = 60000L // 10 minutes in milliseconds
 
-        // Native ad frequency (show a native ad after every X photos)
-        private const val NATIVE_AD_FREQUENCY = 5 // Show a native ad after every 5 photos
+        // Native ad frequency (min and max values)
+        private const val MIN_NATIVE_AD_FREQUENCY = 40 // Min photos between random ads
+        private const val MAX_NATIVE_AD_FREQUENCY = 65 // Max photos between random ads
+        private const val DEFAULT_NATIVE_AD_FREQUENCY = 40 // Default fallback value
 
         // The number of native ads to preload in the cache
         private const val NATIVE_AD_CACHE_SIZE = 3
     }
     private var photoCount = 0
-    private var totalPhotosShown = 0
-    private var photosUntilNextAd = NATIVE_AD_FREQUENCY
+    private var photosUntilNextAd = getRandomAdFrequency()
 
     private var isInitialized = false
     private var mainAdView: AdView? = null
@@ -114,6 +115,7 @@ class AdManager @Inject constructor(
     private var isLoadingNativeAd = false
     private val nativeAdLoadScope = CoroutineScope(Dispatchers.IO)
 
+    private val random = kotlin.random.Random.Default
 
     // The current listener for native ad loading
     private var nativeAdLoadListener: ((NativeAd?) -> Unit)? = null
@@ -137,6 +139,15 @@ class AdManager @Inject constructor(
     // Getter for interstitial ad unit ID
     fun getInterstitialAdUnitId(): String {
         return INTERSTITIAL_AD_UNIT_ID
+    }
+
+    private fun getRandomAdFrequency(): Int {
+        return try {
+            random.nextInt(MIN_NATIVE_AD_FREQUENCY, MAX_NATIVE_AD_FREQUENCY + 1)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating random ad frequency", e)
+            DEFAULT_NATIVE_AD_FREQUENCY
+        }
     }
 
     fun getNativeAdView(activity: Activity, nativeAd: NativeAd): View {
@@ -268,13 +279,15 @@ class AdManager @Inject constructor(
 
         // If we've reached zero, it's time to show an ad
         if (photosUntilNextAd <= 0) {
-            // Reset counter for next time
-            photosUntilNextAd = NATIVE_AD_FREQUENCY
+            // Reset counter with a new random value for next time
+            photosUntilNextAd = getRandomAdFrequency()
+            Log.d(TAG, "Ad threshold reached. Next ad will show after $photosUntilNextAd photos")
             return true
         }
 
         return false
     }
+
 
     // Method to preload native ads
     private fun preloadNativeAds() {
@@ -729,9 +742,9 @@ class AdManager @Inject constructor(
         nativeAdsCache.clear()
     }
 
-    // Static class to define native ad frequency
     object NativeAdSettings {
-        // How often to show native ads (every X photos)
-        const val FREQUENCY = NATIVE_AD_FREQUENCY
+        // Min and max frequency
+        const val MIN_FREQUENCY = MIN_NATIVE_AD_FREQUENCY
+        const val MAX_FREQUENCY = MAX_NATIVE_AD_FREQUENCY
     }
 }

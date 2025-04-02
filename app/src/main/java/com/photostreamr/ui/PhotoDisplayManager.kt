@@ -80,7 +80,7 @@ class PhotoDisplayManager @Inject constructor(
 
     private var currentNativeAd: NativeAd? = null
     private var isShowingNativeAd = false
-    private var nativeAdDuration = 5000L // Display native ads for 5 seconds
+    private var nativeAdDuration = 10000L // Display native ads for 10 seconds
     private val mainHandler = Handler(Looper.getMainLooper())
 
 
