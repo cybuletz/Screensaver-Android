@@ -34,11 +34,18 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
 import android.animation.Animator
 import android.animation.ObjectAnimator
+import android.app.Activity
 import android.graphics.drawable.BitmapDrawable
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import com.bumptech.glide.load.HttpException
+import com.google.android.gms.ads.nativead.NativeAd
 import com.photostreamr.glide.GlideApp
 import com.photostreamr.music.SpotifyManager
 import com.photostreamr.music.SpotifyPreferences
+import android.os.Handler
+import com.photostreamr.ads.AdManager
+import com.photostreamr.version.AppVersionManager
 
 
 @Singleton
@@ -47,7 +54,9 @@ class PhotoDisplayManager @Inject constructor(
     private val photoCache: PhotoCache,
     private val context: Context,
     private val spotifyManager: SpotifyManager,
-    private val spotifyPreferences: SpotifyPreferences
+    private val spotifyPreferences: SpotifyPreferences,
+    private val adManager: AdManager,
+    private val appVersionManager: AppVersionManager
 ) {
 
     private val managerJob = SupervisorJob()
@@ -68,6 +77,12 @@ class PhotoDisplayManager @Inject constructor(
     private var wasDisplayingPhotos = false
 
     private var hasLoadedPhotos = false
+
+    private var currentNativeAd: NativeAd? = null
+    private var isShowingNativeAd = false
+    private var nativeAdDuration = 5000L // Display native ads for 5 seconds
+    private val mainHandler = Handler(Looper.getMainLooper())
+
 
     data class Views(
         val primaryView: ImageView,
@@ -262,6 +277,14 @@ class PhotoDisplayManager @Inject constructor(
             spotifyManager.playbackState.value is SpotifyManager.PlaybackState.Idle) {
             spotifyManager.resume()
         }
+
+        // Use the simplified ad check
+        if (adManager.shouldShowNativeAd()) {
+            Log.d(TAG, "Time to show a native ad!")
+            displayNativeAd()
+            return
+        }
+
 
         // Store lifecycleScope in a local variable
         val currentScope = lifecycleScope ?: return
@@ -815,6 +838,8 @@ class PhotoDisplayManager @Inject constructor(
 
             isTransitioning = false
             currentPhotoIndex = nextIndex
+            // Notify AdManager of the photo count for ad frequency tracking
+            adManager.updatePhotoCount(currentPhotoIndex)
             Log.d(TAG, "Transition completed to photo $nextIndex")
 
         } catch (e: Exception) {
@@ -925,6 +950,113 @@ class PhotoDisplayManager @Inject constructor(
 
     private fun trackPhotoLoadTime(isFromCache: Boolean, loadTimeMs: Long) {
         Log.d(TAG, "Photo load time (${if (isFromCache) "cached" else "fresh"}): $loadTimeMs ms")
+    }
+
+    private fun displayNativeAd() {
+        val views = this.views ?: return
+        val currentScope = lifecycleScope ?: return
+
+        Log.d(TAG, "Attempting to display native ad")
+
+        // Skip if pro version
+        if (appVersionManager.isProVersion()) {
+            Log.d(TAG, "Skipping native ad - Pro version")
+            return
+        }
+
+        // Skip if already displaying an ad
+        if (isShowingNativeAd) {
+            Log.d(TAG, "Already showing a native ad, skipping")
+            return
+        }
+
+        isShowingNativeAd = true
+
+        currentScope.launch {
+            try {
+                // Show loading indicator
+                views.loadingIndicator?.visibility = View.VISIBLE
+
+                // Request a native ad
+                Log.d(TAG, "Requesting native ad from AdManager")
+
+                withContext(Dispatchers.Main) {
+                    adManager.getNativeAdForSlideshow(views.container.context as Activity) { nativeAd ->
+                        if (nativeAd == null) {
+                            Log.w(TAG, "No native ad available, continuing with regular photos")
+                            isShowingNativeAd = false
+                            views.loadingIndicator?.visibility = View.GONE
+                            loadAndDisplayPhoto()
+                            return@getNativeAdForSlideshow
+                        }
+
+                        Log.d(TAG, "Native ad received successfully, displaying")
+                        currentNativeAd = nativeAd
+
+                        try {
+                            val activity = views.container.context as Activity
+
+                            // Create the native ad view
+                            val adRootView = adManager.getNativeAdView(activity, nativeAd)
+
+                            // Create a frame to hold the ad view
+                            val adContainer = FrameLayout(activity)
+                            adContainer.layoutParams = FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT
+                            )
+                            adContainer.tag = "native_ad_container"
+                            adContainer.addView(adRootView)
+
+                            // Get the parent view to add our ad container to
+                            val parent = views.primaryView.parent as? ViewGroup
+
+                            if (parent != null) {
+                                // Add the ad container
+                                parent.addView(adContainer)
+                                adContainer.bringToFront()
+
+                                // Hide the loading indicator
+                                views.loadingIndicator?.visibility = View.GONE
+
+                                // Schedule removal of the ad
+                                mainHandler.postDelayed({
+                                    try {
+                                        parent.removeView(adContainer)
+                                        isShowingNativeAd = false
+                                        currentNativeAd?.destroy()
+                                        currentNativeAd = null
+
+                                        // Continue with regular photos
+                                        loadAndDisplayPhoto()
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error removing ad container", e)
+                                        isShowingNativeAd = false
+                                        loadAndDisplayPhoto()
+                                    }
+                                }, nativeAdDuration)
+                            } else {
+                                Log.e(TAG, "Cannot find parent view to add ad container")
+                                isShowingNativeAd = false
+                                views.loadingIndicator?.visibility = View.GONE
+                                loadAndDisplayPhoto()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error displaying native ad", e)
+                            isShowingNativeAd = false
+                            views.loadingIndicator?.visibility = View.GONE
+                            nativeAd.destroy()
+                            loadAndDisplayPhoto()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception in displayNativeAd", e)
+                isShowingNativeAd = false
+                views.loadingIndicator?.visibility = View.GONE
+                loadAndDisplayPhoto()
+            }
+        }
     }
 
     fun stopPhotoDisplay() {

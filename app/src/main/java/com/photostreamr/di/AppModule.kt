@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.photostreamr.PhotoRepository
+import com.photostreamr.ads.AdManager
 import com.photostreamr.auth.GoogleAuthManager
 import com.photostreamr.data.AppDataManager
 import com.photostreamr.data.SecureStorage
@@ -32,6 +33,7 @@ import com.photostreamr.photos.PhotoUriManager
 import com.photostreamr.security.AppAuthManager
 import com.photostreamr.security.BiometricHelper
 import com.photostreamr.security.SecurityPreferences
+import com.photostreamr.version.AppVersionManager
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -98,14 +100,18 @@ object AppModule {
         photoCache: PhotoCache,
         @ApplicationContext context: Context,
         spotifyManager: SpotifyManager,
-        spotifyPreferences: SpotifyPreferences
+        spotifyPreferences: SpotifyPreferences,
+        adManager: AdManager,
+        appVersionManager: AppVersionManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
             photoCache = photoCache,
             context = context,
             spotifyManager = spotifyManager,
-            spotifyPreferences = spotifyPreferences
+            spotifyPreferences = spotifyPreferences,
+            adManager = adManager,
+            appVersionManager = appVersionManager
         )
     }
 
