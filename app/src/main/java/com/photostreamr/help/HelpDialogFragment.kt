@@ -54,13 +54,22 @@ class HelpDialogFragment : DialogFragment() {
     }
 
     private fun showTutorial() {
-        val parentActivity = activity ?: return
-        val tutorialFragment = TutorialOverlayFragment.newInstance(TutorialType.SETTINGS)
+        dismiss()
 
-        if (parentActivity is TutorialOverlayFragment.TutorialCallback) {
-            tutorialFragment.setCallback(parentActivity)
+        // Get the parent fragment (SettingsFragment) which implements the callback
+        val settingsFragment = parentFragment
+        if (settingsFragment is TutorialOverlayFragment.TutorialCallback) {
+            val tutorialFragment = TutorialOverlayFragment.newInstance(TutorialType.SETTINGS)
+            tutorialFragment.setCallback(settingsFragment)
+            tutorialFragment.show(settingsFragment.childFragmentManager, "tutorial_overlay")
+        } else {
+            // Fallback to activity
+            val parentActivity = activity
+            if (parentActivity is TutorialOverlayFragment.TutorialCallback) {
+                val tutorialFragment = TutorialOverlayFragment.newInstance(TutorialType.SETTINGS)
+                tutorialFragment.setCallback(parentActivity)
+                tutorialFragment.show(parentActivity.supportFragmentManager, "tutorial_overlay")
+            }
         }
-
-        tutorialFragment.show(parentActivity.supportFragmentManager, "tutorial_overlay")
     }
 }

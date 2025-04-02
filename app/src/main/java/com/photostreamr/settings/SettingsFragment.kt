@@ -356,11 +356,13 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
             }
         }
         // Check if it's the first login and show tutorial if needed
-        view.post {
+        // Delay showing the tutorial to ensure the UI is fully rendered
+        view.postDelayed({
             if (tutorialManager.isFirstLogin() && tutorialManager.shouldShowTutorial(TutorialType.SETTINGS)) {
+                Log.d(TAG, "First login detected, showing tutorial")
                 showTutorial()
             }
-        }
+        }, 500)
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -702,32 +704,68 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
         }
     }
 
-    override fun getTargetView(viewId: Int): View? {
-        // For preferences, we need to locate the view that represents the preference in the RecyclerView
-        val prefKey = getPreferenceKeyById(viewId)
-        if (prefKey.isNotEmpty()) {
-            val pref = findPreference<Preference>(prefKey)
-            // The preference is rendered as a ViewHolder in the RecyclerView
-            // We need to find its view in the hierarchy
+    override fun scrollToPreference(preferenceKey: String) {
+        Log.d(TAG, "Scrolling to preference: $preferenceKey")
+        // Get the preference
+        val preference = findPreference<Preference>(preferenceKey)
+        if (preference != null) {
+            // This will make sure the preference is visible
+            scrollToPreference(preference)
+        }
+    }
 
+    // Update getTargetView method to be more accurate
+    override fun getTargetView(viewId: Int): View? {
+        Log.d(TAG, "Looking for preference with viewId: $viewId")
+
+        val prefKey = when (viewId) {
+            TutorialManager.ID_MANAGE_PHOTOS -> "manage_photos"
+            TutorialManager.ID_COMMON_SETTINGS -> "common_settings"
+            TutorialManager.ID_DISPLAY_SETTINGS -> "display_settings"
+            TutorialManager.ID_SECURITY_PREFERENCES -> "security_preferences"
+            else -> ""
+        }
+
+        Log.d(TAG, "Mapped to preference key: $prefKey")
+
+        if (prefKey.isNotEmpty()) {
+            val preference = findPreference<Preference>(prefKey)
+            Log.d(TAG, "Found preference: ${preference?.title}")
+
+            // Get the RecyclerView that holds the preferences
             val recyclerView = view?.findViewById<androidx.recyclerview.widget.RecyclerView>(
                 androidx.preference.R.id.recycler_view
             )
 
             if (recyclerView != null) {
-                // Look through all visible views to find the one containing our preference
+                // Find the view for this preference by matching the title
+                val prefTitle = preference?.title?.toString() ?: return null
+
                 for (i in 0 until recyclerView.childCount) {
                     val itemView = recyclerView.getChildAt(i)
-
-                    // Try to find the title TextView which contains the preference title
                     val titleView = itemView.findViewById<TextView>(android.R.id.title)
-                    if (titleView != null && titleView.text == pref?.title) {
+
+                    if (titleView != null && titleView.text == prefTitle) {
+                        Log.d(TAG, "Found exact match for: $prefTitle")
+                        return itemView
+                    }
+                }
+
+                // If we can't find the exact preference, find any preference with a similar layout
+                // This helps when categories are expanded/collapsed
+                for (i in 0 until recyclerView.childCount) {
+                    val itemView = recyclerView.getChildAt(i)
+                    // Only consider preference items, not categories
+                    if (itemView.findViewById<TextView>(android.R.id.title) != null) {
+                        Log.d(TAG, "Using visible preference at position $i as fallback")
                         return itemView
                     }
                 }
             }
         }
-        return null
+
+        // If all else fails, return the entire preferences view
+        return view
     }
 
     override fun onTutorialClosed() {
