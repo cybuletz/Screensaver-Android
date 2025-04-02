@@ -716,78 +716,129 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
     override fun getTargetView(viewId: Int): View? {
         Log.d(TAG, "Looking for preference with viewId: $viewId")
 
+        // Map viewId to preference key
         val prefKey = when (viewId) {
             TutorialManager.ID_MANAGE_PHOTOS -> "manage_photos"
             TutorialManager.ID_COMMON_SETTINGS -> "common_settings"
             TutorialManager.ID_DISPLAY_SETTINGS -> "display_settings"
             TutorialManager.ID_SECURITY_PREFERENCES -> "security_preferences"
-            else -> ""
+            else -> null
+        } ?: return null
+
+        // Find the preference
+        val preference = findPreference<Preference>(prefKey)
+        if (preference == null) {
+            Log.e(TAG, "Preference not found for key: $prefKey")
+            return null
         }
 
-        Log.d(TAG, "Mapped to preference key: $prefKey")
+        // Get RecyclerView that contains the preferences
+        val recyclerView = view?.findViewById<androidx.recyclerview.widget.RecyclerView>(
+            androidx.preference.R.id.recycler_view
+        ) ?: return null
 
-        if (prefKey.isNotEmpty()) {
-            val preference = findPreference<Preference>(prefKey)
-            Log.d(TAG, "Found preference: ${preference?.title}")
+        // Log children for debugging
+        for (i in 0 until recyclerView.childCount) {
+            val childView = recyclerView.getChildAt(i)
+            val titleView = childView.findViewById<TextView>(android.R.id.title)
+            Log.d(TAG, "Child $i: ${titleView?.text}")
+        }
 
-            // Get the RecyclerView that holds the preferences
-            val recyclerView = view?.findViewById<androidx.recyclerview.widget.RecyclerView>(
-                androidx.preference.R.id.recycler_view
-            )
+        // First try: Find by exact title match
+        for (i in 0 until recyclerView.childCount) {
+            val childView = recyclerView.getChildAt(i)
+            val titleView = childView.findViewById<TextView>(android.R.id.title)
 
-            if (recyclerView != null) {
-                // Add debug information for view finding
-                Log.d(TAG, "RecyclerView found with ${recyclerView.childCount} visible children")
-
-                // Look through all visible items in the RecyclerView
-                for (i in 0 until recyclerView.childCount) {
-                    val itemView = recyclerView.getChildAt(i)
-                    val titleView = itemView.findViewById<TextView>(android.R.id.title)
-
-                    Log.d(TAG, "Checking child $i: ${titleView?.text}")
-
-                    if (titleView != null && preference != null &&
-                        titleView.text.toString() == preference.title.toString()) {
-                        Log.d(TAG, "Found exact match for: ${preference.title}")
-                        return itemView
-                    }
-                }
-
-                // If we couldn't find it by title, try to find by position based on preference order
-                val allPreferences = preferenceScreen?.preferenceCount ?: 0
-                var targetPosition = -1
-
-                // Find position of the target preference in the hierarchy
-                for (i in 0 until allPreferences) {
-                    val pref = preferenceScreen?.getPreference(i)
-                    if (pref?.key == prefKey) {
-                        targetPosition = i
-                        break
-                    }
-                }
-
-                if (targetPosition >= 0 && targetPosition < recyclerView.childCount) {
-                    val itemView = recyclerView.getChildAt(targetPosition)
-                    Log.d(TAG, "Found preference by position: $targetPosition")
-                    return itemView
-                }
-
-                // As a last resort, just return the first preference item that has a title
-                for (i in 0 until recyclerView.childCount) {
-                    val itemView = recyclerView.getChildAt(i)
-                    if (itemView.findViewById<TextView>(android.R.id.title) != null) {
-                        Log.d(TAG, "Returning first titled child at position $i as fallback")
-                        return itemView
-                    }
-                }
-            } else {
-                Log.e(TAG, "RecyclerView not found!")
+            if (titleView != null && preference.title != null &&
+                titleView.text.toString() == preference.title.toString()) {
+                Log.d(TAG, "Found exact match for title: ${preference.title}")
+                return childView
             }
         }
 
-        // If all else fails, return the entire preferences view
-        Log.w(TAG, "Falling back to entire view as target")
-        return view
+        // Second try: Find any preference title that contains our target title
+        if (preference.title != null) {
+            for (i in 0 until recyclerView.childCount) {
+                val childView = recyclerView.getChildAt(i)
+                val titleView = childView.findViewById<TextView>(android.R.id.title)
+
+                if (titleView != null && titleView.text.toString().contains(preference.title.toString())) {
+                    Log.d(TAG, "Found partial match for title: ${preference.title}")
+                    return childView
+                }
+            }
+        }
+
+        // Third try: Try to find by index in the recyclerView
+        // Since we know the order of our preferences in the settings screen
+        val expectedIndex = when (prefKey) {
+            "manage_photos" -> 0  // Usually the first preference
+            "common_settings" -> 1 // Second preference
+            "display_settings" -> 2 // Third preference
+            "security_preferences" -> 3 // Fourth preference
+            else -> -1
+        }
+
+        if (expectedIndex >= 0 && expectedIndex < recyclerView.childCount) {
+            val childView = recyclerView.getChildAt(expectedIndex)
+            if (childView != null) {
+                Log.d(TAG, "Found preference by index: $expectedIndex")
+                return childView
+            }
+        }
+
+        // Fourth try: try scrolling to make sure more preferences are visible
+        scrollToPreference(preference)
+
+        // Give it a moment to scroll, then try to find visible preferences again
+        recyclerView.post {
+            val tutorialFragment = childFragmentManager.findFragmentByTag("tutorial_overlay") as? TutorialOverlayFragment
+            tutorialFragment?.let { fragment ->
+                // Try once more to find the view after scrolling
+                val newTargetView = getTargetView(viewId)
+                if (newTargetView != null) {
+                    fragment.retryHighlightForPreference(prefKey)
+                }
+            }
+        }
+
+        // Fallback: try to just use the first preference item we can find
+        for (i in 0 until recyclerView.childCount) {
+            val childView = recyclerView.getChildAt(i)
+            val titleView = childView.findViewById<TextView>(android.R.id.title)
+            if (titleView != null) {
+                Log.d(TAG, "Using fallback preference at position $i")
+                return childView
+            }
+        }
+
+        // Last resort: return the entire recycler view or null
+        Log.d(TAG, "Could not find specific view for preference, using fallback")
+        return recyclerView
+    }
+
+    // This method will have a compilation error since we can't use findPositionOfPreference directly
+// Here's a simplified version that shouldn't have the Unresolved reference issue:
+    private fun findAndHighlightPreference(prefKey: String) {
+        // Find the target view again after scrolling
+        val tutorialFragment = childFragmentManager.findFragmentByTag("tutorial_overlay") as? TutorialOverlayFragment
+        tutorialFragment?.let { fragment ->
+            // Find the viewId for this preference key
+            val viewId = when (prefKey) {
+                "manage_photos" -> TutorialManager.ID_MANAGE_PHOTOS
+                "common_settings" -> TutorialManager.ID_COMMON_SETTINGS
+                "display_settings" -> TutorialManager.ID_DISPLAY_SETTINGS
+                "security_preferences" -> TutorialManager.ID_SECURITY_PREFERENCES
+                else -> return
+            }
+
+            // Try to get and highlight the target again
+            val targetView = getTargetView(viewId)
+            if (targetView != null) {
+                // We would need to add a public method to TutorialOverlayFragment for this
+                fragment.highlightView(targetView)
+            }
+        }
     }
 
     override fun onTutorialClosed() {

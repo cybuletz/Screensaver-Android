@@ -191,23 +191,52 @@
             }
         }
 
-        private fun highlightView(targetView: View) {
-            // Add detailed logging
-            Log.d(TAG, "Target view: ${targetView.javaClass.simpleName}, width=${targetView.width}, height=${targetView.height}, visibility=${targetView.visibility}")
+        fun highlightView(targetView: View) {
+            if (targetView != null) {
+                findAndHighlightTargetView(targetView)
+            }
+        }
 
-            // Get screen location of view
-            val location = IntArray(2)
-            targetView.getLocationInWindow(location)
+        fun retryHighlightForPreference(preferenceKey: String) {
+            val viewId = when (preferenceKey) {
+                "manage_photos" -> TutorialManager.ID_MANAGE_PHOTOS
+                "common_settings" -> TutorialManager.ID_COMMON_SETTINGS
+                "display_settings" -> TutorialManager.ID_DISPLAY_SETTINGS
+                "security_preferences" -> TutorialManager.ID_SECURITY_PREFERENCES
+                else -> return
+            }
 
-            // Get dimensions with additional logging
+            // Find and highlight the target view again
+            findAndHighlightTargetView(viewId)
+        }
+
+        private fun findAndHighlightTargetView(targetView: View) {
+            Log.d(TAG, "Target view: ${targetView.javaClass.simpleName}, width=${targetView.width}, height=${targetView.height}")
+
+            // First, we need to find the root view that contains both our overlay and the target view
+            val rootView = dialog?.window?.decorView ?: return
+
+            // Get coordinates relative to the window
+            val targetLocation = IntArray(2)
+            targetView.getLocationInWindow(targetLocation)
+
+            // Get the overlay's coordinates in the same coordinate system
+            val overlayLocation = IntArray(2)
+            overlayView.getLocationInWindow(overlayLocation)
+
+            // Calculate the target rect with coordinates adjusted relative to our overlay view
             val targetRect = RectF(
-                location[0].toFloat(),
-                location[1].toFloat(),
-                (location[0] + targetView.width).toFloat(),
-                (location[1] + targetView.height).toFloat()
+                (targetLocation[0] - overlayLocation[0]).toFloat(),
+                (targetLocation[1] - overlayLocation[1]).toFloat(),
+                (targetLocation[0] - overlayLocation[0] + targetView.width).toFloat(),
+                (targetLocation[1] - overlayLocation[1] + targetView.height).toFloat()
             )
 
-            // Verify the rect is valid (non-zero dimensions)
+            Log.d(TAG, "Target location in window: (${targetLocation[0]}, ${targetLocation[1]})")
+            Log.d(TAG, "Overlay location in window: (${overlayLocation[0]}, ${overlayLocation[1]})")
+            Log.d(TAG, "Adjusted target rect: $targetRect")
+
+            // Verify the rect is valid
             if (targetRect.width() <= 0 || targetRect.height() <= 0) {
                 Log.e(TAG, "Invalid target rect with zero dimension: $targetRect")
                 showFallbackHighlight()
@@ -218,14 +247,16 @@
             val padding = resources.getDimensionPixelSize(R.dimen.tutorial_highlight_padding)
             targetRect.inset(-padding.toFloat(), -padding.toFloat())
 
-            Log.d(TAG, "Highlighting rect: $targetRect")
+            Log.d(TAG, "Final highlighting rect with padding: $targetRect")
 
             // Animate to new position
             animateHighlight(targetRect)
 
-            // Position hint text
+            // Position hint container
             positionHintContainer(targetRect)
         }
+
+
 
         private fun showFallbackHighlight() {
             // Use a fallback rectangle in the center of the screen
