@@ -567,7 +567,6 @@
     <string name="local_photos_icon">Local photos icon</string>
     <string name="google_photos_description">Access your Google Photos library (requires sign-in)</string>
     <string name="google_photos_icon">Google Photos icon</string>
-    <string name="help">Help</string>
     <string name="source_selection_help">Tap on a card to enable/disable a photo source. You need to select at least one source to continue.</string>
     <!-- Wizard Navigation -->
     <string name="exit_setup">Exit Setup?</string>
@@ -593,9 +592,7 @@
     <string name="setup_save_error">Failed to save setup</string>
     <string name="photo_selection_failed">Failed to load selected photos</string>
     <string name="navigation_error">Failed to navigate to next step</string>
-    <!-- Navigation -->
-    <string name="back">Back</string>
-    <string name="next">Next</string>
+
     <!-- Setup Wizard -->
     <string name="finish">Finish</string>
     <string name="step_format">Step %1$d of %2$d</string>
@@ -741,6 +738,14 @@
     <string name="security_feature_title">Security Features</string>
     <string name="security_feature_description">Protect your slideshow with biometric authentication and passcode locks. Keep your content private and secure.</string>
 
-
+    <!-- Tutorial strings -->
+    <string name="do_not_show_again">Don\'t show this tutorial again</string>
+    <string name="next">Next</string>
+    <string name="close">Close</string>
+    <string name="help">Help</string>
+    <string name="tutorial_display_settings">Display settings let you customize how photos appear on your screen. You can adjust brightness, orientation, and more.</string>
+    <string name="tutorial_common_settings">Common settings allow you to control general preferences, such as transition effects and timing between photos.</string>
+    <string name="tutorial_manage_photos">Here you can select which photos to display as your screensaver and organize your albums.</string>
+    <string name="tutorial_security_preferences">Security settings let you protect your app with a passcode or biometric authentication.</string>
 
 </resources>

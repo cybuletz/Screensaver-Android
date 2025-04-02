@@ -60,9 +60,13 @@ import com.photostreamr.version.ProVersionPromptDialog
 import android.widget.FrameLayout
 import com.photostreamr.widgets.WidgetPreferenceFragment
 import com.photostreamr.R
+import com.photostreamr.help.HelpDialogFragment
+import com.photostreamr.tutorial.TutorialManager
+import com.photostreamr.tutorial.TutorialOverlayFragment
+import com.photostreamr.tutorial.TutorialType
 
 @AndroidEntryPoint
-class SettingsFragment : PreferenceFragmentCompat() {
+class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.TutorialCallback {
 
     @Inject
     lateinit var photoDisplayManager: PhotoDisplayManager
@@ -105,6 +109,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var featureManager: FeatureManager
+
+    @Inject
+    lateinit var tutorialManager: TutorialManager
 
     @Inject
     lateinit var adManager: AdManager
@@ -460,6 +467,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 }
                 true
             }
+            "help_preferences" -> {
+                showHelpDialog()
+                true
+            }
             else -> super.onPreferenceTreeClick(preference)
         }
     }
@@ -683,6 +694,43 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 }
             }
         }
+    }
+
+    override fun getTargetView(viewId: Int): View? {
+        return view?.findViewById(viewId) ?: findPreference<Preference>(getPreferenceKeyById(viewId))?.let {
+            it.context?.let { ctx ->
+                preferenceScreen.onCreateRecyclerView(LayoutInflater.from(ctx), view as ViewGroup, null)
+                    .findViewHolderForItemId(it.order.toLong())?.itemView
+            }
+        }
+    }
+
+    override fun onTutorialClosed() {
+        // Do nothing for now, but you can add logic here if needed
+    }
+
+    private fun getPreferenceKeyById(viewId: Int): String? {
+        return when (viewId) {
+            R.id.manage_photos -> "manage_photos"
+            R.id.common_settings -> "common_settings"
+            R.id.display_settings -> "display_settings"
+            R.id.security_preferences -> "security_preferences"
+            // Add more mappings as needed
+            else -> null
+        }
+    }
+
+    // Add this method to show the tutorial
+    private fun showTutorial() {
+        val tutorialFragment = TutorialOverlayFragment.newInstance(TutorialType.SETTINGS)
+        tutorialFragment.setCallback(this)
+        tutorialFragment.show(childFragmentManager, "tutorial_overlay")
+    }
+
+    // Add this method to show the help dialog
+    private fun showHelpDialog() {
+        HelpDialogFragment.newInstance()
+            .show(childFragmentManager, "help_dialog")
     }
 
     override fun onDestroyView() {

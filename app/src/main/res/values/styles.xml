@@ -181,11 +181,13 @@
         <item name="buttonBarNegativeButtonStyle">@style/MaterialDialog.Button.Cancel</item>
     </style>
 
-    <style name="FullScreenDialogStyle" parent="Theme.AppCompat.Light.Dialog">
+    <!-- Full screen dialog style for tutorial overlay -->
+    <style name="FullScreenDialogStyle" parent="Theme.MaterialComponents.Dialog">
         <item name="android:windowIsFloating">false</item>
-        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowFullscreen">false</item>
-        <item name="colorPrimary">@color/primary</item>
+        <item name="android:windowContentOverlay">@null</item>
     </style>
+
 </resources>

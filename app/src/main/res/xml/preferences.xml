@@ -61,4 +61,17 @@
         android:layout="@layout/preference_bottom_spacing"
         android:key="bottom_spacing"/>
 
+    <PreferenceCategory
+        android:key="help_category"
+        android:title="Help &amp; Support"
+        app:iconSpaceReserved="true">
+
+        <Preference
+            android:key="help_preferences"
+            android:title="Help &amp; Tutorial"
+            android:summary="Show guidance about different settings"
+            android:icon="@drawable/ic_help"
+            app:iconSpaceReserved="true" />
+    </PreferenceCategory>
+
 </PreferenceScreen>
