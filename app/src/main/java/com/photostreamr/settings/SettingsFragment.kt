@@ -125,7 +125,6 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
     companion object {
         private const val TAG = "SettingsFragment"
         private const val REQUEST_SELECT_PHOTOS = 1001
-        private const val SPOTIFY_AUTH_REQUEST_CODE = 1337
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
