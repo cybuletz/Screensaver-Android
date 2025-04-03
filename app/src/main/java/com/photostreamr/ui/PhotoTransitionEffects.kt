@@ -130,7 +130,265 @@ class PhotoTransitionEffects(
                 transitionDuration,
                 callback
             )
-            // More transitions will be added in the next batch
+
+            "shatter" -> performShatterTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "droplet" -> performDropletTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "spiral" -> performSpiralTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "pageCurl" -> performPageCurlTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "split" -> performSplitTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "wave" -> performWaveTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "blinds" -> performBlindsTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+
+            "bounce" -> performBounceTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "glitch" -> performGlitchTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "doorway" -> performDoorwayTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "origami" -> performOrigamiTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "ripple" -> performRippleTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "kaleidoscope" -> performKaleidoscopeTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "wipe" -> performWipeTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "checkerboard" -> performCheckerboardTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "elastic" -> performElasticTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "crystallize" -> performCrystallizeTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "clockwise" -> performClockwiseTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "diagonal" -> performDiagonalTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "stretch" -> performStretchTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "circle" -> performCircleTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "crossFade" -> performCrossFadeTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "crossFadeGrayscale" -> performCrossFadeGrayscaleTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "cube3d" -> performCube3dTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "simpleFade" -> performSimpleFadeTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "flash" -> performFlashTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "illusion" -> performIllusionTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "radial" -> performRadialTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "slideExtended" -> performSlideExtendedTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "wind" -> performWindTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "star" -> performStarTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            "swap" -> performSwapTransition(
+                views,
+                resource,
+                nextIndex,
+                transitionDuration,
+                callback
+            )
+
+            // Default fallback
             else -> performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
         }
     }
@@ -2014,52 +2272,49 @@ class PhotoTransitionEffects(
             visibility = View.VISIBLE
         }
 
-        // Get dimensions
-        val width = views.primaryView.width
-        val height = views.primaryView.height
-
-        // Create a handler for delayed effects
+        val random = Random.Default
         val handler = Handler(Looper.getMainLooper())
-
-        // List to store runnable callbacks
         val glitchCallbacks = mutableListOf<Runnable>()
 
-        // Generate random glitches
-        val numGlitches = 15
-        val random = Random.Default
+        // Pre-create bitmap for noise effect - do this once instead of during animation
+        val noiseView = ImageView(views.primaryView.context).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            alpha = 0.3f
+            visibility = View.GONE
+        }
+
+        // Add the noise view once
+        (views.container as? ViewGroup)?.addView(noiseView)
+
+        // Reduce number of glitches
+        val numGlitches = 8  // Reduced from 15
 
         for (i in 0 until numGlitches) {
-            // Create a glitch effect at random time
             val glitchTime = (random.nextInt(1, 10) * transitionDuration / 10)
 
             val glitchRunnable = Runnable {
                 try {
-                    // Random glitch effect
-                    val glitchType = random.nextInt(4)
+                    // Limit to simpler, less expensive effects
+                    val glitchType = random.nextInt(3) // Removed the expensive split effect (case 2)
 
                     when (glitchType) {
-                        0 -> { // Color channel shift
-                            views.primaryView.colorFilter =
-                                ColorMatrixColorFilter(ColorMatrix().apply {
-                                    setScale(
-                                        random.nextFloat() * 2,
-                                        random.nextFloat() * 2,
-                                        random.nextFloat() * 2,
-                                        1f
-                                    )
-                                })
-                            views.overlayView.colorFilter =
-                                ColorMatrixColorFilter(ColorMatrix().apply {
-                                    setScale(
-                                        random.nextFloat() * 2,
-                                        random.nextFloat() * 2,
-                                        random.nextFloat() * 2,
-                                        1f
-                                    )
-                                })
+                        0 -> { // Color channel shift - inexpensive
+                            val colorMatrix = ColorMatrix()
+                            colorMatrix.setScale(
+                                random.nextFloat() * 2,
+                                random.nextFloat() * 2,
+                                random.nextFloat() * 2,
+                                1f
+                            )
+                            val filter = ColorMatrixColorFilter(colorMatrix)
+                            views.primaryView.colorFilter = filter
+                            views.overlayView.colorFilter = filter
                         }
 
-                        1 -> { // Position glitch
+                        1 -> { // Position glitch - relatively inexpensive
                             val offsetX = random.nextInt(-20, 20)
                             val offsetY = random.nextInt(-20, 20)
                             views.primaryView.translationX = offsetX.toFloat()
@@ -2071,120 +2326,18 @@ class PhotoTransitionEffects(
                             }
                         }
 
-                        2 -> { // Split effect using clipping
-                            // For API 24+ we'll use a different approach with rectangular clipping
-                            // Create horizontal or vertical splits using ViewGroups
-
-                            // Temporarily hide the primary view
-                            views.primaryView.visibility = View.INVISIBLE
-
-                            // Get the current drawable
-                            val currentDrawable = views.primaryView.drawable
-
-                            // Create a container for split views
-                            val splitContainer = FrameLayout(context)
-                            splitContainer.layoutParams = FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-
-                            // Create 2-3 split fragments
-                            val numSplits = random.nextInt(2, 4)
-                            val splitViews = mutableListOf<ImageView>()
-
-                            for (j in 0 until numSplits) {
-                                // Decide if we're doing horizontal or vertical splits
-                                val isHorizontal = random.nextBoolean()
-
-                                val splitView = ImageView(context)
-                                splitView.setImageDrawable(currentDrawable?.constantState?.newDrawable())
-                                splitView.scaleType = ImageView.ScaleType.CENTER_CROP
-
-                                if (isHorizontal) {
-                                    // Horizontal splits
-                                    val splitHeight = height / numSplits
-                                    val yOffset = j * splitHeight
-
-                                    splitView.layoutParams = FrameLayout.LayoutParams(
-                                        width,
-                                        splitHeight
-                                    ).apply {
-                                        topMargin = yOffset
-                                    }
-
-                                    // Apply translation effect
-                                    val jitter = random.nextInt(-10, 10)
-                                    splitView.translationX = jitter.toFloat()
-                                } else {
-                                    // Vertical splits
-                                    val splitWidth = width / numSplits
-                                    val xOffset = j * splitWidth
-
-                                    splitView.layoutParams = FrameLayout.LayoutParams(
-                                        splitWidth,
-                                        height
-                                    ).apply {
-                                        leftMargin = xOffset
-                                    }
-
-                                    // Apply translation effect
-                                    val jitter = random.nextInt(-10, 10)
-                                    splitView.translationY = jitter.toFloat()
-                                }
-
-                                splitContainer.addView(splitView)
-                                splitViews.add(splitView)
+                        2 -> { // Simplified noise effect
+                            // Instead of creating a new bitmap each time, just show/hide the noiseView
+                            if (noiseView.drawable == null) {
+                                // Create noise bitmap only once
+                                val noise = createNoiseBitmap(views.primaryView.width, views.primaryView.height, random)
+                                noiseView.setImageBitmap(noise)
                             }
+                            noiseView.visibility = View.VISIBLE
 
-                            // Add the split container to the main container
-                            (views.container as ViewGroup).addView(splitContainer)
-
-                            // Remove split effect after a short time
+                            // Hide after a short delay
                             handler.postDelayed({
-                                (views.container as ViewGroup).removeView(splitContainer)
-                                views.primaryView.visibility = View.VISIBLE
-                            }, 100)
-                        }
-
-                        3 -> { // Noise effect
-                            val noise = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                            val canvas = Canvas(noise)
-
-                            // Draw random noise
-                            val noisePaint = Paint().apply {
-                                style = Paint.Style.FILL
-                            }
-
-                            // Fill with noise
-                            for (x in 0 until width step 4) {
-                                for (y in 0 until height step 4) {
-                                    noisePaint.color = Color.argb(
-                                        random.nextInt(50, 150),
-                                        random.nextInt(255),
-                                        random.nextInt(255),
-                                        random.nextInt(255)
-                                    )
-                                    canvas.drawRect(
-                                        x.toFloat(), y.toFloat(),
-                                        (x + 4).toFloat(), (y + 4).toFloat(), noisePaint
-                                    )
-                                }
-                            }
-
-                            // Apply noise as overlay
-                            val noiseView = ImageView(context)
-                            noiseView.layoutParams = FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            noiseView.setImageBitmap(noise)
-                            noiseView.alpha = 0.3f
-
-                            (views.container as ViewGroup).addView(noiseView)
-
-                            // Remove noise after a short time
-                            handler.postDelayed({
-                                (views.container as ViewGroup).removeView(noiseView)
+                                noiseView.visibility = View.GONE
                             }, 100)
                         }
                     }
@@ -2198,7 +2351,6 @@ class PhotoTransitionEffects(
                         views.overlayView.translationX = 0f
                         views.overlayView.translationY = 0f
                     }, 100)
-
                 } catch (e: Exception) {
                     Log.e(TAG, "Error in glitch effect", e)
                 }
@@ -2208,29 +2360,15 @@ class PhotoTransitionEffects(
             handler.postDelayed(glitchRunnable, glitchTime)
         }
 
-        // Gradually fade in the new image
+        // Fade in animation
         val fadeAnimator = ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f)
         fadeAnimator.duration = transitionDuration
-        fadeAnimator.interpolator = object : AccelerateDecelerateInterpolator() {
-            override fun getInterpolation(input: Float): Float {
-                // Add some randomness to the fade
-                val baseInterpolation = super.getInterpolation(input)
-                return if (random.nextFloat() < 0.1f) {
-                    // Occasional glitch in the interpolation
-                    random.nextFloat().coerceAtMost(baseInterpolation + 0.2f)
-                } else {
-                    baseInterpolation
-                }
-            }
-        }
+        fadeAnimator.interpolator = AccelerateDecelerateInterpolator()
 
-        // Clean up and finish transition
         fadeAnimator.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                // Remove any pending callbacks
+                // Clean up
                 glitchCallbacks.forEach { handler.removeCallbacks(it) }
-
-                // Reset any remaining effects
                 views.primaryView.colorFilter = null
                 views.overlayView.colorFilter = null
                 views.primaryView.translationX = 0f
@@ -2238,12 +2376,50 @@ class PhotoTransitionEffects(
                 views.overlayView.translationX = 0f
                 views.overlayView.translationY = 0f
 
-                // Complete the transition
+                // Remove the noise view
+                (views.container as? ViewGroup)?.removeView(noiseView)
+
+                // Complete transition
                 callback.onTransitionCompleted(resource, nextIndex)
             }
         })
 
         fadeAnimator.start()
+    }
+
+    private fun createNoiseBitmap(width: Int, height: Int, random: Random): Bitmap {
+        // Create a smaller bitmap (1/4 size) for better performance
+        val scaleFactor = 4
+        val scaledWidth = width / scaleFactor
+        val scaledHeight = height / scaleFactor
+
+        val noise = Bitmap.createBitmap(scaledWidth, scaledHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(noise)
+        val noisePaint = Paint().apply { style = Paint.Style.FILL }
+
+        // Draw less frequent noise pixels
+        for (x in 0 until scaledWidth) {
+            for (y in 0 until scaledHeight) {
+                if (random.nextFloat() < 0.7f) continue // Skip 70% of pixels
+
+                noisePaint.color = Color.argb(
+                    random.nextInt(50, 150),
+                    random.nextInt(255),
+                    random.nextInt(255),
+                    random.nextInt(255)
+                )
+                canvas.drawRect(
+                    x.toFloat(), y.toFloat(),
+                    (x + 1).toFloat(), (y + 1).toFloat(), noisePaint
+                )
+            }
+        }
+
+        // Create the final bitmap scaled back up
+        val finalBitmap = Bitmap.createScaledBitmap(noise, width, height, false)
+        noise.recycle() // Recycle the smaller bitmap
+
+        return finalBitmap
     }
 
     private data class Point(val x: Int, val y: Int)
