@@ -32,8 +32,19 @@ class TutorialManager @Inject constructor(
         const val ID_SECURITY_PREFERENCES = 1006
     }
 
+    fun isFirstLogin(): Boolean {
+        val key = "is_first_login"
+        val isFirst = prefs.getBoolean(key, true)
+        if (isFirst) {
+            prefs.edit().putBoolean(key, false).apply()
+        }
+        return isFirst
+    }
+
     fun shouldShowTutorial(type: TutorialType): Boolean {
-        return !prefs.getBoolean("tutorial_shown_${type.name}", false)
+        // Changed to always return true instead of checking preference
+        // The TutorialOverlayFragment will handle the "don't show again" preference
+        return true
     }
 
     fun getTutorialSteps(type: TutorialType): List<TutorialStep> {
@@ -42,13 +53,26 @@ class TutorialManager @Inject constructor(
         }
     }
 
-    fun isFirstLogin(): Boolean {
-        val key = "is_first_login"
-        val isFirst = prefs.getBoolean(key, true)
-        if (isFirst) {
-            prefs.edit().putBoolean(key, false).apply()
+    fun markTutorialAsShown(type: TutorialType) {
+        prefs.edit().putBoolean("tutorial_shown_${type.name}", true).apply()
+    }
+
+    fun resetTutorials() {
+        val editor = prefs.edit()
+        TutorialType.values().forEach { type ->
+            editor.putBoolean("tutorial_shown_${type.name}", false)
         }
-        return isFirst
+        editor.apply()
+    }
+
+    // Check if the user has explicitly opted out of seeing the tutorial
+    fun isTutorialDisabledByUser(type: TutorialType): Boolean {
+        return prefs.getBoolean("tutorial_disabled_${type.name}", false)
+    }
+
+    // Save the user's preference to not show the tutorial again
+    fun disableTutorial(type: TutorialType) {
+        prefs.edit().putBoolean("tutorial_disabled_${type.name}", true).apply()
     }
 
     private fun getSettingsTutorialSteps(): List<TutorialStep> {
@@ -79,4 +103,9 @@ class TutorialManager @Inject constructor(
             )
         )
     }
+
+
+
+
+
 }

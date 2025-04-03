@@ -291,17 +291,12 @@
 
         private fun closeTutorial() {
             if (doNotShowCheckBox.isChecked) {
-                saveTutorialSetting()
+                // Use the new method to disable the tutorial
+                val tutorialType = arguments?.getSerializable(ARG_TUTORIAL_TYPE) as TutorialType
+                tutorialManager.disableTutorial(tutorialType)
             }
             tutorialCallback?.onTutorialClosed()
             dismiss()
-        }
-
-        private fun saveTutorialSetting() {
-            val tutorialType = arguments?.getSerializable(ARG_TUTORIAL_TYPE) as TutorialType
-            PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
-                .putBoolean("tutorial_shown_${tutorialType.name}", true)
-                .apply()
         }
 
         fun setCallback(callback: TutorialCallback) {

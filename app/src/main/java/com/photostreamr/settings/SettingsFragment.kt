@@ -351,15 +351,15 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                         }
                     }
                 }
+
             }
         }
-        // Delay showing the tutorial to ensure the UI is fully rendered
-        view.postDelayed({
-            if (tutorialManager.isFirstLogin() && tutorialManager.shouldShowTutorial(TutorialType.SETTINGS)) {
-                Log.d(TAG, "First login detected, showing tutorial")
+        view.post {
+            if (!tutorialManager.isTutorialDisabledByUser(TutorialType.SETTINGS)) {
+                Log.d(TAG, "Showing tutorial")
                 showTutorial()
             }
-        }, 300)
+        }
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
