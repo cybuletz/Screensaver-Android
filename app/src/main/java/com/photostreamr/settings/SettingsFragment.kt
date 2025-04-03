@@ -298,7 +298,9 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
     private fun checkFeatureAccess(feature: FeatureManager.Feature): Boolean {
         if (!featureManager.isFeatureAvailable(feature)) {
             if (featureManager.showProVersionPrompt(feature)) {
-                showProVersionPrompt(feature)
+                // Use the version WITH the feature parameter for feature-specific prompts
+                ProVersionPromptDialog.newInstance(feature)
+                    .show(childFragmentManager, "feature_pro_prompt")
             }
             return false
         }
@@ -483,9 +485,16 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                 true
             }
             "upgrade_to_pro" -> {
-                ProVersionPromptDialog.newInstance()
-                    .show(childFragmentManager, "pro_version_prompt")
-                true
+                try {
+                    Log.d("SettingsFragment", "Showing generic Pro version dialog")
+                    // Use the parameterless newInstance() method here
+                    ProVersionPromptDialog.newInstance()
+                        .show(childFragmentManager, "pro_version_prompt")
+                    true
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Error showing pro dialog", e)
+                    false
+                }
             }
             "help_preferences" -> {
                 showHelpDialog()

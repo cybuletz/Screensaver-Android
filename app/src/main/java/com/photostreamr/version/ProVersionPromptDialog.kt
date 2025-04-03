@@ -52,21 +52,25 @@ class ProVersionPromptDialog : DialogFragment() {
 
     companion object {
         private const val ARG_FEATURE = "feature"
+        private const val ARG_GENERIC = "is_generic"
         private const val PRODUCT_LOAD_TIMEOUT = 5000L // 5 second timeout
 
         fun newInstance(feature: FeatureManager.Feature): ProVersionPromptDialog {
             return ProVersionPromptDialog().apply {
                 arguments = Bundle().apply {
                     putSerializable(ARG_FEATURE, feature)
+                    putBoolean(ARG_GENERIC, false) // This is a feature-specific call
                 }
             }
         }
 
-        // New method for creating a generic instance without a specific feature
         fun newInstance(): ProVersionPromptDialog {
             return ProVersionPromptDialog().apply {
-                // No arguments means it will use the default feature (usually MUSIC or whatever you define as default)
-                // When no feature is provided, the dialog will show generic PRO upgrade information
+                arguments = Bundle().apply {
+                    // We'll still need a default feature for internal usage
+                    putSerializable(ARG_FEATURE, FeatureManager.Feature.WIDGETS)
+                    putBoolean(ARG_GENERIC, true) // This indicates it's from the generic upgrade button
+                }
             }
         }
     }
@@ -80,6 +84,9 @@ class ProVersionPromptDialog : DialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val feature = arguments?.getSerializable(ARG_FEATURE) as? FeatureManager.Feature
             ?: FeatureManager.Feature.MUSIC
+
+        // Check if this is a generic Pro upgrade (not feature-specific)
+        val isGeneric = arguments?.getBoolean(ARG_GENERIC, false) ?: false
 
         val view = LayoutInflater.from(requireContext())
             .inflate(R.layout.dialog_pro_version_prompt, null)
@@ -105,16 +112,13 @@ class ProVersionPromptDialog : DialogFragment() {
             }
         }, PRODUCT_LOAD_TIMEOUT)
 
-        // Check if this was opened from the general upgrade button in settings
-        val fromUpgradeButton = tag == "pro_version_prompt" && feature == FeatureManager.Feature.WIDGETS
-
-        if (fromUpgradeButton) {
+        if (isGeneric) {
             // Generic Pro version content for the upgrade button
             titleText.text = "Upgrade to Pro"
             descriptionText.text = "Unlock all premium features including background music, custom widgets, and enhanced privacy controls. Enjoy the full experience with a one-time purchase."
             featureImage.setImageResource(R.drawable.premium)
         } else {
-            // Feature-specific content for other cases
+            // Feature-specific content
             when (feature) {
                 FeatureManager.Feature.MUSIC -> {
                     titleText.text = getString(R.string.music_feature_title)
