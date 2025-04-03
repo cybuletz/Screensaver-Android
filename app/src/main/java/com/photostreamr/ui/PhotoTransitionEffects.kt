@@ -21,6 +21,8 @@ import android.widget.ImageView
 import java.lang.Math.sin
 import kotlin.random.Random
 import android.graphics.Path
+import android.view.ViewOutlineProvider
+import android.graphics.Outline
 
 /**
  * Class that contains all transition effects for photo display
@@ -2081,27 +2083,79 @@ class PhotoTransitionEffects(
                             }
                         }
 
-                        2 -> { // Split effect
-                            val clipPath = Path()
-                            val clipRect = Rect(0, 0, width, height)
+                        2 -> { // Split effect using clipping
+                            // For API 24+ we'll use a different approach with rectangular clipping
+                            // Create horizontal or vertical splits using ViewGroups
 
-                            // Split into two or three parts
+                            // Temporarily hide the primary view
+                            views.primaryView.visibility = View.INVISIBLE
+
+                            // Get the current drawable
+                            val currentDrawable = views.primaryView.drawable
+
+                            // Create a container for split views
+                            val splitContainer = FrameLayout(context)
+                            splitContainer.layoutParams = FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+
+                            // Create 2-3 split fragments
                             val numSplits = random.nextInt(2, 4)
+                            val splitViews = mutableListOf<ImageView>()
+
                             for (j in 0 until numSplits) {
-                                val splitY = random.nextInt(height)
-                                val splitHeight = height / numSplits
-                                clipPath.addRect(
-                                    0f,
-                                    (splitY + j * splitHeight).toFloat(),
-                                    width.toFloat(),
-                                    (splitY + (j + 1) * splitHeight).toFloat(),
-                                    Path.Direction.CW
-                                )
+                                // Decide if we're doing horizontal or vertical splits
+                                val isHorizontal = random.nextBoolean()
+
+                                val splitView = ImageView(context)
+                                splitView.setImageDrawable(currentDrawable?.constantState?.newDrawable())
+                                splitView.scaleType = ImageView.ScaleType.CENTER_CROP
+
+                                if (isHorizontal) {
+                                    // Horizontal splits
+                                    val splitHeight = height / numSplits
+                                    val yOffset = j * splitHeight
+
+                                    splitView.layoutParams = FrameLayout.LayoutParams(
+                                        width,
+                                        splitHeight
+                                    ).apply {
+                                        topMargin = yOffset
+                                    }
+
+                                    // Apply translation effect
+                                    val jitter = random.nextInt(-10, 10)
+                                    splitView.translationX = jitter.toFloat()
+                                } else {
+                                    // Vertical splits
+                                    val splitWidth = width / numSplits
+                                    val xOffset = j * splitWidth
+
+                                    splitView.layoutParams = FrameLayout.LayoutParams(
+                                        splitWidth,
+                                        height
+                                    ).apply {
+                                        leftMargin = xOffset
+                                    }
+
+                                    // Apply translation effect
+                                    val jitter = random.nextInt(-10, 10)
+                                    splitView.translationY = jitter.toFloat()
+                                }
+
+                                splitContainer.addView(splitView)
+                                splitViews.add(splitView)
                             }
 
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                views.primaryView.clipPath = clipPath
-                            }
+                            // Add the split container to the main container
+                            (views.container as ViewGroup).addView(splitContainer)
+
+                            // Remove split effect after a short time
+                            handler.postDelayed({
+                                (views.container as ViewGroup).removeView(splitContainer)
+                                views.primaryView.visibility = View.VISIBLE
+                            }, 100)
                         }
 
                         3 -> { // Noise effect
@@ -2155,9 +2209,6 @@ class PhotoTransitionEffects(
                         views.primaryView.translationY = 0f
                         views.overlayView.translationX = 0f
                         views.overlayView.translationY = 0f
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                            views.primaryView.clipPath = null
-                        }
                     }, 100)
 
                 } catch (e: Exception) {
@@ -2198,9 +2249,6 @@ class PhotoTransitionEffects(
                 views.primaryView.translationY = 0f
                 views.overlayView.translationX = 0f
                 views.overlayView.translationY = 0f
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    views.primaryView.clipPath = null
-                }
 
                 // Complete the transition
                 callback.onTransitionCompleted(resource, nextIndex)
@@ -3495,73 +3543,48 @@ class PhotoTransitionEffects(
             animator.addUpdateListener { valueAnimator ->
                 val angle = valueAnimator.animatedValue as Float
 
-                // Update the radial gradient for the wipe effect
-                val radialPaint = Paint()
-                radialPaint.shader = SweepGradient(
-                    centerX,
-                    centerY,
-                    intArrayOf(Color.TRANSPARENT, Color.BLACK, Color.BLACK),
-                    floatArrayOf(0f, angle / 360f, 1f)
+                // For API 24+, use a bitmap approach with Canvas and Path
+                // Create a mask bitmap
+                val maskBitmap = Bitmap.createBitmap(
+                    containerWidth,
+                    containerHeight,
+                    Bitmap.Config.ARGB_8888
                 )
-
-                // Apply the shader as a porter duff mask
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    radialGradientView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                    revealImageView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-
-                    val revealPath = Path()
-                    revealPath.addArc(
-                        centerX - containerWidth,
-                        centerY - containerHeight,
-                        centerX + containerWidth,
-                        centerY + containerHeight,
-                        -90f,
-                        angle
-                    )
-                    revealPath.lineTo(centerX, centerY)
-                    revealPath.close()
-
-                    // Apply the clip path to the reveal image
-                    revealImageView.clipPath = revealPath
-                } else {
-                    // For older devices, use a simpler approach
-                    val maskBitmap = Bitmap.createBitmap(
-                        containerWidth,
-                        containerHeight,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    val maskCanvas = Canvas(maskBitmap)
-
-                    // Create a path for the current angle
-                    val path = Path()
-                    path.moveTo(centerX, centerY)
-                    path.lineTo(centerX, 0f)
-                    path.arcTo(
-                        RectF(0f, 0f, containerWidth.toFloat(), containerHeight.toFloat()),
-                        -90f,
-                        angle,
-                        false
-                    )
-                    path.close()
-
-                    // Draw the path
-                    maskCanvas.drawPath(path, Paint().apply { color = Color.BLACK })
-
-                    // Apply the mask to the image
-                    val paint = Paint()
-                    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-
-                    val resultBitmap = Bitmap.createBitmap(
-                        containerWidth,
-                        containerHeight,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    val resultCanvas = Canvas(resultBitmap)
-                    resultCanvas.drawBitmap(newBitmap, 0f, 0f, null)
-                    resultCanvas.drawBitmap(maskBitmap, 0f, 0f, paint)
-
-                    revealImageView.setImageBitmap(resultBitmap)
+                val maskCanvas = Canvas(maskBitmap)
+                val maskPaint = Paint().apply {
+                    color = Color.BLACK
+                    style = Paint.Style.FILL
                 }
+
+                // Create a path for the current angle
+                val path = Path()
+                path.moveTo(centerX, centerY)
+                path.lineTo(centerX, 0f)
+                path.arcTo(
+                    RectF(0f, 0f, containerWidth.toFloat(), containerHeight.toFloat()),
+                    -90f,
+                    angle,
+                    false
+                )
+                path.close()
+
+                // Draw the path
+                maskCanvas.drawPath(path, maskPaint)
+
+                // Apply the mask to the image
+                val paint = Paint()
+                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+
+                val resultBitmap = Bitmap.createBitmap(
+                    containerWidth,
+                    containerHeight,
+                    Bitmap.Config.ARGB_8888
+                )
+                val resultCanvas = Canvas(resultBitmap)
+                resultCanvas.drawBitmap(newBitmap, 0f, 0f, null)
+                resultCanvas.drawBitmap(maskBitmap, 0f, 0f, paint)
+
+                revealImageView.setImageBitmap(resultBitmap)
             }
 
             // Fade out the primary view gradually
@@ -4171,7 +4194,6 @@ class PhotoTransitionEffects(
                         containerWidth.toFloat(),
                         containerHeight.toFloat()
                     )
-
                     "up" -> RectF(0f, 0f, containerWidth.toFloat(), containerHeight * progress)
                     "down" -> RectF(
                         0f,
@@ -4179,43 +4201,34 @@ class PhotoTransitionEffects(
                         containerWidth.toFloat(),
                         containerHeight.toFloat()
                     )
-
                     else -> RectF(0f, 0f, containerWidth * progress, containerHeight.toFloat())
                 }
 
                 // Draw the mask
                 maskCanvas.drawRect(rect, maskPaint)
 
-                // Apply the mask to the reveal image view
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    // Use clipPath for newer devices
-                    val clipPath = Path()
-                    clipPath.addRect(rect, Path.Direction.CW)
-                    revealImageView.clipPath = clipPath
+                // Use bitmap-based approach for API 24+
+                val resultBitmap = Bitmap.createBitmap(
+                    containerWidth,
+                    containerHeight,
+                    Bitmap.Config.ARGB_8888
+                )
+                val resultCanvas = Canvas(resultBitmap)
+
+                // Draw the new image
+                if (resource is BitmapDrawable) {
+                    resultCanvas.drawBitmap(resource.bitmap, 0f, 0f, null)
                 } else {
-                    // Use a bitmap approach for older devices
-                    val resultBitmap = Bitmap.createBitmap(
-                        containerWidth,
-                        containerHeight,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    val resultCanvas = Canvas(resultBitmap)
-
-                    // Draw the new image
-                    if (resource is BitmapDrawable) {
-                        resultCanvas.drawBitmap(resource.bitmap, 0f, 0f, null)
-                    } else {
-                        resource.setBounds(0, 0, resultCanvas.width, resultCanvas.height)
-                        resource.draw(resultCanvas)
-                    }
-
-                    // Apply the mask
-                    val paint = Paint()
-                    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                    resultCanvas.drawBitmap(maskBitmap, 0f, 0f, paint)
-
-                    revealImageView.setImageBitmap(resultBitmap)
+                    resource.setBounds(0, 0, resultCanvas.width, resultCanvas.height)
+                    resource.draw(resultCanvas)
                 }
+
+                // Apply the mask
+                val paint = Paint()
+                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                resultCanvas.drawBitmap(maskBitmap, 0f, 0f, paint)
+
+                revealImageView.setImageBitmap(resultBitmap)
             }
 
             // Add listener for completion
@@ -4328,33 +4341,28 @@ class PhotoTransitionEffects(
                 // Draw the star to the mask
                 maskCanvas.drawPath(scaledPath, maskPaint)
 
-                // Apply the mask to reveal the new image
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    starRevealView.clipPath = scaledPath
+                // Use a bitmap approach for API 24+
+                val resultBitmap = Bitmap.createBitmap(
+                    containerWidth,
+                    containerHeight,
+                    Bitmap.Config.ARGB_8888
+                )
+                val resultCanvas = Canvas(resultBitmap)
+
+                // Draw the new image
+                if (resource is BitmapDrawable) {
+                    resultCanvas.drawBitmap(resource.bitmap, 0f, 0f, null)
                 } else {
-                    // Use a bitmap approach for older devices
-                    val resultBitmap = Bitmap.createBitmap(
-                        containerWidth,
-                        containerHeight,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    val resultCanvas = Canvas(resultBitmap)
-
-                    // Draw the new image
-                    if (resource is BitmapDrawable) {
-                        resultCanvas.drawBitmap(resource.bitmap, 0f, 0f, null)
-                    } else {
-                        resource.setBounds(0, 0, resultCanvas.width, resultCanvas.height)
-                        resource.draw(resultCanvas)
-                    }
-
-                    // Apply the mask
-                    val paint = Paint()
-                    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                    resultCanvas.drawBitmap(maskBitmap, 0f, 0f, paint)
-
-                    starRevealView.setImageBitmap(resultBitmap)
+                    resource.setBounds(0, 0, resultCanvas.width, resultCanvas.height)
+                    resource.draw(resultCanvas)
                 }
+
+                // Apply the mask
+                val paint = Paint()
+                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                resultCanvas.drawBitmap(maskBitmap, 0f, 0f, paint)
+
+                starRevealView.setImageBitmap(resultBitmap)
             }
 
             // Create a fade out animation for the primary view

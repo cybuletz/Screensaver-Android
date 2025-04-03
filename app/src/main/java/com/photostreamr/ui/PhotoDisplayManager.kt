@@ -149,6 +149,31 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    override fun onTransitionCompleted(resource: Drawable, nextIndex: Int) {
+        // Handle the completion of the transition
+        Log.d(TAG, "Transition to photo $nextIndex completed")
+
+        // Update the primary view with the new image resource
+        views?.primaryView?.setImageDrawable(resource)
+
+        // Reset overlay view properties
+        views?.overlayView?.apply {
+            alpha = 0f
+            scaleX = 1f
+            scaleY = 1f
+            translationX = 0f
+            translationY = 0f
+            rotationX = 0f
+            rotationY = 0f
+            rotation = 0f
+            translationZ = 0f
+            visibility = View.INVISIBLE
+        }
+
+        // Update the current photo index
+        currentPhotoIndex = nextIndex
+    }
+
     fun isScreensaverActive(): Boolean = isScreensaverActive
 
     private fun loadPhotosInBackground() {
