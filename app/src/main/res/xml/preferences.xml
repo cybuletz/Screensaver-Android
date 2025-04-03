@@ -25,22 +25,17 @@
         style="@style/SettingsCardStyle"/>
 
     <com.photostreamr.settings.MaterialBasicPreference
-        android:key="clock_widget_settings"
-        android:title="@string/pref_category_clock_widget"
-        android:summary="@string/pref_clock_widget_enabled_summary"
+        android:key="widgets_settings"
+        android:title="@string/widgets_settings_title"
+        android:summary="@string/widgets_settings_summary"
         android:icon="@drawable/widgets"
-        style="@style/SettingsCardStyle"/>
+        app:iconSpaceReserved="true" />
 
     <com.photostreamr.settings.MaterialBasicPreference
-        android:key="weather_widget_settings"
-        android:title="@string/pref_category_weather_widget"
-        android:summary="@string/pref_show_weather_summary"
-        style="@style/SettingsCardStyle"/>
-
-    <com.photostreamr.settings.MaterialBasicPreference
-        android:key="music_widget_settings"
-        android:title="@string/pref_music_widget"
-        android:summary="@string/pref_show_music_summary"
+        android:key="display_settings"
+        android:title="@string/pref_category_display"
+        android:summary="@string/pref_display_summary"
+        android:icon="@drawable/ic_display"
         style="@style/SettingsCardStyle"/>
 
     <com.photostreamr.settings.MaterialBasicPreference
@@ -48,13 +43,6 @@
         android:title="@string/pref_security_settings_title"
         android:summary="@string/pref_security_settings_summary"
         android:icon="@drawable/security_settings"
-        style="@style/SettingsCardStyle"/>
-
-    <com.photostreamr.settings.MaterialBasicPreference
-        android:key="display_settings"
-        android:title="@string/pref_category_display"
-        android:summary="@string/pref_display_summary"
-        android:icon="@drawable/ic_display"
         style="@style/SettingsCardStyle"/>
 
     <Preference

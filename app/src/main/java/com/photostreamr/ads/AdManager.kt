@@ -56,9 +56,9 @@ class AdManager @Inject constructor(
         private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-3940256099942544/2247696110"
 
         // Production ad units - replace with your actual ad unit IDs
-        private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111"
-        private const val PRODUCTION_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
-        private const val PRODUCTION_NATIVE_AD_UNIT_ID = "ca-app-pub-3940256099942544/2247696110"
+        private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-1825370608705808/5588599522"
+        private const val PRODUCTION_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-1825370608705808/2803751564"
+        private const val PRODUCTION_NATIVE_AD_UNIT_ID = "ca-app-pub-1825370608705808/2360210075"
 
         // Auto-detect whether we're in debug or release mode
         private val IS_DEBUG = BuildConfig.DEBUG
@@ -76,9 +76,9 @@ class AdManager @Inject constructor(
         private const val BANNER_REFRESH_INTERVAL = 60000L // 10 minutes in milliseconds
 
         // Native ad frequency (min and max values)
-        private const val MIN_NATIVE_AD_FREQUENCY = 40 // Min photos between random ads
-        private const val MAX_NATIVE_AD_FREQUENCY = 65 // Max photos between random ads
-        private const val DEFAULT_NATIVE_AD_FREQUENCY = 40 // Default fallback value
+        private const val MIN_NATIVE_AD_FREQUENCY = 10 // Min photos between random ads
+        private const val MAX_NATIVE_AD_FREQUENCY = 15 // Max photos between random ads
+        private const val DEFAULT_NATIVE_AD_FREQUENCY = 20 // Default fallback value
 
         // The number of native ads to preload in the cache
         private const val NATIVE_AD_CACHE_SIZE = 3

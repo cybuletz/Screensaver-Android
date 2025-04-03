@@ -395,8 +395,6 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                         true
                     }
 
-                    // Update widget summaries based on their states
-                    updateWidgetSummaries()
 
                     observeAppState()
                     observeAppDataState()
@@ -453,16 +451,17 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                 }
                 true
             }
-            "clock_widget_settings", "weather_widget_settings", "music_widget_settings" -> {
+            "widgets_settings" -> {
                 if (checkFeatureAccess(FeatureManager.Feature.WIDGETS)) {
-                    // Original widget code
-                    val widgetType = when (preference.key) {
-                        "clock_widget_settings" -> WidgetType.CLOCK
-                        "weather_widget_settings" -> WidgetType.WEATHER
-                        "music_widget_settings" -> WidgetType.MUSIC
-                        else -> WidgetType.CLOCK
+                    try {
+                        Log.d("SettingsFragment", "Showing WidgetsSettingsDialog")
+                        val dialog = WidgetsSettingsDialog.newInstance()
+                        dialog.show(childFragmentManager, "widgets_settings")
+                        true
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Error showing widgets settings dialog", e)
+                        false
                     }
-                    showWidgetDialog(widgetType)
                 }
                 true
             }
@@ -487,55 +486,9 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
         adManager.loadSettingsAd()
     }
 
-    private fun showWidgetDialog(widgetType: WidgetType) {
-        WidgetPreferenceDialog.newInstance(widgetType)
-            .show(childFragmentManager, "widget_settings")
-    }
-
-    private fun updateWidgetSummaries() {
-        findPreference<Preference>("clock_widget_settings")?.apply {
-            val enabled = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                .getBoolean("show_clock", false)
-            summary = if (enabled) {
-                getString(R.string.pref_clock_widget_enabled_summary)
-            } else {
-                getString(R.string.pref_widget_settings_summary)
-            }
-        }
-
-        findPreference<Preference>("weather_widget_settings")?.apply {
-            val enabled = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                .getBoolean("show_weather", false)
-            summary = if (enabled) {
-                getString(R.string.pref_show_weather_summary)
-            } else {
-                getString(R.string.pref_widget_settings_summary)
-            }
-        }
-
-        findPreference<Preference>("music_widget_settings")?.apply {
-            val enabled = spotifyPreferences.isEnabled()
-            summary = if (enabled) {
-                getString(R.string.pref_music_widget_enabled_summary)
-            } else {
-                getString(R.string.pref_widget_settings_summary)
-            }
-        }
-    }
-
     override fun onStop() {
         super.onStop()
         widgetManager.reinitializeWeatherWidget()
-    }
-
-    private fun observeWidgetState() {
-        lifecycleScope.launch {
-            widgetManager.widgetStates.collect { states ->
-                states[WidgetType.CLOCK]?.let { clockState ->
-                    updateClockPreferencesVisibility(clockState.state is WidgetState.Active)
-                }
-            }
-        }
     }
 
     private fun updateClockPreferencesVisibility(visible: Boolean) {
@@ -682,9 +635,6 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
         // Restore only general settings
         findPreference<ListPreference>("display_mode_selection")?.value = currentState.displayMode
 
-        // Restore widget states
-        updateWidgetSummaries()
-
         // Restore cache settings
         findPreference<ListPreference>("cache_size")?.value =
             PreferenceManager.getDefaultSharedPreferences(requireContext())
@@ -699,6 +649,32 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                 appDataManager.observeState().collect { state ->
                     updatePreferencesFromState(state)
                 }
+            }
+        }
+    }
+
+    private fun updateWidgetsPreferenceSummary() {
+        findPreference<Preference>("widgets_settings")?.apply {
+            // Count how many widgets are enabled
+            val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            val clockEnabled = prefs.getBoolean("show_clock", false)
+            val weatherEnabled = prefs.getBoolean("show_weather", false)
+            val musicEnabled = prefs.getBoolean("show_music", false)
+
+            val enabledCount = listOf(clockEnabled, weatherEnabled, musicEnabled).count { it }
+
+            summary = if (enabledCount > 0) {
+                getString(R.string.widgets_enabled_summary, enabledCount)
+            } else {
+                getString(R.string.widgets_settings_summary)
+            }
+        }
+    }
+
+    private fun observeWidgetState() {
+        lifecycleScope.launch {
+            widgetManager.widgetStates.collect { states ->
+                updateWidgetsPreferenceSummary()
             }
         }
     }

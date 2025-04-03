@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        android:title="@string/widgets_category_title"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="clock_widget_settings"
+            android:title="@string/pref_category_clock_widget"
+            android:summary="@string/pref_widget_settings_summary"
+            android:icon="@drawable/clock_widget"
+            app:iconSpaceReserved="true" />
+
+        <Preference
+            android:key="weather_widget_settings"
+            android:title="@string/pref_category_weather_widget"
+            android:summary="@string/pref_widget_settings_summary"
+            android:icon="@drawable/weather_widget"
+            app:iconSpaceReserved="true" />
+
+        <Preference
+            android:key="music_widget_settings"
+            android:title="@string/pref_category_music_widget"
+            android:summary="@string/pref_widget_settings_summary"
+            android:icon="@drawable/music_widget"
+            app:iconSpaceReserved="true" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

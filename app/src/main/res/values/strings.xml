@@ -748,4 +748,9 @@
     <string name="tutorial_manage_photos">Here you can select which photos to display as your screensaver and organize your albums.</string>
     <string name="tutorial_security_preferences">Security settings let you protect your app with a passcode or biometric authentication.</string>
 
+    <string name="widgets_settings_title">Widgets Settings</string>
+    <string name="widgets_category_title">Available Widgets</string>
+    <string name="widgets_settings_summary">Configure clock, weather, and music widgets</string>
+    <string name="widgets_enabled_summary">%1$d Widgets enabled</string>
+
 </resources>
