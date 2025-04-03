@@ -443,7 +443,7 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                     false
                 }
             }
-            "spotify_preferences", "radio_preferences" -> {
+            "music_sources" -> {
                 if (checkFeatureAccess(FeatureManager.Feature.MUSIC)) {
                     // Original music settings code
                     MusicSourcesDialog.newInstance()
@@ -694,7 +694,9 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
 
         val prefKey = when (viewId) {
             TutorialManager.ID_MANAGE_PHOTOS -> "manage_photos"
+            TutorialManager.ID_MUSIC_SOURCES -> "music_sources"
             TutorialManager.ID_COMMON_SETTINGS -> "common_settings"
+            TutorialManager.ID_WIDGETS_SETTINGS -> "widgets_settings"
             TutorialManager.ID_DISPLAY_SETTINGS -> "display_settings"
             TutorialManager.ID_SECURITY_PREFERENCES -> "security_preferences"
             else -> ""
@@ -770,34 +772,12 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
         // Do nothing for now, but you can add logic here if needed
     }
 
-    private fun getPreferenceKeyById(viewId: Int): String {
-        // Since preferences don't have view IDs in R.id, we'll use a different approach
-        // We'll map our tutorial step index to preference keys instead
-        val prefKeyMapping = mapOf(
-            0 to "manage_photos",
-            1 to "common_settings",
-            2 to "display_settings",
-            3 to "security_preferences"
-        )
-
-        // Find which index in our tutorial this viewId corresponds to
-        for ((index, stepViewId) in tutorialManager.getTutorialSteps(TutorialType.SETTINGS)
-            .mapIndexed { i, step -> i to step.targetViewId }) {
-            if (stepViewId == viewId) {
-                return prefKeyMapping[index] ?: ""
-            }
-        }
-        return ""
-    }
-
-    // Add this method to show the tutorial
     private fun showTutorial() {
         val tutorialFragment = TutorialOverlayFragment.newInstance(TutorialType.SETTINGS)
         tutorialFragment.setCallback(this)
         tutorialFragment.show(childFragmentManager, "tutorial_overlay")
     }
 
-    // Add this method to show the help dialog
     private fun showHelpDialog() {
         HelpDialogFragment.newInstance()
             .show(childFragmentManager, "help_dialog")

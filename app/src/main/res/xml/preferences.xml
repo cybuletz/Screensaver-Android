@@ -11,7 +11,7 @@
         android:title="@string/manage_photos" />
 
     <com.photostreamr.settings.MaterialBasicPreference
-        android:key="spotify_preferences"
+        android:key="music_sources"
         android:title="@string/pref_music_sources_title"
         android:summary="@string/pref_music_sources_summary"
         android:icon="@drawable/music_sources"

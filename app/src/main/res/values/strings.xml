@@ -456,11 +456,11 @@
     <string name="widget_preferences_title">Widget Settings</string>
 
     <!-- Clock Widget -->
-    <string name="pref_clock_widget_enabled_title">Enable Clock Widget</string>
+    <string name="pref_clock_widget_enabled_title">Enable Clock/Date Widget</string>
     <string name="pref_clock_widget_enabled_summary">Show clock and date on screen</string>
     <string name="pref_date_format_title">Date Format</string>
     <string name="pref_date_format_summary">Choose how the date should be displayed</string>
-    <string name="pref_category_clock_widget">Clock Widget</string>
+    <string name="pref_category_clock_widget">Clock/Date Widget</string>
     <string name="pref_show_clock_title">Show Clock</string>
     <string name="pref_show_clock_summary">Display the clock on screen</string>
     <string name="pref_show_date_title">Show Date</string>
@@ -744,7 +744,7 @@
     <string name="close">Close</string>
     <string name="help">Help</string>
     <string name="tutorial_display_settings">Display settings let you customize how photos appear on your screen. You can adjust brightness, orientation, and more.</string>
-    <string name="tutorial_common_settings">Common settings allow you to control general preferences, such as transition effects and timing between photos.</string>
+    <string name="tutorial_common_settings">PhotoShow settings allow you to control photo playing preferences, such as transition effects and timing between photos.</string>
     <string name="tutorial_manage_photos">Here you can select which photos to display as your screensaver and organize your albums.</string>
     <string name="tutorial_security_preferences">Security settings let you protect your app with a passcode or biometric authentication.</string>
 
@@ -752,5 +752,7 @@
     <string name="widgets_category_title">Available Widgets</string>
     <string name="widgets_settings_summary">Configure clock, weather, and music widgets</string>
     <string name="widgets_enabled_summary">%1$d Widgets enabled</string>
+    <string name="tutorial_music_sources">Select your music source for the background music</string>
+    <string name="tutorial_widget_settings">Here you can enable and change the settings of the screen widgets: Clock/Date, Weather and Music</string>
 
 </resources>

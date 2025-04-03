@@ -1,8 +1,6 @@
     package com.photostreamr.tutorial
 
-    import android.animation.ObjectAnimator
     import android.content.Context
-    import android.graphics.Path
     import android.graphics.RectF
     import android.os.Bundle
     import android.util.Log
@@ -14,7 +12,6 @@
     import android.widget.TextView
     import androidx.constraintlayout.widget.ConstraintLayout
     import androidx.fragment.app.DialogFragment
-    import androidx.fragment.app.Fragment
     import androidx.preference.PreferenceManager
     import com.photostreamr.R
     import dagger.hilt.android.AndroidEntryPoint
@@ -55,11 +52,7 @@
             setStyle(STYLE_NO_FRAME, R.style.FullScreenDialogStyle)
         }
 
-        override fun onCreateView(
-            inflater: LayoutInflater,
-            container: ViewGroup?,
-            savedInstanceState: Bundle?
-        ): View {
+        override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
             return inflater.inflate(R.layout.fragment_tutorial_overlay, container, false)
         }
 
@@ -91,19 +84,6 @@
             view.postDelayed({
                 showStep(0)
             }, 500)
-        }
-
-        // Add this utility method to dump the view hierarchy for debugging
-        private fun dumpViewHierarchy(view: View?, prefix: String = "") {
-            if (view == null) return
-
-            Log.d(TAG, "$prefix${view.javaClass.simpleName} [${view.id}] ${view.visibility == View.VISIBLE}")
-
-            if (view is ViewGroup) {
-                for (i in 0 until view.childCount) {
-                    dumpViewHierarchy(view.getChildAt(i), "$prefix  ")
-                }
-            }
         }
 
         private fun showStep(stepIndex: Int) {
@@ -143,26 +123,12 @@
         private fun findAndHighlightTargetView(viewId: Int) {
             Log.d(TAG, "Trying to find view for ID: $viewId")
 
-            // Remove the initial test cutout to avoid confusion
-            // Let's comment out this block that sets an initial test rect
-            /*
-            if (overlayView.getTargetRect() == null) {
-                val screenWidth = resources.displayMetrics.widthPixels
-                val screenHeight = resources.displayMetrics.heightPixels
-                val initialRect = RectF(
-                    screenWidth * 0.4f,
-                    screenHeight * 0.4f,
-                    screenWidth * 0.6f,
-                    screenHeight * 0.6f
-                )
-                overlayView.setTargetRect(initialRect)
-            }
-            */
-
             // Get the preference key based on the tutorial ID
             val prefKey = when (viewId) {
                 TutorialManager.ID_MANAGE_PHOTOS -> "manage_photos"
+                TutorialManager.ID_MUSIC_SOURCES -> "music_sources"
                 TutorialManager.ID_COMMON_SETTINGS -> "common_settings"
+                TutorialManager.ID_WIDGETS_SETTINGS -> "widgets_settings"
                 TutorialManager.ID_DISPLAY_SETTINGS -> "display_settings"
                 TutorialManager.ID_SECURITY_PREFERENCES -> "security_preferences"
                 else -> null
@@ -195,19 +161,6 @@
             if (targetView != null) {
                 findAndHighlightTargetView(targetView)
             }
-        }
-
-        fun retryHighlightForPreference(preferenceKey: String) {
-            val viewId = when (preferenceKey) {
-                "manage_photos" -> TutorialManager.ID_MANAGE_PHOTOS
-                "common_settings" -> TutorialManager.ID_COMMON_SETTINGS
-                "display_settings" -> TutorialManager.ID_DISPLAY_SETTINGS
-                "security_preferences" -> TutorialManager.ID_SECURITY_PREFERENCES
-                else -> return
-            }
-
-            // Find and highlight the target view again
-            findAndHighlightTargetView(viewId)
         }
 
         private fun findAndHighlightTargetView(targetView: View) {
@@ -255,8 +208,6 @@
             // Position hint container
             positionHintContainer(targetRect)
         }
-
-
 
         private fun showFallbackHighlight() {
             // Use a fallback rectangle in the center of the screen
@@ -318,7 +269,6 @@
             hintContainer.requestLayout()
         }
 
-        // Replace the animateHighlight method
         private fun animateHighlight(targetRect: RectF) {
             val currentRect = overlayView.getTargetRect()
 

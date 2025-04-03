@@ -24,11 +24,12 @@ class TutorialManager @Inject constructor(
     private val prefs: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
 
     companion object {
-        // Define tutorial step IDs - these are just arbitrary constants
         const val ID_MANAGE_PHOTOS = 1001
-        const val ID_COMMON_SETTINGS = 1002
-        const val ID_DISPLAY_SETTINGS = 1003
-        const val ID_SECURITY_PREFERENCES = 1004
+        const val ID_MUSIC_SOURCES = 1002
+        const val ID_COMMON_SETTINGS = 1003
+        const val ID_WIDGETS_SETTINGS = 1004
+        const val ID_DISPLAY_SETTINGS = 1005
+        const val ID_SECURITY_PREFERENCES = 1006
     }
 
     fun shouldShowTutorial(type: TutorialType): Boolean {
@@ -39,18 +40,6 @@ class TutorialManager @Inject constructor(
         return when (type) {
             TutorialType.SETTINGS -> getSettingsTutorialSteps()
         }
-    }
-
-    fun markTutorialAsShown(type: TutorialType) {
-        prefs.edit().putBoolean("tutorial_shown_${type.name}", true).apply()
-    }
-
-    fun resetTutorials() {
-        val editor = prefs.edit()
-        TutorialType.values().forEach { type ->
-            editor.putBoolean("tutorial_shown_${type.name}", false)
-        }
-        editor.apply()
     }
 
     fun isFirstLogin(): Boolean {
@@ -69,8 +58,16 @@ class TutorialManager @Inject constructor(
                 context.getString(R.string.tutorial_manage_photos)
             ),
             TutorialStep(
+                ID_MUSIC_SOURCES,
+                context.getString(R.string.tutorial_music_sources)
+            ),
+            TutorialStep(
                 ID_COMMON_SETTINGS,
                 context.getString(R.string.tutorial_common_settings)
+            ),
+            TutorialStep(
+                ID_WIDGETS_SETTINGS,
+                context.getString(R.string.tutorial_widget_settings)
             ),
             TutorialStep(
                 ID_DISPLAY_SETTINGS,
