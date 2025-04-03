@@ -748,12 +748,13 @@
     <string name="tutorial_common_settings">PhotoShow settings allow you to control photo playing preferences, such as transition effects and timing between photos.</string>
     <string name="tutorial_manage_photos">Here you can select which photos to display as your screensaver and organize your albums.</string>
     <string name="tutorial_security_preferences">Security settings let you protect your app with a passcode or biometric authentication.</string>
+    <string name="tutorial_music_sources">Select your music source for the background music</string>
+    <string name="tutorial_widget_settings">Here you can enable and change the settings of the screen widgets: Clock/Date, Weather and Music</string>
 
     <string name="widgets_settings_title">Widgets Settings</string>
     <string name="widgets_category_title">Available Widgets</string>
     <string name="widgets_settings_summary">Configure clock, weather, and music widgets</string>
     <string name="widgets_enabled_summary">%1$d Widgets enabled</string>
-    <string name="tutorial_music_sources">Select your music source for the background music</string>
-    <string name="tutorial_widget_settings">Here you can enable and change the settings of the screen widgets: Clock/Date, Weather and Music</string>
+
 
 </resources>

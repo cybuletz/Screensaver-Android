@@ -105,26 +105,38 @@ class ProVersionPromptDialog : DialogFragment() {
             }
         }, PRODUCT_LOAD_TIMEOUT)
 
-        when (feature) {
-            FeatureManager.Feature.MUSIC -> {
-                titleText.text = getString(R.string.music_feature_title)
-                descriptionText.text = getString(R.string.music_feature_description)
-                featureImage.setImageResource(R.drawable.ic_music_pref)
-            }
-            FeatureManager.Feature.WIDGETS -> {
-                titleText.text = getString(R.string.widgets_feature_title)
-                descriptionText.text = getString(R.string.widgets_feature_description)
-                featureImage.setImageResource(R.drawable.ic_widgets_preview)
-            }
-            FeatureManager.Feature.SECURITY -> {
-                titleText.text = getString(R.string.security_feature_title)
-                descriptionText.text = getString(R.string.security_feature_description)
-                featureImage.setImageResource(R.drawable.ic_security)
-            }
-            else -> {
-                // Default case
-                titleText.text = getString(R.string.pro_feature_title)
-                descriptionText.text = getString(R.string.pro_feature_description)
+        // Check if this was opened from the general upgrade button in settings
+        val fromUpgradeButton = tag == "pro_version_prompt" && feature == FeatureManager.Feature.WIDGETS
+
+        if (fromUpgradeButton) {
+            // Generic Pro version content for the upgrade button
+            titleText.text = "Upgrade to Pro"
+            descriptionText.text = "Unlock all premium features including background music, custom widgets, and enhanced privacy controls. Enjoy the full experience with a one-time purchase."
+            featureImage.setImageResource(R.drawable.premium)
+        } else {
+            // Feature-specific content for other cases
+            when (feature) {
+                FeatureManager.Feature.MUSIC -> {
+                    titleText.text = getString(R.string.music_feature_title)
+                    descriptionText.text = getString(R.string.music_feature_description)
+                    featureImage.setImageResource(R.drawable.ic_music_pref)
+                }
+                FeatureManager.Feature.WIDGETS -> {
+                    titleText.text = getString(R.string.widgets_feature_title)
+                    descriptionText.text = getString(R.string.widgets_feature_description)
+                    featureImage.setImageResource(R.drawable.ic_widgets_preview)
+                }
+                FeatureManager.Feature.SECURITY -> {
+                    titleText.text = getString(R.string.security_feature_title)
+                    descriptionText.text = getString(R.string.security_feature_description)
+                    featureImage.setImageResource(R.drawable.ic_security)
+                }
+                else -> {
+                    // Default case
+                    titleText.text = getString(R.string.pro_feature_title)
+                    descriptionText.text = getString(R.string.pro_feature_description)
+                    featureImage.setImageResource(R.drawable.premium)
+                }
             }
         }
 
