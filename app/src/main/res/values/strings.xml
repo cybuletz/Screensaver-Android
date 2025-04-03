@@ -725,6 +725,7 @@
     <string name="upgrade_to_pro">Upgrade to Pro</string>
     <string name="upgrade_button_with_price">Upgrade to Pro (%1$s)</string>
     <string name="feature_image_description">Feature illustration</string>
+    <string name="upgrade_to_pro_summary">Enjoy premium features: music, widgets, more photo effects and screen lock security</string>
 
     <!-- Music Feature -->
     <string name="music_feature_title">Music Integration</string>

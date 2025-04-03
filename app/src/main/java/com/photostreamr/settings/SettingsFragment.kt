@@ -58,6 +58,7 @@ import com.photostreamr.version.AppVersionManager
 import com.photostreamr.version.FeatureManager
 import com.photostreamr.version.ProVersionPromptDialog
 import android.widget.FrameLayout
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.photostreamr.widgets.WidgetPreferenceFragment
 import com.photostreamr.R
 import com.photostreamr.help.HelpDialogFragment
@@ -371,9 +372,19 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
         setPreferencesFromResource(R.xml.preferences, rootKey)
         preferenceScreen.isIconSpaceReserved = true
 
+        // Hide upgrade button if user already has PRO
+        findPreference<Preference>("upgrade_to_pro")?.isVisible = !appVersionManager.isProVersion()
+
         // Then launch coroutine for background operations
         lifecycleScope.launch {
             try {
+                // Observe PRO version state changes to update button visibility
+                launch {
+                    appVersionManager.versionState.collect { state ->
+                        findPreference<Preference>("upgrade_to_pro")?.isVisible = state !is AppVersionManager.VersionState.Pro
+                    }
+                }
+
                 // Background operations
                 withContext(Dispatchers.IO) {
                     // Any heavy loading operations can go here
@@ -395,11 +406,9 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                         true
                     }
 
-
                     observeAppState()
                     observeAppDataState()
                     observeWidgetState()
-
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error setting up preferences", e)
@@ -471,6 +480,11 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                     SecurityPreferenceDialog.newInstance()
                         .show(childFragmentManager, "security_settings")
                 }
+                true
+            }
+            "upgrade_to_pro" -> {
+                ProVersionPromptDialog.newInstance()
+                    .show(childFragmentManager, "pro_version_prompt")
                 true
             }
             "help_preferences" -> {

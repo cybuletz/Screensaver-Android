@@ -61,6 +61,14 @@ class ProVersionPromptDialog : DialogFragment() {
                 }
             }
         }
+
+        // New method for creating a generic instance without a specific feature
+        fun newInstance(): ProVersionPromptDialog {
+            return ProVersionPromptDialog().apply {
+                // No arguments means it will use the default feature (usually MUSIC or whatever you define as default)
+                // When no feature is provided, the dialog will show generic PRO upgrade information
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

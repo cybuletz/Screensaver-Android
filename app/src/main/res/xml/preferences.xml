@@ -45,6 +45,13 @@
         android:icon="@drawable/security_settings"
         style="@style/SettingsCardStyle"/>
 
+    <com.photostreamr.settings.MaterialBasicPreference
+        android:key="upgrade_to_pro"
+        android:title="@string/upgrade_to_pro"
+        android:summary="Enjoy premium features: music, widgets, and security controls"
+        android:icon="@drawable/premium"
+        style="@style/SettingsCardStyle"/>
+
     <Preference
         android:key="help_preferences"
         android:title="Help &amp; Tutorial"
