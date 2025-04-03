@@ -150,28 +150,8 @@ class PhotoDisplayManager @Inject constructor(
     }
 
     override fun onTransitionCompleted(resource: Drawable, nextIndex: Int) {
-        // Handle the completion of the transition
-        Log.d(TAG, "Transition to photo $nextIndex completed")
-
-        // Update the primary view with the new image resource
-        views?.primaryView?.setImageDrawable(resource)
-
-        // Reset overlay view properties
-        views?.overlayView?.apply {
-            alpha = 0f
-            scaleX = 1f
-            scaleY = 1f
-            translationX = 0f
-            translationY = 0f
-            rotationX = 0f
-            rotationY = 0f
-            rotation = 0f
-            translationZ = 0f
-            visibility = View.INVISIBLE
-        }
-
-        // Update the current photo index
-        currentPhotoIndex = nextIndex
+        val currentViews = views ?: return
+        completeTransition(currentViews, resource, nextIndex)
     }
 
     fun isScreensaverActive(): Boolean = isScreensaverActive
@@ -611,224 +591,27 @@ class PhotoDisplayManager @Inject constructor(
             isFirstResource: Boolean
         ): Boolean {
             Log.d(TAG, "Photo loaded, starting transition: $transitionEffect")
-            views.overlayView.cameraDistance = views.overlayView.width * 3f
 
-            when (transitionEffect) {
-                "fade" -> performFadeTransition(views, resource, nextIndex)
-                "slide" -> performSlideTransition(views, resource, nextIndex)
-                "zoom" -> performZoomTransition(views, resource, nextIndex)
-                "flip" -> performFlipTransition(views, resource, nextIndex)
-                "rotate" -> performRotateTransition(views, resource, nextIndex)
-                "depth" -> performDepthTransition(views, resource, nextIndex)
-                "cube" -> performCubeTransition(views, resource, nextIndex)
-                else -> performFadeTransition(views, resource, nextIndex)
-            }
+            // Create TransitionViews object for the PhotoTransitionEffects class
+            val transitionViews = PhotoTransitionEffects.TransitionViews(
+                primaryView = views.primaryView,
+                overlayView = views.overlayView,
+                container = views.container
+            )
+
+            // Use the PhotoTransitionEffects class to perform the transition
+            transitionEffects.performTransition(
+                views = transitionViews,
+                resource = resource,
+                nextIndex = nextIndex,
+                transitionEffect = transitionEffect,
+                transitionDuration = transitionDuration,
+                callback = this@PhotoDisplayManager
+            )
 
             trackPhotoLoadTime(dataSource == DataSource.MEMORY_CACHE, System.currentTimeMillis() - startTime)
-            return false
+            return true // Return true to indicate we've handled setting the resource
         }
-    }
-
-    private fun performFadeTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        views.overlayView.apply {
-            alpha = 0f
-            animate()
-                .alpha(1f)
-                .setDuration(transitionDuration)
-                .setInterpolator(DecelerateInterpolator())
-                .withEndAction { completeTransition(views, resource, nextIndex) }
-                .start()
-        }
-    }
-
-    private fun performSlideTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        views.overlayView.apply {
-            alpha = 1f
-            translationX = width.toFloat()
-            animate()
-                .translationX(0f)
-                .setDuration(transitionDuration)
-                .setInterpolator(DecelerateInterpolator())
-                .withEndAction { completeTransition(views, resource, nextIndex) }
-                .start()
-        }
-    }
-
-    private fun performZoomTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        views.overlayView.apply {
-            alpha = 0f
-            scaleX = 1.2f
-            scaleY = 1.2f
-            animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(transitionDuration)
-                .setInterpolator(DecelerateInterpolator())
-                .withEndAction { completeTransition(views, resource, nextIndex) }
-                .start()
-        }
-    }
-
-    private fun performFlipTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        // Ensure both views are visible and have correct initial state
-        views.primaryView.apply {
-            visibility = View.VISIBLE
-            alpha = 1f
-            rotationY = 0f
-        }
-
-        views.overlayView.apply {
-            visibility = View.VISIBLE
-            alpha = 1f
-            rotationY = 90f
-            setImageDrawable(resource)
-        }
-
-        // Set camera distance to prevent clipping
-        val distance = views.overlayView.width * 3f
-        views.primaryView.cameraDistance = distance
-        views.overlayView.cameraDistance = distance
-
-        // Create AnimatorSet for synchronized animations
-        val animatorSet = AnimatorSet()
-
-        // Create overlay view animation (new image)
-        val overlayFlip = ObjectAnimator.ofFloat(views.overlayView, View.ROTATION_Y, 90f, 0f)
-
-        // Create primary view animation (old image)
-        val primaryFlip = ObjectAnimator.ofFloat(views.primaryView, View.ROTATION_Y, 0f, -90f)
-
-        // Configure animations
-        animatorSet.apply {
-            playTogether(overlayFlip, primaryFlip)
-            duration = transitionDuration
-            interpolator = AccelerateDecelerateInterpolator()
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    completeTransition(views, resource, nextIndex)
-                }
-            })
-        }
-
-        // Start the animation
-        animatorSet.start()
-    }
-
-    private fun performRotateTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        views.overlayView.apply {
-            alpha = 0f
-            rotation = -180f
-            scaleX = 0.5f
-            scaleY = 0.5f
-            animate()
-                .alpha(1f)
-                .rotation(0f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(transitionDuration)
-                .setInterpolator(AccelerateDecelerateInterpolator())
-                .withEndAction { completeTransition(views, resource, nextIndex) }
-                .start()
-        }
-    }
-
-    private fun performDepthTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        // Set initial states
-        views.primaryView.apply {
-            visibility = View.VISIBLE
-            alpha = 1f
-            scaleX = 1f
-            scaleY = 1f
-        }
-
-        views.overlayView.apply {
-            visibility = View.VISIBLE
-            setImageDrawable(resource)
-            alpha = 0f
-            scaleX = 1.5f
-            scaleY = 1.5f
-            translationZ = -1000f
-        }
-
-        // Create AnimatorSet for synchronized animations
-        val animatorSet = AnimatorSet()
-
-        // Animations for the new image (overlay)
-        val overlayAlpha = ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f)
-        val overlayScaleX = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_X, 1.5f, 1f)
-        val overlayScaleY = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_Y, 1.5f, 1f)
-        val overlayZ = ObjectAnimator.ofFloat(views.overlayView, View.TRANSLATION_Z, -1000f, 0f)
-
-        // Animations for the old image (primary)
-        val primaryAlpha = ObjectAnimator.ofFloat(views.primaryView, View.ALPHA, 1f, 0f)
-        val primaryScaleX = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_X, 1f, 0.5f)
-        val primaryScaleY = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_Y, 1f, 0.5f)
-        val primaryZ = ObjectAnimator.ofFloat(views.primaryView, View.TRANSLATION_Z, 0f, -500f)
-
-        // Configure animations
-        animatorSet.apply {
-            playTogether(
-                overlayAlpha, overlayScaleX, overlayScaleY, overlayZ,
-                primaryAlpha, primaryScaleX, primaryScaleY, primaryZ
-            )
-            duration = transitionDuration
-            interpolator = DecelerateInterpolator()
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    completeTransition(views, resource, nextIndex)
-                }
-            })
-        }
-
-        // Start the animation
-        animatorSet.start()
-    }
-
-    private fun performCubeTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        // Ensure both views are visible and have correct initial state
-        views.primaryView.apply {
-            visibility = View.VISIBLE
-            alpha = 1f
-            rotationY = 0f
-            translationX = 0f
-        }
-
-        views.overlayView.apply {
-            visibility = View.VISIBLE
-            alpha = 1f
-            rotationY = 90f
-            translationX = width.toFloat()
-            setImageDrawable(resource)
-        }
-
-        // Create AnimatorSet for synchronized animations
-        val animatorSet = AnimatorSet()
-
-        // Create overlay view animations
-        val overlayAnim = ObjectAnimator.ofFloat(views.overlayView, View.ROTATION_Y, 90f, 0f)
-        val overlayTranslation = ObjectAnimator.ofFloat(views.overlayView, View.TRANSLATION_X,
-            views.overlayView.width.toFloat(), 0f)
-
-        // Create primary view animations
-        val primaryAnim = ObjectAnimator.ofFloat(views.primaryView, View.ROTATION_Y, 0f, -90f)
-        val primaryTranslation = ObjectAnimator.ofFloat(views.primaryView, View.TRANSLATION_X,
-            0f, -views.primaryView.width.toFloat())
-
-        // Configure animations
-        animatorSet.apply {
-            playTogether(overlayAnim, overlayTranslation, primaryAnim, primaryTranslation)
-            duration = transitionDuration
-            interpolator = AccelerateDecelerateInterpolator()
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    completeTransition(views, resource, nextIndex)
-                }
-            })
-        }
-
-        // Start the animation
-        animatorSet.start()
     }
 
     private fun completeTransition(views: Views, resource: Drawable, nextIndex: Int) {
@@ -838,9 +621,6 @@ class PhotoDisplayManager @Inject constructor(
         }
 
         try {
-            // Clear the old drawable from the overlay view first
-            views.overlayView.setImageDrawable(null)
-
             // Update primary view with the new drawable
             views.primaryView.apply {
                 setImageDrawable(resource)

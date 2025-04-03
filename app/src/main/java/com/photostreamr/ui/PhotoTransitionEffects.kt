@@ -24,10 +24,7 @@ import android.graphics.Path
 import android.view.ViewOutlineProvider
 import android.graphics.Outline
 
-/**
- * Class that contains all transition effects for photo display
- * Can be used by PhotoDisplayManager to perform transitions between photos
- */
+
 class PhotoTransitionEffects(
     private val context: android.content.Context
 ) {
@@ -35,25 +32,16 @@ class PhotoTransitionEffects(
         private const val TAG = "PhotoTransitionEffects"
     }
 
-    /**
-     * Represents the views required for transition effects
-     */
     data class TransitionViews(
         val primaryView: ImageView,
         val overlayView: ImageView,
         val container: View
     )
 
-    /**
-     * Callback interface for transition completion
-     */
     interface TransitionCompletionCallback {
         fun onTransitionCompleted(resource: Drawable, nextIndex: Int)
     }
 
-    /**
-     * Performs the specified transition effect
-     */
     fun performTransition(
         views: TransitionViews,
         resource: Drawable,
