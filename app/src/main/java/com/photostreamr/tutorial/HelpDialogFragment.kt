@@ -1,4 +1,4 @@
-package com.photostreamr.help
+package com.photostreamr.tutorial
 
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -7,9 +7,6 @@ import android.view.ViewGroup
 import android.widget.Button
 import androidx.fragment.app.DialogFragment
 import com.photostreamr.R
-import com.photostreamr.tutorial.TutorialManager
-import com.photostreamr.tutorial.TutorialOverlayFragment
-import com.photostreamr.tutorial.TutorialType
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 

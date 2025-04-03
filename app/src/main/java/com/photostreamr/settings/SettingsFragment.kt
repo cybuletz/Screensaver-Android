@@ -36,8 +36,6 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceCategory
 import androidx.preference.MultiSelectListPreference
 import com.photostreamr.PhotoRepository
-import com.photostreamr.widgets.WidgetState
-import com.photostreamr.widgets.WidgetType
 import com.photostreamr.widgets.WidgetManager
 import androidx.preference.SwitchPreferenceCompat
 import com.photostreamr.photos.PhotoManagerActivity
@@ -46,7 +44,6 @@ import com.photostreamr.security.AppAuthManager
 import com.photostreamr.security.BiometricHelper
 import com.photostreamr.security.SecurityPreferenceDialog
 import com.photostreamr.security.SecurityPreferences
-import com.photostreamr.widgets.WidgetPreferenceDialog
 import com.photostreamr.models.MediaItem
 import com.photostreamr.PhotoRepository.PhotoAddMode
 import com.photostreamr.music.MusicSourcesDialog
@@ -58,10 +55,9 @@ import com.photostreamr.version.AppVersionManager
 import com.photostreamr.version.FeatureManager
 import com.photostreamr.version.ProVersionPromptDialog
 import android.widget.FrameLayout
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.photostreamr.widgets.WidgetPreferenceFragment
 import com.photostreamr.R
-import com.photostreamr.help.HelpDialogFragment
+import com.photostreamr.tutorial.HelpDialogFragment
 import com.photostreamr.tutorial.TutorialManager
 import com.photostreamr.tutorial.TutorialOverlayFragment
 import com.photostreamr.tutorial.TutorialType
