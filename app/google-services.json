@@ -7,18 +7,18 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:197175025747:android:b7b1d1efb570ea04d4e6a6",
+        "mobilesdk_app_id": "1:197175025747:android:da110aeb0f8f4216d4e6a6",
         "android_client_info": {
           "package_name": "com.photostreamr"
         }
       },
       "oauth_client": [
         {
-          "client_id": "197175025747-e4orscrpk62hvv0bq1h2lj58qib0sork.apps.googleusercontent.com",
+          "client_id": "197175025747-47ndfnoh1u5i21ifngrqorv9reo66dks.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.photostreamr",
-            "certificate_hash": "9237d0283bc4ec1f201a19454dfeeeaae9fcd7a2"
+            "certificate_hash": "0d07fab2a70fbd73d56ff1a351cbe9e16bf670c3"
           }
         },
         {

@@ -46,6 +46,15 @@ import com.photostreamr.music.SpotifyPreferences
 import android.os.Handler
 import com.photostreamr.ads.AdManager
 import com.photostreamr.version.AppVersionManager
+import android.animation.*
+import android.graphics.*
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.view.animation.*
+import android.renderscript.Allocation
+import android.renderscript.Element
+import android.renderscript.RenderScript
+import android.renderscript.ScriptIntrinsicBlur
 
 
 @Singleton
@@ -57,7 +66,9 @@ class PhotoDisplayManager @Inject constructor(
     private val spotifyPreferences: SpotifyPreferences,
     private val adManager: AdManager,
     private val appVersionManager: AppVersionManager
-) {
+) : PhotoTransitionEffects.TransitionCompletionCallback {
+
+    private val transitionEffects = PhotoTransitionEffects(context)
 
     private val managerJob = SupervisorJob()
     private val managerScope = CoroutineScope(Dispatchers.Main + managerJob)
@@ -578,6 +589,7 @@ class PhotoDisplayManager @Inject constructor(
             views.overlayView.cameraDistance = views.overlayView.width * 3f
 
             when (transitionEffect) {
+                "fade" -> performFadeTransition(views, resource, nextIndex)
                 "slide" -> performSlideTransition(views, resource, nextIndex)
                 "zoom" -> performZoomTransition(views, resource, nextIndex)
                 "flip" -> performFlipTransition(views, resource, nextIndex)

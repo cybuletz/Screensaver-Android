@@ -48,10 +48,10 @@ android {
 
     signingConfigs {
         getByName("debug") {
-            storeFile = file("${projectDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            storeFile = file("${projectDir}/photostreamr.jks")
+            storePassword = "luvvmMary"
+            keyAlias = "key0"
+            keyPassword = "luvvmMary"
         }
     }
 
