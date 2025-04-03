@@ -98,26 +98,8 @@
             // Show/hide next button on last step
             nextButton.visibility = if (stepIndex == tutorialSteps.size - 1) View.GONE else View.VISIBLE
 
-            // Do NOT set an initial rect - wait for the actual target to be found
-            // Remove this block to avoid the initial test cutout in the middle
-            /*
-            if (overlayView.getTargetRect() == null) {
-                val screenWidth = resources.displayMetrics.widthPixels
-                val screenHeight = resources.displayMetrics.heightPixels
-                val initialRect = RectF(
-                    screenWidth * 0.4f,
-                    screenHeight * 0.4f,
-                    screenWidth * 0.6f,
-                    screenHeight * 0.6f
-                )
-                overlayView.setTargetRect(initialRect)
-            }
-            */
-
-            // Increase delay to make sure the UI is fully laid out
-            view?.postDelayed({
-                findAndHighlightTargetView(step.targetViewId)
-            }, 500) // Increase from 300ms to 500ms
+            // Immediately find and highlight the target view - no delay
+            findAndHighlightTargetView(step.targetViewId)
         }
 
         private fun findAndHighlightTargetView(viewId: Int) {
@@ -140,8 +122,8 @@
                 // Ask the fragment to scroll to make the preference visible if needed
                 tutorialCallback?.scrollToPreference(prefKey)
 
-                // Increase delay to give more time for scrolling to complete and views to stabilize
-                view?.postDelayed({
+                // Use post instead of postDelayed to minimize delay
+                view?.post {
                     // Now try to find the view
                     val targetView = tutorialCallback?.getTargetView(viewId)
                     if (targetView != null) {
@@ -151,7 +133,7 @@
                         Log.e(TAG, "No view found for preference $prefKey, showing fallback")
                         showFallbackHighlight()
                     }
-                }, 500) // Increase from 300ms to 500ms for more stability
+                }
             } else {
                 showFallbackHighlight()
             }
@@ -282,7 +264,7 @@
 
             // Use ValueAnimator which doesn't try to access the property directly
             val animator = android.animation.ValueAnimator.ofFloat(0f, 1f)
-            animator.duration = 300
+            animator.duration = 150 // Reduced from 300ms to 150ms
             animator.addUpdateListener { animation ->
                 val fraction = animation.animatedValue as Float
 

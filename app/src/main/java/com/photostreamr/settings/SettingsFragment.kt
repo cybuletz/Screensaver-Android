@@ -353,14 +353,13 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                 }
             }
         }
-        // Check if it's the first login and show tutorial if needed
         // Delay showing the tutorial to ensure the UI is fully rendered
         view.postDelayed({
             if (tutorialManager.isFirstLogin() && tutorialManager.shouldShowTutorial(TutorialType.SETTINGS)) {
                 Log.d(TAG, "First login detected, showing tutorial")
                 showTutorial()
             }
-        }, 500)
+        }, 300)
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
