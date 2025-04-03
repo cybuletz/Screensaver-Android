@@ -60,14 +60,9 @@ import com.photostreamr.utils.ScreenOrientation
 import com.photostreamr.ads.AdManager
 import com.photostreamr.version.AppVersionManager
 import com.photostreamr.version.FeatureManager
-import com.photostreamr.version.ProVersionPromptDialog
-import android.widget.FrameLayout
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.photostreamr.music.LocalMusicManager
 import com.photostreamr.music.LocalMusicPreferences
 import com.photostreamr.version.ProVersionPromptManager
-import java.util.concurrent.TimeUnit
-import javax.inject.Singleton
 
 
 @AndroidEntryPoint
@@ -176,40 +171,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkForProPrompt() {
-        // Check if we should show the Pro version prompt, completely separate from other prompts
-        if (proVersionPromptManager.shouldShowProVersionPrompt()) {
-            // Show dedicated Pro version prompt
-            showProVersionPrompt()
-        }
-    }
+
 
     private fun checkForAds() {
         // For MainActivity, simply ensure the banner is loaded
         if (!appVersionManager.isProVersion() && appVersionManager.shouldShowAd()) {
             appVersionManager.updateLastAdShownTime()
         }
-    }
-
-    private fun showProVersionPrompt() {
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle("Upgrade to Pro Version")
-            .setMessage("Enhance your experience with the Pro version! Enjoy ad-free usage, unlimited features, and more.")
-            .setPositiveButton("Upgrade Now") { _, _ ->
-                // Launch purchase flow
-                // launchPurchaseFlow()
-            }
-            .setNegativeButton("Later", null)
-            .setNeutralButton("Don't Ask Again") { _, _ ->
-                // Set a very long interval before showing again
-                proVersionPromptManager.setPromptInterval(TimeUnit.DAYS.toMillis(90))
-            }
-            .create()
-
-        dialog.show()
-
-        // Update the last prompt time
-        proVersionPromptManager.updateLastPromptTime()
     }
 
     private fun setupFullScreenInterstitialTimer() {
@@ -324,7 +292,6 @@ class MainActivity : AppCompatActivity() {
 
             photoDisplayManager.updatePhotoSources()
             checkInitialChargingState()
-            checkForProPrompt()
 
             if (navController.currentDestination?.id == R.id.mainFragment) {
                 lifecycleScope.launch {
@@ -372,18 +339,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkFeatureAccess(feature: FeatureManager.Feature): Boolean {
-        if (!featureManager.isFeatureAvailable(feature)) {
-            if (featureManager.showProVersionPrompt(feature)) {
-                showProVersionPrompt(feature)
-            }
-            return false
-        }
-        return true
-    }
-
-    private fun showProVersionPrompt(feature: FeatureManager.Feature) {
-        ProVersionPromptDialog.newInstance(feature)
-            .show(supportFragmentManager, "pro_version_prompt")
+        return featureManager.isFeatureAvailable(feature)
     }
 
     private fun initializeMusicSources() {
