@@ -68,6 +68,10 @@ class PhotoDisplayManager @Inject constructor(
     private val appVersionManager: AppVersionManager
 ) : PhotoTransitionEffects.TransitionCompletionCallback {
 
+    private val photoScalingEffects = PhotoScalingEffects(context)
+    private var photoScaleMode: String = "fill"
+    private var photoEnhancementEffect: String = "none"
+
     private val transitionEffects = PhotoTransitionEffects(context)
 
     private val managerJob = SupervisorJob()
@@ -365,6 +369,7 @@ class PhotoDisplayManager @Inject constructor(
         val views = this.views ?: return
         val currentScope = lifecycleScope ?: return
 
+        photoScalingEffects.cleanupAnimations()
         isTransitioning = true
 
         currentScope.launch {
@@ -609,6 +614,20 @@ class PhotoDisplayManager @Inject constructor(
                 callback = this@PhotoDisplayManager
             )
 
+            if (photoScaleMode != "fill") {
+                val scalingViews = PhotoScalingEffects.ScalingViews(
+                    imageView = views.overlayView,
+                    container = views.container as ViewGroup,
+                    backgroundView = null // You may need to add a background view to your layout
+                )
+                photoScalingEffects.applyScalingMode(
+                    views = scalingViews,
+                    drawable = resource,
+                    mode = photoScaleMode,
+                    enhancementEffect = photoEnhancementEffect
+                )
+            }
+
             trackPhotoLoadTime(dataSource == DataSource.MEMORY_CACHE, System.currentTimeMillis() - startTime)
             return true // Return true to indicate we've handled setting the resource
         }
@@ -648,6 +667,26 @@ class PhotoDisplayManager @Inject constructor(
                 rotation = 0f
                 translationZ = 0f
                 visibility = View.INVISIBLE
+            }
+
+            // Apply scaling effects to the primary view if needed
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            val photoScaleMode = prefs.getString("photo_scale", "fill") ?: "fill"
+            val photoEnhancementEffect = prefs.getString("photo_enhancement", "none") ?: "none"
+
+            if (photoScaleMode != "fill" || photoEnhancementEffect != "none") {
+                val scalingViews = PhotoScalingEffects.ScalingViews(
+                    imageView = views.primaryView,
+                    container = views.container as ViewGroup,
+                    backgroundView = views.overlayView // Reuse overlay view for effects
+                )
+
+                photoScalingEffects.applyScalingMode(
+                    views = scalingViews,
+                    drawable = resource,
+                    mode = photoScaleMode,
+                    enhancementEffect = photoEnhancementEffect
+                )
             }
 
             // Hide any remaining messages
@@ -695,12 +734,20 @@ class PhotoDisplayManager @Inject constructor(
         } ?: false
     }
 
-    fun updateSettings(transitionDuration: Long? = null, showLocation: Boolean? = null, isRandomOrder: Boolean? = null) {
+    fun updateSettings(
+        transitionDuration: Long? = null,
+        showLocation: Boolean? = null,
+        isRandomOrder: Boolean? = null,
+        photoScaleMode: String? = null,
+        photoEnhancementEffect: String? = null
+    ) {
         Log.d(TAG, "Updating settings")
 
         transitionDuration?.let { this.transitionDuration = it }
         showLocation?.let { this.showLocation = it }
         isRandomOrder?.let { this.isRandomOrder = it }
+        photoScaleMode?.let { this.photoScaleMode = it }
+        photoEnhancementEffect?.let { this.photoEnhancementEffect = it }
     }
 
     private fun preloadDefaultPhoto() {
@@ -910,6 +957,8 @@ class PhotoDisplayManager @Inject constructor(
             }
         }
         managerJob.cancel()
+        photoScalingEffects.release()
+
     }
 
     fun updatePhotoSources(virtualAlbumPhotos: List<Uri> = emptyList()) {

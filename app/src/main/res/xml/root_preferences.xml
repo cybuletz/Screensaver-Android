@@ -52,26 +52,6 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="Display Settings"
-        android:key="display_settings">
-
-        <ListPreference
-            android:key="photo_scale"
-            android:title="Photo Scaling"
-            android:summary="How photos should fit the screen"
-            android:defaultValue="fit"
-            android:entries="@array/photo_scale_options"
-            android:entryValues="@array/photo_scale_values"/>
-
-        <SwitchPreference
-            android:key="show_photo_info"
-            android:title="Show Photo Information"
-            android:summary="Display date and album name"
-            android:defaultValue="false"/>
-    </PreferenceCategory>
-
-
-    <PreferenceCategory
         android:title="Schedule"
         android:key="schedule_settings">
 

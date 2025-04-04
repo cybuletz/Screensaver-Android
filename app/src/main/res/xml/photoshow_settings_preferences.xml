@@ -12,12 +12,21 @@
 
     <ListPreference
         android:key="photo_scale"
-        android:title="@string/pref_photo_scale_title"
-        android:summary="@string/pref_photo_scale_summary"
-        android:entries="@array/photo_scale_options"
+        android:title="Photo Display Mode"
+        android:summary="%s"
+        android:entries="@array/photo_scale_entries"
         android:entryValues="@array/photo_scale_values"
         android:defaultValue="fill"
-        android:icon="@drawable/ic_aspect_ratio" />
+        app:iconSpaceReserved="false" />
+
+    <ListPreference
+        android:key="photo_enhancement"
+        android:title="Visual Enhancement"
+        android:summary="%s"
+        android:entries="@array/photo_enhancement_entries"
+        android:entryValues="@array/photo_enhancement_values"
+        android:defaultValue="none"
+        app:iconSpaceReserved="false" />
 
     <ListPreference
         android:key="transition_effect"
