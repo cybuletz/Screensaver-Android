@@ -70,7 +70,7 @@ class PhotoDisplayManager @Inject constructor(
 
     private val photoScalingEffects = PhotoScalingEffects(context)
     private var photoScaleMode: String = "fill"
-    private var photoEnhancementEffect: String = "none"
+    private var photoEnhancementEffect: String = "bokeh"
 
     private val transitionEffects = PhotoTransitionEffects(context)
 

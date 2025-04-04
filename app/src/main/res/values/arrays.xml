@@ -145,7 +145,6 @@
         <item>Original Size</item>
         <item>Smart Fit</item>
         <item>Pan Effect</item>
-        <item>Ken Burns Effect</item>
     </string-array>
 
     <string-array name="photo_scale_values">
@@ -154,21 +153,16 @@
         <item>original</item>
         <item>smart</item>
         <item>pan</item>
-        <item>kenburns</item>
     </string-array>
 
     <string-array name="photo_enhancement_entries">
         <item>None</item>
         <item>Bokeh (Blur Background)</item>
-        <item>Vignette</item>
-        <item>Ambient Light</item>
     </string-array>
 
     <string-array name="photo_enhancement_values">
         <item>none</item>
         <item>bokeh</item>
-        <item>vignette</item>
-        <item>ambient</item>
     </string-array>
 
     <!-- Days of Week -->
