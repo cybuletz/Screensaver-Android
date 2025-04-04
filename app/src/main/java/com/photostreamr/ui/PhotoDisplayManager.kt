@@ -69,8 +69,12 @@ class PhotoDisplayManager @Inject constructor(
 ) : PhotoTransitionEffects.TransitionCompletionCallback {
 
     private val photoScalingEffects = PhotoScalingEffects(context)
-    private var photoScaleMode: String = "fill"
-    private var photoEnhancementEffect: String = "bokeh"
+    private var photoScaleMode: String = PreferenceManager.getDefaultSharedPreferences(context)
+        .getString("photo_scale", "fill") ?: "fill"
+    private var photoEnhancementEffect: String = PreferenceManager.getDefaultSharedPreferences(context)
+        .getString("photo_enhancement", "bokeh") ?: "bokeh"
+    private var transitionStartTime: Long = 0L
+
 
     private val transitionEffects = PhotoTransitionEffects(context)
 
@@ -289,8 +293,21 @@ class PhotoDisplayManager @Inject constructor(
     private fun loadAndDisplayPhoto(fromCache: Boolean = false) {
         if (isTransitioning) {
             Log.d(TAG, "Skipping photo load - transition in progress")
+
+            // Failsafe: If we've been transitioning for too long, reset the state
+            if (transitionStartTime != 0L && System.currentTimeMillis() - transitionStartTime > 10000) {
+                Log.w(TAG, "Transition has been in progress for too long, resetting state")
+                isTransitioning = false
+                transitionStartTime = 0L
+            } else if (transitionStartTime == 0L) {
+                // Set the transition start time if it's not set
+                transitionStartTime = System.currentTimeMillis()
+            }
             return
         }
+
+        // Reset transition start time
+        transitionStartTime = 0L
 
         // Check if music should be playing
         if (isScreensaverActive && spotifyPreferences.isEnabled() &&
@@ -512,9 +529,26 @@ class PhotoDisplayManager @Inject constructor(
                 // Start with first photo immediately
                 loadAndDisplayPhoto(false)
 
+                var lastPhotoIndex = currentPhotoIndex
+                var stuckCounter = 0
+
                 // Then continue with regular interval
                 while (isActive) {
                     delay(getIntervalMillis()) // Always get fresh value
+
+                    // Debug check to see if photos are actually changing
+                    if (lastPhotoIndex == currentPhotoIndex) {
+                        stuckCounter++
+                        if (stuckCounter >= 3) {
+                            Log.w(TAG, "Photo display appears to be stuck on photo $currentPhotoIndex, forcing next photo")
+                            isTransitioning = false
+                            stuckCounter = 0
+                        }
+                    } else {
+                        stuckCounter = 0
+                        lastPhotoIndex = currentPhotoIndex
+                    }
+
                     loadAndDisplayPhoto()
                 }
             } catch (e: Exception) {
@@ -560,31 +594,9 @@ class PhotoDisplayManager @Inject constructor(
             Log.e(TAG, "Failed to load photo: $model", e)
             isTransitioning = false
 
-            // If we get a 403, try refreshing the token and retrying
-            if (e?.rootCauses?.any { it is HttpException && it.statusCode == 403 } == true) {
-                lifecycleScope?.launch {
-                    try {
-                        if (photoManager.refreshTokens()) {
-                            // Add a small delay before retrying
-                            delay(500)
-                            // Clear Glide's memory cache for this URL to force a new request
-                            model?.toString()?.let { url ->
-                                Glide.get(context).clearMemory()
-                                GlideApp.with(context).clear(views.overlayView)
-                            }
-                            // Retry the load after token refresh
-                            loadAndDisplayPhoto(true)
-                        } else {
-                            Log.e(TAG, "Failed to refresh tokens")
-                            showErrorMessage("Failed to refresh authentication")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error during token refresh", e)
-                        showErrorMessage("Authentication error")
-                    }
-                }
-            }
-
+            // Skip to next photo
+            currentPhotoIndex = nextIndex
+            loadAndDisplayPhoto(false)
             return false
         }
 
@@ -597,39 +609,51 @@ class PhotoDisplayManager @Inject constructor(
         ): Boolean {
             Log.d(TAG, "Photo loaded, starting transition: $transitionEffect")
 
-            // Create TransitionViews object for the PhotoTransitionEffects class
-            val transitionViews = PhotoTransitionEffects.TransitionViews(
-                primaryView = views.primaryView,
-                overlayView = views.overlayView,
-                container = views.container
-            )
+            try {
+                // Skip the ripple transition and use a simpler fade transition
+                // Set the resource directly on the overlay view
+                views.overlayView.setImageDrawable(resource)
+                views.overlayView.visibility = View.VISIBLE
+                views.overlayView.alpha = 0f
 
-            // Use the PhotoTransitionEffects class to perform the transition
-            transitionEffects.performTransition(
-                views = transitionViews,
-                resource = resource,
-                nextIndex = nextIndex,
-                transitionEffect = transitionEffect,
-                transitionDuration = transitionDuration,
-                callback = this@PhotoDisplayManager
-            )
+                // Apply scaling effects first if needed
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                val photoScaleMode = prefs.getString("photo_scale", "fill") ?: "fill"
+                val photoEnhancementEffect = prefs.getString("photo_enhancement", "bokeh") ?: "bokeh"
 
-            if (photoScaleMode != "fill") {
-                val scalingViews = PhotoScalingEffects.ScalingViews(
-                    imageView = views.overlayView,
-                    container = views.container as ViewGroup,
-                    backgroundView = null // You may need to add a background view to your layout
-                )
-                photoScalingEffects.applyScalingMode(
-                    views = scalingViews,
-                    drawable = resource,
-                    mode = photoScaleMode,
-                    enhancementEffect = photoEnhancementEffect
-                )
+                if (photoScaleMode != "fill" || photoEnhancementEffect != "none") {
+                    val scalingViews = PhotoScalingEffects.ScalingViews(
+                        imageView = views.overlayView,
+                        container = views.container as ViewGroup,
+                        backgroundView = views.primaryView // Use primaryView as background for effects
+                    )
+
+                    photoScalingEffects.applyScalingMode(
+                        views = scalingViews,
+                        drawable = resource,
+                        mode = photoScaleMode,
+                        enhancementEffect = photoEnhancementEffect
+                    )
+                }
+
+                // Simple fade animation
+                views.overlayView.animate()
+                    .alpha(1f)
+                    .setDuration(transitionDuration)
+                    .withEndAction {
+                        // When animation completes, update the primary view
+                        completeTransition(views, resource, nextIndex)
+                    }
+                    .start()
+
+                trackPhotoLoadTime(dataSource == DataSource.MEMORY_CACHE, System.currentTimeMillis() - startTime)
+                return true // Return true to indicate we've handled setting the resource
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during resource ready handling", e)
+                // In case of error, set the transition state to false to allow new photos to load
+                isTransitioning = false
+                return false
             }
-
-            trackPhotoLoadTime(dataSource == DataSource.MEMORY_CACHE, System.currentTimeMillis() - startTime)
-            return true // Return true to indicate we've handled setting the resource
         }
     }
 
@@ -640,6 +664,8 @@ class PhotoDisplayManager @Inject constructor(
         }
 
         try {
+            Log.d(TAG, "Starting transition completion to photo $nextIndex")
+
             // Update primary view with the new drawable
             views.primaryView.apply {
                 setImageDrawable(resource)
@@ -658,27 +684,24 @@ class PhotoDisplayManager @Inject constructor(
             // Reset overlay view properties
             views.overlayView.apply {
                 alpha = 0f
-                scaleX = 1f
-                scaleY = 1f
-                translationX = 0f
-                translationY = 0f
-                rotationX = 0f
-                rotationY = 0f
-                rotation = 0f
-                translationZ = 0f
                 visibility = View.INVISIBLE
             }
 
             // Apply scaling effects to the primary view if needed
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
             val photoScaleMode = prefs.getString("photo_scale", "fill") ?: "fill"
-            val photoEnhancementEffect = prefs.getString("photo_enhancement", "none") ?: "none"
+            val photoEnhancementEffect = prefs.getString("photo_enhancement", "bokeh") ?: "bokeh"
 
             if (photoScaleMode != "fill" || photoEnhancementEffect != "none") {
+                // Make overlay visible again if needed for bokeh
+                if (photoEnhancementEffect == PhotoScalingEffects.EFFECT_BOKEH) {
+                    views.overlayView.visibility = View.VISIBLE
+                }
+
                 val scalingViews = PhotoScalingEffects.ScalingViews(
                     imageView = views.primaryView,
                     container = views.container as ViewGroup,
-                    backgroundView = views.overlayView // Reuse overlay view for effects
+                    backgroundView = views.overlayView // Use overlay view for background effects
                 )
 
                 photoScalingEffects.applyScalingMode(
@@ -692,8 +715,10 @@ class PhotoDisplayManager @Inject constructor(
             // Hide any remaining messages
             hideAllMessages()
 
+            // IMPORTANT: Reset the transition state to allow new photos to load
             isTransitioning = false
             currentPhotoIndex = nextIndex
+
             // Notify AdManager of the photo count for ad frequency tracking
             adManager.updatePhotoCount(currentPhotoIndex)
             Log.d(TAG, "Transition completed to photo $nextIndex")

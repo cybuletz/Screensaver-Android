@@ -8,6 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.renderscript.Allocation
@@ -74,15 +75,16 @@ class PhotoScalingEffects(private val context: Context) {
     // RenderScript for blur effects
     private var renderScript: RenderScript? = null
 
-    /**
-     * Apply the selected display mode to the image
-     *
-     * @param views The views to apply the scaling to
-     * @param drawable The drawable to display
-     * @param mode The display mode to apply
-     * @param enhancementEffect Optional visual enhancement to apply
-     * @param callback Optional callback for when scaling is complete
-     */
+    init {
+        // Initialize RenderScript once for better performance
+        try {
+            renderScript = RenderScript.create(context)
+            Log.d(TAG, "RenderScript initialized successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing RenderScript", e)
+        }
+    }
+
     fun applyScalingMode(
         views: ScalingViews,
         drawable: Drawable,
@@ -90,7 +92,7 @@ class PhotoScalingEffects(private val context: Context) {
         enhancementEffect: String = EFFECT_BOKEH,
         callback: ScalingEffectCallback? = null
     ) {
-        Log.d(TAG, "Applying scaling mode: $mode with effect: $enhancementEffect")
+        Log.d(TAG, "Applying scaling mode: $mode with effect: $enhancementEffect, backgroundView available: ${views.backgroundView != null}")
 
         // Cancel any existing animations
         cleanupAnimations()
@@ -133,6 +135,11 @@ class PhotoScalingEffects(private val context: Context) {
         // Apply enhancement effect if specified
         applyEnhancementEffect(views, drawable, enhancementEffect)
 
+        // Make sure the image view is visible and properly elevated
+        imageView.visibility = View.VISIBLE
+        imageView.elevation = 2f
+        views.backgroundView?.elevation = 1f
+
         callback?.onScalingEffectComplete(true)
     }
 
@@ -158,6 +165,11 @@ class PhotoScalingEffects(private val context: Context) {
         // Apply enhancement effect if specified
         applyEnhancementEffect(views, drawable, enhancementEffect)
 
+        // Make sure the image view is visible and properly elevated
+        imageView.visibility = View.VISIBLE
+        imageView.elevation = 2f
+        views.backgroundView?.elevation = 1f
+
         callback?.onScalingEffectComplete(true)
     }
 
@@ -181,6 +193,11 @@ class PhotoScalingEffects(private val context: Context) {
 
         // Apply enhancement effect if specified
         applyEnhancementEffect(views, drawable, enhancementEffect)
+
+        // Make sure the image view is visible and properly elevated
+        imageView.visibility = View.VISIBLE
+        imageView.elevation = 2f
+        views.backgroundView?.elevation = 1f
 
         callback?.onScalingEffectComplete(true)
     }
@@ -216,6 +233,11 @@ class PhotoScalingEffects(private val context: Context) {
 
         // Apply enhancement effect if specified
         applyEnhancementEffect(views, drawable, enhancementEffect)
+
+        // Make sure the image view is visible and properly elevated
+        imageView.visibility = View.VISIBLE
+        imageView.elevation = 2f
+        views.backgroundView?.elevation = 1f
 
         callback?.onScalingEffectComplete(true)
     }
@@ -263,6 +285,11 @@ class PhotoScalingEffects(private val context: Context) {
 
         // Apply enhancement effect if specified
         applyEnhancementEffect(views, drawable, enhancementEffect)
+
+        // Make sure the image view is visible and properly elevated
+        imageView.visibility = View.VISIBLE
+        imageView.elevation = 2f
+        views.backgroundView?.elevation = 1f
 
         // Only animate if panning is needed (image is wider than screen after scaling)
         if (scaledWidth > screenWidth) {
@@ -320,12 +347,19 @@ class PhotoScalingEffects(private val context: Context) {
         drawable: Drawable,
         enhancementEffect: String
     ) {
+        Log.d(TAG, "Applying enhancement effect: $enhancementEffect")
+        Log.d(TAG, "Background view available: ${views.backgroundView != null}")
+
         when (enhancementEffect) {
-            EFFECT_BOKEH -> applyBokehEffect(views, drawable)
+            EFFECT_BOKEH -> {
+                applyBokehEffect(views, drawable)
+                Log.d(TAG, "Bokeh effect applied")
+            }
             else -> {
                 // Clear any background effects
                 views.backgroundView?.setImageDrawable(null)
                 views.backgroundView?.visibility = View.GONE
+                Log.d(TAG, "No enhancement effect applied, cleared background")
             }
         }
     }
@@ -340,15 +374,28 @@ class PhotoScalingEffects(private val context: Context) {
         try {
             // Create a blurred version of the image
             val bitmap = drawable.toBitmap()
+            Log.d(TAG, "Original bitmap size: ${bitmap.width}x${bitmap.height}")
+
             val blurredBitmap = blurBitmap(bitmap, BOKEH_BLUR_RADIUS)
+            Log.d(TAG, "Blurred bitmap created successfully: ${blurredBitmap != null}")
 
             // Set the blurred image as background
             backgroundView.scaleType = ImageView.ScaleType.CENTER_CROP
             backgroundView.setImageBitmap(blurredBitmap)
             backgroundView.visibility = View.VISIBLE
 
-            // Make sure the blurred background is behind the main image
-            backgroundView.z = views.imageView.z - 1
+            // Use elevation instead of z property
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                backgroundView.elevation = 1f
+                views.imageView.elevation = 2f
+
+                // Add debug log to confirm elevation
+                Log.d(TAG, "Set elevations: main image: ${views.imageView.elevation}, background: ${backgroundView.elevation}")
+            } else {
+                // For older Android versions, use bringToFront
+                views.imageView.bringToFront()
+                Log.d(TAG, "Using bringToFront() for z-ordering on older Android")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error applying bokeh effect", e)
             backgroundView.visibility = View.GONE
@@ -361,24 +408,28 @@ class PhotoScalingEffects(private val context: Context) {
     private fun blurBitmap(bitmap: Bitmap, radius: Float): Bitmap {
         if (radius <= 0) return bitmap
 
-        var renderScript: RenderScript? = null
+        var localRenderScript = renderScript
         var allocationIn: Allocation? = null
         var allocationOut: Allocation? = null
         var blurScript: ScriptIntrinsicBlur? = null
 
         try {
-            // Initialize RenderScript
-            renderScript = RenderScript.create(context)
+            // Initialize RenderScript if needed
+            if (localRenderScript == null) {
+                localRenderScript = RenderScript.create(context)
+                renderScript = localRenderScript
+                Log.d(TAG, "Created new RenderScript instance for blurring")
+            }
 
             // Create output bitmap
             val outputBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
 
             // Create allocations
-            allocationIn = Allocation.createFromBitmap(renderScript, bitmap)
-            allocationOut = Allocation.createFromBitmap(renderScript, outputBitmap)
+            allocationIn = Allocation.createFromBitmap(localRenderScript, bitmap)
+            allocationOut = Allocation.createFromBitmap(localRenderScript, outputBitmap)
 
             // Create blur script and set parameters
-            blurScript = ScriptIntrinsicBlur.create(renderScript, Element.U8_4(renderScript))
+            blurScript = ScriptIntrinsicBlur.create(localRenderScript, Element.U8_4(localRenderScript))
             blurScript.setRadius(min(radius, 25f)) // Maximum radius is 25
             blurScript.setInput(allocationIn)
             blurScript.forEach(allocationOut)
@@ -386,6 +437,7 @@ class PhotoScalingEffects(private val context: Context) {
             // Copy the result back to the output bitmap
             allocationOut.copyTo(outputBitmap)
 
+            Log.d(TAG, "Blur applied successfully with radius: $radius")
             return outputBitmap
         } catch (e: Exception) {
             Log.e(TAG, "Error blurring bitmap", e)
@@ -396,7 +448,7 @@ class PhotoScalingEffects(private val context: Context) {
                 blurScript?.destroy()
                 allocationIn?.destroy()
                 allocationOut?.destroy()
-                renderScript?.destroy()
+                // Don't destroy renderScript here as we'll reuse it
             } catch (e: Exception) {
                 Log.e(TAG, "Error cleaning up RenderScript resources", e)
             }
