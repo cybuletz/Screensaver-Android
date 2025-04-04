@@ -89,28 +89,91 @@ class PhotoScalingEffects(private val context: Context) {
         views: ScalingViews,
         drawable: Drawable,
         mode: String = getDefaultMode(),
-        enhancementEffect: String = EFFECT_BOKEH,
+        enhancementEffect: String = EFFECT_NONE,
         callback: ScalingEffectCallback? = null
     ) {
-        Log.d(TAG, "Applying scaling mode: $mode with effect: $enhancementEffect, backgroundView available: ${views.backgroundView != null}")
+        Log.d(TAG, "Applying scaling mode: $mode with effect: $enhancementEffect")
 
         // Cancel any existing animations
         cleanupAnimations()
 
         try {
-            // Apply the main scaling mode
+            // First apply the scaling based on the mode
             when (mode) {
-                MODE_FIT -> applyFitMode(views, drawable, enhancementEffect, callback)
-                MODE_FILL -> applyFillMode(views, drawable, enhancementEffect, callback)
-                MODE_ORIGINAL -> applyOriginalMode(views, drawable, enhancementEffect, callback)
-                MODE_SMART -> applySmartMode(views, drawable, enhancementEffect, callback)
-                MODE_PAN -> applyPanMode(views, drawable, enhancementEffect, callback)
-                else -> applyFitMode(views, drawable, enhancementEffect, callback)
+                MODE_FIT -> {
+                    resetImageView(views.imageView)
+                    views.imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                    views.imageView.setImageDrawable(drawable)
+                    Log.d(TAG, "FIT mode applied")
+                }
+                MODE_FILL -> {
+                    resetImageView(views.imageView)
+                    views.imageView.scaleType = ImageView.ScaleType.CENTER_CROP
+                    views.imageView.setImageDrawable(drawable)
+                    Log.d(TAG, "FILL mode applied")
+                }
+                MODE_ORIGINAL -> {
+                    resetImageView(views.imageView)
+                    views.imageView.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    views.imageView.setImageDrawable(drawable)
+                    Log.d(TAG, "ORIGINAL mode applied")
+                }
+                MODE_SMART -> {
+                    resetImageView(views.imageView)
+                    // Check if the image is landscape or portrait
+                    val isLandscapeImage = drawable.intrinsicWidth > drawable.intrinsicHeight
+                    val isLandscapeScreen = views.container.width > views.container.height
+
+                    if (isLandscapeImage == isLandscapeScreen) {
+                        // Same orientation - use fill mode
+                        views.imageView.scaleType = ImageView.ScaleType.CENTER_CROP
+                    } else {
+                        // Different orientation - use fit mode
+                        views.imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                    }
+                    views.imageView.setImageDrawable(drawable)
+                    Log.d(TAG, "SMART mode applied with scale type: ${views.imageView.scaleType}")
+                }
+                MODE_PAN -> {
+                    applyPanMode(views, drawable, enhancementEffect, callback)
+                    Log.d(TAG, "PAN mode applied")
+                    return // Pan mode handles the callback
+                }
+                else -> {
+                    resetImageView(views.imageView)
+                    views.imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                    views.imageView.setImageDrawable(drawable)
+                    Log.d(TAG, "Default mode applied as fallback")
+                }
             }
+
+            // Then apply enhancement effect separately
+            if (enhancementEffect != EFFECT_NONE) {
+                applyEnhancementEffect(views, drawable, enhancementEffect)
+            }
+
+            // Ensure the view is visible
+            views.imageView.visibility = View.VISIBLE
+
+            // Set proper elevation to ensure bokeh effect works
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                views.imageView.elevation = 2f
+                views.backgroundView?.elevation = 1f
+            }
+
+            callback?.onScalingEffectComplete(true)
         } catch (e: Exception) {
             Log.e(TAG, "Error applying scaling mode", e)
-            // Fallback to fit mode in case of error
-            applyFitMode(views, drawable, EFFECT_NONE, callback)
+            // Fallback
+            try {
+                resetImageView(views.imageView)
+                views.imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                views.imageView.setImageDrawable(drawable)
+                callback?.onScalingEffectComplete(false)
+            } catch (e2: Exception) {
+                Log.e(TAG, "Error applying fallback scaling", e2)
+                callback?.onScalingEffectComplete(false)
+            }
         }
     }
 
@@ -243,6 +306,82 @@ class PhotoScalingEffects(private val context: Context) {
     }
 
     /**
+     * Apply pan effect to the image
+     */
+    private fun applyPanEffect(imageView: ImageView, drawable: Drawable, container: ViewGroup) {
+        Log.d(TAG, "Setting up pan effect with animation")
+
+        // Pan effect uses matrix scaling
+        imageView.scaleType = ImageView.ScaleType.MATRIX
+        val matrix = Matrix()
+
+        // Get image and screen dimensions
+        val drawableWidth = drawable.intrinsicWidth.toFloat()
+        val drawableHeight = drawable.intrinsicHeight.toFloat()
+        val screenWidth = container.width.toFloat()
+        val screenHeight = container.height.toFloat()
+
+        // Calculate scale to fill
+        val scale = max(screenWidth / drawableWidth, screenHeight / drawableHeight)
+
+        // Calculate the total width/height after scaling
+        val scaledWidth = drawableWidth * scale
+        val scaledHeight = drawableHeight * scale
+
+        // Set initial position - centered
+        matrix.setScale(scale, scale)
+        matrix.postTranslate(
+            (screenWidth - scaledWidth) / 2,
+            (screenHeight - scaledHeight) / 2
+        )
+
+        // Apply the initial matrix
+        imageView.imageMatrix = matrix
+
+        // Only animate if panning is needed (image is wider than screen after scaling)
+        if (scaledWidth > screenWidth) {
+            val panDuration = 5000L // 5 seconds for panning
+
+            // Animate panning from left to right and back
+            val animator = ValueAnimator.ofFloat(0f, 1f, 0f)
+            animator.repeatMode = ValueAnimator.RESTART
+            animator.repeatCount = ValueAnimator.INFINITE
+            animator.duration = panDuration * 2
+            animator.interpolator = LinearInterpolator()
+
+            // Maximum pan distance
+            val maxPanX = (scaledWidth - screenWidth)
+
+            animator.addUpdateListener { anim ->
+                val progress = anim.animatedValue as Float
+                val panX = if (progress <= 0.5f) {
+                    // First half: 0 -> maxPanX
+                    progress * 2 * maxPanX
+                } else {
+                    // Second half: maxPanX -> 0
+                    (1f - (progress - 0.5f) * 2) * maxPanX
+                }
+
+                // Create new matrix for this animation frame
+                val panMatrix = Matrix(matrix)
+                panMatrix.postTranslate(-panX, 0f)
+                imageView.imageMatrix = panMatrix
+            }
+
+            // Start the animation
+            animator.start()
+
+            // Store animator reference to cancel it later if needed
+            imageView.tag = animator
+
+            Log.d(TAG, "Started panning animation for width $scaledWidth > $screenWidth")
+        } else {
+            Log.d(TAG, "No panning needed, image fits screen width: $scaledWidth <= $screenWidth")
+        }
+    }
+
+
+    /**
      * Pan mode applies a slow panning effect to show the entire image
      * This is especially useful for landscape images on portrait screens
      */
@@ -342,7 +481,7 @@ class PhotoScalingEffects(private val context: Context) {
     /**
      * Apply visual enhancement effects to the image
      */
-    private fun applyEnhancementEffect(
+    fun applyEnhancementEffect(
         views: ScalingViews,
         drawable: Drawable,
         enhancementEffect: String
@@ -368,6 +507,10 @@ class PhotoScalingEffects(private val context: Context) {
      * Apply a bokeh (blur) effect to the background of the image
      * This keeps the center sharp and blurs the edges
      */
+    /**
+     * Apply a bokeh (blur) effect to the background of the image
+     * This keeps the center sharp and blurs the edges
+     */
     private fun applyBokehEffect(views: ScalingViews, drawable: Drawable) {
         val backgroundView = views.backgroundView ?: return
 
@@ -379,23 +522,31 @@ class PhotoScalingEffects(private val context: Context) {
             val blurredBitmap = blurBitmap(bitmap, BOKEH_BLUR_RADIUS)
             Log.d(TAG, "Blurred bitmap created successfully: ${blurredBitmap != null}")
 
-            // Set the blurred image as background
-            backgroundView.scaleType = ImageView.ScaleType.CENTER_CROP
+            // IMPORTANT: Use the SAME scale type as the main image for the background
+            // Instead of hardcoding CENTER_CROP
+            backgroundView.scaleType = views.imageView.scaleType
+
+            // For MATRIX scale type, need to also copy the matrix
+            if (views.imageView.scaleType == ImageView.ScaleType.MATRIX &&
+                views.imageView.imageMatrix != null) {
+                backgroundView.imageMatrix = Matrix(views.imageView.imageMatrix)
+            }
+
             backgroundView.setImageBitmap(blurredBitmap)
             backgroundView.visibility = View.VISIBLE
 
-            // Use elevation instead of z property
+            // Make sure z-ordering is correct
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 backgroundView.elevation = 1f
                 views.imageView.elevation = 2f
-
-                // Add debug log to confirm elevation
                 Log.d(TAG, "Set elevations: main image: ${views.imageView.elevation}, background: ${backgroundView.elevation}")
             } else {
                 // For older Android versions, use bringToFront
                 views.imageView.bringToFront()
                 Log.d(TAG, "Using bringToFront() for z-ordering on older Android")
             }
+
+            Log.d(TAG, "Bokeh effect applied with scale type: ${views.imageView.scaleType}")
         } catch (e: Exception) {
             Log.e(TAG, "Error applying bokeh effect", e)
             backgroundView.visibility = View.GONE

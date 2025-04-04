@@ -74,6 +74,8 @@ class PhotoDisplayManager @Inject constructor(
     private var photoEnhancementEffect: String = PreferenceManager.getDefaultSharedPreferences(context)
         .getString("photo_enhancement", "bokeh") ?: "bokeh"
     private var transitionStartTime: Long = 0L
+    private val simplePhotoEffects = SimplePhotoEffects(context)
+
 
 
     private val transitionEffects = PhotoTransitionEffects(context)
@@ -427,8 +429,31 @@ class PhotoDisplayManager @Inject constructor(
                                 dataSource: DataSource,
                                 isFirstResource: Boolean
                             ): Boolean {
-                                return createGlideListener(views, photoIndex, startTime, transitionEffect)
-                                    .onResourceReady(resource, model, target, dataSource, isFirstResource)
+                                Log.d(TAG, "Photo loaded, starting fade transition")
+
+                                try {
+                                    // Set the resource on the overlay view
+                                    views.overlayView.setImageDrawable(resource)
+                                    views.overlayView.visibility = View.VISIBLE
+                                    views.overlayView.alpha = 0f
+
+                                    // Simple fade animation
+                                    views.overlayView.animate()
+                                        .alpha(1f)
+                                        .setDuration(transitionDuration)
+                                        .withEndAction {
+                                            // When animation completes, update the primary view
+                                            completeTransition(views, resource, photoIndex)
+                                        }
+                                        .start()
+
+                                    trackPhotoLoadTime(dataSource == DataSource.MEMORY_CACHE, System.currentTimeMillis() - startTime)
+                                    return true // Return true to indicate we've handled setting the resource
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error during resource ready handling", e)
+                                    isTransitioning = false
+                                    return false
+                                }
                             }
                         })
                         .into(views.overlayView)
@@ -581,7 +606,7 @@ class PhotoDisplayManager @Inject constructor(
 
     private fun createGlideListener(
         views: Views,
-        nextIndex: Int,
+        nextIndex: Int, // This parameter is available in this scope
         startTime: Long,
         transitionEffect: String
     ) = object : RequestListener<Drawable> {
@@ -607,36 +632,15 @@ class PhotoDisplayManager @Inject constructor(
             dataSource: DataSource,
             isFirstResource: Boolean
         ): Boolean {
-            Log.d(TAG, "Photo loaded, starting transition: $transitionEffect")
+            Log.d(TAG, "Photo loaded, starting fade transition")
 
             try {
-                // Skip the ripple transition and use a simpler fade transition
-                // Set the resource directly on the overlay view
+                // Set the resource on the overlay view
                 views.overlayView.setImageDrawable(resource)
-                views.overlayView.visibility = View.VISIBLE
+                views.overlayView.visibility = android.view.View.VISIBLE
                 views.overlayView.alpha = 0f
 
-                // Apply scaling effects first if needed
-                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-                val photoScaleMode = prefs.getString("photo_scale", "fill") ?: "fill"
-                val photoEnhancementEffect = prefs.getString("photo_enhancement", "bokeh") ?: "bokeh"
-
-                if (photoScaleMode != "fill" || photoEnhancementEffect != "none") {
-                    val scalingViews = PhotoScalingEffects.ScalingViews(
-                        imageView = views.overlayView,
-                        container = views.container as ViewGroup,
-                        backgroundView = views.primaryView // Use primaryView as background for effects
-                    )
-
-                    photoScalingEffects.applyScalingMode(
-                        views = scalingViews,
-                        drawable = resource,
-                        mode = photoScaleMode,
-                        enhancementEffect = photoEnhancementEffect
-                    )
-                }
-
-                // Simple fade animation
+                // Simple fade animation - nextIndex comes from the outer method
                 views.overlayView.animate()
                     .alpha(1f)
                     .setDuration(transitionDuration)
@@ -650,7 +654,6 @@ class PhotoDisplayManager @Inject constructor(
                 return true // Return true to indicate we've handled setting the resource
             } catch (e: Exception) {
                 Log.e(TAG, "Error during resource ready handling", e)
-                // In case of error, set the transition state to false to allow new photos to load
                 isTransitioning = false
                 return false
             }
@@ -681,10 +684,19 @@ class PhotoDisplayManager @Inject constructor(
                 visibility = View.VISIBLE
             }
 
-            // Reset overlay view properties
+            // Reset overlay view properties but keep it VISIBLE
             views.overlayView.apply {
-                alpha = 0f
-                visibility = View.INVISIBLE
+                // Don't set alpha to 0 or INVISIBLE if we're going to use it for bokeh
+                setImageDrawable(null) // Clear any old image
+                scaleX = 1f
+                scaleY = 1f
+                translationX = 0f
+                translationY = 0f
+                rotationX = 0f
+                rotationY = 0f
+                rotation = 0f
+                translationZ = 0f
+                visibility = View.VISIBLE // Keep visible
             }
 
             // Apply scaling effects to the primary view if needed
@@ -692,24 +704,43 @@ class PhotoDisplayManager @Inject constructor(
             val photoScaleMode = prefs.getString("photo_scale", "fill") ?: "fill"
             val photoEnhancementEffect = prefs.getString("photo_enhancement", "bokeh") ?: "bokeh"
 
-            if (photoScaleMode != "fill" || photoEnhancementEffect != "none") {
-                // Make overlay visible again if needed for bokeh
-                if (photoEnhancementEffect == PhotoScalingEffects.EFFECT_BOKEH) {
-                    views.overlayView.visibility = View.VISIBLE
-                }
-
+            // First, apply ONLY the scaling mode without any enhancement
+            if (photoScaleMode != "fill") {
                 val scalingViews = PhotoScalingEffects.ScalingViews(
                     imageView = views.primaryView,
                     container = views.container as ViewGroup,
-                    backgroundView = views.overlayView // Use overlay view for background effects
+                    backgroundView = null // No background for scaling
                 )
 
                 photoScalingEffects.applyScalingMode(
                     views = scalingViews,
                     drawable = resource,
                     mode = photoScaleMode,
-                    enhancementEffect = photoEnhancementEffect
+                    enhancementEffect = PhotoScalingEffects.EFFECT_NONE // No effect here
                 )
+
+                Log.d(TAG, "Applied scaling mode: $photoScaleMode")
+            }
+
+            // AFTER applying scaling, now apply the bokeh effect if needed
+            if (photoEnhancementEffect == PhotoScalingEffects.EFFECT_BOKEH) {
+                val bokehViews = PhotoScalingEffects.ScalingViews(
+                    imageView = views.primaryView,
+                    container = views.container as ViewGroup,
+                    backgroundView = views.overlayView
+                )
+
+                // Apply just the bokeh effect without changing scaling
+                photoScalingEffects.applyEnhancementEffect(
+                    bokehViews,
+                    resource,
+                    PhotoScalingEffects.EFFECT_BOKEH
+                )
+
+                Log.d(TAG, "Applied bokeh effect separately after scaling")
+            } else {
+                // If no bokeh, make sure overlay is invisible
+                views.overlayView.visibility = View.INVISIBLE
             }
 
             // Hide any remaining messages
@@ -727,6 +758,50 @@ class PhotoDisplayManager @Inject constructor(
             Log.e(TAG, "Error in completeTransition", e)
             isTransitioning = false
         }
+    }
+
+    private fun applyScalingAndEffects(
+        imageView: ImageView,
+        backgroundView: ImageView?,
+        container: ViewGroup,
+        drawable: Drawable,
+        mode: String,
+        enhancementEffect: String
+    ) {
+        Log.d(TAG, "Applying scaling mode: $mode and effect: $enhancementEffect separately")
+
+        // First apply the scaling mode without any enhancement
+        val scalingViews = PhotoScalingEffects.ScalingViews(
+            imageView = imageView,
+            container = container,
+            backgroundView = null // No background for scaling
+        )
+
+        photoScalingEffects.applyScalingMode(
+            views = scalingViews,
+            drawable = drawable,
+            mode = mode,
+            enhancementEffect = PhotoScalingEffects.EFFECT_NONE // No effect here
+        )
+
+        // Then apply just the enhancement effect if needed
+        if (enhancementEffect != PhotoScalingEffects.EFFECT_NONE && backgroundView != null) {
+            val effectViews = PhotoScalingEffects.ScalingViews(
+                imageView = imageView,
+                container = container,
+                backgroundView = backgroundView
+            )
+
+            // Apply only the enhancement effect
+            photoScalingEffects.applyScalingMode(
+                views = effectViews,
+                drawable = drawable,
+                mode = mode, // Pass the mode for logging
+                enhancementEffect = enhancementEffect
+            )
+        }
+
+        Log.d(TAG, "Applied scaling and effects separately")
     }
 
     private fun Drawable.toBitmap(): Bitmap? {
@@ -983,6 +1058,8 @@ class PhotoDisplayManager @Inject constructor(
         }
         managerJob.cancel()
         photoScalingEffects.release()
+        simplePhotoEffects.release()
+
 
     }
 
