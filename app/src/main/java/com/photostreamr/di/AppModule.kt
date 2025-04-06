@@ -33,6 +33,7 @@ import com.photostreamr.photos.PhotoUriManager
 import com.photostreamr.security.AppAuthManager
 import com.photostreamr.security.BiometricHelper
 import com.photostreamr.security.SecurityPreferences
+import com.photostreamr.ui.PhotoResizeManager
 import com.photostreamr.version.AppVersionManager
 
 @Module
@@ -95,6 +96,14 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun providePhotoResizeManager(
+        @ApplicationContext context: Context
+    ): PhotoResizeManager {
+        return PhotoResizeManager(context)
+    }
+
+    @Provides
+    @Singleton
     fun providePhotoDisplayManager(
         photoRepository: PhotoRepository,
         photoCache: PhotoCache,
@@ -102,7 +111,8 @@ object AppModule {
         spotifyManager: SpotifyManager,
         spotifyPreferences: SpotifyPreferences,
         adManager: AdManager,
-        appVersionManager: AppVersionManager
+        appVersionManager: AppVersionManager,
+        photoResizeManager: PhotoResizeManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
@@ -111,7 +121,8 @@ object AppModule {
             spotifyManager = spotifyManager,
             spotifyPreferences = spotifyPreferences,
             adManager = adManager,
-            appVersionManager = appVersionManager
+            appVersionManager = appVersionManager,
+            photoResizeManager = photoResizeManager
         )
     }
 

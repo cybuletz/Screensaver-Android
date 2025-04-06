@@ -108,6 +108,9 @@ class MainFragment : Fragment() {
                 overlayMessageContainer = binding.overlayMessageContainer,
                 overlayMessageText = binding.overlayMessageText,
                 backgroundLoadingIndicator = binding.backgroundLoadingIndicator,
+                topLetterboxView = null,
+                bottomLetterboxView = null
+
             ),
             viewLifecycleOwner.lifecycleScope
         )

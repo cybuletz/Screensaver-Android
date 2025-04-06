@@ -339,7 +339,12 @@ class PhotoResizeManager @Inject constructor(
 
         // Get blur intensity from preferences
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val blurIntensity = prefs.getFloat(PREF_KEY_BLUR_INTENSITY, DEFAULT_BLUR_RADIUS)
+        val blurIntensity = try {
+            prefs.getFloat(PREF_KEY_BLUR_INTENSITY, DEFAULT_BLUR_RADIUS)
+        } catch (e: ClassCastException) {
+            // If the value is stored as an Integer, convert it to Float
+            prefs.getInt(PREF_KEY_BLUR_INTENSITY, DEFAULT_BLUR_RADIUS.toInt()).toFloat()
+        }
 
         // Process blur in background
         managerScope.launch(Dispatchers.Default) {
@@ -453,7 +458,12 @@ class PhotoResizeManager @Inject constructor(
     private fun applyGradientWithColors(colorArray: IntArray) {
         // Get opacity from preferences
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val opacity = prefs.getFloat(PREF_KEY_GRADIENT_OPACITY, DEFAULT_GRADIENT_OPACITY)
+        val opacity = try {
+            prefs.getFloat(PREF_KEY_GRADIENT_OPACITY, DEFAULT_GRADIENT_OPACITY)
+        } catch (e: ClassCastException) {
+            // If the value is stored as an Integer, convert it to Float
+            prefs.getInt(PREF_KEY_GRADIENT_OPACITY, (DEFAULT_GRADIENT_OPACITY * 100).toInt()).toFloat() / 100f
+        }
 
         // Apply opacity to colors
         val opaqueColors = colorArray.map { color ->
@@ -512,7 +522,7 @@ class PhotoResizeManager @Inject constructor(
                 val sourceHeight = bitmap.height
 
                 // Get appropriate height for edge regions to mirror
-                val edgeHeight = (letterboxHeight * 1.5).coerceAtMost(sourceHeight / 3)
+                val edgeHeight = (letterboxHeight * 1.5).toInt().coerceAtMost(sourceHeight / 3)
 
                 // Create top bitmap (from top of photo, flipped)
                 val topBitmap = Bitmap.createBitmap(sourceWidth, edgeHeight, Bitmap.Config.ARGB_8888)
