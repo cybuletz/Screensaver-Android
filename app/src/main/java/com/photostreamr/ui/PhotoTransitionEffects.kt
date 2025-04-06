@@ -3811,104 +3811,213 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Setup overlay view with the new image
+        // IMPORTANT: Don't change visibility or properties of the primary view
+        // until the animation is fully set up to prevent flicker
+
+        // Set up overlay view with the new image but keep it invisible initially
         views.overlayView.apply {
             setImageDrawable(resource)
-            visibility = View.VISIBLE
-            alpha = 0f
+            visibility = View.INVISIBLE // Start as INVISIBLE instead of setting alpha=0
+            alpha = 1f  // Keep alpha at 1 to avoid any alpha transitions
         }
 
-        // Get content area accounting for letterboxing
-        val contentArea = calculateContentArea(views)
+        // Calculate the center point of the screen
+        val screenCenterX = views.container.width.toFloat() / 2
+        val screenCenterY = views.container.height.toFloat() / 2
 
-        // Calculate the center point within the actual content area
-        val centerX = contentArea.centerX()
-        val centerY = contentArea.centerY()
+        // Calculate the maximum possible radius for the ripple
+        val maxRadius = Math.sqrt(
+            Math.pow(views.container.width.toDouble(), 2.0) +
+                    Math.pow(views.container.height.toDouble(), 2.0)
+        ).toFloat() * 0.6f // Make it slightly larger than needed to ensure full coverage
 
-        // Calculate maximum radius to cover the entire content area
-        val maxRadius = Math.max(
-            Math.hypot(centerX.toDouble(), (centerY - contentArea.top).toDouble()),
-            Math.hypot((contentArea.right - centerX).toDouble(), (contentArea.bottom - centerY).toDouble())
-        ).toFloat()
-
-        // Create a bitmap for the masked reveal effect
-        val maskBitmap = Bitmap.createBitmap(
+        // Create a bitmap for the reveal effect that will cover the new image
+        val rippleMaskBitmap = Bitmap.createBitmap(
             views.container.width,
             views.container.height,
             Bitmap.Config.ARGB_8888
         )
-        val maskCanvas = Canvas(maskBitmap)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val rippleMaskCanvas = Canvas(rippleMaskBitmap)
+        val ripplePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Create temporary bitmap for the actual image
-        val resultBitmap = Bitmap.createBitmap(
-            views.container.width,
-            views.container.height,
-            Bitmap.Config.ARGB_8888
+        // Create a temporary ImageView to hold just the ripple-shaped cutout of the new image
+        val revealImageView = ImageView(context)
+        revealImageView.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
         )
-        val resultCanvas = Canvas(resultBitmap)
+        revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
+        revealImageView.visibility = View.INVISIBLE // Start as INVISIBLE
 
-        // Create animator to drive the ripple effect
+        // Add the reveal view to the container, on top of both primary and overlay views
+        (views.container as ViewGroup).addView(revealImageView)
+
+        // Create animator for the transition
         val animator = ValueAnimator.ofFloat(0f, 1f)
-        animator.duration = transitionDuration
-        animator.interpolator = AccelerateDecelerateInterpolator()
+
+        // Slow down animation
+        animator.duration = transitionDuration * 2
+        animator.interpolator = AccelerateInterpolator(0.8f)
+
+        // Prepare the first frame before making anything visible
+        try {
+            // Clear the ripple mask canvas
+            rippleMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+
+            // Calculate initial ripple size - very small to start with
+            val initialProgress = 0.01f // Tiny starting progress
+            val progressCurved = Math.pow(initialProgress.toDouble(), 0.8).toFloat()
+            val currentRadius = progressCurved * maxRadius
+
+            // Draw the initial ripple shape - a simple circle
+            ripplePaint.color = Color.WHITE
+            ripplePaint.style = Paint.Style.FILL
+
+            rippleMaskCanvas.drawCircle(screenCenterX, screenCenterY, currentRadius, ripplePaint)
+
+            // Prepare initial image
+            if (resource is BitmapDrawable) {
+                val resultBitmap = Bitmap.createBitmap(
+                    views.container.width,
+                    views.container.height,
+                    Bitmap.Config.ARGB_8888
+                )
+                val resultCanvas = Canvas(resultBitmap)
+
+                val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                val destRect = calculateProperDestRect(
+                    resource.bitmap.width,
+                    resource.bitmap.height,
+                    resultBitmap.width,
+                    resultBitmap.height
+                )
+
+                resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
+
+                val maskPaint = Paint()
+                maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                resultCanvas.drawBitmap(rippleMaskBitmap, 0f, 0f, maskPaint)
+
+                revealImageView.setImageBitmap(resultBitmap)
+            } else {
+                revealImageView.setImageDrawable(resource)
+                revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
+            }
+
+            // Now make revealImageView visible before animation starts
+            revealImageView.visibility = View.VISIBLE
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing ripple transition", e)
+        }
 
         animator.addUpdateListener { animation ->
             val progress = animation.animatedValue as Float
 
             try {
-                // Clear the mask canvas
-                maskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                // Clear the ripple mask canvas
+                rippleMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-                // Draw the circle with current radius
-                paint.color = Color.WHITE
-                val currentRadius = progress * maxRadius
-                maskCanvas.drawCircle(centerX, centerY, currentRadius, paint)
+                // Calculate current ripple size with a curved progress for smoother growth
+                val progressCurved = Math.pow(progress.toDouble(), 0.8).toFloat()
+                val currentRadius = progressCurved * maxRadius
 
-                // Draw the resource drawable into the result bitmap
+                // Draw the ripple shape on the mask canvas - a simple circle that expands
+                ripplePaint.color = Color.WHITE
+                ripplePaint.style = Paint.Style.FILL
+
+                // Optional: Add multiple ripple circles for a more complex effect
+                /*
+                val numRipples = 3
+                val rippleSpacing = 40f
+                for (i in 0 until numRipples) {
+                    val rippleRadius = Math.max(0f, currentRadius - (i * rippleSpacing))
+                    if (rippleRadius > 0) {
+                        ripplePaint.alpha = (255 * (1 - (i.toFloat() / numRipples))).toInt()
+                        rippleMaskCanvas.drawCircle(screenCenterX, screenCenterY, rippleRadius, ripplePaint)
+                    }
+                }
+                */
+
+                // Or use a simple expanding circle for a clean effect
+                rippleMaskCanvas.drawCircle(screenCenterX, screenCenterY, currentRadius, ripplePaint)
+
+                // Create a copy of the new image, masked by the ripple shape
                 if (resource is BitmapDrawable) {
-                    // Clear the result canvas
-                    resultCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                    // Clear any previous bitmap and create new one
+                    val resultBitmap = Bitmap.createBitmap(
+                        views.container.width,
+                        views.container.height,
+                        Bitmap.Config.ARGB_8888
+                    )
 
-                    // Draw the source image
+                    val resultCanvas = Canvas(resultBitmap)
+
+                    // Calculate destination rectangle that maintains aspect ratio
                     val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
-                    val destRect = Rect(0, 0, resultBitmap.width, resultBitmap.height)
+                    val destRect = calculateProperDestRect(
+                        resource.bitmap.width,
+                        resource.bitmap.height,
+                        resultBitmap.width,
+                        resultBitmap.height
+                    )
+
+                    // Draw the bitmap with proper aspect ratio
                     resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
 
-                    // Apply the mask
-                    val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+                    // Apply the ripple mask to only show part of the new image
+                    val maskPaint = Paint()
                     maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                    resultCanvas.drawBitmap(maskBitmap, 0f, 0f, maskPaint)
+                    resultCanvas.drawBitmap(rippleMaskBitmap, 0f, 0f, maskPaint)
 
-                    // Set the result to the overlay view
-                    views.overlayView.setImageBitmap(resultBitmap)
-                    views.overlayView.alpha = 1f
+                    // Show the ripple-shaped cutout of the new image
+                    revealImageView.setImageBitmap(resultBitmap)
                 } else {
-                    // Fallback to simple fade if not a bitmap drawable
-                    views.overlayView.alpha = progress
+                    // For non-bitmap drawables, do a simpler approach
+                    revealImageView.setImageDrawable(resource)
+
+                    // Create a BitmapDrawable from the ripple mask
+                    val maskDrawable = BitmapDrawable(context.resources, rippleMaskBitmap)
+                    revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in ripple transition", e)
-                // Fallback to simple fade if there's an error
-                views.overlayView.alpha = progress
             }
         }
 
         animator.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                // Clean up resources
-                maskBitmap.recycle()
-                resultBitmap.recycle()
+                try {
+                    // Remove the temporary view
+                    (views.container as ViewGroup).removeView(revealImageView)
 
-                // Reset the overlay view to show the full image
-                views.overlayView.setImageDrawable(resource)
-                views.overlayView.alpha = 1f
+                    // Make the new image fully visible
+                    views.overlayView.visibility = View.VISIBLE
+                    views.overlayView.alpha = 1f
 
-                // Complete the transition
-                callback.onTransitionCompleted(resource, nextIndex)
+                    // Clean up resources
+                    rippleMaskBitmap.recycle()
+
+                    // Complete the transition
+                    callback.onTransitionCompleted(resource, nextIndex)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up ripple transition", e)
+                    callback.onTransitionCompleted(resource, nextIndex)
+                }
+            }
+
+            override fun onAnimationCancel(animation: Animator) {
+                try {
+                    // Clean up if animation is cancelled
+                    (views.container as ViewGroup).removeView(revealImageView)
+                    rippleMaskBitmap.recycle()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up cancelled ripple transition", e)
+                }
             }
         })
 
+        // Start the animation
         animator.start()
     }
 
@@ -4426,14 +4535,14 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // First, ensure the primary view (current image) is visible
-        views.primaryView.visibility = View.VISIBLE
+        // IMPORTANT: Don't change visibility or properties of the primary view
+        // until the animation is fully set up to prevent flicker
 
-        // Set up overlay view with the new image but make it invisible initially
+        // Set up overlay view with the new image but keep it invisible initially
         views.overlayView.apply {
             setImageDrawable(resource)
-            visibility = View.VISIBLE
-            alpha = 0f
+            visibility = View.INVISIBLE // Start as INVISIBLE instead of setting alpha=0
+            alpha = 1f  // Keep alpha at 1 to avoid any alpha transitions
         }
 
         // Calculate the center point of the screen
@@ -4462,14 +4571,91 @@ class PhotoTransitionEffects(
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
+        revealImageView.visibility = View.INVISIBLE // Start as INVISIBLE
 
         // Add the reveal view to the container, on top of both primary and overlay views
         (views.container as ViewGroup).addView(revealImageView)
 
         // Create animator for the transition
         val animator = ValueAnimator.ofFloat(0f, 1f)
-        animator.duration = transitionDuration
-        animator.interpolator = AccelerateInterpolator(1.2f) // Faster acceleration
+
+        // Slow down animation
+        animator.duration = transitionDuration * 2
+        animator.interpolator = AccelerateInterpolator(0.8f)
+
+        // Prepare the first frame before making anything visible
+        try {
+            // Clear the star mask canvas
+            starMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+
+            // Calculate initial star size - very small to start with
+            val initialProgress = 0.01f // Tiny starting progress
+            val progressCurved = Math.pow(initialProgress.toDouble(), 0.8).toFloat()
+            val currentRadius = progressCurved * maxRadius
+
+            // Draw the initial star shape
+            starPaint.color = Color.WHITE
+            starPaint.style = Paint.Style.FILL
+
+            val path = Path()
+            val outerRadius = currentRadius
+            val innerRadius = currentRadius * 0.4f
+            val numPoints = 10
+
+            // Draw initial star
+            path.moveTo(
+                screenCenterX,
+                screenCenterY - outerRadius
+            )
+
+            for (i in 1 until numPoints * 2) {
+                val radius = if (i % 2 == 0) outerRadius else innerRadius
+                val angle = Math.PI * i / numPoints - Math.PI / 2
+
+                path.lineTo(
+                    screenCenterX + radius * Math.cos(angle).toFloat(),
+                    screenCenterY + radius * Math.sin(angle).toFloat()
+                )
+            }
+
+            path.close()
+            starMaskCanvas.drawPath(path, starPaint)
+
+            // Prepare initial image
+            if (resource is BitmapDrawable) {
+                val resultBitmap = Bitmap.createBitmap(
+                    views.container.width,
+                    views.container.height,
+                    Bitmap.Config.ARGB_8888
+                )
+                val resultCanvas = Canvas(resultBitmap)
+
+                val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                val destRect = calculateProperDestRect(
+                    resource.bitmap.width,
+                    resource.bitmap.height,
+                    resultBitmap.width,
+                    resultBitmap.height
+                )
+
+                resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
+
+                val maskPaint = Paint()
+                maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                resultCanvas.drawBitmap(starMaskBitmap, 0f, 0f, maskPaint)
+
+                revealImageView.setImageBitmap(resultBitmap)
+            } else {
+                revealImageView.setImageDrawable(resource)
+                revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
+            }
+
+            // Now make revealImageView visible before animation starts
+            revealImageView.visibility = View.VISIBLE
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing star transition", e)
+        }
 
         animator.addUpdateListener { animation ->
             val progress = animation.animatedValue as Float
@@ -4479,25 +4665,23 @@ class PhotoTransitionEffects(
                 starMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
                 // Calculate current star size with a curved progress for smoother growth
-                val progressCurved = Math.pow(progress.toDouble(), 0.7).toFloat()
+                val progressCurved = Math.pow(progress.toDouble(), 0.8).toFloat()
                 val currentRadius = progressCurved * maxRadius
 
                 // Draw the star shape on the mask canvas
-                starPaint.color = Color.WHITE // Use white for the star mask shape
+                starPaint.color = Color.WHITE
                 starPaint.style = Paint.Style.FILL
 
                 val path = Path()
                 val outerRadius = currentRadius
                 val innerRadius = currentRadius * 0.4f
-                val numPoints = 10 // 5-pointed star
+                val numPoints = 10
 
-                // Start at the top point of the star
                 path.moveTo(
                     screenCenterX,
                     screenCenterY - outerRadius
                 )
 
-                // Draw the star points
                 for (i in 1 until numPoints * 2) {
                     val radius = if (i % 2 == 0) outerRadius else innerRadius
                     val angle = Math.PI * i / numPoints - Math.PI / 2
@@ -4522,9 +4706,16 @@ class PhotoTransitionEffects(
 
                     val resultCanvas = Canvas(resultBitmap)
 
-                    // First draw the new image (properly scaled)
+                    // Calculate destination rectangle that maintains aspect ratio
                     val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
-                    val destRect = Rect(0, 0, resultBitmap.width, resultBitmap.height)
+                    val destRect = calculateProperDestRect(
+                        resource.bitmap.width,
+                        resource.bitmap.height,
+                        resultBitmap.width,
+                        resultBitmap.height
+                    )
+
+                    // Draw the bitmap with proper aspect ratio
                     resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
 
                     // Apply the star mask to only show part of the new image
@@ -4534,11 +4725,9 @@ class PhotoTransitionEffects(
 
                     // Show the star-shaped cutout of the new image
                     revealImageView.setImageBitmap(resultBitmap)
-                    revealImageView.alpha = 1f
                 } else {
                     // For non-bitmap drawables, do a simpler approach
                     revealImageView.setImageDrawable(resource)
-                    revealImageView.alpha = 1f
 
                     // Create a BitmapDrawable from the star mask
                     val maskDrawable = BitmapDrawable(context.resources, starMaskBitmap)
@@ -4546,9 +4735,6 @@ class PhotoTransitionEffects(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in star transition", e)
-                // Fallback to simple fade if there's an error
-                views.overlayView.alpha = progress
-                revealImageView.alpha = 0f
             }
         }
 
@@ -4559,6 +4745,7 @@ class PhotoTransitionEffects(
                     (views.container as ViewGroup).removeView(revealImageView)
 
                     // Make the new image fully visible
+                    views.overlayView.visibility = View.VISIBLE
                     views.overlayView.alpha = 1f
 
                     // Clean up resources
@@ -4583,7 +4770,40 @@ class PhotoTransitionEffects(
             }
         })
 
+        // Start the animation
         animator.start()
+    }
+
+    private fun calculateProperDestRect(
+        srcWidth: Int,
+        srcHeight: Int,
+        dstWidth: Int,
+        dstHeight: Int
+    ): Rect {
+        val srcRatio = srcWidth.toFloat() / srcHeight.toFloat()
+        val dstRatio = dstWidth.toFloat() / dstHeight.toFloat()
+
+        val resultRect = Rect()
+
+        if (srcRatio > dstRatio) {
+            // Source is wider than destination, scale to fit width
+            resultRect.left = 0
+            resultRect.right = dstWidth
+            val scaledHeight = (dstWidth / srcRatio).toInt()
+            val yOffset = (dstHeight - scaledHeight) / 2
+            resultRect.top = yOffset
+            resultRect.bottom = yOffset + scaledHeight
+        } else {
+            // Source is taller than destination, scale to fit height
+            resultRect.top = 0
+            resultRect.bottom = dstHeight
+            val scaledWidth = (dstHeight * srcRatio).toInt()
+            val xOffset = (dstWidth - scaledWidth) / 2
+            resultRect.left = xOffset
+            resultRect.right = xOffset + scaledWidth
+        }
+
+        return resultRect
     }
 
     private fun performSwapTransition(
