@@ -590,7 +590,9 @@ class PhotoDisplayManager @Inject constructor(
             val transitionViews = PhotoTransitionEffects.TransitionViews(
                 primaryView = views.primaryView,
                 overlayView = views.overlayView,
-                container = views.container
+                container = views.container,
+                topLetterboxView = views.topLetterboxView,
+                bottomLetterboxView = views.bottomLetterboxView
             )
 
             // Use the PhotoTransitionEffects class to perform the transition
