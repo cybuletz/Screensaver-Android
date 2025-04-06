@@ -1,4 +1,4 @@
-package com.photostreamr.ui
+package com.photostreamr.settings
 
 import android.util.Log
 import android.view.View

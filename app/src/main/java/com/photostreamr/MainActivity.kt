@@ -25,7 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import com.photostreamr.ui.SettingsButtonController
+import com.photostreamr.settings.SettingsButtonController
 import com.photostreamr.utils.AppPreferences
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo

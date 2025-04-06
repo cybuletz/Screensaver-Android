@@ -123,7 +123,6 @@ class PhotoDisplayManager @Inject constructor(
         const val PREF_KEY_INTERVAL = "photo_interval"
         const val DEFAULT_INTERVAL_SECONDS = 5
         private const val MILLIS_PER_SECOND = 1000L
-        private const val SPOTIFY_RECONNECT_DELAY = 5000L
     }
 
     init {
@@ -183,12 +182,6 @@ class PhotoDisplayManager @Inject constructor(
     private fun getIntervalMillis(): Long {
         val seconds = prefs.getInt(PREF_KEY_INTERVAL, DEFAULT_INTERVAL_SECONDS)
         return seconds * MILLIS_PER_SECOND
-    }
-
-    private fun loadPhotoFromUri(uri: Uri, imageView: ImageView) {
-        Glide.with(context)
-            .load(uri)
-            .into(imageView)
     }
 
     private fun handleCacheError() {
@@ -252,19 +245,6 @@ class PhotoDisplayManager @Inject constructor(
                 Log.d(TAG, "Error message displayed: $error")
             } ?: Log.e(TAG, "Message container is null")
         }
-    }
-
-    private fun loadLocalPhotos(): List<Uri> {
-        return PreferenceManager.getDefaultSharedPreferences(context)
-            .getStringSet("selected_local_photos", emptySet())
-            ?.mapNotNull { uriString ->
-                try {
-                    Uri.parse(uriString)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error parsing URI: $uriString", e)
-                    null
-                }
-            } ?: emptyList()
     }
 
     private suspend fun getNextPhotoIndex(currentIndex: Int, totalPhotos: Int): Int =
@@ -359,7 +339,6 @@ class PhotoDisplayManager @Inject constructor(
             }
         }
     }
-
 
     private fun displayPhoto(photoIndex: Int, uri: String, isCached: Boolean) {
         val views = this.views ?: return
@@ -685,14 +664,6 @@ class PhotoDisplayManager @Inject constructor(
             Log.e(TAG, "Error converting drawable to bitmap", e)
             null
         }
-    }
-
-    private fun isBitmapInUse(bitmap: Bitmap): Boolean {
-        return views?.let { views ->
-            val primaryBitmap = (views.primaryView.drawable as? BitmapDrawable)?.bitmap
-            val overlayBitmap = (views.overlayView.drawable as? BitmapDrawable)?.bitmap
-            bitmap === primaryBitmap || bitmap === overlayBitmap
-        } ?: false
     }
 
     fun updateSettings(transitionDuration: Long? = null, showLocation: Boolean? = null, isRandomOrder: Boolean? = null) {
