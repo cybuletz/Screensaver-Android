@@ -4426,66 +4426,75 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Setup overlay view with the new image
+        // First, ensure the primary view (current image) is visible
+        views.primaryView.visibility = View.VISIBLE
+
+        // Set up overlay view with the new image but make it invisible initially
         views.overlayView.apply {
             setImageDrawable(resource)
             visibility = View.VISIBLE
             alpha = 0f
         }
 
-        // Get content area accounting for letterboxing
-        val contentArea = calculateContentArea(views)
+        // Calculate the center point of the screen
+        val screenCenterX = views.container.width.toFloat() / 2
+        val screenCenterY = views.container.height.toFloat() / 2
 
-        // Calculate the center point within the actual content area
-        val centerX = contentArea.centerX()
-        val centerY = contentArea.centerY()
+        // Calculate the maximum possible radius based on screen dimensions
+        val maxRadius = Math.max(
+            Math.max(screenCenterX, views.container.width - screenCenterX),
+            Math.max(screenCenterY, views.container.height - screenCenterY)
+        ) * 1.5f
 
-        // Calculate appropriate max radius based on content area, not full screen
-        val maxRadius = Math.min(contentArea.width(), contentArea.height() - contentArea.top) * 0.5f
-
-        // Create a bitmap for the masked star effect
-        val maskBitmap = Bitmap.createBitmap(
+        // Create a bitmap for the reveal effect that will cover the new image
+        val starMaskBitmap = Bitmap.createBitmap(
             views.container.width,
             views.container.height,
             Bitmap.Config.ARGB_8888
         )
-        val maskCanvas = Canvas(maskBitmap)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val starMaskCanvas = Canvas(starMaskBitmap)
+        val starPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Create temporary bitmap for the actual image
-        val resultBitmap = Bitmap.createBitmap(
-            views.container.width,
-            views.container.height,
-            Bitmap.Config.ARGB_8888
+        // Create a temporary ImageView to hold just the star-shaped cutout of the new image
+        val revealImageView = ImageView(context)
+        revealImageView.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
         )
-        val resultCanvas = Canvas(resultBitmap)
+        revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
 
-        // Create animator to drive the star effect
+        // Add the reveal view to the container, on top of both primary and overlay views
+        (views.container as ViewGroup).addView(revealImageView)
+
+        // Create animator for the transition
         val animator = ValueAnimator.ofFloat(0f, 1f)
         animator.duration = transitionDuration
-        animator.interpolator = AccelerateDecelerateInterpolator()
+        animator.interpolator = AccelerateInterpolator(1.2f) // Faster acceleration
 
         animator.addUpdateListener { animation ->
             val progress = animation.animatedValue as Float
 
             try {
-                // Clear the mask canvas
-                maskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                // Clear the star mask canvas
+                starMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-                // Calculate current star size
-                val currentRadius = progress * maxRadius
+                // Calculate current star size with a curved progress for smoother growth
+                val progressCurved = Math.pow(progress.toDouble(), 0.7).toFloat()
+                val currentRadius = progressCurved * maxRadius
 
-                // Draw the star shape
-                paint.color = Color.WHITE
+                // Draw the star shape on the mask canvas
+                starPaint.color = Color.WHITE // Use white for the star mask shape
+                starPaint.style = Paint.Style.FILL
+
                 val path = Path()
                 val outerRadius = currentRadius
-                val innerRadius = currentRadius * 0.5f
-                val numPoints = 10
+                val innerRadius = currentRadius * 0.4f
+                val numPoints = 10 // 5-pointed star
 
                 // Start at the top point of the star
                 path.moveTo(
-                    centerX,
-                    centerY - outerRadius
+                    screenCenterX,
+                    screenCenterY - outerRadius
                 )
 
                 // Draw the star points
@@ -4494,55 +4503,83 @@ class PhotoTransitionEffects(
                     val angle = Math.PI * i / numPoints - Math.PI / 2
 
                     path.lineTo(
-                        centerX + radius * Math.cos(angle).toFloat(),
-                        centerY + radius * Math.sin(angle).toFloat()
+                        screenCenterX + radius * Math.cos(angle).toFloat(),
+                        screenCenterY + radius * Math.sin(angle).toFloat()
                     )
                 }
 
                 path.close()
-                maskCanvas.drawPath(path, paint)
+                starMaskCanvas.drawPath(path, starPaint)
 
-                // Draw the resource drawable into the result bitmap
+                // Create a copy of the new image, masked by the star shape
                 if (resource is BitmapDrawable) {
-                    // Clear the result canvas
-                    resultCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                    // Clear any previous bitmap and create new one
+                    val resultBitmap = Bitmap.createBitmap(
+                        views.container.width,
+                        views.container.height,
+                        Bitmap.Config.ARGB_8888
+                    )
 
-                    // Draw the source image
+                    val resultCanvas = Canvas(resultBitmap)
+
+                    // First draw the new image (properly scaled)
                     val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
                     val destRect = Rect(0, 0, resultBitmap.width, resultBitmap.height)
                     resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
 
-                    // Apply the mask
-                    val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+                    // Apply the star mask to only show part of the new image
+                    val maskPaint = Paint()
                     maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                    resultCanvas.drawBitmap(maskBitmap, 0f, 0f, maskPaint)
+                    resultCanvas.drawBitmap(starMaskBitmap, 0f, 0f, maskPaint)
 
-                    // Set the result to the overlay view
-                    views.overlayView.setImageBitmap(resultBitmap)
-                    views.overlayView.alpha = 1f
+                    // Show the star-shaped cutout of the new image
+                    revealImageView.setImageBitmap(resultBitmap)
+                    revealImageView.alpha = 1f
                 } else {
-                    // Fallback to simple fade if not a bitmap drawable
-                    views.overlayView.alpha = progress
+                    // For non-bitmap drawables, do a simpler approach
+                    revealImageView.setImageDrawable(resource)
+                    revealImageView.alpha = 1f
+
+                    // Create a BitmapDrawable from the star mask
+                    val maskDrawable = BitmapDrawable(context.resources, starMaskBitmap)
+                    revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in star transition", e)
                 // Fallback to simple fade if there's an error
                 views.overlayView.alpha = progress
+                revealImageView.alpha = 0f
             }
         }
 
         animator.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                // Clean up resources
-                maskBitmap.recycle()
-                resultBitmap.recycle()
+                try {
+                    // Remove the temporary view
+                    (views.container as ViewGroup).removeView(revealImageView)
 
-                // Reset the overlay view to show the full image
-                views.overlayView.setImageDrawable(resource)
-                views.overlayView.alpha = 1f
+                    // Make the new image fully visible
+                    views.overlayView.alpha = 1f
 
-                // Complete the transition
-                callback.onTransitionCompleted(resource, nextIndex)
+                    // Clean up resources
+                    starMaskBitmap.recycle()
+
+                    // Complete the transition
+                    callback.onTransitionCompleted(resource, nextIndex)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up star transition", e)
+                    callback.onTransitionCompleted(resource, nextIndex)
+                }
+            }
+
+            override fun onAnimationCancel(animation: Animator) {
+                try {
+                    // Clean up if animation is cancelled
+                    (views.container as ViewGroup).removeView(revealImageView)
+                    starMaskBitmap.recycle()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up cancelled star transition", e)
+                }
             }
         })
 
