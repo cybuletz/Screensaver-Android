@@ -3,6 +3,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <!-- Existing preferences -->
     <SwitchPreferenceCompat
         android:key="random_order"
         android:title="@string/pref_random_order_title"
@@ -10,6 +11,7 @@
         android:defaultValue="true"
         android:icon="@drawable/ic_shuffle" />
 
+    <!-- Photo Scale Preference - This one already exists, but let's ensure it works with letterboxing -->
     <ListPreference
         android:key="photo_scale"
         android:title="@string/pref_photo_scale_title"
@@ -19,6 +21,46 @@
         android:defaultValue="fill"
         android:icon="@drawable/ic_aspect_ratio" />
 
+    <!-- New Letterbox Settings Category -->
+    <PreferenceCategory
+        android:title="@string/pref_letterbox_category"
+        android:key="letterbox_category">
+
+        <ListPreference
+            android:key="letterbox_mode"
+            android:title="@string/pref_letterbox_mode_title"
+            android:summary="@string/pref_letterbox_mode_summary"
+            android:entries="@array/letterbox_mode_options"
+            android:entryValues="@array/letterbox_mode_values"
+            android:defaultValue="black"
+            android:icon="@drawable/ic_aspect_ratio" />
+
+        <SeekBarPreference
+            android:key="letterbox_blur_intensity"
+            android:title="@string/pref_letterbox_blur_intensity_title"
+            android:summary="@string/pref_letterbox_blur_intensity_summary"
+            app:min="5"
+            android:max="25"
+            android:defaultValue="15"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true"
+            android:icon="@drawable/ic_blur" />
+
+        <SeekBarPreference
+            android:key="letterbox_gradient_opacity"
+            android:title="@string/pref_letterbox_gradient_opacity_title"
+            android:summary="@string/pref_letterbox_gradient_opacity_summary"
+            app:min="1"
+            android:max="10"
+            android:defaultValue="7"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true"
+            android:icon="@drawable/ic_opacity" />
+    </PreferenceCategory>
+
+    <!-- Existing preferences -->
     <ListPreference
         android:key="transition_effect"
         android:title="@string/pref_transition_effect_title"

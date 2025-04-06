@@ -250,6 +250,20 @@
     <string name="transition_star">Star</string>
     <string name="transition_swap">Swap</string>
 
+    <string name="letterbox_top_description">Top letterbox area</string>
+    <string name="letterbox_bottom_description">Bottom letterbox area</string>
+    <string name="pref_letterbox_category">Letterbox Settings</string>
+    <string name="pref_letterbox_mode_title">Letterbox Fill Mode</string>
+    <string name="pref_letterbox_mode_summary">How to fill the space above and below landscape photos</string>
+    <string name="pref_letterbox_blur_intensity_title">Blur Intensity</string>
+    <string name="pref_letterbox_blur_intensity_summary">How much to blur the photo when filling letterbox space</string>
+    <string name="pref_letterbox_gradient_opacity_title">Gradient Opacity</string>
+    <string name="pref_letterbox_gradient_opacity_summary">Opacity of the gradient effect when filling letterbox space</string>
+    <string name="letterbox_mode_black">Black (Default)</string>
+    <string name="letterbox_mode_blur">Blurred Photo</string>
+    <string name="letterbox_mode_gradient">Photo Colors Gradient</string>
+    <string name="letterbox_mode_mirror">Mirrored Photo Edges</string>
+
     <!-- Content descriptions -->
     <string name="photo_content_description">Photo</string>
     <string name="next_photo_content_description">Next photo</string>

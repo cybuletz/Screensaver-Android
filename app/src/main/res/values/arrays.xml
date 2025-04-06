@@ -152,6 +152,21 @@
         <item>original</item>
     </string-array>
 
+    <!-- Letterbox Mode Options -->
+    <string-array name="letterbox_mode_options">
+        <item>@string/letterbox_mode_black</item>
+        <item>@string/letterbox_mode_blur</item>
+        <item>@string/letterbox_mode_gradient</item>
+        <item>@string/letterbox_mode_mirror</item>
+    </string-array>
+
+    <string-array name="letterbox_mode_values">
+        <item>black</item>
+        <item>blur</item>
+        <item>gradient</item>
+        <item>mirror</item>
+    </string-array>
+
     <!-- Days of Week -->
     <string-array name="days_of_week">
         <item>@string/day_monday</item>

@@ -958,7 +958,9 @@ class MainActivity : AppCompatActivity() {
                     container = binding.screensaverContainer,
                     overlayMessageContainer = binding.overlayMessageContainer,
                     overlayMessageText = binding.overlayMessageText,
-                    backgroundLoadingIndicator = binding.backgroundLoadingIndicator
+                    backgroundLoadingIndicator = binding.backgroundLoadingIndicator,
+                    topLetterboxView = binding.topLetterboxView,
+                    bottomLetterboxView = binding.bottomLetterboxView
                 )
 
                 // Initialize PhotoDisplayManager
@@ -1151,7 +1153,7 @@ class MainActivity : AppCompatActivity() {
                         val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
                         val intervalInt = prefs.getInt("photo_interval", 10000)
 
-                        // Initialize PhotoDisplayManager with views
+                        // Initialize PhotoDisplayManager with views - Updated to include the new letterbox views
                         val views = PhotoDisplayManager.Views(
                             primaryView = binding.photoPreview,
                             overlayView = binding.photoPreviewOverlay,
@@ -1161,7 +1163,9 @@ class MainActivity : AppCompatActivity() {
                             container = binding.screensaverContainer,
                             overlayMessageContainer = binding.overlayMessageContainer,
                             overlayMessageText = binding.overlayMessageText,
-                            backgroundLoadingIndicator = binding.backgroundLoadingIndicator
+                            backgroundLoadingIndicator = binding.backgroundLoadingIndicator,
+                            topLetterboxView = binding.topLetterboxView,
+                            bottomLetterboxView = binding.bottomLetterboxView
                         )
 
                         // Re-initialize PhotoDisplayManager

@@ -107,7 +107,7 @@ class MainFragment : Fragment() {
                 container = binding.screensaverContainer,
                 overlayMessageContainer = binding.overlayMessageContainer,
                 overlayMessageText = binding.overlayMessageText,
-                backgroundLoadingIndicator = binding.backgroundLoadingIndicator
+                backgroundLoadingIndicator = binding.backgroundLoadingIndicator,
             ),
             viewLifecycleOwner.lifecycleScope
         )

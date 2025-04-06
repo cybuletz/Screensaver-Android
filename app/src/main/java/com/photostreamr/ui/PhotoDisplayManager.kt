@@ -65,7 +65,8 @@ class PhotoDisplayManager @Inject constructor(
     private val spotifyManager: SpotifyManager,
     private val spotifyPreferences: SpotifyPreferences,
     private val adManager: AdManager,
-    private val appVersionManager: AppVersionManager
+    private val appVersionManager: AppVersionManager,
+    private val photoResizeManager: PhotoResizeManager
 ) : PhotoTransitionEffects.TransitionCompletionCallback {
 
     private val transitionEffects = PhotoTransitionEffects(context)
@@ -104,7 +105,9 @@ class PhotoDisplayManager @Inject constructor(
         val container: View,
         val overlayMessageContainer: View?,
         val overlayMessageText: TextView?,
-        val backgroundLoadingIndicator: View?
+        val backgroundLoadingIndicator: View?,
+        val topLetterboxView: ImageView?,
+        val bottomLetterboxView: ImageView?
     )
 
     private var views: Views? = null
@@ -210,6 +213,20 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Initializing PhotoDisplayManager")
         this.views = views
         this.lifecycleScope = scope
+
+        // Initialize resize manager if the views are provided
+        if (views.topLetterboxView != null && views.bottomLetterboxView != null) {
+            photoResizeManager.initialize(
+                views.primaryView,
+                views.overlayView,
+                views.topLetterboxView,
+                views.bottomLetterboxView,
+                views.container
+            )
+
+            // Apply current display mode (fill or fit)
+            photoResizeManager.applyDisplayMode()
+        }
 
         // Store scope locally to avoid smart cast issue
         val currentScope = scope
@@ -519,12 +536,7 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
-    private fun createGlideListener(
-        views: Views,
-        nextIndex: Int,
-        startTime: Long,
-        transitionEffect: String
-    ) = object : RequestListener<Drawable> {
+    private fun createGlideListener(views: Views, nextIndex: Int, startTime: Long, transitionEffect: String) = object : RequestListener<Drawable> {
         override fun onLoadFailed(
             e: GlideException?,
             model: Any?,
@@ -571,6 +583,9 @@ class PhotoDisplayManager @Inject constructor(
         ): Boolean {
             Log.d(TAG, "Photo loaded, starting transition: $transitionEffect")
 
+            // Try to apply letterboxing if needed (only happens if in "fit" mode)
+            photoResizeManager.processPhoto(resource, views.overlayView)
+
             // Create TransitionViews object for the PhotoTransitionEffects class
             val transitionViews = PhotoTransitionEffects.TransitionViews(
                 primaryView = views.primaryView,
@@ -600,6 +615,9 @@ class PhotoDisplayManager @Inject constructor(
         }
 
         try {
+            // Try to apply letterboxing if needed (only happens if in "fit" mode)
+            photoResizeManager.processPhoto(resource, views.primaryView)
+
             // Update primary view with the new drawable
             views.primaryView.apply {
                 setImageDrawable(resource)
@@ -614,6 +632,7 @@ class PhotoDisplayManager @Inject constructor(
                 translationZ = 0f
                 visibility = View.VISIBLE
             }
+
 
             // Reset overlay view properties
             views.overlayView.apply {
@@ -672,6 +691,16 @@ class PhotoDisplayManager @Inject constructor(
         transitionDuration?.let { this.transitionDuration = it }
         showLocation?.let { this.showLocation = it }
         isRandomOrder?.let { this.isRandomOrder = it }
+
+        // Apply current display mode (fill or fit)
+        photoResizeManager.applyDisplayMode()
+
+        // Make sure we restart photo display to apply any letterbox changes
+        val currentScope = lifecycleScope ?: return
+        currentScope.launch {
+            stopPhotoDisplay()
+            startPhotoDisplay()
+        }
     }
 
     private fun preloadDefaultPhoto() {
@@ -870,6 +899,10 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Cleaning up PhotoDisplayManager, clearCache: $clearCache")
         managerScope.launch {
             stopPhotoDisplay()  // This will handle Spotify cleanup
+
+            // Clean up resize manager
+            photoResizeManager.cleanup()
+
             views = null
             lifecycleScope = null
             _photoLoadingState.value = LoadingState.IDLE
