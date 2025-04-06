@@ -1386,117 +1386,210 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Set up the views
-        views.primaryView.visibility = View.VISIBLE
+        // Set up overlay view with the new image but keep it invisible initially
         views.overlayView.apply {
             setImageDrawable(resource)
+            visibility = View.INVISIBLE
             alpha = 1f
-            visibility = View.INVISIBLE // We'll show the blinds first
         }
 
-        // Number of blinds
-        val numBlinds = 10
-        val blindViews = mutableListOf<View>()
+        // Create a bitmap for the reveal effect that will cover the new image
+        val blindsMaskBitmap = Bitmap.createBitmap(
+            views.container.width,
+            views.container.height,
+            Bitmap.Config.ARGB_8888
+        )
+        val blindsMaskCanvas = Canvas(blindsMaskBitmap)
+        val blindsPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Container dimensions
-        val containerWidth = views.container.width
-        val containerHeight = views.container.height
+        // Create a temporary ImageView to hold just the blinds-shaped cutout of the new image
+        val revealImageView = ImageView(context)
+        revealImageView.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
+        revealImageView.visibility = View.INVISIBLE // Start as INVISIBLE
 
-        // Blind dimensions
-        val blindHeight = containerHeight / numBlinds
+        // Add the reveal view to the container, on top of both primary and overlay views
+        (views.container as ViewGroup).addView(revealImageView)
 
-        // Create the blinds
-        for (i in 0 until numBlinds) {
-            val blindView = View(context)
-            blindView.layoutParams = FrameLayout.LayoutParams(
-                containerWidth,
-                0 // Start with 0 height
-            ).apply {
-                topMargin = i * blindHeight
+        // Blinds configuration
+        val blindsCount = 12 // Number of horizontal blinds
+
+        // Create animator for the transition
+        val animator = ValueAnimator.ofFloat(0f, 1f)
+        animator.duration = transitionDuration * 2
+        animator.interpolator = AccelerateInterpolator(0.8f)
+
+        // Prepare the first frame before making anything visible
+        try {
+            // Clear the blinds mask canvas
+            blindsMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+
+            // Calculate initial blinds position - just starting to open
+            val initialProgress = 0.01f
+
+            // Draw initial blinds shape (tiny slivers)
+            blindsPaint.color = Color.WHITE
+            blindsPaint.style = Paint.Style.FILL
+
+            val width = views.container.width.toFloat()
+            val height = views.container.height.toFloat()
+            val blindHeight = height / blindsCount
+
+            // Draw tiny initial blinds
+            for (i in 0 until blindsCount) {
+                val top = i * blindHeight
+                val blindOpenAmount = initialProgress * width
+
+                blindsMaskCanvas.drawRect(0f, top, blindOpenAmount, top + blindHeight, blindsPaint)
             }
-            blindView.setBackgroundColor(Color.BLACK) // Or any color you prefer
 
-            (views.container as ViewGroup).addView(blindView)
-            blindViews.add(blindView)
-        }
+            // Prepare initial image
+            if (resource is BitmapDrawable) {
+                val resultBitmap = Bitmap.createBitmap(
+                    views.container.width,
+                    views.container.height,
+                    Bitmap.Config.ARGB_8888
+                )
+                val resultCanvas = Canvas(resultBitmap)
 
-        // Create the animation
-        val animatorSet = AnimatorSet()
-        val animators = mutableListOf<Animator>()
+                val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                val destRect = calculateProperDestRect(
+                    resource.bitmap.width,
+                    resource.bitmap.height,
+                    resultBitmap.width,
+                    resultBitmap.height
+                )
 
-        // Create animation for each blind
-        for (i in 0 until numBlinds) {
-            val blindView = blindViews[i]
-            val heightAnimator = ValueAnimator.ofInt(0, blindHeight)
+                resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
 
-            heightAnimator.addUpdateListener { animator ->
-                val height = animator.animatedValue as Int
-                blindView.layoutParams =
-                    (blindView.layoutParams as FrameLayout.LayoutParams).apply {
-                        this.height = height
-                    }
-                blindView.requestLayout()
+                val maskPaint = Paint()
+                maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                resultCanvas.drawBitmap(blindsMaskBitmap, 0f, 0f, maskPaint)
+
+                revealImageView.setImageBitmap(resultBitmap)
+            } else {
+                revealImageView.setImageDrawable(resource)
+                revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
             }
 
-            // Add a delay based on position
-            heightAnimator.startDelay = (i * (transitionDuration / numBlinds) / 2)
+            // Now make revealImageView visible before animation starts
+            revealImageView.visibility = View.VISIBLE
 
-            animators.add(heightAnimator)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing blinds transition", e)
         }
 
-        // Play the animations together
-        animatorSet.playTogether(animators)
-        animatorSet.duration = transitionDuration / 2 // Half the time for blinds to close
+        animator.addUpdateListener { animation ->
+            val progress = animation.animatedValue as Float
 
-        // Then show the new image and open the blinds
-        val openBlindsSet = AnimatorSet()
+            try {
+                // Clear the blinds mask canvas
+                blindsMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-        animatorSet.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                // Show the new image
-                views.overlayView.visibility = View.VISIBLE
-                views.primaryView.visibility = View.INVISIBLE
+                // Use a curved progress for smoother animation
+                val progressCurved = Math.pow(progress.toDouble(), 0.8).toFloat()
 
-                // Create animations to open the blinds
-                val openAnimators = mutableListOf<Animator>()
+                // Draw the blinds shape
+                blindsPaint.color = Color.WHITE
+                blindsPaint.style = Paint.Style.FILL
 
-                for (i in 0 until numBlinds) {
-                    val blindView = blindViews[i]
-                    val heightAnimator = ValueAnimator.ofInt(blindHeight, 0)
+                val width = views.container.width.toFloat()
+                val height = views.container.height.toFloat()
+                val blindHeight = height / blindsCount
 
-                    heightAnimator.addUpdateListener { animator ->
-                        val height = animator.animatedValue as Int
-                        blindView.layoutParams =
-                            (blindView.layoutParams as FrameLayout.LayoutParams).apply {
-                                this.height = height
-                            }
-                        blindView.requestLayout()
+                // Draw alternating blinds that open from left and right
+                for (i in 0 until blindsCount) {
+                    val top = i * blindHeight
+
+                    // Stagger the blinds slightly
+                    val staggerFactor = 0.1f * (i % 3) // Small delay between groups of blinds
+                    val adjustedProgress = Math.max(0f, progressCurved - staggerFactor)
+
+                    if (i % 2 == 0) {
+                        // Open from left to right
+                        val left = 0f
+                        val right = width * Math.min(1f, adjustedProgress * 1.2f) // Slightly faster
+
+                        blindsMaskCanvas.drawRect(left, top, right, top + blindHeight, blindsPaint)
+                    } else {
+                        // Open from right to left
+                        val right = width
+                        val left = width - (width * Math.min(1f, adjustedProgress * 1.2f))
+
+                        blindsMaskCanvas.drawRect(left, top, right, top + blindHeight, blindsPaint)
                     }
-
-                    // Add a delay based on position (reverse order)
-                    heightAnimator.startDelay =
-                        ((numBlinds - i - 1) * (transitionDuration / numBlinds) / 2)
-
-                    openAnimators.add(heightAnimator)
                 }
 
-                openBlindsSet.playTogether(openAnimators)
-                openBlindsSet.duration = transitionDuration / 2 // Half the time for blinds to open
+                // Create a copy of the new image, masked by the blinds shape
+                if (resource is BitmapDrawable) {
+                    val resultBitmap = Bitmap.createBitmap(
+                        views.container.width,
+                        views.container.height,
+                        Bitmap.Config.ARGB_8888
+                    )
+                    val resultCanvas = Canvas(resultBitmap)
 
-                openBlindsSet.addListener(object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        // Remove all blind views
-                        blindViews.forEach { (views.container as ViewGroup).removeView(it) }
-                        // Complete the transition
-                        callback.onTransitionCompleted(resource, nextIndex)
-                    }
-                })
+                    val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                    val destRect = calculateProperDestRect(
+                        resource.bitmap.width,
+                        resource.bitmap.height,
+                        resultBitmap.width,
+                        resultBitmap.height
+                    )
 
-                openBlindsSet.start()
+                    resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
+
+                    val maskPaint = Paint()
+                    maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                    resultCanvas.drawBitmap(blindsMaskBitmap, 0f, 0f, maskPaint)
+
+                    revealImageView.setImageBitmap(resultBitmap)
+                } else {
+                    revealImageView.setImageDrawable(resource)
+                    revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in blinds transition", e)
+            }
+        }
+
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                try {
+                    // Remove the temporary view
+                    (views.container as ViewGroup).removeView(revealImageView)
+
+                    // Make the new image fully visible
+                    views.overlayView.visibility = View.VISIBLE
+                    views.overlayView.alpha = 1f
+
+                    // Clean up resources
+                    blindsMaskBitmap.recycle()
+
+                    // Complete the transition
+                    callback.onTransitionCompleted(resource, nextIndex)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up blinds transition", e)
+                    callback.onTransitionCompleted(resource, nextIndex)
+                }
+            }
+
+            override fun onAnimationCancel(animation: Animator) {
+                try {
+                    // Clean up if animation is cancelled
+                    (views.container as ViewGroup).removeView(revealImageView)
+                    blindsMaskBitmap.recycle()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up cancelled blinds transition", e)
+                }
             }
         })
 
-        animatorSet.start()
+        // Start the animation
+        animator.start()
     }
 
     private fun performCheckerboardTransition(
@@ -2161,125 +2254,213 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Set up the views
-        views.primaryView.visibility = View.VISIBLE
+        // Set up overlay view with the new image but keep it invisible initially
         views.overlayView.apply {
             setImageDrawable(resource)
+            visibility = View.INVISIBLE
             alpha = 1f
-            visibility = View.INVISIBLE // We'll use custom wave segments
         }
 
-        val container = views.container as ViewGroup
-        val containerWidth = container.width
-        val containerHeight = container.height
+        // Create a bitmap for the reveal effect that will cover the new image
+        val waveMaskBitmap = Bitmap.createBitmap(
+            views.container.width,
+            views.container.height,
+            Bitmap.Config.ARGB_8888
+        )
+        val waveMaskCanvas = Canvas(waveMaskBitmap)
+        val wavePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
+        // Create a temporary ImageView to hold just the wave-shaped cutout of the new image
+        val revealImageView = ImageView(context)
+        revealImageView.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
+        revealImageView.visibility = View.INVISIBLE // Start as INVISIBLE
+
+        // Add the reveal view to the container, on top of both primary and overlay views
+        (views.container as ViewGroup).addView(revealImageView)
+
+        // Wave configuration
+        val waveCount = 3 // Number of wave cycles across the screen
+        val waveAmplitude = views.container.height * 0.1f // Height of wave peaks
+
+        // Create animator for the transition
+        val animator = ValueAnimator.ofFloat(0f, 1f)
+        animator.duration = transitionDuration * 2
+        animator.interpolator = AccelerateInterpolator(0.8f)
+
+        // Prepare the first frame before making anything visible
         try {
-            // Number of wave segments
-            val numSegments = 12
-            val segmentHeight = containerHeight / numSegments
+            // Clear the wave mask canvas
+            waveMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-            // Get the bitmap from the new image
-            val newBitmap = if (resource is BitmapDrawable) {
-                resource.bitmap
-            } else {
-                val bitmap = Bitmap.createBitmap(
-                    containerWidth,
-                    containerHeight,
+            // Calculate initial wave position - just starting to appear from left
+            val initialProgress = 0.01f
+
+            // Draw initial wave shape
+            wavePaint.color = Color.WHITE
+            wavePaint.style = Paint.Style.FILL
+
+            val width = views.container.width.toFloat()
+            val height = views.container.height.toFloat()
+
+            val path = Path()
+            path.moveTo(0f, height) // Start at bottom-left
+            path.lineTo(0f, height) // Bottom left corner
+
+            // Draw just the very beginning of the wave on the left edge
+            val initialPosition = width * initialProgress
+            path.lineTo(initialPosition, height)
+            path.lineTo(initialPosition, height - waveAmplitude / 2)
+            path.lineTo(0f, height - waveAmplitude / 2)
+
+            path.close()
+            waveMaskCanvas.drawPath(path, wavePaint)
+
+            // Prepare initial image
+            if (resource is BitmapDrawable) {
+                val resultBitmap = Bitmap.createBitmap(
+                    views.container.width,
+                    views.container.height,
                     Bitmap.Config.ARGB_8888
                 )
-                val canvas = Canvas(bitmap)
-                resource.setBounds(0, 0, canvas.width, canvas.height)
-                resource.draw(canvas)
-                bitmap
-            }
+                val resultCanvas = Canvas(resultBitmap)
 
-            // Create segment views for the wave effect
-            val segmentViews = mutableListOf<ImageView>()
-            for (i in 0 until numSegments) {
-                // Create a slice of the new image
-                val segmentBitmap = Bitmap.createBitmap(
-                    newBitmap,
-                    0,
-                    i * newBitmap.height / numSegments,
-                    newBitmap.width,
-                    newBitmap.height / numSegments
+                val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                val destRect = calculateProperDestRect(
+                    resource.bitmap.width,
+                    resource.bitmap.height,
+                    resultBitmap.width,
+                    resultBitmap.height
                 )
 
-                // Create a view for this segment
-                val segmentView = ImageView(context)
-                segmentView.layoutParams = FrameLayout.LayoutParams(
-                    containerWidth,
-                    segmentHeight
-                ).apply {
-                    topMargin = i * segmentHeight
-                }
-                segmentView.setImageBitmap(segmentBitmap)
+                resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
 
-                // Set initial position (off screen to the right)
-                segmentView.translationX = containerWidth.toFloat()
+                val maskPaint = Paint()
+                maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                resultCanvas.drawBitmap(waveMaskBitmap, 0f, 0f, maskPaint)
 
-                container.addView(segmentView)
-                segmentViews.add(segmentView)
+                revealImageView.setImageBitmap(resultBitmap)
+            } else {
+                revealImageView.setImageDrawable(resource)
+                revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
             }
 
-            // Create the wave animation
-            val animatorSet = AnimatorSet()
-            val animators = mutableListOf<Animator>()
-
-            // Create animations for each segment
-            for (i in 0 until numSegments) {
-                val segmentView = segmentViews[i]
-
-                // Wave-like motion: start offset based on position
-                val delay = if (i % 2 == 0) {
-                    (i * transitionDuration / (numSegments * 2)).toLong()
-                } else {
-                    ((numSegments - i) * transitionDuration / (numSegments * 2)).toLong()
-                }
-
-                // Create the translation animation
-                val translateAnimator = ObjectAnimator.ofFloat(
-                    segmentView,
-                    View.TRANSLATION_X,
-                    containerWidth.toFloat(),
-                    0f
-                )
-                translateAnimator.duration = transitionDuration / 2
-                translateAnimator.startDelay = delay
-                translateAnimator.interpolator = DecelerateInterpolator()
-
-                animators.add(translateAnimator)
-            }
-
-            // Fade out the primary view
-            val fadeOutAnimator = ObjectAnimator.ofFloat(
-                views.primaryView,
-                View.ALPHA,
-                1f,
-                0f
-            )
-            fadeOutAnimator.duration = transitionDuration / 3
-            fadeOutAnimator.startDelay = transitionDuration / 3
-
-            // Play all animations together
-            animatorSet.playTogether(animators + fadeOutAnimator)
-
-            animatorSet.addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    // Remove all segment views
-                    segmentViews.forEach { container.removeView(it) }
-                    // Complete the transition
-                    callback.onTransitionCompleted(resource, nextIndex)
-                }
-            })
-
-            animatorSet.start()
+            // Now make revealImageView visible before animation starts
+            revealImageView.visibility = View.VISIBLE
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error in wave transition", e)
-            // Fall back to fade transition
-            performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
+            Log.e(TAG, "Error preparing wave transition", e)
         }
+
+        animator.addUpdateListener { animation ->
+            val progress = animation.animatedValue as Float
+
+            try {
+                // Clear the wave mask canvas
+                waveMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+
+                // Use a curved progress for smoother animation
+                val progressCurved = Math.pow(progress.toDouble(), 0.8).toFloat()
+
+                // Draw the wave shape on the mask canvas
+                wavePaint.color = Color.WHITE
+                wavePaint.style = Paint.Style.FILL
+
+                val width = views.container.width.toFloat()
+                val height = views.container.height.toFloat()
+
+                val path = Path()
+                path.moveTo(0f, height) // Start at bottom-left
+                path.lineTo(0f, 0f) // Top left corner
+                path.lineTo(width * progressCurved, 0f) // Top edge up to current position
+
+                // Draw the wavy leading edge
+                val segments = 100
+                for (i in 0..segments) {
+                    val x = width * progressCurved
+                    val segmentHeight = height * i / segments
+
+                    // Sine wave pattern that moves as progress increases
+                    val waveOffset = Math.sin(i * waveCount * Math.PI / segments + progressCurved * 10).toFloat()
+                    val adjustedX = x + waveOffset * waveAmplitude
+
+                    path.lineTo(adjustedX, segmentHeight)
+                }
+
+                path.lineTo(0f, height) // Back to start
+                path.close()
+                waveMaskCanvas.drawPath(path, wavePaint)
+
+                // Create a copy of the new image, masked by the wave shape
+                if (resource is BitmapDrawable) {
+                    val resultBitmap = Bitmap.createBitmap(
+                        views.container.width,
+                        views.container.height,
+                        Bitmap.Config.ARGB_8888
+                    )
+                    val resultCanvas = Canvas(resultBitmap)
+
+                    val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                    val destRect = calculateProperDestRect(
+                        resource.bitmap.width,
+                        resource.bitmap.height,
+                        resultBitmap.width,
+                        resultBitmap.height
+                    )
+
+                    resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
+
+                    val maskPaint = Paint()
+                    maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                    resultCanvas.drawBitmap(waveMaskBitmap, 0f, 0f, maskPaint)
+
+                    revealImageView.setImageBitmap(resultBitmap)
+                } else {
+                    revealImageView.setImageDrawable(resource)
+                    revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in wave transition", e)
+            }
+        }
+
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                try {
+                    // Remove the temporary view
+                    (views.container as ViewGroup).removeView(revealImageView)
+
+                    // Make the new image fully visible
+                    views.overlayView.visibility = View.VISIBLE
+                    views.overlayView.alpha = 1f
+
+                    // Clean up resources
+                    waveMaskBitmap.recycle()
+
+                    // Complete the transition
+                    callback.onTransitionCompleted(resource, nextIndex)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up wave transition", e)
+                    callback.onTransitionCompleted(resource, nextIndex)
+                }
+            }
+
+            override fun onAnimationCancel(animation: Animator) {
+                try {
+                    // Clean up if animation is cancelled
+                    (views.container as ViewGroup).removeView(revealImageView)
+                    waveMaskBitmap.recycle()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up cancelled wave transition", e)
+                }
+            }
+        })
+
+        // Start the animation
+        animator.start()
     }
 
     private fun performGlitchTransition(
@@ -3332,150 +3513,218 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Set up the views
-        views.primaryView.visibility = View.VISIBLE
+        // Set up overlay view with the new image but keep it invisible initially
         views.overlayView.apply {
             setImageDrawable(resource)
+            visibility = View.INVISIBLE
             alpha = 1f
-            visibility = View.INVISIBLE // We'll use custom door panels
         }
 
-        val container = views.container as ViewGroup
-        val containerWidth = container.width
-        val containerHeight = container.height
+        // Create a bitmap for the reveal effect that will cover the new image
+        val doorMaskBitmap = Bitmap.createBitmap(
+            views.container.width,
+            views.container.height,
+            Bitmap.Config.ARGB_8888
+        )
+        val doorMaskCanvas = Canvas(doorMaskBitmap)
+        val doorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
+        // Create a temporary ImageView to hold just the door-shaped cutout of the new image
+        val revealImageView = ImageView(context)
+        revealImageView.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
+        revealImageView.visibility = View.INVISIBLE // Start as INVISIBLE
+
+        // Add the reveal view to the container, on top of both primary and overlay views
+        (views.container as ViewGroup).addView(revealImageView)
+
+        // Create animator for the transition
+        val animator = ValueAnimator.ofFloat(0f, 1f)
+        animator.duration = transitionDuration * 2
+        animator.interpolator = AccelerateInterpolator(0.8f)
+
+        // Prepare the first frame before making anything visible
         try {
-            // Get the current drawable
-            val currentDrawable = views.primaryView.drawable
-            if (currentDrawable == null) {
-                performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
-                return
-            }
+            // Clear the door mask canvas
+            doorMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-            // Create bitmap from the current drawable
-            val currentBitmap = if (currentDrawable is BitmapDrawable) {
-                currentDrawable.bitmap
-            } else {
-                val bitmap = Bitmap.createBitmap(
-                    containerWidth,
-                    containerHeight,
+            // Calculate initial door position - just starting to open
+            val initialProgress = 0.01f
+
+            // Draw initial door shape (closed doors with tiny opening in middle)
+            doorPaint.color = Color.WHITE
+            doorPaint.style = Paint.Style.FILL
+
+            val width = views.container.width.toFloat()
+            val height = views.container.height.toFloat()
+            val centerX = width / 2
+
+            // Left door - starting at center with tiny gap
+            val leftDoorPath = Path()
+            leftDoorPath.moveTo(centerX - (initialProgress * centerX), 0f)
+            leftDoorPath.lineTo(0f, 0f)
+            leftDoorPath.lineTo(0f, height)
+            leftDoorPath.lineTo(centerX - (initialProgress * centerX), height)
+            leftDoorPath.close()
+
+            // Right door - starting at center with tiny gap
+            val rightDoorPath = Path()
+            rightDoorPath.moveTo(centerX + (initialProgress * centerX), 0f)
+            rightDoorPath.lineTo(width, 0f)
+            rightDoorPath.lineTo(width, height)
+            rightDoorPath.lineTo(centerX + (initialProgress * centerX), height)
+            rightDoorPath.close()
+
+            doorMaskCanvas.drawPath(leftDoorPath, doorPaint)
+            doorMaskCanvas.drawPath(rightDoorPath, doorPaint)
+
+            // Prepare initial image
+            if (resource is BitmapDrawable) {
+                val resultBitmap = Bitmap.createBitmap(
+                    views.container.width,
+                    views.container.height,
                     Bitmap.Config.ARGB_8888
                 )
-                val canvas = Canvas(bitmap)
-                currentDrawable.setBounds(0, 0, canvas.width, canvas.height)
-                currentDrawable.draw(canvas)
-                bitmap
+                val resultCanvas = Canvas(resultBitmap)
+
+                val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                val destRect = calculateProperDestRect(
+                    resource.bitmap.width,
+                    resource.bitmap.height,
+                    resultBitmap.width,
+                    resultBitmap.height
+                )
+
+                resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
+
+                val maskPaint = Paint()
+                maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                resultCanvas.drawBitmap(doorMaskBitmap, 0f, 0f, maskPaint)
+
+                revealImageView.setImageBitmap(resultBitmap)
+            } else {
+                revealImageView.setImageDrawable(resource)
+                revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
             }
 
-            // Create left door panel
-            val leftDoorView = ImageView(context)
-            leftDoorView.layoutParams = FrameLayout.LayoutParams(
-                containerWidth / 2,
-                containerHeight
-            )
+            // Now make revealImageView visible before animation starts
+            revealImageView.visibility = View.VISIBLE
 
-            // Create right door panel
-            val rightDoorView = ImageView(context)
-            rightDoorView.layoutParams = FrameLayout.LayoutParams(
-                containerWidth / 2,
-                containerHeight
-            ).apply {
-                leftMargin = containerWidth / 2
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing door transition", e)
+        }
+
+        animator.addUpdateListener { animation ->
+            val progress = animation.animatedValue as Float
+
+            try {
+                // Clear the door mask canvas
+                doorMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+
+                // Use a curved progress for smoother animation - ease out for door opening
+                val progressCurved = Math.pow(progress.toDouble(), 0.6).toFloat()
+
+                // Draw the door shapes on the mask canvas
+                doorPaint.color = Color.WHITE
+                doorPaint.style = Paint.Style.FILL
+
+                val width = views.container.width.toFloat()
+                val height = views.container.height.toFloat()
+                val centerX = width / 2
+
+                // Calculate how far the doors have opened
+                val leftEdge = progressCurved * centerX
+                val rightEdge = width - (progressCurved * centerX)
+
+                // Left door
+                val leftDoorPath = Path()
+                leftDoorPath.moveTo(0f, 0f)
+                leftDoorPath.lineTo(leftEdge, 0f)
+                leftDoorPath.lineTo(leftEdge, height)
+                leftDoorPath.lineTo(0f, height)
+                leftDoorPath.close()
+
+                // Right door
+                val rightDoorPath = Path()
+                rightDoorPath.moveTo(width, 0f)
+                rightDoorPath.lineTo(rightEdge, 0f)
+                rightDoorPath.lineTo(rightEdge, height)
+                rightDoorPath.lineTo(width, height)
+                rightDoorPath.close()
+
+                doorMaskCanvas.drawPath(leftDoorPath, doorPaint)
+                doorMaskCanvas.drawPath(rightDoorPath, doorPaint)
+
+                // Create a copy of the new image, masked by the door shape
+                if (resource is BitmapDrawable) {
+                    val resultBitmap = Bitmap.createBitmap(
+                        views.container.width,
+                        views.container.height,
+                        Bitmap.Config.ARGB_8888
+                    )
+                    val resultCanvas = Canvas(resultBitmap)
+
+                    val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                    val destRect = calculateProperDestRect(
+                        resource.bitmap.width,
+                        resource.bitmap.height,
+                        resultBitmap.width,
+                        resultBitmap.height
+                    )
+
+                    resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
+
+                    val maskPaint = Paint()
+                    maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                    resultCanvas.drawBitmap(doorMaskBitmap, 0f, 0f, maskPaint)
+
+                    revealImageView.setImageBitmap(resultBitmap)
+                } else {
+                    revealImageView.setImageDrawable(resource)
+                    revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in door transition", e)
             }
+        }
 
-            // Create bitmaps for left and right door panels
-            val leftDoorBitmap = Bitmap.createBitmap(
-                currentBitmap,
-                0,
-                0,
-                currentBitmap.width / 2,
-                currentBitmap.height
-            )
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                try {
+                    // Remove the temporary view
+                    (views.container as ViewGroup).removeView(revealImageView)
 
-            val rightDoorBitmap = Bitmap.createBitmap(
-                currentBitmap,
-                currentBitmap.width / 2,
-                0,
-                currentBitmap.width / 2,
-                currentBitmap.height
-            )
+                    // Make the new image fully visible
+                    views.overlayView.visibility = View.VISIBLE
+                    views.overlayView.alpha = 1f
 
-            // Set the bitmaps to the views
-            leftDoorView.setImageBitmap(leftDoorBitmap)
-            rightDoorView.setImageBitmap(rightDoorBitmap)
-
-            // Add the views to the container
-            container.addView(leftDoorView)
-            container.addView(rightDoorView)
-
-            // Set pivot points for 3D rotation
-            leftDoorView.pivotX = 0f
-            leftDoorView.pivotY = containerHeight / 2f
-            rightDoorView.pivotX = 0f
-            rightDoorView.pivotY = containerHeight / 2f
-
-            // Set the camera distance to avoid clipping
-            leftDoorView.cameraDistance = containerWidth * 5f
-            rightDoorView.cameraDistance = containerWidth * 5f
-
-            // Hide the primary view since we're showing the door panels
-            views.primaryView.visibility = View.INVISIBLE
-
-            // Show the overlay view behind the doors
-            views.overlayView.visibility = View.VISIBLE
-            views.overlayView.alpha = 1f
-
-            // Create the door opening animation
-            val leftDoorAnimator = ObjectAnimator.ofFloat(leftDoorView, View.ROTATION_Y, 0f, -90f)
-            val rightDoorAnimator = ObjectAnimator.ofFloat(rightDoorView, View.ROTATION_Y, 0f, 90f)
-
-            // Add shadow effects for 3D realism
-            val shadowPaint = Paint()
-            leftDoorView.setLayerType(View.LAYER_TYPE_HARDWARE, shadowPaint)
-            rightDoorView.setLayerType(View.LAYER_TYPE_HARDWARE, shadowPaint)
-
-            val shadowAnimator = ValueAnimator.ofFloat(0f, 1f)
-            shadowAnimator.addUpdateListener { animator ->
-                val progress = animator.animatedValue as Float
-
-                // Apply shadows based on rotation
-                val leftShadow = 1f - 0.5f * Math.abs(leftDoorView.rotationY) / 90f
-                val rightShadow = 1f - 0.5f * Math.abs(rightDoorView.rotationY) / 90f
-
-                leftDoorView.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply {
-                    setScale(leftShadow, leftShadow, leftShadow, 1f)
-                })
-
-                rightDoorView.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply {
-                    setScale(rightShadow, rightShadow, rightShadow, 1f)
-                })
-            }
-            shadowAnimator.duration = transitionDuration
-
-            // Combine the animations
-            val animatorSet = AnimatorSet()
-            animatorSet.playTogether(leftDoorAnimator, rightDoorAnimator, shadowAnimator)
-            animatorSet.duration = transitionDuration
-            animatorSet.interpolator = AccelerateDecelerateInterpolator()
-
-            animatorSet.addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    // Remove door views
-                    container.removeView(leftDoorView)
-                    container.removeView(rightDoorView)
+                    // Clean up resources
+                    doorMaskBitmap.recycle()
 
                     // Complete the transition
                     callback.onTransitionCompleted(resource, nextIndex)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up door transition", e)
+                    callback.onTransitionCompleted(resource, nextIndex)
                 }
-            })
+            }
 
-            animatorSet.start()
+            override fun onAnimationCancel(animation: Animator) {
+                try {
+                    // Clean up if animation is cancelled
+                    (views.container as ViewGroup).removeView(revealImageView)
+                    doorMaskBitmap.recycle()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up cancelled door transition", e)
+                }
+            }
+        })
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in doorway transition", e)
-            // Fall back to fade transition
-            performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
-        }
+        // Start the animation
+        animator.start()
     }
 
     private fun performSimpleFadeTransition(
@@ -3671,137 +3920,238 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Similar to circle transition but with a different visual style
-
-        // Set up the views
-        views.primaryView.visibility = View.VISIBLE
+        // Set up overlay view with the new image but keep it invisible initially
         views.overlayView.apply {
             setImageDrawable(resource)
+            visibility = View.INVISIBLE
             alpha = 1f
-            visibility = View.INVISIBLE // We'll use a custom radial reveal
         }
 
-        val container = views.container as ViewGroup
-        val containerWidth = container.width
-        val containerHeight = container.height
+        // Create a bitmap for the reveal effect that will cover the new image
+        val radialMaskBitmap = Bitmap.createBitmap(
+            views.container.width,
+            views.container.height,
+            Bitmap.Config.ARGB_8888
+        )
+        val radialMaskCanvas = Canvas(radialMaskBitmap)
+        val radialPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
+        // Create a temporary ImageView to hold just the radial-shaped cutout of the new image
+        val revealImageView = ImageView(context)
+        revealImageView.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
+        revealImageView.visibility = View.INVISIBLE // Start as INVISIBLE
+
+        // Add the reveal view to the container, on top of both primary and overlay views
+        (views.container as ViewGroup).addView(revealImageView)
+
+        // Calculate the center point of the screen
+        val centerX = views.container.width.toFloat() / 2
+        val centerY = views.container.height.toFloat() / 2
+
+        // Number of slices in the radial pattern
+        val sliceCount = 12
+
+        // Create animator for the transition
+        val animator = ValueAnimator.ofFloat(0f, 1f)
+        animator.duration = transitionDuration * 2
+        animator.interpolator = AccelerateInterpolator(0.8f)
+
+        // Prepare the first frame before making anything visible
         try {
-            // Create a bitmap with the new image
-            val newBitmap = if (resource is BitmapDrawable) {
-                resource.bitmap
-            } else {
-                val bitmap = Bitmap.createBitmap(
-                    containerWidth,
-                    containerHeight,
-                    Bitmap.Config.ARGB_8888
-                )
-                val canvas = Canvas(bitmap)
-                resource.setBounds(0, 0, canvas.width, canvas.height)
-                resource.draw(canvas)
-                bitmap
-            }
+            // Clear the radial mask canvas
+            radialMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-            // Create a custom sweep gradient for radial wipe
-            val radialGradientView = View(context)
-            radialGradientView.layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
+            // Calculate initial radial position - just starting to reveal
+            val initialProgress = 0.01f
 
-            // Custom ImageView to apply the radial wipe
-            val revealImageView = ImageView(context)
-            revealImageView.layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            revealImageView.setImageBitmap(newBitmap)
+            // Draw initial radial shape (small wedges)
+            radialPaint.color = Color.WHITE
+            radialPaint.style = Paint.Style.FILL
 
-            // Add the custom views
-            container.addView(revealImageView)
-            container.addView(radialGradientView)
+            // Define the maximum size of the radial pattern
+            val maxRadius = Math.sqrt(
+                Math.pow(views.container.width.toDouble(), 2.0) +
+                        Math.pow(views.container.height.toDouble(), 2.0)
+            ).toFloat()
 
-            // Set the center point for the radial effect
-            val centerX = containerWidth / 2f
-            val centerY = containerHeight / 2f
+            // Draw tiny initial wedges
+            val initialRadius = maxRadius * initialProgress * 0.2f
+            val initialAngle = 360f * initialProgress
 
-            // Create the animation
-            val animator = ValueAnimator.ofFloat(0f, 360f)
-            animator.duration = transitionDuration
-            animator.interpolator = AccelerateDecelerateInterpolator()
+            for (i in 0 until sliceCount) {
+                val startAngle = i * (360f / sliceCount)
+                val sweepAngle = initialAngle / sliceCount
 
-            animator.addUpdateListener { valueAnimator ->
-                val angle = valueAnimator.animatedValue as Float
-
-                // For API 24+, use a bitmap approach with Canvas and Path
-                // Create a mask bitmap
-                val maskBitmap = Bitmap.createBitmap(
-                    containerWidth,
-                    containerHeight,
-                    Bitmap.Config.ARGB_8888
-                )
-                val maskCanvas = Canvas(maskBitmap)
-                val maskPaint = Paint().apply {
-                    color = Color.BLACK
-                    style = Paint.Style.FILL
-                }
-
-                // Create a path for the current angle
                 val path = Path()
                 path.moveTo(centerX, centerY)
-                path.lineTo(centerX, 0f)
-                path.arcTo(
-                    RectF(0f, 0f, containerWidth.toFloat(), containerHeight.toFloat()),
-                    -90f,
-                    angle,
-                    false
+
+                // Create an arc
+                val oval = RectF(
+                    centerX - initialRadius,
+                    centerY - initialRadius,
+                    centerX + initialRadius,
+                    centerY + initialRadius
                 )
+                path.arcTo(oval, startAngle, sweepAngle)
                 path.close()
 
-                // Draw the path
-                maskCanvas.drawPath(path, maskPaint)
+                radialMaskCanvas.drawPath(path, radialPaint)
+            }
 
-                // Apply the mask to the image
-                val paint = Paint()
-                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-
+            // Prepare initial image
+            if (resource is BitmapDrawable) {
                 val resultBitmap = Bitmap.createBitmap(
-                    containerWidth,
-                    containerHeight,
+                    views.container.width,
+                    views.container.height,
                     Bitmap.Config.ARGB_8888
                 )
                 val resultCanvas = Canvas(resultBitmap)
-                resultCanvas.drawBitmap(newBitmap, 0f, 0f, null)
-                resultCanvas.drawBitmap(maskBitmap, 0f, 0f, paint)
+
+                val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                val destRect = calculateProperDestRect(
+                    resource.bitmap.width,
+                    resource.bitmap.height,
+                    resultBitmap.width,
+                    resultBitmap.height
+                )
+
+                resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
+
+                val maskPaint = Paint()
+                maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                resultCanvas.drawBitmap(radialMaskBitmap, 0f, 0f, maskPaint)
 
                 revealImageView.setImageBitmap(resultBitmap)
+            } else {
+                revealImageView.setImageDrawable(resource)
+                revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
             }
 
-            // Fade out the primary view gradually
-            val fadeOutAnimator = ObjectAnimator.ofFloat(views.primaryView, View.ALPHA, 1f, 0f)
-            fadeOutAnimator.duration = transitionDuration
+            // Now make revealImageView visible before animation starts
+            revealImageView.visibility = View.VISIBLE
 
-            // Combine the animations
-            val animatorSet = AnimatorSet()
-            animatorSet.playTogether(animator, fadeOutAnimator)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing radial transition", e)
+        }
 
-            animatorSet.addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    // Remove the custom views
-                    container.removeView(revealImageView)
-                    container.removeView(radialGradientView)
+        animator.addUpdateListener { animation ->
+            val progress = animation.animatedValue as Float
+
+            try {
+                // Clear the radial mask canvas
+                radialMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+
+                // Use a curved progress for smoother animation
+                val progressCurved = Math.pow(progress.toDouble(), 0.8).toFloat()
+
+                // Draw the radial shape
+                radialPaint.color = Color.WHITE
+                radialPaint.style = Paint.Style.FILL
+
+                // Define the maximum size of the radial pattern
+                val maxRadius = Math.sqrt(
+                    Math.pow(views.container.width.toDouble(), 2.0) +
+                            Math.pow(views.container.height.toDouble(), 2.0)
+                ).toFloat()
+
+                // Calculate current radius and sweep angle based on progress
+                val currentRadius = maxRadius * progressCurved
+                val sweepAngle = 360f / sliceCount
+
+                for (i in 0 until sliceCount) {
+                    val startAngle = i * sweepAngle
+
+                    // Create a path for each slice
+                    val path = Path()
+                    path.moveTo(centerX, centerY)
+
+                    // Create an arc
+                    val oval = RectF(
+                        centerX - currentRadius,
+                        centerY - currentRadius,
+                        centerX + currentRadius,
+                        centerY + currentRadius
+                    )
+
+                    // As progress increases, the wedges get wider
+                    val currentSweepAngle = sweepAngle * Math.min(1f, progressCurved * 3)
+                    path.arcTo(oval, startAngle, currentSweepAngle)
+                    path.close()
+
+                    radialMaskCanvas.drawPath(path, radialPaint)
+                }
+
+                // Create a copy of the new image, masked by the radial shape
+                if (resource is BitmapDrawable) {
+                    val resultBitmap = Bitmap.createBitmap(
+                        views.container.width,
+                        views.container.height,
+                        Bitmap.Config.ARGB_8888
+                    )
+                    val resultCanvas = Canvas(resultBitmap)
+
+                    val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
+                    val destRect = calculateProperDestRect(
+                        resource.bitmap.width,
+                        resource.bitmap.height,
+                        resultBitmap.width,
+                        resultBitmap.height
+                    )
+
+                    resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
+
+                    val maskPaint = Paint()
+                    maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+                    resultCanvas.drawBitmap(radialMaskBitmap, 0f, 0f, maskPaint)
+
+                    revealImageView.setImageBitmap(resultBitmap)
+                } else {
+                    revealImageView.setImageDrawable(resource)
+                    revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in radial transition", e)
+            }
+        }
+
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                try {
+                    // Remove the temporary view
+                    (views.container as ViewGroup).removeView(revealImageView)
+
+                    // Make the new image fully visible
+                    views.overlayView.visibility = View.VISIBLE
+                    views.overlayView.alpha = 1f
+
+                    // Clean up resources
+                    radialMaskBitmap.recycle()
 
                     // Complete the transition
                     callback.onTransitionCompleted(resource, nextIndex)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up radial transition", e)
+                    callback.onTransitionCompleted(resource, nextIndex)
                 }
-            })
+            }
 
-            animatorSet.start()
+            override fun onAnimationCancel(animation: Animator) {
+                try {
+                    // Clean up if animation is cancelled
+                    (views.container as ViewGroup).removeView(revealImageView)
+                    radialMaskBitmap.recycle()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up cancelled radial transition", e)
+                }
+            }
+        })
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in radial transition", e)
-            // Fall back to fade transition
-            performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
-        }
+        // Start the animation
+        animator.start()
     }
 
     private fun performRippleTransition(
