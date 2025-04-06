@@ -620,26 +620,40 @@ class PhotoResizeManager @Inject constructor(
      * Apply a blur effect using RenderScript
      */
     private fun applyRenderScriptBlur(bitmap: Bitmap, blurRadius: Float): Bitmap? {
+        var rs: RenderScript? = null
+        var input: Allocation? = null
+        var output: Allocation? = null
+        var script: ScriptIntrinsicBlur? = null
+
         try {
             // Create a mutable copy to avoid "bitmap is immutable" errors
             val outputBitmap = bitmap.copy(bitmap.config, true)
 
-            val rs = RenderScript.create(context)
-            val input = Allocation.createFromBitmap(rs, bitmap)
-            val output = Allocation.createFromBitmap(rs, outputBitmap)
+            rs = RenderScript.create(context)
+            input = Allocation.createFromBitmap(rs, bitmap)
+            output = Allocation.createFromBitmap(rs, outputBitmap)
 
-            val script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
+            script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
             script.setRadius(blurRadius.coerceAtMost(MAX_BLUR_RADIUS))
             script.setInput(input)
             script.forEach(output)
 
             output.copyTo(outputBitmap)
-            rs.destroy()
 
             return outputBitmap
         } catch (e: Exception) {
             Log.e(TAG, "Error applying RenderScript blur", e)
             return null
+        } finally {
+            // Properly clean up all RenderScript resources
+            try {
+                script?.destroy()
+                input?.destroy()
+                output?.destroy()
+                rs?.destroy()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cleaning up RenderScript resources", e)
+            }
         }
     }
 
