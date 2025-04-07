@@ -246,14 +246,6 @@ class PhotoTransitionEffects(
                 callback
             )
 
-            "origami" -> performOrigamiTransition(
-                views,
-                resource,
-                nextIndex,
-                transitionDuration,
-                callback
-            )
-
             "ripple" -> performRippleTransition(
                 views,
                 resource,
@@ -295,22 +287,6 @@ class PhotoTransitionEffects(
             )
 
             "crystallize" -> performCrystallizeTransition(
-                views,
-                resource,
-                nextIndex,
-                transitionDuration,
-                callback
-            )
-
-            "clockwise" -> performClockwiseTransition(
-                views,
-                resource,
-                nextIndex,
-                transitionDuration,
-                callback
-            )
-
-            "diagonal" -> performDiagonalTransition(
                 views,
                 resource,
                 nextIndex,
@@ -925,7 +901,7 @@ class PhotoTransitionEffects(
         views.primaryView.visibility = View.VISIBLE
 
         // We'll create multiple small views to represent the shattered pieces
-        val fragmentSize = 50 // Size of each fragment
+        val fragmentSize = 50 // Smaller fragments for more detailed effect
         val container = views.container as ViewGroup
         val screenWidth = container.width
         val screenHeight = container.height
@@ -960,7 +936,7 @@ class PhotoTransitionEffects(
                     val height = fragmentSize.coerceAtMost(screenHeight - y)
 
                     // Skip very small fragments
-                    if (width < 10 || height < 10) continue
+                    if (width < 8 || height < 8) continue
 
                     // Create a bitmap for this fragment
                     val fragmentBitmap = Bitmap.createBitmap(
@@ -990,58 +966,52 @@ class PhotoTransitionEffects(
             val random = Random.Default
             val animatorSet = AnimatorSet()
             val animators = fragments.map { fragment ->
-                val endX = random.nextInt(-screenWidth, screenWidth * 2)
-                val endY = random.nextInt(-screenHeight, screenHeight * 2)
+                // Randomize the direction each fragment flies
+                val endX = random.nextInt(-screenWidth, screenWidth * 2).toFloat()
+                val endY = random.nextInt(-screenHeight, screenHeight * 2).toFloat()
                 val rotation = random.nextInt(-720, 720).toFloat()
 
                 // Create property animators for this fragment
-                val translateX = ObjectAnimator.ofFloat(
-                    fragment,
-                    View.TRANSLATION_X,
-                    0f,
-                    (endX - fragment.left).toFloat()
-                )
-                val translateY = ObjectAnimator.ofFloat(
-                    fragment,
-                    View.TRANSLATION_Y,
-                    0f,
-                    (endY - fragment.top).toFloat()
-                )
+                val translateX = ObjectAnimator.ofFloat(fragment, View.TRANSLATION_X, 0f, endX)
+                val translateY = ObjectAnimator.ofFloat(fragment, View.TRANSLATION_Y, 0f, endY)
                 val rotate = ObjectAnimator.ofFloat(fragment, View.ROTATION, 0f, rotation)
                 val alpha = ObjectAnimator.ofFloat(fragment, View.ALPHA, 1f, 0f)
 
-                AnimatorSet().apply {
-                    playTogether(translateX, translateY, rotate, alpha)
-                    duration = transitionDuration
-                    interpolator = DecelerateInterpolator()
-                }
+                // Combine the animators for this fragment
+                val fragmentAnimator = AnimatorSet()
+                fragmentAnimator.playTogether(translateX, translateY, rotate, alpha)
+                fragmentAnimator
             }
 
-            // Fade in the new image
-            val fadeInAnimator =
-                ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f).apply {
-                    duration = transitionDuration
-                }
+            // Create the fade-in animator for the new image
+            val fadeInAnimator = ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f).apply {
+                duration = transitionDuration
+                startDelay = transitionDuration / 3  // Start fading in after pieces start moving
+            }
 
-            // Play all animations together
+            // Play all fragment animators together with the fade-in
             animatorSet.playTogether(animators + fadeInAnimator)
+            animatorSet.duration = transitionDuration
+            animatorSet.interpolator = AccelerateInterpolator()
+
+            // Add a listener to clean up after the animation
             animatorSet.addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
-                    // Remove all fragment views
+                    // Clean up by removing all fragment views
                     fragments.forEach { container.removeView(it) }
-                    // Complete the transition
                     callback.onTransitionCompleted(resource, nextIndex)
                 }
             })
 
+            // Start the animation
             animatorSet.start()
-
         } catch (e: Exception) {
             Log.e(TAG, "Error in shatter transition", e)
-            // Fall back to fade transition
+            // Fall back to fade transition if there's an error
             performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
         }
     }
+
 
     private fun performDropletTransition(
         views: TransitionViews,
@@ -1718,12 +1688,12 @@ class PhotoTransitionEffects(
         // Add the reveal view to the container, on top of both primary and overlay views
         (views.container as ViewGroup).addView(revealImageView)
 
-        // Checkerboard configuration
-        val gridSize = 8 // 8x8 grid of squares
+        // Checkerboard configuration - more squares and faster
+        val gridSize = 16 // 16x16 grid of squares (more squares as requested)
 
         // Create animator for the transition
         val animator = ValueAnimator.ofFloat(0f, 1f)
-        animator.duration = transitionDuration * 2
+        animator.duration = transitionDuration // Regular speed, not slowed down
         animator.interpolator = AccelerateInterpolator(0.8f)
 
         // Prepare the first frame before making anything visible
@@ -1810,9 +1780,6 @@ class PhotoTransitionEffects(
                 // Clear the checker mask canvas
                 checkerMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-                // Use a curved progress for smoother animation
-                val progressCurved = Math.pow(progress.toDouble(), 0.8).toFloat()
-
                 // Draw the checkerboard pattern
                 checkerPaint.color = Color.WHITE
                 checkerPaint.style = Paint.Style.FILL
@@ -1824,24 +1791,21 @@ class PhotoTransitionEffects(
 
                 for (row in 0 until gridSize) {
                     for (col in 0 until gridSize) {
-                        // Create a staggered effect where some squares appear before others
-                        val isEvenCell = (row + col) % 2 == 0
-
-                        // Delay factor based on position in grid - cells further from center appear later
-                        val centerRow = gridSize / 2f
-                        val centerCol = gridSize / 2f
+                        // Delay factor based on position - faster animation with lower values
                         val distanceFromCenter = Math.sqrt(
-                            Math.pow((row - centerRow).toDouble(), 2.0) +
-                                    Math.pow((col - centerCol).toDouble(), 2.0)
+                            Math.pow((row - gridSize / 2f).toDouble(), 2.0) +
+                                    Math.pow((col - gridSize / 2f).toDouble(), 2.0)
                         ).toFloat() / (gridSize / 2f)
 
-                        // Adjust progress based on position
-                        val cellDelay = if (isEvenCell) 0f else 0.2f
-                        val cellProgress = Math.max(0f, progressCurved - cellDelay - distanceFromCenter * 0.3f)
+                        // Faster effect: reduce the delay impact
+                        val cellDelay = distanceFromCenter * 0.15f // Reduced from 0.3f
 
-                        // Calculate square size based on progress
+                        // Adjust progress for this cell
+                        val cellProgress = Math.max(0f, progress - cellDelay)
+
+                        // Calculate square size based on progress - faster growth
                         val maxSize = Math.min(cellWidth, cellHeight)
-                        val squareSize = maxSize * Math.min(1f, cellProgress * 1.5f)
+                        val squareSize = maxSize * Math.min(1f, cellProgress * 2f) // Faster growth
 
                         if (squareSize > 0) {
                             val left = col * cellWidth + (cellWidth - squareSize) / 2
@@ -1934,260 +1898,187 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Set up overlay view with the new image but keep it invisible initially
-        views.overlayView.apply {
-            setImageDrawable(resource)
-            visibility = View.INVISIBLE
-            alpha = 1f
-        }
+        // We'll create multiple triangular views to simulate a kaleidoscope effect
+        val container = views.container as ViewGroup
+        val screenWidth = container.width
+        val screenHeight = container.height
 
-        // Create a bitmap for the reveal effect that will cover the new image
-        val kaleidoscopeMaskBitmap = Bitmap.createBitmap(
-            views.container.width,
-            views.container.height,
+        try {
+            // Get the current bitmap and new bitmap
+            val originalBitmap = if (views.primaryView.drawable is BitmapDrawable) {
+                (views.primaryView.drawable as BitmapDrawable).bitmap
+            } else {
+                // Fall back to fade transition if we can't get the bitmap
+                performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
+                return
+            }
+
+            // Hide the primary view
+            views.primaryView.visibility = View.INVISIBLE
+
+            // Prepare the overlay view with the new image
+            views.overlayView.apply {
+                setImageDrawable(resource)
+                alpha = 0f
+                visibility = View.VISIBLE
+            }
+
+            // Define the kaleidoscope segments (triangular pieces)
+            val numSegments = 10
+            val centerX = screenWidth / 2f
+            val centerY = screenHeight / 2f
+            val maxRadius = Math.hypot(screenWidth.toDouble(), screenHeight.toDouble()).toFloat()
+            val angleStep = 360f / numSegments
+
+            // Create the segments
+            val segments = mutableListOf<ImageView>()
+
+            for (i in 0 until numSegments) {
+                val startAngle = i * angleStep
+                val endAngle = (i + 1) * angleStep
+
+                // Create a bitmap for this segment
+                val segmentBitmap = createTriangularSegment(
+                    originalBitmap,
+                    centerX, centerY,
+                    maxRadius,
+                    startAngle, endAngle
+                )
+
+                // Create an ImageView for this segment
+                val segmentView = ImageView(context).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    pivotX = centerX
+                    pivotY = centerY
+                    setImageBitmap(segmentBitmap)
+                }
+
+                // Add to the container
+                container.addView(segmentView)
+                segments.add(segmentView)
+            }
+
+            // Create animation for all segments
+            val animatorSet = AnimatorSet()
+            val animators = segments.mapIndexed { index, segment ->
+                // Create different animations for each segment
+                val delay = (index * transitionDuration / numSegments) / 4
+
+                // Create rotation animation
+                val rotate = ObjectAnimator.ofFloat(
+                    segment,
+                    View.ROTATION,
+                    0f,
+                    360f + (index % 2) * 180f
+                )
+
+                // Create scale animation
+                val scaleX = ObjectAnimator.ofFloat(
+                    segment,
+                    View.SCALE_X,
+                    1f,
+                    0f
+                )
+
+                val scaleY = ObjectAnimator.ofFloat(
+                    segment,
+                    View.SCALE_Y,
+                    1f,
+                    0f
+                )
+
+                // Create alpha animation
+                val alpha = ObjectAnimator.ofFloat(
+                    segment,
+                    View.ALPHA,
+                    1f,
+                    0f
+                )
+
+                // Combine animations for this segment
+                val segmentAnimator = AnimatorSet()
+                segmentAnimator.playTogether(rotate, scaleX, scaleY, alpha)
+                segmentAnimator.startDelay = delay
+
+                segmentAnimator
+            }
+
+            // Create fade-in animation for the new image
+            val fadeInAnimator = ObjectAnimator.ofFloat(
+                views.overlayView,
+                View.ALPHA,
+                0f,
+                1f
+            ).apply {
+                duration = transitionDuration
+            }
+
+            // Play all animations together
+            animatorSet.playTogether(animators + fadeInAnimator)
+            animatorSet.duration = transitionDuration
+            animatorSet.interpolator = AccelerateInterpolator()
+
+            // Add listener for cleanup
+            animatorSet.addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    // Remove all segment views
+                    segments.forEach { container.removeView(it) }
+                    callback.onTransitionCompleted(resource, nextIndex)
+                }
+            })
+
+            // Start animation
+            animatorSet.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in kaleidoscope transition", e)
+            performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
+        }
+    }
+
+    // Helper function for kaleidoscope transition
+    private fun createTriangularSegment(
+        bitmap: Bitmap,
+        centerX: Float,
+        centerY: Float,
+        radius: Float,
+        startAngle: Float,
+        endAngle: Float
+    ): Bitmap {
+        val resultBitmap = Bitmap.createBitmap(
+            bitmap.width,
+            bitmap.height,
             Bitmap.Config.ARGB_8888
         )
-        val kaleidoscopeMaskCanvas = Canvas(kaleidoscopeMaskBitmap)
-        val kaleidoscopePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Create a temporary ImageView to hold the kaleidoscope cutout of the new image
-        val revealImageView = ImageView(context)
-        revealImageView.layoutParams = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
-        revealImageView.visibility = View.INVISIBLE // Start as INVISIBLE
+        val canvas = Canvas(resultBitmap)
 
-        // Add the reveal view to the container, on top of both primary and overlay views
-        (views.container as ViewGroup).addView(revealImageView)
+        // Create a triangular path
+        val path = Path().apply {
+            moveTo(centerX, centerY)
 
-        // Calculate the center point of the screen
-        val centerX = views.container.width.toFloat() / 2
-        val centerY = views.container.height.toFloat() / 2
+            // Calculate start point on circumference
+            val startX = centerX + radius * Math.cos(Math.toRadians(startAngle.toDouble())).toFloat()
+            val startY = centerY + radius * Math.sin(Math.toRadians(startAngle.toDouble())).toFloat()
+            lineTo(startX, startY)
 
-        // Kaleidoscope configuration
-        val segmentCount = 8 // Number of segments in the kaleidoscope
-        val rotationAngle = 360f / segmentCount
+            // Calculate end point on circumference
+            val endX = centerX + radius * Math.cos(Math.toRadians(endAngle.toDouble())).toFloat()
+            val endY = centerY + radius * Math.sin(Math.toRadians(endAngle.toDouble())).toFloat()
+            lineTo(endX, endY)
 
-        // Create animator for the transition
-        val animator = ValueAnimator.ofFloat(0f, 1f)
-        animator.duration = transitionDuration * 2
-        animator.interpolator = AccelerateInterpolator(0.8f)
-
-        // Prepare the first frame before making anything visible
-        try {
-            // Clear the kaleidoscope mask canvas
-            kaleidoscopeMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-
-            // Calculate initial kaleidoscope size - just starting to appear
-            val initialProgress = 0.01f
-
-            // Draw initial kaleidoscope shape (tiny segments)
-            kaleidoscopePaint.color = Color.WHITE
-            kaleidoscopePaint.style = Paint.Style.FILL
-
-            // Maximum radius - diagonal from center to corner
-            val maxRadius = Math.sqrt(
-                Math.pow(centerX.toDouble(), 2.0) +
-                        Math.pow(centerY.toDouble(), 2.0)
-            ).toFloat()
-
-            // Draw tiny initial segments
-            val initialRadius = maxRadius * initialProgress
-
-            for (i in 0 until segmentCount) {
-                val startAngle = i * rotationAngle
-
-                val path = Path()
-                path.moveTo(centerX, centerY)
-
-                val startRadians = Math.toRadians(startAngle.toDouble())
-                val endRadians = Math.toRadians((startAngle + rotationAngle).toDouble())
-
-                val startX = centerX + initialRadius * Math.cos(startRadians).toFloat()
-                val startY = centerY + initialRadius * Math.sin(startRadians).toFloat()
-
-                val endX = centerX + initialRadius * Math.cos(endRadians).toFloat()
-                val endY = centerY + initialRadius * Math.sin(endRadians).toFloat()
-
-                path.lineTo(startX, startY)
-
-                // Add a small arc between the two points
-                val oval = RectF(
-                    centerX - initialRadius,
-                    centerY - initialRadius,
-                    centerX + initialRadius,
-                    centerY + initialRadius
-                )
-                path.arcTo(oval, startAngle, rotationAngle)
-
-                path.close()
-
-                kaleidoscopeMaskCanvas.drawPath(path, kaleidoscopePaint)
-            }
-
-            // Prepare initial image
-            if (resource is BitmapDrawable) {
-                val resultBitmap = Bitmap.createBitmap(
-                    views.container.width,
-                    views.container.height,
-                    Bitmap.Config.ARGB_8888
-                )
-                val resultCanvas = Canvas(resultBitmap)
-
-                val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
-                val destRect = calculateProperDestRect(
-                    resource.bitmap.width,
-                    resource.bitmap.height,
-                    resultBitmap.width,
-                    resultBitmap.height
-                )
-
-                resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
-
-                val maskPaint = Paint()
-                maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                resultCanvas.drawBitmap(kaleidoscopeMaskBitmap, 0f, 0f, maskPaint)
-
-                revealImageView.setImageBitmap(resultBitmap)
-            } else {
-                revealImageView.setImageDrawable(resource)
-                revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
-            }
-
-            // Now make revealImageView visible before animation starts
-            revealImageView.visibility = View.VISIBLE
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error preparing kaleidoscope transition", e)
+            close()
         }
 
-        animator.addUpdateListener { animation ->
-            val progress = animation.animatedValue as Float
+        // Draw the triangle using the path
+        canvas.clipPath(path)
+        canvas.drawBitmap(bitmap, 0f, 0f, null)
 
-            try {
-                // Clear the kaleidoscope mask canvas
-                kaleidoscopeMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-
-                // Use a curved progress for smoother animation
-                val progressCurved = Math.pow(progress.toDouble(), 0.8).toFloat()
-
-                // Draw the kaleidoscope pattern
-                kaleidoscopePaint.color = Color.WHITE
-                kaleidoscopePaint.style = Paint.Style.FILL
-
-                // Maximum radius - diagonal from center to corner
-                val maxRadius = Math.sqrt(
-                    Math.pow(centerX.toDouble(), 2.0) +
-                            Math.pow(centerY.toDouble(), 2.0)
-                ).toFloat()
-
-                // Calculate current radius based on progress
-                val currentRadius = maxRadius * progressCurved
-
-                // Add rotation effect to the kaleidoscope
-                val rotationOffset = progressCurved * 30f // Rotate up to 30 degrees as it grows
-
-                for (i in 0 until segmentCount) {
-                    val startAngle = i * rotationAngle + rotationOffset
-
-                    val path = Path()
-                    path.moveTo(centerX, centerY)
-
-                    val startRadians = Math.toRadians(startAngle.toDouble())
-                    val endRadians = Math.toRadians((startAngle + rotationAngle).toDouble())
-
-                    val startX = centerX + currentRadius * Math.cos(startRadians).toFloat()
-                    val startY = centerY + currentRadius * Math.sin(startRadians).toFloat()
-
-                    val endX = centerX + currentRadius * Math.cos(endRadians).toFloat()
-                    val endY = centerY + currentRadius * Math.sin(endRadians).toFloat()
-
-                    path.lineTo(startX, startY)
-
-                    // Add an arc between the two points
-                    val oval = RectF(
-                        centerX - currentRadius,
-                        centerY - currentRadius,
-                        centerX + currentRadius,
-                        centerY + currentRadius
-                    )
-                    path.arcTo(oval, startAngle, rotationAngle)
-
-                    path.close()
-
-                    kaleidoscopeMaskCanvas.drawPath(path, kaleidoscopePaint)
-                }
-
-                // Create a copy of the new image, masked by the kaleidoscope shape
-                if (resource is BitmapDrawable) {
-                    val resultBitmap = Bitmap.createBitmap(
-                        views.container.width,
-                        views.container.height,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    val resultCanvas = Canvas(resultBitmap)
-
-                    val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
-                    val destRect = calculateProperDestRect(
-                        resource.bitmap.width,
-                        resource.bitmap.height,
-                        resultBitmap.width,
-                        resultBitmap.height
-                    )
-
-                    resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
-
-                    val maskPaint = Paint()
-                    maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                    resultCanvas.drawBitmap(kaleidoscopeMaskBitmap, 0f, 0f, maskPaint)
-
-                    revealImageView.setImageBitmap(resultBitmap)
-                } else {
-                    revealImageView.setImageDrawable(resource)
-                    revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in kaleidoscope transition", e)
-            }
-        }
-
-        animator.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                try {
-                    // Remove the temporary view
-                    (views.container as ViewGroup).removeView(revealImageView)
-
-                    // Make the new image fully visible
-                    views.overlayView.visibility = View.VISIBLE
-                    views.overlayView.alpha = 1f
-
-                    // Clean up resources
-                    kaleidoscopeMaskBitmap.recycle()
-
-                    // Complete the transition
-                    callback.onTransitionCompleted(resource, nextIndex)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error cleaning up kaleidoscope transition", e)
-                    callback.onTransitionCompleted(resource, nextIndex)
-                }
-            }
-
-            override fun onAnimationCancel(animation: Animator) {
-                try {
-                    // Clean up if animation is cancelled
-                    (views.container as ViewGroup).removeView(revealImageView)
-                    kaleidoscopeMaskBitmap.recycle()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error cleaning up cancelled kaleidoscope transition", e)
-                }
-            }
-        })
-
-        // Start the animation
-        animator.start()
+        return resultBitmap
     }
+
 
     private fun performBounceTransition(
         views: TransitionViews,
@@ -2250,321 +2141,59 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Set up the views
-        views.primaryView.visibility = View.VISIBLE
-        views.overlayView.apply {
-            setImageDrawable(resource)
-            alpha = 1f
-            // Start with the overlay stretched
-            scaleX = 3f
-            scaleY = 0.3f
+        // Set initial states
+        views.primaryView.apply {
             visibility = View.VISIBLE
+            alpha = 1f
+            pivotX = width / 2f
+            pivotY = height / 2f
         }
 
-        // Create a custom elastic interpolator for more pronounced effect
-        val elasticInterpolator = object : TimeInterpolator {
-            override fun getInterpolation(input: Float): Float {
-                // Elastic equation: https://easings.net/#easeOutElastic
-                return if (input == 0f) {
-                    0f
-                } else if (input == 1f) {
-                    1f
-                } else {
-                    val p = 0.3f
-                    val s = p / 4f
-                    val power = Math.pow(2.0, (-10 * input).toDouble()).toFloat()
-                    power * sin((input - s) * (2 * Math.PI) / p).toFloat() + 1
-                }
-            }
+        views.overlayView.apply {
+            visibility = View.VISIBLE
+            alpha = 0f
+            scaleX = 0.3f
+            scaleY = 2.5f
+            pivotX = width / 2f
+            pivotY = height / 2f
+            setImageDrawable(resource)
         }
 
-        // Create the animation
+        // Create AnimatorSet for synchronized animations
         val animatorSet = AnimatorSet()
 
-        // First move the primary view out
-        val moveOut = ObjectAnimator.ofFloat(
-            views.primaryView,
-            View.TRANSLATION_X,
-            0f,
-            -views.primaryView.width.toFloat()
-        ).apply {
-            duration = transitionDuration / 2
-            interpolator = AccelerateInterpolator()
-        }
+        // Create animations for the old image (primary)
+        val primaryAlpha = ObjectAnimator.ofFloat(views.primaryView, View.ALPHA, 1f, 0f)
+        val primaryScaleX = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_X, 1f, 2.5f)
+        val primaryScaleY = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_Y, 1f, 0.3f)
 
-        // Elastic animation for the overlay view
-        val scaleXAnimator = ObjectAnimator.ofFloat(
-            views.overlayView,
-            View.SCALE_X,
-            3f,
-            1f
-        )
-        val scaleYAnimator = ObjectAnimator.ofFloat(
-            views.overlayView,
-            View.SCALE_Y,
-            0.3f,
-            1f
-        )
+        // Animations for the new image (overlay)
+        val overlayAlpha = ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f)
+        val overlayScaleX = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_X, 0.3f, 1f)
+        val overlayScaleY = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_Y, 2.5f, 1f)
 
-        // Group the elastic animations
-        val elasticAnimator = AnimatorSet().apply {
-            playTogether(scaleXAnimator, scaleYAnimator)
-            interpolator = elasticInterpolator
+        // Configure animations with elastic interpolator
+        animatorSet.apply {
+            playTogether(
+                primaryAlpha, primaryScaleX, primaryScaleY,
+                overlayAlpha, overlayScaleX, overlayScaleY
+            )
             duration = transitionDuration
+            interpolator = OvershootInterpolator(2f)
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    // Reset primary view
+                    views.primaryView.scaleX = 1f
+                    views.primaryView.scaleY = 1f
+                    callback.onTransitionCompleted(resource, nextIndex)
+                }
+            })
         }
 
-        // Play the animations sequentially
-        animatorSet.playSequentially(moveOut, elasticAnimator)
-
-        animatorSet.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                callback.onTransitionCompleted(resource, nextIndex)
-            }
-        })
-
+        // Start the animation
         animatorSet.start()
     }
 
-    private fun performOrigamiTransition(
-        views: TransitionViews,
-        resource: Drawable,
-        nextIndex: Int,
-        transitionDuration: Long,
-        callback: TransitionCompletionCallback
-    ) {
-        // Set up overlay view with the new image but keep it invisible initially
-        views.overlayView.apply {
-            setImageDrawable(resource)
-            visibility = View.INVISIBLE
-            alpha = 1f
-        }
-
-        // Create a bitmap for the reveal effect that will cover the new image
-        val origamiMaskBitmap = Bitmap.createBitmap(
-            views.container.width,
-            views.container.height,
-            Bitmap.Config.ARGB_8888
-        )
-        val origamiMaskCanvas = Canvas(origamiMaskBitmap)
-        val origamiPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        // Create a temporary ImageView to hold the origami-shaped cutout of the new image
-        val revealImageView = ImageView(context)
-        revealImageView.layoutParams = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
-        revealImageView.visibility = View.INVISIBLE // Start as INVISIBLE
-
-        // Add the reveal view to the container, on top of both primary and overlay views
-        (views.container as ViewGroup).addView(revealImageView)
-
-        // Create animator for the transition
-        val animator = ValueAnimator.ofFloat(0f, 1f)
-        animator.duration = transitionDuration * 2
-        animator.interpolator = AccelerateInterpolator(0.8f)
-
-        // Prepare the first frame before making anything visible
-        try {
-            // Clear the origami mask canvas
-            origamiMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-
-            // Calculate initial origami position - just starting to appear
-            val initialProgress = 0.01f
-
-            // Draw initial origami shape (small triangle from corner)
-            origamiPaint.color = Color.WHITE
-            origamiPaint.style = Paint.Style.FILL
-
-            val width = views.container.width.toFloat()
-            val height = views.container.height.toFloat()
-
-            // Draw a small triangle in the top-left corner
-            val initialSize = width * initialProgress
-
-            val path = Path()
-            path.moveTo(0f, 0f)
-            path.lineTo(initialSize, 0f)
-            path.lineTo(0f, initialSize)
-            path.close()
-
-            origamiMaskCanvas.drawPath(path, origamiPaint)
-
-            // Prepare initial image
-            if (resource is BitmapDrawable) {
-                val resultBitmap = Bitmap.createBitmap(
-                    views.container.width,
-                    views.container.height,
-                    Bitmap.Config.ARGB_8888
-                )
-                val resultCanvas = Canvas(resultBitmap)
-
-                val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
-                val destRect = calculateProperDestRect(
-                    resource.bitmap.width,
-                    resource.bitmap.height,
-                    resultBitmap.width,
-                    resultBitmap.height
-                )
-
-                resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
-
-                val maskPaint = Paint()
-                maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                resultCanvas.drawBitmap(origamiMaskBitmap, 0f, 0f, maskPaint)
-
-                revealImageView.setImageBitmap(resultBitmap)
-            } else {
-                revealImageView.setImageDrawable(resource)
-                revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
-            }
-
-            // Now make revealImageView visible before animation starts
-            revealImageView.visibility = View.VISIBLE
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error preparing origami transition", e)
-        }
-
-        animator.addUpdateListener { animation ->
-            val progress = animation.animatedValue as Float
-
-            try {
-                // Clear the origami mask canvas
-                origamiMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-
-                // Use a curved progress for smoother animation
-                val progressCurved = Math.pow(progress.toDouble(), 0.8).toFloat()
-
-                // Draw the origami shape
-                origamiPaint.color = Color.WHITE
-                origamiPaint.style = Paint.Style.FILL
-
-                val width = views.container.width.toFloat()
-                val height = views.container.height.toFloat()
-
-                // The origami unfold happens in phases
-                if (progressCurved < 0.33f) {
-                    // Phase 1: Triangle from top-left growing to center
-                    val normalizedProgress = progressCurved * 3f // Scale to 0-1 range for this phase
-
-                    val size = width * normalizedProgress
-
-                    val path = Path()
-                    path.moveTo(0f, 0f)
-                    path.lineTo(size, 0f)
-                    path.lineTo(0f, size)
-                    path.close()
-
-                    origamiMaskCanvas.drawPath(path, origamiPaint)
-
-                } else if (progressCurved < 0.66f) {
-                    // Phase 2: First triangle fully unfolded, second triangle unfolding
-                    val normalizedProgress = (progressCurved - 0.33f) * 3f // Scale to 0-1 range for this phase
-
-                    // First triangle (full size)
-                    val path1 = Path()
-                    path1.moveTo(0f, 0f)
-                    path1.lineTo(width, 0f)
-                    path1.lineTo(0f, height)
-                    path1.close()
-
-                    // Second triangle (growing)
-                    val path2 = Path()
-                    path2.moveTo(width, 0f)
-                    path2.lineTo(width, height * normalizedProgress)
-                    path2.lineTo(width - (width * normalizedProgress), height)
-                    path2.lineTo(0f, height)
-                    path2.close()
-
-                    origamiMaskCanvas.drawPath(path1, origamiPaint)
-                    origamiMaskCanvas.drawPath(path2, origamiPaint)
-
-                } else {
-                    // Phase 3: Both triangles fully unfolded, filling the rectangle
-                    val normalizedProgress = (progressCurved - 0.66f) * 3f // Scale to 0-1 range for this phase
-
-                    // At this point, we've covered most of the screen with two triangles
-                    // Now we just fill in the remaining bottom-right corner
-                    val path = Path()
-                    path.moveTo(0f, 0f)
-                    path.lineTo(width, 0f)
-                    path.lineTo(width, height)
-                    path.lineTo(0f, height)
-                    path.close()
-
-                    origamiMaskCanvas.drawPath(path, origamiPaint)
-                }
-
-                // Create a copy of the new image, masked by the origami shape
-                if (resource is BitmapDrawable) {
-                    val resultBitmap = Bitmap.createBitmap(
-                        views.container.width,
-                        views.container.height,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    val resultCanvas = Canvas(resultBitmap)
-
-                    val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
-                    val destRect = calculateProperDestRect(
-                        resource.bitmap.width,
-                        resource.bitmap.height,
-                        resultBitmap.width,
-                        resultBitmap.height
-                    )
-
-                    resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
-
-                    val maskPaint = Paint()
-                    maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                    resultCanvas.drawBitmap(origamiMaskBitmap, 0f, 0f, maskPaint)
-
-                    revealImageView.setImageBitmap(resultBitmap)
-                } else {
-                    revealImageView.setImageDrawable(resource)
-                    revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in origami transition", e)
-            }
-        }
-
-        animator.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                try {
-                    // Remove the temporary view
-                    (views.container as ViewGroup).removeView(revealImageView)
-
-                    // Make the new image fully visible
-                    views.overlayView.visibility = View.VISIBLE
-                    views.overlayView.alpha = 1f
-
-                    // Clean up resources
-                    origamiMaskBitmap.recycle()
-
-                    // Complete the transition
-                    callback.onTransitionCompleted(resource, nextIndex)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error cleaning up origami transition", e)
-                    callback.onTransitionCompleted(resource, nextIndex)
-                }
-            }
-
-            override fun onAnimationCancel(animation: Animator) {
-                try {
-                    // Clean up if animation is cancelled
-                    (views.container as ViewGroup).removeView(revealImageView)
-                    origamiMaskBitmap.recycle()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error cleaning up cancelled origami transition", e)
-                }
-            }
-        })
-
-        // Start the animation
-        animator.start()
-    }
 
     private fun performWaveTransition(
         views: TransitionViews,
@@ -3199,379 +2828,6 @@ class PhotoTransitionEffects(
                     crystalMaskBitmap.recycle()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error cleaning up cancelled crystallize transition", e)
-                }
-            }
-        })
-
-        // Start the animation
-        animator.start()
-    }
-
-    private fun performClockwiseTransition(
-        views: TransitionViews,
-        resource: Drawable,
-        nextIndex: Int,
-        transitionDuration: Long,
-        callback: TransitionCompletionCallback,
-        isClockwise: Boolean = true
-    ) {
-        // Set up the views
-        views.primaryView.visibility = View.VISIBLE
-
-        // Create a circular reveal effect
-        views.overlayView.post {
-            try {
-                // Set the new image
-                views.overlayView.setImageDrawable(resource)
-                views.overlayView.visibility = View.INVISIBLE
-
-                // Get dimensions
-                val width = views.overlayView.width
-                val height = views.overlayView.height
-
-                // Create a bitmap for the mask
-                val maskBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                val maskCanvas = Canvas(maskBitmap)
-
-                // Create a custom image view for the masked image
-                val maskedImageView = ImageView(context)
-                maskedImageView.layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-
-                // Set the same image as the overlay
-                if (resource is BitmapDrawable) {
-                    maskedImageView.setImageBitmap(resource.bitmap)
-                } else {
-                    maskedImageView.setImageDrawable(resource.constantState?.newDrawable())
-                }
-
-                // Add the masked image view
-                (views.container as ViewGroup).addView(maskedImageView)
-
-                // Create an animator for the clock hand angle
-                val startAngle = if (isClockwise) -90f else 270f
-                val endAngle = if (isClockwise) 270f else -90f
-
-                val angleAnimator = ValueAnimator.ofFloat(startAngle, endAngle)
-                angleAnimator.duration = transitionDuration
-                angleAnimator.interpolator = LinearInterpolator()
-
-                angleAnimator.addUpdateListener { animator ->
-                    val angle = animator.animatedValue as Float
-
-                    // Clear the mask
-                    maskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-
-                    // Create a path for the current angle
-                    val path = Path()
-                    val centerX = width / 2f
-                    val centerY = height / 2f
-
-                    // Start at the center
-                    path.moveTo(centerX, centerY)
-
-                    // Draw a line to the edge at the start angle
-                    val startX =
-                        centerX + Math.cos(Math.toRadians(startAngle.toDouble())).toFloat() * width
-                    val startY =
-                        centerY + Math.sin(Math.toRadians(startAngle.toDouble())).toFloat() * height
-                    path.lineTo(startX, startY)
-
-                    // Draw an arc from the start angle to the current angle
-                    val radius = Math.hypot(width.toDouble(), height.toDouble()).toFloat()
-                    val rect = RectF(
-                        centerX - radius,
-                        centerY - radius,
-                        centerX + radius,
-                        centerY + radius
-                    )
-
-                    val sweepAngle = if (isClockwise) {
-                        (angle - startAngle) % 360
-                    } else {
-                        (startAngle - angle) % 360
-                    }
-
-                    path.arcTo(rect, startAngle, sweepAngle)
-
-                    // Close the path back to the center
-                    path.lineTo(centerX, centerY)
-                    path.close()
-
-                    // Draw the path to the mask
-                    val paint = Paint().apply {
-                        color = Color.BLACK
-                        style = Paint.Style.FILL
-                    }
-                    maskCanvas.drawPath(path, paint)
-
-                    // Apply the mask
-                    maskedImageView.setImageBitmap(maskBitmap)
-                }
-
-                // Fade out the old image
-                val fadeOutAnimator = ObjectAnimator.ofFloat(views.primaryView, View.ALPHA, 1f, 0f)
-                fadeOutAnimator.duration = transitionDuration / 2
-                fadeOutAnimator.startDelay = transitionDuration / 2
-
-                // Create animator set
-                val animatorSet = AnimatorSet()
-                animatorSet.playTogether(angleAnimator, fadeOutAnimator)
-
-                animatorSet.addListener(object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        // Remove the masked image view
-                        (views.container as ViewGroup).removeView(maskedImageView)
-
-                        // Complete the transition
-                        callback.onTransitionCompleted(resource, nextIndex)
-                    }
-                })
-
-                animatorSet.start()
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in clockwise transition", e)
-                // Fall back to fade transition
-                performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
-            }
-        }
-    }
-
-    private fun performDiagonalTransition(
-        views: TransitionViews,
-        resource: Drawable,
-        nextIndex: Int,
-        transitionDuration: Long,
-        callback: TransitionCompletionCallback
-    ) {
-        // Set up overlay view with the new image but keep it invisible initially
-        views.overlayView.apply {
-            setImageDrawable(resource)
-            visibility = View.INVISIBLE
-            alpha = 1f
-        }
-
-        // Create a bitmap for the reveal effect that will cover the new image
-        val diagonalMaskBitmap = Bitmap.createBitmap(
-            views.container.width,
-            views.container.height,
-            Bitmap.Config.ARGB_8888
-        )
-        val diagonalMaskCanvas = Canvas(diagonalMaskBitmap)
-        val diagonalPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        // Create a temporary ImageView to hold the diagonal-shaped cutout of the new image
-        val revealImageView = ImageView(context)
-        revealImageView.layoutParams = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        revealImageView.scaleType = views.overlayView.scaleType // Match the scale type of the main image
-        revealImageView.visibility = View.INVISIBLE // Start as INVISIBLE
-
-        // Add the reveal view to the container, on top of both primary and overlay views
-        (views.container as ViewGroup).addView(revealImageView)
-
-        // Create animator for the transition
-        val animator = ValueAnimator.ofFloat(0f, 1f)
-        animator.duration = transitionDuration * 2
-        animator.interpolator = AccelerateInterpolator(0.8f)
-
-        // Prepare the first frame before making anything visible
-        try {
-            // Clear the diagonal mask canvas
-            diagonalMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-
-            // Calculate initial diagonal position - just starting to appear
-            val initialProgress = 0.01f
-
-            // Draw initial diagonal shape (small triangle from corner)
-            diagonalPaint.color = Color.WHITE
-            diagonalPaint.style = Paint.Style.FILL
-
-            val width = views.container.width.toFloat()
-            val height = views.container.height.toFloat()
-
-            // The diagonal wipe moves from bottom-left to top-right
-            // At progress 0, nothing is showing
-            // At progress 1, everything is showing
-
-            // Calculate how far the diagonal line should be from the origin (bottom-left)
-            val maxDiagonalLength = width + height // The maximum distance the diagonal line will travel
-            val initialOffset = -height + (initialProgress * maxDiagonalLength)
-
-            // Create a path for the revealed portion
-            val path = Path()
-            path.moveTo(0f, height) // Start at bottom-left
-            path.lineTo(0f, Math.max(0f, height - initialOffset)) // Up the left edge
-
-            if (initialOffset > height) {
-                // If we've moved past the top-left corner
-                path.lineTo(initialOffset - height, 0f) // Across the top edge
-            }
-
-            path.lineTo(0f, height) // Back to bottom-left
-            path.close()
-
-            diagonalMaskCanvas.drawPath(path, diagonalPaint)
-
-            // Prepare initial image
-            if (resource is BitmapDrawable) {
-                val resultBitmap = Bitmap.createBitmap(
-                    views.container.width,
-                    views.container.height,
-                    Bitmap.Config.ARGB_8888
-                )
-                val resultCanvas = Canvas(resultBitmap)
-
-                val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
-                val destRect = calculateProperDestRect(
-                    resource.bitmap.width,
-                    resource.bitmap.height,
-                    resultBitmap.width,
-                    resultBitmap.height
-                )
-
-                resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
-
-                val maskPaint = Paint()
-                maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                resultCanvas.drawBitmap(diagonalMaskBitmap, 0f, 0f, maskPaint)
-
-                revealImageView.setImageBitmap(resultBitmap)
-            } else {
-                revealImageView.setImageDrawable(resource)
-                revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
-            }
-
-            // Now make revealImageView visible before animation starts
-            revealImageView.visibility = View.VISIBLE
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error preparing diagonal transition", e)
-        }
-
-        animator.addUpdateListener { animation ->
-            val progress = animation.animatedValue as Float
-
-            try {
-                // Clear the diagonal mask canvas
-                diagonalMaskCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-
-                // Use a curved progress for smoother animation
-                val progressCurved = Math.pow(progress.toDouble(), 0.8).toFloat()
-
-                // Draw the diagonal shape
-                diagonalPaint.color = Color.WHITE
-                diagonalPaint.style = Paint.Style.FILL
-
-                val width = views.container.width.toFloat()
-                val height = views.container.height.toFloat()
-
-                // Calculate how far the diagonal line should be from the origin (bottom-left)
-                val maxDiagonalLength = width + height // The maximum distance the diagonal line will travel
-                val offset = -height + (progressCurved * maxDiagonalLength)
-
-                // Create a path for the revealed portion
-                val path = Path()
-                path.moveTo(0f, height) // Start at bottom-left
-
-                if (offset <= 0) {
-                    // Diagonal line hasn't reached the left edge yet
-                    path.lineTo(0f, height + offset) // Up the left edge (partially)
-                    path.close()
-                } else if (offset <= height) {
-                    // Diagonal line is on the left edge
-                    path.lineTo(0f, height - offset) // Up the left edge
-                    path.lineTo(offset, height) // To the right along the bottom
-                    path.close()
-                } else if (offset <= width) {
-                    // Diagonal line is on the bottom edge
-                    path.lineTo(0f, 0f) // Up to top-left
-                    path.lineTo(offset - height, 0f) // Along the top
-                    path.lineTo(offset, height) // To the diagonal
-                    path.close()
-                } else if (offset <= width + height) {
-                    // Diagonal line is on the right edge
-                    path.lineTo(0f, 0f) // Up to top-left
-                    path.lineTo(width, 0f) // Along the top to top-right
-                    path.lineTo(width, offset - width) // Down the right edge
-                    path.lineTo(width - (offset - width - height), height) // To the diagonal
-                    path.close()
-                } else {
-                    // We've completed the wipe
-                    path.lineTo(0f, 0f) // Up to top-left
-                    path.lineTo(width, 0f) // Along the top to top-right
-                    path.lineTo(width, height) // Down to bottom-right
-                    path.close()
-                }
-
-                diagonalMaskCanvas.drawPath(path, diagonalPaint)
-
-                // Create a copy of the new image, masked by the diagonal shape
-                if (resource is BitmapDrawable) {
-                    val resultBitmap = Bitmap.createBitmap(
-                        views.container.width,
-                        views.container.height,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    val resultCanvas = Canvas(resultBitmap)
-
-                    val sourceRect = Rect(0, 0, resource.bitmap.width, resource.bitmap.height)
-                    val destRect = calculateProperDestRect(
-                        resource.bitmap.width,
-                        resource.bitmap.height,
-                        resultBitmap.width,
-                        resultBitmap.height
-                    )
-
-                    resultCanvas.drawBitmap(resource.bitmap, sourceRect, destRect, null)
-
-                    val maskPaint = Paint()
-                    maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-                    resultCanvas.drawBitmap(diagonalMaskBitmap, 0f, 0f, maskPaint)
-
-                    revealImageView.setImageBitmap(resultBitmap)
-                } else {
-                    revealImageView.setImageDrawable(resource)
-                    revealImageView.setColorFilter(Color.BLACK, PorterDuff.Mode.DST_IN)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in diagonal transition", e)
-            }
-        }
-
-        animator.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                try {
-                    // Remove the temporary view
-                    (views.container as ViewGroup).removeView(revealImageView)
-
-                    // Make the new image fully visible
-                    views.overlayView.visibility = View.VISIBLE
-                    views.overlayView.alpha = 1f
-
-                    // Clean up resources
-                    diagonalMaskBitmap.recycle()
-
-                    // Complete the transition
-                    callback.onTransitionCompleted(resource, nextIndex)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error cleaning up diagonal transition", e)
-                    callback.onTransitionCompleted(resource, nextIndex)
-                }
-            }
-
-            override fun onAnimationCancel(animation: Animator) {
-                try {
-                    // Clean up if animation is cancelled
-                    (views.container as ViewGroup).removeView(revealImageView)
-                    diagonalMaskBitmap.recycle()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error cleaning up cancelled diagonal transition", e)
                 }
             }
         })
@@ -4366,76 +3622,54 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Set up the views
-        views.primaryView.visibility = View.VISIBLE
-        views.overlayView.apply {
-            setImageDrawable(resource)
-            alpha = 0f
+        // Set initial states
+        views.primaryView.apply {
             visibility = View.VISIBLE
+            alpha = 1f
+            scaleX = 1f
+            scaleY = 1f
         }
 
-        // Create the animation
+        views.overlayView.apply {
+            visibility = View.VISIBLE
+            alpha = 0f
+            scaleX = 0.25f
+            scaleY = 0.25f
+            rotationY = 720f
+            setImageDrawable(resource)
+        }
+
+        // Create AnimatorSet for synchronized animations
         val animatorSet = AnimatorSet()
 
-        // Distort the old image
-        val scaleXAnimator =
-            ObjectAnimator.ofFloat(views.primaryView, View.SCALE_X, 1f, 0.8f, 1.2f, 0.5f)
-        val scaleYAnimator =
-            ObjectAnimator.ofFloat(views.primaryView, View.SCALE_Y, 1f, 1.2f, 0.8f, 0.5f)
-        val rotationAnimator =
-            ObjectAnimator.ofFloat(views.primaryView, View.ROTATION, 0f, 5f, -5f, 0f)
-        val alphaOutAnimator = ObjectAnimator.ofFloat(views.primaryView, View.ALPHA, 1f, 0f)
+        // Create primary view animations (old image)
+        val primaryScaleX = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_X, 1f, 1.75f)
+        val primaryScaleY = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_Y, 1f, 1.75f)
+        val primaryRotationY = ObjectAnimator.ofFloat(views.primaryView, View.ROTATION_Y, 0f, -720f)
+        val primaryAlpha = ObjectAnimator.ofFloat(views.primaryView, View.ALPHA, 1f, 0f)
 
-        // Reveal the new image with a twist
-        val overlayAlphaAnimator = ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f)
-        val overlayScaleXAnimator =
-            ObjectAnimator.ofFloat(views.overlayView, View.SCALE_X, 1.5f, 1f)
-        val overlayScaleYAnimator =
-            ObjectAnimator.ofFloat(views.overlayView, View.SCALE_Y, 1.5f, 1f)
-        val overlayRotationAnimator =
-            ObjectAnimator.ofFloat(views.overlayView, View.ROTATION, -5f, 0f)
+        // Create overlay view animations (new image)
+        val overlayScaleX = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_X, 0.25f, 1f)
+        val overlayScaleY = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_Y, 0.25f, 1f)
+        val overlayRotationY = ObjectAnimator.ofFloat(views.overlayView, View.ROTATION_Y, 720f, 0f)
+        val overlayAlpha = ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f)
 
-        // Group primary view animations
-        val primaryAnimatorSet = AnimatorSet()
-        primaryAnimatorSet.playTogether(
-            scaleXAnimator,
-            scaleYAnimator,
-            rotationAnimator,
-            alphaOutAnimator
-        )
-        primaryAnimatorSet.duration = transitionDuration / 2
-
-        // Group overlay view animations
-        val overlayAnimatorSet = AnimatorSet()
-        overlayAnimatorSet.playTogether(
-            overlayAlphaAnimator,
-            overlayScaleXAnimator,
-            overlayScaleYAnimator,
-            overlayRotationAnimator
-        )
-        overlayAnimatorSet.duration = transitionDuration / 2
-
-        // Play the animation sets sequentially
-        animatorSet.playSequentially(primaryAnimatorSet, overlayAnimatorSet)
-
-        // Custom interpolator for a more fluid, "magical" effect
-        val customInterpolator = object : TimeInterpolator {
-            override fun getInterpolation(input: Float): Float {
-                // Custom curve that starts fast, slows in the middle, then speeds up again
-                return (1 - Math.cos(input * Math.PI * 2)).toFloat() / 2f
-            }
+        // Configure animations
+        animatorSet.apply {
+            playTogether(
+                primaryScaleX, primaryScaleY, primaryRotationY, primaryAlpha,
+                overlayScaleX, overlayScaleY, overlayRotationY, overlayAlpha
+            )
+            duration = transitionDuration
+            interpolator = DecelerateInterpolator()
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    callback.onTransitionCompleted(resource, nextIndex)
+                }
+            })
         }
 
-        scaleXAnimator.interpolator = customInterpolator
-        scaleYAnimator.interpolator = customInterpolator
-        rotationAnimator.interpolator = customInterpolator
-
-        animatorSet.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                callback.onTransitionCompleted(resource, nextIndex)
-            }
-        })
-
+        // Start the animation
         animatorSet.start()
     }
 
@@ -5733,65 +4967,58 @@ class PhotoTransitionEffects(
         transitionDuration: Long,
         callback: TransitionCompletionCallback
     ) {
-        // Set up the views
-        views.primaryView.visibility = View.VISIBLE
-        views.overlayView.apply {
-            setImageDrawable(resource)
-            alpha = 1f
+        // Set up initial states for both views
+        views.primaryView.apply {
             visibility = View.VISIBLE
-            scaleX = 0.8f
-            scaleY = 0.8f
-            rotationY = 180f // Flipped initially
+            alpha = 1f
+            translationX = 0f
+            translationY = 0f
+            scaleX = 1f
+            scaleY = 1f
         }
 
-        // Set the camera distance to avoid clipping
-        val distance = 8000f
-        views.primaryView.cameraDistance = distance
-        views.overlayView.cameraDistance = distance
+        views.overlayView.apply {
+            visibility = View.VISIBLE
+            alpha = 0f
+            translationY = height.toFloat() * 0.5f
+            scaleX = 0.8f
+            scaleY = 0.8f
+            setImageDrawable(resource)
+        }
 
-        // Create the animations
+        // Create an AnimatorSet for synchronized animations
         val animatorSet = AnimatorSet()
 
-        // First half of animation - primary view flips out
-        val primaryRotateOut = ObjectAnimator.ofFloat(views.primaryView, View.ROTATION_Y, 0f, 90f)
-        primaryRotateOut.duration = transitionDuration / 2
-        primaryRotateOut.interpolator = AccelerateInterpolator()
+        // Primary view animations (old image moving away)
+        val primaryScaleX = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_X, 1f, 0.8f)
+        val primaryScaleY = ObjectAnimator.ofFloat(views.primaryView, View.SCALE_Y, 1f, 0.8f)
+        val primaryTranslateY = ObjectAnimator.ofFloat(views.primaryView, View.TRANSLATION_Y, 0f, -views.primaryView.height.toFloat() * 0.5f)
+        val primaryAlpha = ObjectAnimator.ofFloat(views.primaryView, View.ALPHA, 1f, 0f)
 
-        // Second half of animation - overlay view flips in
-        val overlayRotateIn = ObjectAnimator.ofFloat(views.overlayView, View.ROTATION_Y, 180f, 360f)
-        overlayRotateIn.duration = transitionDuration / 2
-        overlayRotateIn.startDelay = transitionDuration / 2
-        overlayRotateIn.interpolator = DecelerateInterpolator()
-
-        // Scale animations for the overlay (for a "pop" effect)
+        // Overlay view animations (new image coming in)
         val overlayScaleX = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_X, 0.8f, 1f)
         val overlayScaleY = ObjectAnimator.ofFloat(views.overlayView, View.SCALE_Y, 0.8f, 1f)
-        overlayScaleX.duration = transitionDuration / 4
-        overlayScaleY.duration = transitionDuration / 4
-        overlayScaleX.startDelay = transitionDuration * 3 / 4
-        overlayScaleY.startDelay = transitionDuration * 3 / 4
+        val overlayTranslateY = ObjectAnimator.ofFloat(views.overlayView, View.TRANSLATION_Y, views.overlayView.height.toFloat() * 0.5f, 0f)
+        val overlayAlpha = ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f)
 
-        // Combine the animations
-        animatorSet.playTogether(primaryRotateOut, overlayRotateIn, overlayScaleX, overlayScaleY)
-
-        // Add listener to hide primary view when it's rotated to 90 degrees
-        primaryRotateOut.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                views.primaryView.visibility = View.INVISIBLE
-            }
-        })
-
-        // Add listener for completion
-        animatorSet.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                // Reset rotation values
-                views.primaryView.rotationY = 0f
-                views.overlayView.rotationY = 0f
-
-                callback.onTransitionCompleted(resource, nextIndex)
-            }
-        })
+        // Configure and start animations
+        animatorSet.apply {
+            playTogether(
+                primaryScaleX, primaryScaleY, primaryTranslateY, primaryAlpha,
+                overlayScaleX, overlayScaleY, overlayTranslateY, overlayAlpha
+            )
+            duration = transitionDuration
+            interpolator = OvershootInterpolator(0.7f)
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    // Clean up fragments and complete transition
+                    views.primaryView.visibility = View.INVISIBLE
+                    callback.onTransitionCompleted(resource, nextIndex)
+                }
+            })
+        }
 
         animatorSet.start()
     }
+
 }

@@ -72,7 +72,6 @@
         <item>@string/transition_slide</item>
         <item>@string/transition_slide_extended</item>
         <item>@string/transition_elastic</item>
-        <item>@string/transition_clockwise</item>
         <item>@string/transition_crystallize</item>
         <item>@string/transition_cube_3d</item>
         <item>@string/transition_kaleidoscope</item>
@@ -81,11 +80,9 @@
         <item>@string/transition_stretch</item>
         <item>@string/transition_page_curl</item>
         <item>@string/transition_wipe</item>
-        <item>@string/transition_origami</item>
         <item>@string/transition_zoom</item>
         <item>@string/transition_spiral</item>
         <item>@string/transition_rotate</item>
-        <item>@string/transition_diagonal</item>
         <item>@string/transition_depth</item>
         <item>@string/transition_circle</item>
         <item>@string/transition_cross_fade_grayscale</item>
@@ -117,7 +114,6 @@
         <item>slide</item>
         <item>slideExtended</item>
         <item>elastic</item>
-        <item>clockwise</item>
         <item>crystallize</item>
         <item>cube3d</item>
         <item>kaleidoscope</item>
@@ -126,11 +122,9 @@
         <item>stretch</item>
         <item>pageCurl</item>
         <item>wipe</item>
-        <item>origami</item>
         <item>zoom</item>
         <item>spiral</item>
         <item>rotate</item>
-        <item>diagonal</item>
         <item>depth</item>
         <item>circle</item>
         <item>crossFadeGrayscale</item>
