@@ -1,5 +1,8 @@
 package com.photostreamr.ui
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ObjectAnimator
 import android.content.Context
 import android.graphics.*
 import android.graphics.drawable.BitmapDrawable
@@ -75,7 +78,7 @@ class PhotoResizeManager @Inject constructor(
     private var cachedBlurredBitmap: Bitmap? = null
     private var cachedMirrorTopBitmap: Bitmap? = null
     private var cachedMirrorBottomBitmap: Bitmap? = null
-    private var cachedPaletteColors: IntArray? = null
+    private var cachedPaletteColors: Array<IntArray>? = null
 
     // Track if letterboxing is currently active
     private var isLetterboxActive = false
@@ -292,7 +295,7 @@ class PhotoResizeManager @Inject constructor(
         val mode = prefs.getString(PREF_KEY_LETTERBOX_MODE, DEFAULT_LETTERBOX_MODE) ?: DEFAULT_LETTERBOX_MODE
 
         // Debug statement to verify the selected mode
-        Log.d(TAG, "Letterbox mode: $mode")
+        Log.d(TAG, "Letterbox mode: $mode (height: $letterboxHeight)")
 
         // Cancel any existing processing jobs first
         managerScope.coroutineContext.cancelChildren()
@@ -331,7 +334,7 @@ class PhotoResizeManager @Inject constructor(
                 // Already applied
             }
             LETTERBOX_MODE_GRADIENT -> {
-                // Force a direct gradient now for immediate effect
+                // Apply photo-edge based gradient
                 try {
                     applyGradientLetterbox(drawable)
                 } catch (e: Exception) {
@@ -345,200 +348,6 @@ class PhotoResizeManager @Inject constructor(
             LETTERBOX_MODE_MIRROR -> {
                 applyMirrorLetterbox(drawable, letterboxHeight)
             }
-        }
-    }
-
-    /**
-     * Create a default gradient when palette generation is cancelled or fails
-     */
-    private fun createDefaultGradient() {
-        try {
-            // Create default colors for a nice gradient
-            val defaultColors = intArrayOf(
-                Color.parseColor("#121212"),  // Dark gray
-                Color.parseColor("#2D2D2D"),  // Medium gray
-                Color.parseColor("#424242")   // Light gray
-            )
-
-            // Log that we're creating a default gradient
-            Log.d(TAG, "Creating default gradient letterbox")
-
-            // Apply the default gradient
-            applyGradientWithColors(defaultColors)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating default gradient", e)
-            // Absolute fallback - just use black
-            topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-            bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-        }
-    }
-
-    /**
-     * Apply a gradient with the given colors to the letterbox areas
-     */
-    private fun applyGradientWithColors(colorArray: IntArray) {
-        try {
-            // Get opacity from preferences (with backup in case of issues)
-            val defaultOpacity = 0.7f
-            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val opacity = try {
-                prefs.getFloat(PREF_KEY_GRADIENT_OPACITY, defaultOpacity)
-            } catch (e: Exception) {
-                Log.w(TAG, "Error retrieving gradient opacity preference", e)
-                defaultOpacity
-            }
-
-            // Apply opacity to colors (safe approach)
-            val opaqueColors = colorArray.map { color ->
-                try {
-                    Color.argb(
-                        (opacity * 255).toInt().coerceIn(0, 255),
-                        Color.red(color),
-                        Color.green(color),
-                        Color.blue(color)
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error applying opacity to color", e)
-                    color  // Use original color if there's an error
-                }
-            }.toIntArray()
-
-            // Log that we're applying a gradient
-            Log.d(TAG, "Applying gradient with colors: ${opaqueColors.joinToString {
-                String.format("#%08X", it)
-            }}")
-
-            // Create top gradient (darker at the edge)
-            val topGradient = GradientDrawable(
-                GradientDrawable.Orientation.BOTTOM_TOP,
-                opaqueColors
-            )
-
-            // Create bottom gradient (darker at the edge)
-            val bottomGradient = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                opaqueColors
-            )
-
-            // Apply gradients to the views on the main thread
-            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
-            mainHandler.post {
-                try {
-                    topLetterboxView?.setImageDrawable(topGradient)
-                    bottomLetterboxView?.setImageDrawable(bottomGradient)
-                    Log.d(TAG, "Gradient applied successfully")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error setting gradient drawable", e)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in applyGradientWithColors", e)
-            // Fallback to black in case of error
-            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
-            mainHandler.post {
-                topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-                bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-            }
-        }
-    }
-
-    /**
-     * Apply a color gradient based on the photo's dominant colors
-     */
-    private fun applyGradientLetterbox(drawable: Drawable) {
-        try {
-            // Generate a cache key for the drawable
-            val cacheKey = System.identityHashCode(drawable).toString()
-
-            // Log that we're starting gradient generation
-            Log.d(TAG, "Starting gradient generation for drawable with key: $cacheKey")
-
-            // Use existing palette if available and matches cache key
-            if (cachedPaletteColors != null && lastPaletteCacheKey == cacheKey) {
-                Log.d(TAG, "Using cached palette colors")
-                applyGradientWithColors(cachedPaletteColors!!)
-                return
-            }
-
-            // Clear cache if we have a new image
-            if (cacheKey != lastPaletteCacheKey) {
-                cachedPaletteColors = null
-                lastPaletteCacheKey = cacheKey
-            }
-
-            // Create a simple default gradient immediately
-            createDefaultGradient()
-
-            // Convert drawable to bitmap for processing on the main thread first
-            // to avoid any threading issues
-            val bitmap = drawableToBitmap(drawable)
-            if (bitmap == null) {
-                Log.e(TAG, "Failed to convert drawable to bitmap for palette extraction")
-                return
-            }
-
-            // Try to generate a palette synchronously for immediate effect
-            try {
-                val quickPalette = Palette.from(bitmap).generate()
-                val dominantColor = quickPalette.getDominantColor(Color.BLACK)
-                val vibrantColor = quickPalette.getVibrantColor(dominantColor)
-                val darkColor = quickPalette.getDarkMutedColor(Color.BLACK)
-
-                val colorArray = intArrayOf(darkColor, dominantColor, vibrantColor)
-
-                // Save for reuse
-                cachedPaletteColors = colorArray
-                lastPaletteCacheKey = cacheKey
-
-                // Apply immediately
-                applyGradientWithColors(colorArray)
-
-                Log.d(TAG, "Applied immediate palette-based gradient")
-            } catch (e: Exception) {
-                Log.w(TAG, "Error in synchronous palette generation", e)
-                // Will still try async below
-            }
-
-            // Also process in background for better quality if the synchronous one failed
-            if (cachedPaletteColors == null) {
-                managerScope.launch(Dispatchers.Default) {
-                    try {
-                        // Generate palette from bitmap
-                        val palette = Palette.Builder(bitmap)
-                            .maximumColorCount(16)  // More colors for better gradient
-                            .generate()
-
-                        // Extract colors from palette with fallbacks
-                        val dominantColor = palette.getDominantColor(Color.DKGRAY)
-                        val vibrantColor = palette.getVibrantColor(dominantColor)
-                        val darkColor = palette.getDarkMutedColor(Color.BLACK)
-
-                        // Create array of colors for gradients
-                        val colorArray = intArrayOf(darkColor, dominantColor, vibrantColor)
-
-                        // Save for reuse
-                        cachedPaletteColors = colorArray
-                        lastPaletteCacheKey = cacheKey
-
-                        // Apply on main thread
-                        withContext(Dispatchers.Main) {
-                            if (isActive) {
-                                applyGradientWithColors(colorArray)
-                                Log.d(TAG, "Applied background-processed gradient")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        if (e !is CancellationException) {
-                            Log.e(TAG, "Error in background palette processing", e)
-                        } else {
-                            Log.d(TAG, "Background palette processing cancelled")
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in applyGradientLetterbox", e)
-            createDefaultGradient()  // Fallback
         }
     }
 
@@ -804,8 +613,315 @@ class PhotoResizeManager @Inject constructor(
         }
     }
 
+
+
+
     /**
-     * Check if letterboxing is currently active
+     * Create a default gradient with colors that blend naturally with photos
      */
-    fun isLetterboxActive(): Boolean = isLetterboxActive
+    private fun createDefaultGradient() {
+        try {
+            // Create natural-looking default gradient colors
+            val topColors = intArrayOf(
+                Color.parseColor("#000000"),  // Black (screen edge)
+                Color.parseColor("#1A1A1A"),  // Very dark gray
+                Color.parseColor("#333333")   // Dark gray (photo edge)
+            )
+
+            val bottomColors = intArrayOf(
+                Color.parseColor("#000000"),  // Black (screen edge)
+                Color.parseColor("#1A1A1A"),  // Very dark gray
+                Color.parseColor("#333333")   // Dark gray (photo edge)
+            )
+
+            Log.d(TAG, "Creating default photo-edge style gradient")
+
+            // Apply using the same method as the photo-based gradient
+            applyPhotoEdgeGradient(arrayOf(topColors, bottomColors), false, false)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating default gradient", e)
+            // Absolute fallback
+            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+            mainHandler.post {
+                topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+                bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+            }
+        }
+    }
+
+    /**
+     * Apply a letterbox gradient derived from the edges of the photo
+     * This creates the illusion that the letterbox is an extension of the photo
+     */
+    private fun applyGradientLetterbox(drawable: Drawable) {
+        try {
+            // Generate a cache key for the drawable
+            val cacheKey = System.identityHashCode(drawable).toString()
+
+            Log.d(TAG, "Starting photo-edge gradient for drawable: $cacheKey")
+
+            // Use existing cached colors if available
+            if (cachedPaletteColors != null && lastPaletteCacheKey == cacheKey) {
+                Log.d(TAG, "Using cached photo-edge colors")
+                applyPhotoEdgeGradient(cachedPaletteColors!!, true, false)
+                return
+            }
+
+            // Clear cache if we have a new image
+            if (cacheKey != lastPaletteCacheKey) {
+                cachedPaletteColors = null
+                lastPaletteCacheKey = cacheKey
+            }
+
+            // Create a default gradient immediately
+            createDefaultGradient()
+
+            // Convert drawable to bitmap for processing
+            val bitmap = drawableToBitmap(drawable)
+            if (bitmap == null) {
+                Log.e(TAG, "Failed to convert drawable to bitmap for edge color extraction")
+                return
+            }
+
+            // Extract colors directly from the bitmap edges
+            val edgeColors = extractPhotoEdgeColors(bitmap)
+
+            // Save for reuse
+            cachedPaletteColors = edgeColors
+            lastPaletteCacheKey = cacheKey
+
+            // Apply the edge-based gradient
+            applyPhotoEdgeGradient(edgeColors, true, true)
+
+            Log.d(TAG, "Applied photo-edge based gradient")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in applyGradientLetterbox", e)
+            createDefaultGradient()  // Fallback
+        }
+    }
+
+    /**
+     * Extract colors from the top and bottom edges of the photo
+     * Returns an array with [topEdgeColors, bottomEdgeColors]
+     */
+    private fun extractPhotoEdgeColors(bitmap: Bitmap): Array<IntArray> {
+        // Define how many pixels from the edge to sample
+        val edgeSampleWidth = 20
+        val numSamples = 5
+
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+
+            // Calculate optimal sample positions along the width
+            val samplePositions = Array(numSamples) { index ->
+                (width * (index + 1) / (numSamples + 1))
+            }
+
+            // Arrays to hold sampled colors
+            val topColors = IntArray(numSamples)
+            val bottomColors = IntArray(numSamples)
+
+            // Sample colors from the top edge at various positions
+            for (i in 0 until numSamples) {
+                val x = samplePositions[i]
+
+                // Sample from a small area rather than just a pixel
+                val topSampleColors = mutableListOf<Int>()
+                val bottomSampleColors = mutableListOf<Int>()
+
+                // Sample a few rows at the edge
+                for (row in 0 until edgeSampleWidth) {
+                    // Sample the top edge
+                    if (row < height) {
+                        topSampleColors.add(bitmap.getPixel(x, row))
+                    }
+
+                    // Sample the bottom edge
+                    val bottomRow = height - 1 - row
+                    if (bottomRow >= 0) {
+                        bottomSampleColors.add(bitmap.getPixel(x, bottomRow))
+                    }
+                }
+
+                // Calculate the average color for this sample
+                topColors[i] = averageColors(topSampleColors)
+                bottomColors[i] = averageColors(bottomSampleColors)
+            }
+
+            // Enhance the colors to make the gradient more vibrant
+            enhanceColorArray(topColors)
+            enhanceColorArray(bottomColors)
+
+            return arrayOf(topColors, bottomColors)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sampling edge colors", e)
+            // Return a default array of colors if sampling fails
+            return arrayOf(
+                intArrayOf(Color.BLACK, Color.DKGRAY, Color.GRAY),
+                intArrayOf(Color.BLACK, Color.DKGRAY, Color.GRAY)
+            )
+        }
+    }
+
+    /**
+     * Calculate the average of a list of colors
+     */
+    private fun averageColors(colors: List<Int>): Int {
+        if (colors.isEmpty()) return Color.BLACK
+
+        var sumR = 0
+        var sumG = 0
+        var sumB = 0
+
+        for (color in colors) {
+            sumR += Color.red(color)
+            sumG += Color.green(color)
+            sumB += Color.blue(color)
+        }
+
+        val avgR = sumR / colors.size
+        val avgG = sumG / colors.size
+        val avgB = sumB / colors.size
+
+        return Color.rgb(avgR, avgG, avgB)
+    }
+
+    /**
+     * Enhance a color array to make gradients more visually appealing
+     * This adjusts saturation and ensures a good transition
+     */
+    private fun enhanceColorArray(colors: IntArray) {
+        for (i in colors.indices) {
+            val color = colors[i]
+
+            // Convert to HSV for easier manipulation
+            val hsv = FloatArray(3)
+            Color.colorToHSV(color, hsv)
+
+            // Enhance saturation slightly (0.0-1.0 scale)
+            hsv[1] = (hsv[1] * 1.2f).coerceAtMost(1.0f)
+
+            // Ensure value (brightness) is within a good range for gradients
+            if (i == 0) {
+                // First color (edge of screen) should be darker
+                hsv[2] = (hsv[2] * 0.7f).coerceIn(0.1f, 0.5f)
+            } else {
+                // Inner colors (closer to photo) should maintain brightness
+                hsv[2] = hsv[2].coerceIn(0.3f, 0.8f)
+            }
+
+            // Store enhanced color back in array
+            colors[i] = Color.HSVToColor(hsv)
+        }
+    }
+
+    /**
+     * Apply the photo edge gradient to the letterbox views
+     */
+    private fun applyPhotoEdgeGradient(edgeColors: Array<IntArray>, smoothTransition: Boolean, isNewPhoto: Boolean) {
+        try {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            val opacity = try {
+                prefs.getFloat(PREF_KEY_GRADIENT_OPACITY, 0.85f)
+            } catch (e: Exception) {
+                0.85f  // Default opacity
+            }
+
+            Log.d(TAG, "Applying photo-edge gradient with opacity: $opacity")
+
+            // Extract top and bottom edge colors
+            val topEdgeColors = edgeColors[0]
+            val bottomEdgeColors = edgeColors[1]
+
+            // Apply opacity to the colors
+            val topColorsWithOpacity = topEdgeColors.map { color ->
+                Color.argb(
+                    (opacity * 255).toInt().coerceIn(0, 255),
+                    Color.red(color),
+                    Color.green(color),
+                    Color.blue(color)
+                )
+            }.toIntArray()
+
+            val bottomColorsWithOpacity = bottomEdgeColors.map { color ->
+                Color.argb(
+                    (opacity * 255).toInt().coerceIn(0, 255),
+                    Color.red(color),
+                    Color.green(color),
+                    Color.blue(color)
+                )
+            }.toIntArray()
+
+            // Create top gradient (extending from the top edge of the photo)
+            val topGradient = GradientDrawable(
+                GradientDrawable.Orientation.BOTTOM_TOP,  // From photo to screen edge
+                topColorsWithOpacity
+            )
+
+            // Create bottom gradient (extending from the bottom edge of the photo)
+            val bottomGradient = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,  // From photo to screen edge
+                bottomColorsWithOpacity
+            )
+
+            // Apply gradients to the views on the main thread
+            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+            mainHandler.post {
+                try {
+                    if (smoothTransition && isNewPhoto) {
+                        // For new photos, crossfade to the new gradient
+                        crossfadeToNewGradient(topLetterboxView, topGradient)
+                        crossfadeToNewGradient(bottomLetterboxView, bottomGradient)
+                    } else {
+                        // Direct application
+                        topLetterboxView?.setImageDrawable(topGradient)
+                        bottomLetterboxView?.setImageDrawable(bottomGradient)
+                    }
+                    Log.d(TAG, "Photo-edge gradient applied successfully")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error setting photo-edge gradient drawable", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in applyPhotoEdgeGradient", e)
+            // Fallback
+            createDefaultGradient()
+        }
+    }
+
+    /**
+     * Crossfade to a new gradient drawable
+     */
+    private fun crossfadeToNewGradient(view: ImageView?, newGradient: Drawable) {
+        // Skip if view isn't available
+        if (view == null) return
+
+        try {
+            // Create a fade-out animation for the current drawable
+            val fadeOut = ObjectAnimator.ofFloat(view, "alpha", 1f, 0f)
+            fadeOut.duration = 150
+
+            // Create a fade-in animation for the new drawable
+            val fadeIn = ObjectAnimator.ofFloat(view, "alpha", 0f, 1f)
+            fadeIn.duration = 200
+
+            // Set up the sequence
+            fadeOut.addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    // Change the drawable when fully faded out
+                    view.setImageDrawable(newGradient)
+                    // Start fade in
+                    fadeIn.start()
+                }
+            })
+
+            // Start the animation sequence
+            fadeOut.start()
+        } catch (e: Exception) {
+            // If animation fails, just set the drawable directly
+            Log.e(TAG, "Crossfade animation failed, applying gradient directly", e)
+            view.setImageDrawable(newGradient)
+        }
+    }
 }
