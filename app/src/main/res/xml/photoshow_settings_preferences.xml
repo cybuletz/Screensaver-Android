@@ -58,6 +58,13 @@
             app:showSeekBarValue="true"
             app:updatesContinuously="true"
             android:icon="@drawable/ic_opacity" />
+
+        <SeekBarPreference
+            android:key="letterbox_ambient_intensity"
+            android:title="Ambient Light Intensity"
+            android:summary="Adjust the intensity of the ambient lighting effect"
+            android:defaultValue="70"
+            android:max="100" />
     </PreferenceCategory>
 
     <!-- Existing preferences -->

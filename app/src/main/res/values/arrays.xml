@@ -152,6 +152,7 @@
         <item>@string/letterbox_mode_blur</item>
         <item>@string/letterbox_mode_gradient</item>
         <item>@string/letterbox_mode_mirror</item>
+        <item>ambient</item>
     </string-array>
 
     <string-array name="letterbox_mode_values">
@@ -159,6 +160,7 @@
         <item>blur</item>
         <item>gradient</item>
         <item>mirror</item>
+        <item>ambient</item>
     </string-array>
 
     <!-- Days of Week -->

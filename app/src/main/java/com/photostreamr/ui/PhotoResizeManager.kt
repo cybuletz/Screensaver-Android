@@ -43,6 +43,7 @@ class PhotoResizeManager @Inject constructor(
         const val LETTERBOX_MODE_BLUR = "blur"
         const val LETTERBOX_MODE_GRADIENT = "gradient"
         const val LETTERBOX_MODE_MIRROR = "mirror"
+        const val LETTERBOX_MODE_AMBIENT = "ambient"
 
         // Default values
         const val DEFAULT_DISPLAY_MODE = DISPLAY_MODE_FILL
@@ -53,6 +54,7 @@ class PhotoResizeManager @Inject constructor(
         const val PREF_KEY_LETTERBOX_MODE = "letterbox_mode"
         const val PREF_KEY_BLUR_INTENSITY = "letterbox_blur_intensity"
         const val PREF_KEY_GRADIENT_OPACITY = "letterbox_gradient_opacity"
+        const val PREF_KEY_AMBIENT_INTENSITY = "letterbox_ambient_intensity"
 
         // Constants for effects
         private const val DEFAULT_BLUR_RADIUS = 20f
@@ -331,6 +333,11 @@ class PhotoResizeManager @Inject constructor(
                 topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
                 bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
             }
+            LETTERBOX_MODE_AMBIENT -> {
+                // Start with black, will be replaced with ambient lighting
+                topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+                bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+            }
             else -> {
                 // Fallback for unknown modes
                 topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
@@ -357,6 +364,9 @@ class PhotoResizeManager @Inject constructor(
             }
             LETTERBOX_MODE_MIRROR -> {
                 applyMirrorLetterbox(drawable, letterboxHeight)
+            }
+            LETTERBOX_MODE_AMBIENT -> {
+                applyAmbientLetterbox(drawable, letterboxHeight)
             }
         }
     }
@@ -994,6 +1004,190 @@ class PhotoResizeManager @Inject constructor(
             // If animation fails, just set the drawable directly
             Log.e(TAG, "Crossfade animation failed, applying gradient directly", e)
             view.setImageDrawable(newGradient)
+        }
+    }
+
+
+    /**
+     * Apply ambient lighting effect to letterbox areas
+     * This creates a dynamic edge lighting effect similar to TV ambient lighting systems
+     */
+    private fun applyAmbientLetterbox(drawable: Drawable, letterboxHeight: Int) {
+        // Start with black placeholder
+        topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+        bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val ambientIntensity = try {
+            prefs.getInt(PREF_KEY_AMBIENT_INTENSITY, 70) / 100f
+        } catch (e: ClassCastException) {
+            0.7f // Default intensity
+        }
+
+        // Process ambient lighting in background
+        managerScope.launch(Dispatchers.Default) {
+            try {
+                // Convert drawable to bitmap for processing
+                val bitmap = drawableToBitmap(drawable)
+                if (bitmap == null) {
+                    Log.e(TAG, "Failed to convert drawable to bitmap for ambient lighting effect")
+                    return@launch
+                }
+
+                // Define how many horizontal segments to use for the ambient effect
+                val segmentCount = 8
+
+                // Create bitmaps for top and bottom letterbox areas
+                val topAmbientBitmap = Bitmap.createBitmap(bitmap.width, letterboxHeight, Bitmap.Config.ARGB_8888)
+                val bottomAmbientBitmap = Bitmap.createBitmap(bitmap.width, letterboxHeight, Bitmap.Config.ARGB_8888)
+
+                // Create canvases for drawing
+                val topCanvas = Canvas(topAmbientBitmap)
+                val bottomCanvas = Canvas(bottomAmbientBitmap)
+
+                // Fill with black initially
+                topCanvas.drawColor(Color.BLACK)
+                bottomCanvas.drawColor(Color.BLACK)
+
+                // Calculate segment width
+                val segmentWidth = bitmap.width / segmentCount
+
+                // Sample colors from each segment at the top and bottom edges of the image
+                for (i in 0 until segmentCount) {
+                    // Calculate sample area
+                    val startX = i * segmentWidth
+                    val endX = ((i + 1) * segmentWidth).coerceAtMost(bitmap.width)
+                    val sampleWidth = endX - startX
+
+                    // Top edge sampling height (from the top of the image)
+                    val topSampleHeight = (bitmap.height * 0.05).toInt().coerceAtLeast(1)
+                    // Bottom edge sampling height (from the bottom of the image)
+                    val bottomSampleHeight = (bitmap.height * 0.05).toInt().coerceAtLeast(1)
+
+                    // Extract and average the colors from the top edge
+                    val topColors = mutableListOf<Int>()
+                    for (x in startX until endX) {
+                        for (y in 0 until topSampleHeight) {
+                            topColors.add(bitmap.getPixel(x, y))
+                        }
+                    }
+                    val topAvgColor = averageColors(topColors)
+
+                    // Extract and average the colors from the bottom edge
+                    val bottomColors = mutableListOf<Int>()
+                    for (x in startX until endX) {
+                        for (y in (bitmap.height - bottomSampleHeight) until bitmap.height) {
+                            bottomColors.add(bitmap.getPixel(x, y))
+                        }
+                    }
+                    val bottomAvgColor = averageColors(bottomColors)
+
+                    // Create paint for the ambient light column
+                    val topPaint = Paint().apply {
+                        color = topAvgColor
+                        // Make the color more vibrant for ambient effect
+                        colorFilter = LightingColorFilter(
+                            Color.rgb(255, 255, 255), // multiply with white (no change)
+                            Color.rgb(20, 20, 20)     // add slight brightness
+                        )
+                        setShadowLayer(15f, 0f, 0f, topAvgColor) // Add glow
+                    }
+
+                    val bottomPaint = Paint().apply {
+                        color = bottomAvgColor
+                        // Make the color more vibrant for ambient effect
+                        colorFilter = LightingColorFilter(
+                            Color.rgb(255, 255, 255), // multiply with white (no change)
+                            Color.rgb(20, 20, 20)     // add slight brightness
+                        )
+                        setShadowLayer(15f, 0f, 0f, bottomAvgColor) // Add glow
+                    }
+
+                    // Create gradients that fade out toward the edges
+                    val topGradientShader = LinearGradient(
+                        0f, letterboxHeight.toFloat(),
+                        0f, 0f,
+                        intArrayOf(
+                            Color.argb(255, Color.red(topAvgColor), Color.green(topAvgColor), Color.blue(topAvgColor)),
+                            Color.argb(100, Color.red(topAvgColor), Color.green(topAvgColor), Color.blue(topAvgColor)),
+                            Color.argb(0, 0, 0, 0)
+                        ),
+                        floatArrayOf(0f, 0.6f, 1f),
+                        Shader.TileMode.CLAMP
+                    )
+
+                    val bottomGradientShader = LinearGradient(
+                        0f, 0f,
+                        0f, letterboxHeight.toFloat(),
+                        intArrayOf(
+                            Color.argb(255, Color.red(bottomAvgColor), Color.green(bottomAvgColor), Color.blue(bottomAvgColor)),
+                            Color.argb(100, Color.red(bottomAvgColor), Color.green(bottomAvgColor), Color.blue(bottomAvgColor)),
+                            Color.argb(0, 0, 0, 0)
+                        ),
+                        floatArrayOf(0f, 0.6f, 1f),
+                        Shader.TileMode.CLAMP
+                    )
+
+                    // Apply the gradients to the paints
+                    topPaint.shader = topGradientShader
+                    bottomPaint.shader = bottomGradientShader
+
+                    // Draw ambient lighting columns
+                    val columnRect = RectF(
+                        startX.toFloat(),
+                        0f,
+                        endX.toFloat(),
+                        letterboxHeight.toFloat()
+                    )
+
+                    // Draw with a slight blend mode to create the glow effect
+                    topPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_OVER)
+                    bottomPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_OVER)
+
+                    topCanvas.drawRect(columnRect, topPaint)
+                    bottomCanvas.drawRect(columnRect, bottomPaint)
+                }
+
+                // Add an additional horizontal gradient to soften the segments
+                val horizontalBlendPaint = Paint().apply {
+                    // Adjust the alpha by preference if desired
+                    alpha = 80 // Subtle blend, 0-255
+                    // Optional blur effect
+                    maskFilter = BlurMaskFilter(15f, BlurMaskFilter.Blur.NORMAL)
+                }
+
+                // Apply the horizontal blur/blend to soften segment transitions
+                topCanvas.drawBitmap(topAmbientBitmap, 0f, 0f, horizontalBlendPaint)
+                bottomCanvas.drawBitmap(bottomAmbientBitmap, 0f, 0f, horizontalBlendPaint)
+
+                // Apply on main thread
+                withContext(Dispatchers.Main) {
+                    if (isActive) {
+                        // Fade in the ambient effect
+                        topLetterboxView?.alpha = 0f
+                        bottomLetterboxView?.alpha = 0f
+                        topLetterboxView?.setImageBitmap(topAmbientBitmap)
+                        bottomLetterboxView?.setImageBitmap(bottomAmbientBitmap)
+
+                        // Animate the fade in
+                        topLetterboxView?.animate()?.alpha(1f)?.duration = 300
+                        bottomLetterboxView?.animate()?.alpha(1f)?.duration = 300
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Error applying ambient lighting effect", e)
+                    withContext(Dispatchers.Main) {
+                        if (isActive) {
+                            // Fallback to black in case of error
+                            topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+                            bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+                        }
+                    }
+                } else {
+                    Log.d(TAG, "Ambient lighting processing was cancelled")
+                }
+            }
         }
     }
 }
