@@ -16,11 +16,13 @@ import android.renderscript.RenderScript
 import android.renderscript.ScriptIntrinsicBlur
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.FrameLayout
 import androidx.palette.graphics.Palette
 import androidx.preference.PreferenceManager
 import kotlinx.coroutines.*
+import java.util.Random
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -56,6 +58,7 @@ class PhotoResizeManager @Inject constructor(
         const val PREF_KEY_GRADIENT_OPACITY = "letterbox_gradient_opacity"
         const val PREF_KEY_AMBIENT_INTENSITY = "letterbox_ambient_intensity"
 
+
         // Constants for effects
         private const val DEFAULT_BLUR_RADIUS = 20f
         private const val DEFAULT_GRADIENT_OPACITY = 0.7f
@@ -72,6 +75,11 @@ class PhotoResizeManager @Inject constructor(
     // Cache for blurred edge bitmaps
     private var cachedBlurredTopBitmap: Bitmap? = null
     private var cachedBlurredBottomBitmap: Bitmap? = null
+
+    // Add these to cache generated ambient effects for reuse
+    private var cachedTopAmbientBitmap: Bitmap? = null
+    private var cachedBottomAmbientBitmap: Bitmap? = null
+    private var lastAmbientCacheKey: String? = null
 
     private var lastPaletteCacheKey: String? = null
 
@@ -147,6 +155,14 @@ class PhotoResizeManager @Inject constructor(
 
         cachedMirrorBottomBitmap?.recycle()
         cachedMirrorBottomBitmap = null
+
+        cachedTopAmbientBitmap?.recycle()
+        cachedTopAmbientBitmap = null
+
+        cachedBottomAmbientBitmap?.recycle()
+        cachedBottomAmbientBitmap = null
+
+        lastAmbientCacheKey = null
 
         cachedPaletteColors = null
     }
@@ -300,8 +316,314 @@ class PhotoResizeManager @Inject constructor(
     }
 
     /**
-     * Apply the currently selected letterbox mode to fill the letterbox areas
+     * Apply a completely random, amorphous cloud-like ambient effect
+     * No refreshing - generate once and keep it
      */
+    private fun applyAmbientLetterbox(drawable: Drawable, letterboxHeight: Int) {
+        // Check if we already have ambient bitmaps for this drawable
+        val cacheKey = System.identityHashCode(drawable).toString()
+
+        if (cachedTopAmbientBitmap != null && cachedBottomAmbientBitmap != null && lastAmbientCacheKey == cacheKey) {
+            // Use existing cached ambient effect
+            Log.d(TAG, "Using cached ambient effect")
+            topLetterboxView?.setImageBitmap(cachedTopAmbientBitmap)
+            bottomLetterboxView?.setImageBitmap(cachedBottomAmbientBitmap)
+            return
+        }
+
+        // Start with dark gray placeholder
+        topLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 10, 10, 10)))
+        bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 10, 10, 10)))
+
+        // Generate new ambient effect in background
+        managerScope.launch(Dispatchers.Default) {
+            try {
+                // Convert drawable to bitmap for processing
+                val bitmap = drawableToBitmap(drawable)
+                if (bitmap == null) {
+                    Log.e(TAG, "Failed to convert drawable to bitmap for ambient lighting effect")
+                    return@launch
+                }
+
+                // Sample dominant colors from the image using Palette API
+                val palette = Palette.from(bitmap).generate()
+
+                // Extract up to 6 distinct colors from the palette
+                val colors = mutableListOf<Int>()
+
+                // Add vibrant colors with fallbacks
+                palette.vibrantSwatch?.rgb?.let { colors.add(it) }
+                palette.lightVibrantSwatch?.rgb?.let { colors.add(it) }
+                palette.darkVibrantSwatch?.rgb?.let { colors.add(it) }
+                palette.mutedSwatch?.rgb?.let { colors.add(it) }
+                palette.lightMutedSwatch?.rgb?.let { colors.add(it) }
+                palette.darkMutedSwatch?.rgb?.let { colors.add(it) }
+
+                // If we couldn't get enough colors, add some from the image directly
+                if (colors.size < 3) {
+                    val random = Random()
+                    for (i in 0 until 5) {
+                        val x = random.nextInt(bitmap.width)
+                        val y = random.nextInt(bitmap.height)
+                        colors.add(bitmap.getPixel(x, y))
+                    }
+                }
+
+                // Create bitmaps for top and bottom letterbox areas
+                val topAmbientBitmap = createPurelyRandomCloudEffect(bitmap.width, letterboxHeight, colors)
+                val bottomAmbientBitmap = createPurelyRandomCloudEffect(bitmap.width, letterboxHeight, colors)
+
+                // Cache for reuse
+                cachedTopAmbientBitmap = topAmbientBitmap
+                cachedBottomAmbientBitmap = bottomAmbientBitmap
+                lastAmbientCacheKey = cacheKey
+
+                // Apply on main thread - simple direct application
+                withContext(Dispatchers.Main) {
+                    if (isActive) {
+                        topLetterboxView?.setImageBitmap(topAmbientBitmap)
+                        bottomLetterboxView?.setImageBitmap(bottomAmbientBitmap)
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Error applying ambient lighting effect", e)
+                    withContext(Dispatchers.Main) {
+                        if (isActive) {
+                            // Fallback to dark color in case of error
+                            topLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 10, 10, 10)))
+                            bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 10, 10, 10)))
+                        }
+                    }
+                } else {
+                    Log.d(TAG, "Ambient lighting processing was cancelled")
+                }
+            }
+        }
+    }
+
+    /**
+     * Cross-fade to new drawable to prevent flickering
+     */
+    private fun crossfadeLetterboxDrawable(view: ImageView?, newBitmap: Bitmap) {
+        if (view == null) return
+
+        // If the view already has a bitmap, do a smooth crossfade
+        if (view.drawable is BitmapDrawable) {
+            // Create new ImageView with the new bitmap to fade in
+            val tempImageView = ImageView(context).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    view.height
+                )
+                scaleType = ImageView.ScaleType.FIT_XY
+                setImageBitmap(newBitmap)
+                alpha = 0f
+            }
+
+            // Add temp view to the parent
+            (view.parent as? ViewGroup)?.addView(tempImageView)
+
+            // Position temp view exactly over the original
+            tempImageView.y = view.y
+
+            // Fade in the new view
+            tempImageView.animate()
+                .alpha(1f)
+                .setDuration(300)
+                .setListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        // When fade completes, update the original view and remove the temp
+                        view.setImageBitmap(newBitmap)
+                        (tempImageView.parent as? ViewGroup)?.removeView(tempImageView)
+                    }
+                })
+                .start()
+        } else {
+            // For initial setup, just set the bitmap with a fade
+            view.alpha = 0f
+            view.setImageBitmap(newBitmap)
+            view.animate()
+                .alpha(1f)
+                .setDuration(300)
+                .start()
+        }
+    }
+
+    /**
+     * Create a completely random, amorphous cloud effect
+     * No structure, no patterns, just pure randomness with larger, more numerous clouds
+     */
+    private fun createPurelyRandomCloudEffect(width: Int, height: Int, colors: List<Int>): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // Fill with black background
+        canvas.drawColor(Color.BLACK)
+
+        val random = Random(System.currentTimeMillis())
+
+        // Create a noise texture first (using random pixel values)
+        val noise = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+        // Fill noise bitmap with random pixels
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                // Generate random gray value for noise
+                val alpha = 30 + random.nextInt(30) // Low alpha for subtle effect
+                val value = random.nextInt(255)
+                noise.setPixel(x, y, Color.argb(alpha, value, value, value))
+            }
+        }
+
+        // Apply the noise texture to create a random base
+        val noisePaint = Paint()
+        noisePaint.alpha = 60 // Reduced to make clouds more visible
+        canvas.drawBitmap(noise, 0f, 0f, noisePaint)
+
+        // Increase the number of blobs (50-70 instead of 25-40)
+        val numBlobs = 50 + random.nextInt(20)
+
+        for (i in 0 until numBlobs) {
+            // Completely random position
+            val x = random.nextInt(width)
+            val y = random.nextInt(height)
+
+            // Larger size range (30-150 instead of 10-70)
+            val size = 30 + random.nextInt(120)
+
+            // Random color from our palette
+            val color = colors[random.nextInt(colors.size)]
+
+            // Adjust color alpha and brightness
+            val adjustedColor = adjustColorForAmbient(color, random)
+
+            // Create paint for this blob
+            val paint = Paint()
+            paint.isAntiAlias = true
+
+            // Set up radial gradient for soft blob with larger radius
+            val gradientRadius = size * (1.0f + random.nextFloat() * 0.5f)
+            val radialColors = intArrayOf(
+                adjustedColor,
+                Color.argb(
+                    (Color.alpha(adjustedColor) * 0.7f).toInt(),
+                    Color.red(adjustedColor),
+                    Color.green(adjustedColor),
+                    Color.blue(adjustedColor)
+                ),
+                Color.argb(0, Color.red(adjustedColor), Color.green(adjustedColor), Color.blue(adjustedColor))
+            )
+
+            paint.shader = RadialGradient(
+                x.toFloat(), y.toFloat(),
+                gradientRadius,
+                radialColors,
+                floatArrayOf(0f, 0.7f, 1f),
+                Shader.TileMode.CLAMP
+            )
+
+            // Use screen blend mode for light-like effect
+            paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
+
+            // Draw the blob
+            canvas.drawCircle(x.toFloat(), y.toFloat(), gradientRadius, paint)
+
+            // Add additional smaller satellite blobs to create more complex cloud formations
+            // This creates cloud clusters rather than just individual blobs
+            val numSatellites = 2 + random.nextInt(4)
+            for (j in 0 until numSatellites) {
+                // Position satellite relative to the main blob
+                val satelliteDistance = gradientRadius * (0.3f + random.nextFloat() * 0.7f)
+                val satelliteAngle = random.nextFloat() * 360f
+                val satelliteX = x + (satelliteDistance * Math.cos(Math.toRadians(satelliteAngle.toDouble()))).toFloat()
+                val satelliteY = y + (satelliteDistance * Math.sin(Math.toRadians(satelliteAngle.toDouble()))).toFloat()
+
+                // Smaller size for satellite
+                val satelliteSize = size * (0.3f + random.nextFloat() * 0.4f)
+
+                // Create paint for satellite blob
+                val satellitePaint = Paint()
+                satellitePaint.isAntiAlias = true
+
+                // Similar color but with slight variation
+                val hsvColor = FloatArray(3)
+                Color.colorToHSV(adjustedColor, hsvColor)
+
+                // Correct way to modify hue without direct array assignment
+                var hue = (hsvColor[0] + random.nextFloat() * 10 - 5) % 360
+                if (hue < 0) hue += 360
+                hsvColor[0] = hue
+
+                val satelliteColor = Color.HSVToColor(Color.alpha(adjustedColor), hsvColor)
+
+                // Set up radial gradient
+                satellitePaint.shader = RadialGradient(
+                    satelliteX, satelliteY,
+                    satelliteSize,
+                    intArrayOf(
+                        satelliteColor,
+                        Color.argb(0, Color.red(satelliteColor), Color.green(satelliteColor), Color.blue(satelliteColor))
+                    ),
+                    floatArrayOf(0f, 1f),
+                    Shader.TileMode.CLAMP
+                )
+
+                satellitePaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
+
+                // Draw the satellite blob
+                canvas.drawCircle(satelliteX, satelliteY, satelliteSize, satellitePaint)
+            }
+        }
+
+        // Apply final blur for smoother look - slightly reduced to preserve cloud definition
+        try {
+            val rs = RenderScript.create(context)
+            val input = Allocation.createFromBitmap(rs, bitmap)
+            val output = Allocation.createTyped(rs, input.type)
+            val script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
+
+            script.setRadius(12f) // Slightly reduced blur radius
+            script.setInput(input)
+            script.forEach(output)
+            output.copyTo(bitmap)
+
+            input.destroy()
+            output.destroy()
+            script.destroy()
+            rs.destroy()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying final blur", e)
+        }
+
+        return bitmap
+    }
+
+    /**
+     * Adjust color for ambient effect
+     */
+    private fun adjustColorForAmbient(color: Int, random: Random): Int {
+        // Convert to HSV
+        val hsv = FloatArray(3)
+        Color.colorToHSV(color, hsv)
+
+        // Add slight randomness to hue
+        var hue = (hsv[0] + random.nextFloat() * 20 - 10) % 360
+        if (hue < 0) hue += 360
+        hsv[0] = hue
+
+        // Boost saturation slightly
+        hsv[1] = (hsv[1] * (1.0f + random.nextFloat() * 0.3f)).coerceIn(0.4f, 0.9f)
+
+        // Ensure good brightness
+        hsv[2] = (hsv[2] * (1.0f + random.nextFloat() * 0.3f)).coerceIn(0.5f, 0.9f)
+
+        // Increased alpha for more vibrant effect
+        val alpha = (70 + random.nextInt(60)).coerceIn(70, 130)
+
+        return Color.HSVToColor(alpha, hsv)
+    }
+
     private fun applyLetterboxMode(drawable: Drawable, letterboxHeight: Int) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val mode = prefs.getString(PREF_KEY_LETTERBOX_MODE, DEFAULT_LETTERBOX_MODE) ?: DEFAULT_LETTERBOX_MODE
@@ -334,7 +656,7 @@ class PhotoResizeManager @Inject constructor(
                 bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
             }
             LETTERBOX_MODE_AMBIENT -> {
-                // Start with black, will be replaced with ambient lighting
+                // Start with black for ambient effect
                 topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
                 bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
             }
@@ -1004,190 +1326,6 @@ class PhotoResizeManager @Inject constructor(
             // If animation fails, just set the drawable directly
             Log.e(TAG, "Crossfade animation failed, applying gradient directly", e)
             view.setImageDrawable(newGradient)
-        }
-    }
-
-
-    /**
-     * Apply ambient lighting effect to letterbox areas
-     * This creates a dynamic edge lighting effect similar to TV ambient lighting systems
-     */
-    private fun applyAmbientLetterbox(drawable: Drawable, letterboxHeight: Int) {
-        // Start with black placeholder
-        topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-        bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val ambientIntensity = try {
-            prefs.getInt(PREF_KEY_AMBIENT_INTENSITY, 70) / 100f
-        } catch (e: ClassCastException) {
-            0.7f // Default intensity
-        }
-
-        // Process ambient lighting in background
-        managerScope.launch(Dispatchers.Default) {
-            try {
-                // Convert drawable to bitmap for processing
-                val bitmap = drawableToBitmap(drawable)
-                if (bitmap == null) {
-                    Log.e(TAG, "Failed to convert drawable to bitmap for ambient lighting effect")
-                    return@launch
-                }
-
-                // Define how many horizontal segments to use for the ambient effect
-                val segmentCount = 8
-
-                // Create bitmaps for top and bottom letterbox areas
-                val topAmbientBitmap = Bitmap.createBitmap(bitmap.width, letterboxHeight, Bitmap.Config.ARGB_8888)
-                val bottomAmbientBitmap = Bitmap.createBitmap(bitmap.width, letterboxHeight, Bitmap.Config.ARGB_8888)
-
-                // Create canvases for drawing
-                val topCanvas = Canvas(topAmbientBitmap)
-                val bottomCanvas = Canvas(bottomAmbientBitmap)
-
-                // Fill with black initially
-                topCanvas.drawColor(Color.BLACK)
-                bottomCanvas.drawColor(Color.BLACK)
-
-                // Calculate segment width
-                val segmentWidth = bitmap.width / segmentCount
-
-                // Sample colors from each segment at the top and bottom edges of the image
-                for (i in 0 until segmentCount) {
-                    // Calculate sample area
-                    val startX = i * segmentWidth
-                    val endX = ((i + 1) * segmentWidth).coerceAtMost(bitmap.width)
-                    val sampleWidth = endX - startX
-
-                    // Top edge sampling height (from the top of the image)
-                    val topSampleHeight = (bitmap.height * 0.05).toInt().coerceAtLeast(1)
-                    // Bottom edge sampling height (from the bottom of the image)
-                    val bottomSampleHeight = (bitmap.height * 0.05).toInt().coerceAtLeast(1)
-
-                    // Extract and average the colors from the top edge
-                    val topColors = mutableListOf<Int>()
-                    for (x in startX until endX) {
-                        for (y in 0 until topSampleHeight) {
-                            topColors.add(bitmap.getPixel(x, y))
-                        }
-                    }
-                    val topAvgColor = averageColors(topColors)
-
-                    // Extract and average the colors from the bottom edge
-                    val bottomColors = mutableListOf<Int>()
-                    for (x in startX until endX) {
-                        for (y in (bitmap.height - bottomSampleHeight) until bitmap.height) {
-                            bottomColors.add(bitmap.getPixel(x, y))
-                        }
-                    }
-                    val bottomAvgColor = averageColors(bottomColors)
-
-                    // Create paint for the ambient light column
-                    val topPaint = Paint().apply {
-                        color = topAvgColor
-                        // Make the color more vibrant for ambient effect
-                        colorFilter = LightingColorFilter(
-                            Color.rgb(255, 255, 255), // multiply with white (no change)
-                            Color.rgb(20, 20, 20)     // add slight brightness
-                        )
-                        setShadowLayer(15f, 0f, 0f, topAvgColor) // Add glow
-                    }
-
-                    val bottomPaint = Paint().apply {
-                        color = bottomAvgColor
-                        // Make the color more vibrant for ambient effect
-                        colorFilter = LightingColorFilter(
-                            Color.rgb(255, 255, 255), // multiply with white (no change)
-                            Color.rgb(20, 20, 20)     // add slight brightness
-                        )
-                        setShadowLayer(15f, 0f, 0f, bottomAvgColor) // Add glow
-                    }
-
-                    // Create gradients that fade out toward the edges
-                    val topGradientShader = LinearGradient(
-                        0f, letterboxHeight.toFloat(),
-                        0f, 0f,
-                        intArrayOf(
-                            Color.argb(255, Color.red(topAvgColor), Color.green(topAvgColor), Color.blue(topAvgColor)),
-                            Color.argb(100, Color.red(topAvgColor), Color.green(topAvgColor), Color.blue(topAvgColor)),
-                            Color.argb(0, 0, 0, 0)
-                        ),
-                        floatArrayOf(0f, 0.6f, 1f),
-                        Shader.TileMode.CLAMP
-                    )
-
-                    val bottomGradientShader = LinearGradient(
-                        0f, 0f,
-                        0f, letterboxHeight.toFloat(),
-                        intArrayOf(
-                            Color.argb(255, Color.red(bottomAvgColor), Color.green(bottomAvgColor), Color.blue(bottomAvgColor)),
-                            Color.argb(100, Color.red(bottomAvgColor), Color.green(bottomAvgColor), Color.blue(bottomAvgColor)),
-                            Color.argb(0, 0, 0, 0)
-                        ),
-                        floatArrayOf(0f, 0.6f, 1f),
-                        Shader.TileMode.CLAMP
-                    )
-
-                    // Apply the gradients to the paints
-                    topPaint.shader = topGradientShader
-                    bottomPaint.shader = bottomGradientShader
-
-                    // Draw ambient lighting columns
-                    val columnRect = RectF(
-                        startX.toFloat(),
-                        0f,
-                        endX.toFloat(),
-                        letterboxHeight.toFloat()
-                    )
-
-                    // Draw with a slight blend mode to create the glow effect
-                    topPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_OVER)
-                    bottomPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_OVER)
-
-                    topCanvas.drawRect(columnRect, topPaint)
-                    bottomCanvas.drawRect(columnRect, bottomPaint)
-                }
-
-                // Add an additional horizontal gradient to soften the segments
-                val horizontalBlendPaint = Paint().apply {
-                    // Adjust the alpha by preference if desired
-                    alpha = 80 // Subtle blend, 0-255
-                    // Optional blur effect
-                    maskFilter = BlurMaskFilter(15f, BlurMaskFilter.Blur.NORMAL)
-                }
-
-                // Apply the horizontal blur/blend to soften segment transitions
-                topCanvas.drawBitmap(topAmbientBitmap, 0f, 0f, horizontalBlendPaint)
-                bottomCanvas.drawBitmap(bottomAmbientBitmap, 0f, 0f, horizontalBlendPaint)
-
-                // Apply on main thread
-                withContext(Dispatchers.Main) {
-                    if (isActive) {
-                        // Fade in the ambient effect
-                        topLetterboxView?.alpha = 0f
-                        bottomLetterboxView?.alpha = 0f
-                        topLetterboxView?.setImageBitmap(topAmbientBitmap)
-                        bottomLetterboxView?.setImageBitmap(bottomAmbientBitmap)
-
-                        // Animate the fade in
-                        topLetterboxView?.animate()?.alpha(1f)?.duration = 300
-                        bottomLetterboxView?.animate()?.alpha(1f)?.duration = 300
-                    }
-                }
-            } catch (e: Exception) {
-                if (e !is CancellationException) {
-                    Log.e(TAG, "Error applying ambient lighting effect", e)
-                    withContext(Dispatchers.Main) {
-                        if (isActive) {
-                            // Fallback to black in case of error
-                            topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-                            bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-                        }
-                    }
-                } else {
-                    Log.d(TAG, "Ambient lighting processing was cancelled")
-                }
-            }
         }
     }
 }
