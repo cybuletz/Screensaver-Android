@@ -424,7 +424,44 @@ class PhotoResizeManager @Inject constructor(
             // If we get here, the photo and container have the same ratio or letterboxing is too small
             Log.d(TAG, "Landscape photo in landscape container: no letterboxing needed or too small")
         }
+        // CASE 5: Portrait photo in portrait container
+        else if (!isLandscape && !isLandscapeContainer) {
+            // First try horizontal letterboxing (top/bottom) when the container is narrower relative to photo
+            if (photoRatio > containerRatio) {
+                // Photo is wider relative to its height than container - apply horizontal letterboxing
+                val scaledPhotoHeight = (containerWidth / photoRatio).toInt()
+                val letterboxHeight = (containerHeight - scaledPhotoHeight) / 2
 
+                Log.d(TAG, "Portrait photo in portrait container (photo relatively wider): letterboxHeight = $letterboxHeight")
+
+                if (letterboxHeight >= 1) {
+                    configureHorizontalLetterboxViews(letterboxHeight)
+                    applyLetterboxMode(drawable, letterboxHeight, LETTERBOX_ORIENTATION_HORIZONTAL)
+                    isLetterboxActive = true
+                    activeLetterboxOrientation = LETTERBOX_ORIENTATION_HORIZONTAL
+                    return true
+                }
+            }
+            // Otherwise try vertical letterboxing (left/right) if container is wider relative to photo
+            else if (photoRatio < containerRatio) {
+                // Photo is narrower relative to its height than container - apply vertical letterboxing
+                val scaledPhotoWidth = (containerHeight * photoRatio).toInt()
+                val letterboxWidth = (containerWidth - scaledPhotoWidth) / 2
+
+                Log.d(TAG, "Portrait photo in portrait container (photo relatively narrower): letterboxWidth = $letterboxWidth")
+
+                if (letterboxWidth >= 1) {
+                    configureVerticalLetterboxViews(letterboxWidth)
+                    applyLetterboxMode(drawable, letterboxWidth, LETTERBOX_ORIENTATION_VERTICAL)
+                    isLetterboxActive = true
+                    activeLetterboxOrientation = LETTERBOX_ORIENTATION_VERTICAL
+                    return true
+                }
+            }
+
+            // If we get here, the photo and container have the same ratio or letterboxing is too small
+            Log.d(TAG, "Portrait photo in portrait container: no letterboxing needed or too small")
+        }
         // If we get here, no letterboxing was applied
         Log.d(TAG, "No letterboxing condition met")
         hideAllLetterboxing()
