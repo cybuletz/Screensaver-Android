@@ -31,7 +31,20 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
-        <!-- Top Letterbox View - NEW -->
+        <!-- Left Letterbox View - NEW -->
+        <ImageView
+            android:id="@+id/leftLetterboxView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="@android:color/black"
+            android:scaleType="centerCrop"
+            android:visibility="gone"
+            android:contentDescription="@string/letterbox_left_description"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent" />
+
+        <!-- Top Letterbox View -->
         <ImageView
             android:id="@+id/topLetterboxView"
             android:layout_width="0dp"
@@ -44,6 +57,19 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
 
+        <!-- Right Letterbox View - NEW -->
+        <ImageView
+            android:id="@+id/rightLetterboxView"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="@android:color/black"
+            android:scaleType="centerCrop"
+            android:visibility="gone"
+            android:contentDescription="@string/letterbox_right_description"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
         <ImageView
             android:id="@+id/photoPreview"
             android:layout_width="0dp"
@@ -53,10 +79,10 @@
             android:contentDescription="@string/photo_preview_description"
             app:layout_constraintTop_toBottomOf="@id/topLetterboxView"
             app:layout_constraintBottom_toTopOf="@id/bottomLetterboxView"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            app:layout_constraintStart_toEndOf="@id/leftLetterboxView"
+            app:layout_constraintEnd_toStartOf="@id/rightLetterboxView"/>
 
-        <!-- Bottom Letterbox View - NEW -->
+        <!-- Bottom Letterbox View -->
         <ImageView
             android:id="@+id/bottomLetterboxView"
             android:layout_width="0dp"
@@ -79,9 +105,10 @@
             android:contentDescription="@string/photo_preview_transition_description"
             app:layout_constraintTop_toBottomOf="@id/topLetterboxView"
             app:layout_constraintBottom_toTopOf="@id/bottomLetterboxView"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+            app:layout_constraintStart_toEndOf="@id/leftLetterboxView"
+            app:layout_constraintEnd_toStartOf="@id/rightLetterboxView"/>
 
+        <!-- Rest of the content remains the same -->
         <androidx.constraintlayout.widget.ConstraintLayout
             android:id="@+id/widgets_layer"
             android:layout_width="0dp"
@@ -95,6 +122,9 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintVertical_bias="0.0" />
+
+        <!-- Remaining content: backgroundLoadingIndicator, initialSetupMessage, etc. -->
+        <!-- (keep the rest of the content unchanged) -->
 
         <FrameLayout
             android:id="@+id/backgroundLoadingIndicator"

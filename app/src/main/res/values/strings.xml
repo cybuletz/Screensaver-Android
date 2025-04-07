@@ -263,6 +263,8 @@
     <string name="letterbox_mode_blur">Blurred Photo</string>
     <string name="letterbox_mode_gradient">Photo Colors Gradient</string>
     <string name="letterbox_mode_mirror">Mirrored Photo Edges</string>
+    <string name="letterbox_left_description">Left letterbox area</string>
+    <string name="letterbox_right_description">Right letterbox area</string>
 
     <!-- Content descriptions -->
     <string name="photo_content_description">Photo</string>

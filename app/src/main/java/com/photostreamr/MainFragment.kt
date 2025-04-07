@@ -109,8 +109,9 @@ class MainFragment : Fragment() {
                 overlayMessageText = binding.overlayMessageText,
                 backgroundLoadingIndicator = binding.backgroundLoadingIndicator,
                 topLetterboxView = null,
-                bottomLetterboxView = null
-
+                bottomLetterboxView = null,
+                leftLetterboxView = null,
+                rightLetterboxView = null
             ),
             viewLifecycleOwner.lifecycleScope
         )

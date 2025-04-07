@@ -107,7 +107,9 @@ class PhotoDisplayManager @Inject constructor(
         val overlayMessageText: TextView?,
         val backgroundLoadingIndicator: View?,
         val topLetterboxView: ImageView?,
-        val bottomLetterboxView: ImageView?
+        val bottomLetterboxView: ImageView?,
+        val leftLetterboxView: ImageView?,
+        val rightLetterboxView: ImageView?
     )
 
     private var views: Views? = null
@@ -215,12 +217,15 @@ class PhotoDisplayManager @Inject constructor(
         this.lifecycleScope = scope
 
         // Initialize resize manager if the views are provided
-        if (views.topLetterboxView != null && views.bottomLetterboxView != null) {
+        if (views.topLetterboxView != null && views.bottomLetterboxView != null &&
+            views.leftLetterboxView != null && views.rightLetterboxView != null) {
             photoResizeManager.initialize(
                 views.primaryView,
                 views.overlayView,
                 views.topLetterboxView,
                 views.bottomLetterboxView,
+                views.leftLetterboxView,     // New
+                views.rightLetterboxView,    // New
                 views.container
             )
 

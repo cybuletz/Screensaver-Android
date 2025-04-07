@@ -960,7 +960,9 @@ class MainActivity : AppCompatActivity() {
                     overlayMessageText = binding.overlayMessageText,
                     backgroundLoadingIndicator = binding.backgroundLoadingIndicator,
                     topLetterboxView = binding.topLetterboxView,
-                    bottomLetterboxView = binding.bottomLetterboxView
+                    bottomLetterboxView = binding.bottomLetterboxView,
+                    leftLetterboxView = binding.leftLetterboxView,
+                    rightLetterboxView = binding.rightLetterboxView
                 )
 
                 // Initialize PhotoDisplayManager
@@ -1165,7 +1167,9 @@ class MainActivity : AppCompatActivity() {
                             overlayMessageText = binding.overlayMessageText,
                             backgroundLoadingIndicator = binding.backgroundLoadingIndicator,
                             topLetterboxView = binding.topLetterboxView,
-                            bottomLetterboxView = binding.bottomLetterboxView
+                            bottomLetterboxView = binding.bottomLetterboxView,
+                            leftLetterboxView = binding.leftLetterboxView,
+                            rightLetterboxView = binding.rightLetterboxView
                         )
 
                         // Re-initialize PhotoDisplayManager
