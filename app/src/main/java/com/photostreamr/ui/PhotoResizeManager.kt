@@ -43,9 +43,10 @@ class PhotoResizeManager @Inject constructor(
         // Letterbox fill modes
         const val LETTERBOX_MODE_BLACK = "black"
         const val LETTERBOX_MODE_BLUR = "blur"
-        const val LETTERBOX_MODE_GRADIENT = "gradient"
+        // Removed the gradient option
         const val LETTERBOX_MODE_MIRROR = "mirror"
         const val LETTERBOX_MODE_AMBIENT = "ambient"
+        const val LETTERBOX_MODE_AMBIENT_CLOUDS = "ambient_clouds"
 
         // Default values
         const val DEFAULT_DISPLAY_MODE = DISPLAY_MODE_FILL
@@ -55,13 +56,11 @@ class PhotoResizeManager @Inject constructor(
         const val PREF_KEY_PHOTO_SCALE = "photo_scale"
         const val PREF_KEY_LETTERBOX_MODE = "letterbox_mode"
         const val PREF_KEY_BLUR_INTENSITY = "letterbox_blur_intensity"
-        const val PREF_KEY_GRADIENT_OPACITY = "letterbox_gradient_opacity"
+        // Removed the gradient opacity preference
         const val PREF_KEY_AMBIENT_INTENSITY = "letterbox_ambient_intensity"
-
 
         // Constants for effects
         private const val DEFAULT_BLUR_RADIUS = 20f
-        private const val DEFAULT_GRADIENT_OPACITY = 0.7f
         private const val MAX_BLUR_RADIUS = 25f
     }
 
@@ -319,7 +318,7 @@ class PhotoResizeManager @Inject constructor(
      * Apply a completely random, amorphous cloud-like ambient effect
      * No refreshing - generate once and keep it
      */
-    private fun applyAmbientLetterbox(drawable: Drawable, letterboxHeight: Int) {
+    private fun applyAmbientCloudsLetterbox(drawable: Drawable, letterboxHeight: Int) {
         // Check if we already have ambient bitmaps for this drawable
         val cacheKey = System.identityHashCode(drawable).toString()
 
@@ -399,54 +398,6 @@ class PhotoResizeManager @Inject constructor(
                     Log.d(TAG, "Ambient lighting processing was cancelled")
                 }
             }
-        }
-    }
-
-    /**
-     * Cross-fade to new drawable to prevent flickering
-     */
-    private fun crossfadeLetterboxDrawable(view: ImageView?, newBitmap: Bitmap) {
-        if (view == null) return
-
-        // If the view already has a bitmap, do a smooth crossfade
-        if (view.drawable is BitmapDrawable) {
-            // Create new ImageView with the new bitmap to fade in
-            val tempImageView = ImageView(context).apply {
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    view.height
-                )
-                scaleType = ImageView.ScaleType.FIT_XY
-                setImageBitmap(newBitmap)
-                alpha = 0f
-            }
-
-            // Add temp view to the parent
-            (view.parent as? ViewGroup)?.addView(tempImageView)
-
-            // Position temp view exactly over the original
-            tempImageView.y = view.y
-
-            // Fade in the new view
-            tempImageView.animate()
-                .alpha(1f)
-                .setDuration(300)
-                .setListener(object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        // When fade completes, update the original view and remove the temp
-                        view.setImageBitmap(newBitmap)
-                        (tempImageView.parent as? ViewGroup)?.removeView(tempImageView)
-                    }
-                })
-                .start()
-        } else {
-            // For initial setup, just set the bitmap with a fade
-            view.alpha = 0f
-            view.setImageBitmap(newBitmap)
-            view.animate()
-                .alpha(1f)
-                .setDuration(300)
-                .start()
         }
     }
 
@@ -624,6 +575,294 @@ class PhotoResizeManager @Inject constructor(
         return Color.HSVToColor(alpha, hsv)
     }
 
+    // Completely redesigned ambient columns letterbox effect to eliminate all stripes
+    private fun applyAmbientColumnsLetterbox(drawable: Drawable, letterboxHeight: Int) {
+        // Start with dark gray placeholder
+        topLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 20, 20, 20)))
+        bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 20, 20, 20)))
+
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val ambientIntensity = try {
+            prefs.getInt(PREF_KEY_AMBIENT_INTENSITY, 70) / 100f
+        } catch (e: ClassCastException) {
+            0.7f // Default intensity
+        }
+
+        // Process ambient lighting in background
+        managerScope.launch(Dispatchers.Default) {
+            try {
+                // Convert drawable to bitmap for processing
+                val bitmap = drawableToBitmap(drawable)
+                if (bitmap == null) {
+                    Log.e(TAG, "Failed to convert drawable to bitmap for ambient lighting effect")
+                    return@launch
+                }
+
+                // Create bitmaps for top and bottom letterbox areas at double width for smoother blur
+                val scaleFactor = 2.0f
+                val blurWidth = (bitmap.width * scaleFactor).toInt()
+                val blurHeight = (letterboxHeight * 1.5).toInt()
+
+                val topAmbientBitmap = Bitmap.createBitmap(blurWidth, blurHeight, Bitmap.Config.ARGB_8888)
+                val bottomAmbientBitmap = Bitmap.createBitmap(blurWidth, blurHeight, Bitmap.Config.ARGB_8888)
+
+                // Create canvases for drawing
+                val topCanvas = Canvas(topAmbientBitmap)
+                val bottomCanvas = Canvas(bottomAmbientBitmap)
+
+                // Fill with black initially
+                topCanvas.drawColor(Color.BLACK)
+                bottomCanvas.drawColor(Color.BLACK)
+
+                // Sample colors from the edge of the image
+                val topColors = sampleEdgeColors(bitmap, true, 50)
+                val bottomColors = sampleEdgeColors(bitmap, false, 50)
+
+                // Create a much smoother gradient by sampling more points and using path-based gradients
+
+                // For top edge
+                val topGradientBitmap = createSmoothColorGradient(
+                    blurWidth,
+                    blurHeight,
+                    topColors,
+                    true
+                )
+                topCanvas.drawBitmap(topGradientBitmap, 0f, 0f, null)
+                topGradientBitmap.recycle()
+
+                // For bottom edge
+                val bottomGradientBitmap = createSmoothColorGradient(
+                    blurWidth,
+                    blurHeight,
+                    bottomColors,
+                    false
+                )
+                bottomCanvas.drawBitmap(bottomGradientBitmap, 0f, 0f, null)
+                bottomGradientBitmap.recycle()
+
+                // Apply extreme gaussian blur to eliminate any remaining hard edges
+                val topBlurred = applyMultipassBlur(topAmbientBitmap, 25f, 3)
+                val bottomBlurred = applyMultipassBlur(bottomAmbientBitmap, 25f, 3)
+
+                // Scale back down to original size
+                val finalTopBitmap = Bitmap.createScaledBitmap(
+                    topBlurred ?: topAmbientBitmap,
+                    bitmap.width,
+                    letterboxHeight,
+                    true
+                )
+
+                val finalBottomBitmap = Bitmap.createScaledBitmap(
+                    bottomBlurred ?: bottomAmbientBitmap,
+                    bitmap.width,
+                    letterboxHeight,
+                    true
+                )
+
+                // Recycle intermediate bitmaps
+                topAmbientBitmap.recycle()
+                bottomAmbientBitmap.recycle()
+                if (topBlurred != null && topBlurred != topAmbientBitmap) topBlurred.recycle()
+                if (bottomBlurred != null && bottomBlurred != bottomAmbientBitmap) bottomBlurred.recycle()
+
+                // Apply on main thread
+                withContext(Dispatchers.Main) {
+                    if (isActive) {
+                        topLetterboxView?.setImageBitmap(finalTopBitmap)
+                        bottomLetterboxView?.setImageBitmap(finalBottomBitmap)
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Error applying ambient lighting effect", e)
+                    withContext(Dispatchers.Main) {
+                        if (isActive) {
+                            // Fallback to dark gray in case of error
+                            topLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 20, 20, 20)))
+                            bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 20, 20, 20)))
+                        }
+                    }
+                } else {
+                    Log.d(TAG, "Ambient lighting processing was cancelled")
+                }
+            }
+        }
+    }
+
+    // Sample colors evenly across the edge of an image
+    private fun sampleEdgeColors(bitmap: Bitmap, isTopEdge: Boolean, sampleCount: Int): List<Pair<Float, Int>> {
+        val result = mutableListOf<Pair<Float, Int>>()
+        val width = bitmap.width
+
+        // Determine sampling area height
+        val sampleAreaHeight = (bitmap.height * 0.08).toInt().coerceAtLeast(2)
+        val startY = if (isTopEdge) 0 else bitmap.height - sampleAreaHeight
+        val endY = if (isTopEdge) sampleAreaHeight else bitmap.height
+
+        // Sample at regular intervals
+        for (i in 0 until sampleCount) {
+            val normalizedX = i / (sampleCount - 1f)
+            val sampleX = (normalizedX * (width - 1)).toInt()
+
+            // Average color from a small patch around this point
+            val patchSize = 3
+            val sampleColors = mutableListOf<Int>()
+
+            for (y in startY until endY) {
+                for (x in (sampleX - patchSize).coerceAtLeast(0)..(sampleX + patchSize).coerceAtMost(width - 1)) {
+                    sampleColors.add(bitmap.getPixel(x, y))
+                }
+            }
+
+            val avgColor = averageColors(sampleColors)
+            val enhancedColor = enhanceColor(avgColor)
+            result.add(Pair(normalizedX, enhancedColor))
+        }
+
+        return result
+    }
+
+    // Create an ultra-smooth color gradient from sampled points
+    private fun createSmoothColorGradient(width: Int, height: Int, colorPoints: List<Pair<Float, Int>>, isTopEdge: Boolean): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // Fill with black initially
+        canvas.drawColor(Color.BLACK)
+
+        // First pass: Create smooth color bands with wide overlap
+        for (i in 0 until colorPoints.size - 1) {
+            val (startX, startColor) = colorPoints[i]
+            val (endX, endColor) = colorPoints[i + 1]
+
+            // Convert normalized coordinates to pixel positions
+            val x1 = startX * width
+            val x2 = endX * width
+
+            // Create a wide linear gradient between points
+            val gradient = LinearGradient(
+                x1, 0f,
+                x2, 0f,
+                startColor,
+                endColor,
+                Shader.TileMode.CLAMP
+            )
+
+            val paint = Paint().apply {
+                shader = gradient
+                isAntiAlias = true
+            }
+
+            // Draw a rectangle covering this segment
+            canvas.drawRect(x1, 0f, x2, height.toFloat(), paint)
+        }
+
+        // Second pass: Apply vertical gradient for depth
+        val verticalGradient = LinearGradient(
+            0f, if (isTopEdge) height.toFloat() else 0f,
+            0f, if (isTopEdge) 0f else height.toFloat(),
+            intArrayOf(
+                Color.argb(255, 0, 0, 0),  // Full black at one end
+                Color.argb(0, 0, 0, 0)     // Transparent at the other end
+            ),
+            floatArrayOf(0f, 1f),
+            Shader.TileMode.CLAMP
+        )
+
+        val verticalPaint = Paint().apply {
+            shader = verticalGradient
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+        }
+
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), verticalPaint)
+
+        return bitmap
+    }
+
+    // Multipass blur for extremely smooth gradients
+    private fun applyMultipassBlur(bitmap: Bitmap, radius: Float, passes: Int): Bitmap? {
+        try {
+            var currentBitmap = bitmap
+            var resultBitmap: Bitmap? = null
+
+            // Apply multiple blur passes with diminishing radius
+            for (i in 0 until passes) {
+                val passRadius = radius * (1f - (i * 0.2f)) // Gradually reduce radius in later passes
+
+                val blurredBitmap = Bitmap.createBitmap(
+                    currentBitmap.width,
+                    currentBitmap.height,
+                    Bitmap.Config.ARGB_8888
+                )
+
+                val canvas = Canvas(blurredBitmap)
+                val paint = Paint()
+                paint.isAntiAlias = true
+                paint.maskFilter = BlurMaskFilter(passRadius, BlurMaskFilter.Blur.NORMAL)
+                canvas.drawBitmap(currentBitmap, 0f, 0f, paint)
+
+                // If we created an intermediate bitmap, recycle it
+                if (resultBitmap != null && resultBitmap != bitmap) {
+                    resultBitmap.recycle()
+                }
+
+                resultBitmap = blurredBitmap
+                currentBitmap = blurredBitmap
+            }
+
+            return resultBitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying multipass blur", e)
+            return null
+        }
+    }
+
+    // Enhance color to make it more visible
+    private fun enhanceColor(color: Int): Int {
+        val hsv = FloatArray(3)
+        Color.colorToHSV(color, hsv)
+
+        // Boost saturation by 40%
+        hsv[1] = (hsv[1] * 1.4f).coerceAtMost(1.0f)
+
+        // Boost brightness by 30%
+        hsv[2] = (hsv[2] * 1.3f).coerceAtMost(1.0f)
+
+        // Ensure alpha is high enough for visibility
+        return Color.HSVToColor(200, hsv)
+    }
+
+    // Simple and reliable blur function that works consistently
+    private fun simpleBlur(source: Bitmap, radius: Float): Bitmap? {
+        try {
+            val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(output)
+            val paint = Paint()
+            paint.isAntiAlias = true
+
+            // Apply two-pass blur for more even results
+            // First horizontal blur
+            paint.maskFilter = BlurMaskFilter(radius, BlurMaskFilter.Blur.NORMAL)
+            canvas.drawBitmap(source, 0f, 0f, paint)
+
+            // Second blur pass with different radius
+            val secondBlurPaint = Paint()
+            secondBlurPaint.isAntiAlias = true
+            secondBlurPaint.maskFilter = BlurMaskFilter(radius * 0.7f, BlurMaskFilter.Blur.NORMAL)
+
+            // Create a temporary bitmap for the second pass
+            val tempBitmap = Bitmap.createBitmap(output)
+            val tempCanvas = Canvas(output)
+            tempCanvas.drawBitmap(tempBitmap, 0f, 0f, secondBlurPaint)
+            tempBitmap.recycle()
+
+            return output
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying simple blur", e)
+            return null
+        }
+    }
+
     private fun applyLetterboxMode(drawable: Drawable, letterboxHeight: Int) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val mode = prefs.getString(PREF_KEY_LETTERBOX_MODE, DEFAULT_LETTERBOX_MODE) ?: DEFAULT_LETTERBOX_MODE
@@ -639,10 +878,6 @@ class PhotoResizeManager @Inject constructor(
             LETTERBOX_MODE_BLACK -> {
                 topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
                 bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-            }
-            LETTERBOX_MODE_GRADIENT -> {
-                // Apply a default gradient immediately
-                createDefaultGradient()
             }
             LETTERBOX_MODE_BLUR -> {
                 // Start with dark gray for the blur placeholder
@@ -660,6 +895,11 @@ class PhotoResizeManager @Inject constructor(
                 topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
                 bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
             }
+            LETTERBOX_MODE_AMBIENT_CLOUDS -> {
+                // Start with black for ambient clouds effect
+                topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+                bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+            }
             else -> {
                 // Fallback for unknown modes
                 topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
@@ -672,15 +912,6 @@ class PhotoResizeManager @Inject constructor(
             LETTERBOX_MODE_BLACK -> {
                 // Already applied
             }
-            LETTERBOX_MODE_GRADIENT -> {
-                // Apply photo-edge based gradient
-                try {
-                    applyGradientLetterbox(drawable)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error applying immediate gradient effect", e)
-                    createDefaultGradient() // Fallback
-                }
-            }
             LETTERBOX_MODE_BLUR -> {
                 applyBlurLetterbox(drawable, letterboxHeight)
             }
@@ -688,7 +919,10 @@ class PhotoResizeManager @Inject constructor(
                 applyMirrorLetterbox(drawable, letterboxHeight)
             }
             LETTERBOX_MODE_AMBIENT -> {
-                applyAmbientLetterbox(drawable, letterboxHeight)
+                applyAmbientColumnsLetterbox(drawable, letterboxHeight)
+            }
+            LETTERBOX_MODE_AMBIENT_CLOUDS -> {
+                applyAmbientCloudsLetterbox(drawable, letterboxHeight)
             }
         }
     }
@@ -1017,315 +1251,33 @@ class PhotoResizeManager @Inject constructor(
         }
     }
 
-
-
-
     /**
-     * Create a default gradient with colors that blend naturally with photos
-     */
-    private fun createDefaultGradient() {
-        try {
-            // Create natural-looking default gradient colors
-            val topColors = intArrayOf(
-                Color.parseColor("#000000"),  // Black (screen edge)
-                Color.parseColor("#1A1A1A"),  // Very dark gray
-                Color.parseColor("#333333")   // Dark gray (photo edge)
-            )
-
-            val bottomColors = intArrayOf(
-                Color.parseColor("#000000"),  // Black (screen edge)
-                Color.parseColor("#1A1A1A"),  // Very dark gray
-                Color.parseColor("#333333")   // Dark gray (photo edge)
-            )
-
-            Log.d(TAG, "Creating default photo-edge style gradient")
-
-            // Apply using the same method as the photo-based gradient
-            applyPhotoEdgeGradient(arrayOf(topColors, bottomColors), false, false)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating default gradient", e)
-            // Absolute fallback
-            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
-            mainHandler.post {
-                topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-                bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-            }
-        }
-    }
-
-    /**
-     * Apply a letterbox gradient derived from the edges of the photo
-     * This creates the illusion that the letterbox is an extension of the photo
-     */
-    private fun applyGradientLetterbox(drawable: Drawable) {
-        try {
-            // Generate a cache key for the drawable
-            val cacheKey = System.identityHashCode(drawable).toString()
-
-            Log.d(TAG, "Starting photo-edge gradient for drawable: $cacheKey")
-
-            // Use existing cached colors if available
-            if (cachedPaletteColors != null && lastPaletteCacheKey == cacheKey) {
-                Log.d(TAG, "Using cached photo-edge colors")
-                applyPhotoEdgeGradient(cachedPaletteColors!!, true, false)
-                return
-            }
-
-            // Clear cache if we have a new image
-            if (cacheKey != lastPaletteCacheKey) {
-                cachedPaletteColors = null
-                lastPaletteCacheKey = cacheKey
-            }
-
-            // Create a default gradient immediately
-            createDefaultGradient()
-
-            // Convert drawable to bitmap for processing
-            val bitmap = drawableToBitmap(drawable)
-            if (bitmap == null) {
-                Log.e(TAG, "Failed to convert drawable to bitmap for edge color extraction")
-                return
-            }
-
-            // Extract colors directly from the bitmap edges
-            val edgeColors = extractPhotoEdgeColors(bitmap)
-
-            // Save for reuse
-            cachedPaletteColors = edgeColors
-            lastPaletteCacheKey = cacheKey
-
-            // Apply the edge-based gradient
-            applyPhotoEdgeGradient(edgeColors, true, true)
-
-            Log.d(TAG, "Applied photo-edge based gradient")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in applyGradientLetterbox", e)
-            createDefaultGradient()  // Fallback
-        }
-    }
-
-    /**
-     * Extract colors from the top and bottom edges of the photo
-     * Returns an array with [topEdgeColors, bottomEdgeColors]
-     */
-    private fun extractPhotoEdgeColors(bitmap: Bitmap): Array<IntArray> {
-        // Define how many pixels from the edge to sample
-        val edgeSampleWidth = 20
-        val numSamples = 5
-
-        try {
-            val width = bitmap.width
-            val height = bitmap.height
-
-            // Calculate optimal sample positions along the width
-            val samplePositions = Array(numSamples) { index ->
-                (width * (index + 1) / (numSamples + 1))
-            }
-
-            // Arrays to hold sampled colors
-            val topColors = IntArray(numSamples)
-            val bottomColors = IntArray(numSamples)
-
-            // Sample colors from the top edge at various positions
-            for (i in 0 until numSamples) {
-                val x = samplePositions[i]
-
-                // Sample from a small area rather than just a pixel
-                val topSampleColors = mutableListOf<Int>()
-                val bottomSampleColors = mutableListOf<Int>()
-
-                // Sample a few rows at the edge
-                for (row in 0 until edgeSampleWidth) {
-                    // Sample the top edge
-                    if (row < height) {
-                        topSampleColors.add(bitmap.getPixel(x, row))
-                    }
-
-                    // Sample the bottom edge
-                    val bottomRow = height - 1 - row
-                    if (bottomRow >= 0) {
-                        bottomSampleColors.add(bitmap.getPixel(x, bottomRow))
-                    }
-                }
-
-                // Calculate the average color for this sample
-                topColors[i] = averageColors(topSampleColors)
-                bottomColors[i] = averageColors(bottomSampleColors)
-            }
-
-            // Enhance the colors to make the gradient more vibrant
-            enhanceColorArray(topColors)
-            enhanceColorArray(bottomColors)
-
-            return arrayOf(topColors, bottomColors)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error sampling edge colors", e)
-            // Return a default array of colors if sampling fails
-            return arrayOf(
-                intArrayOf(Color.BLACK, Color.DKGRAY, Color.GRAY),
-                intArrayOf(Color.BLACK, Color.DKGRAY, Color.GRAY)
-            )
-        }
-    }
-
-    /**
-     * Calculate the average of a list of colors
+     * Calculate the average color from a list of colors
      */
     private fun averageColors(colors: List<Int>): Int {
-        if (colors.isEmpty()) return Color.BLACK
+        if (colors.isEmpty()) {
+            return Color.BLACK
+        }
 
-        var sumR = 0
-        var sumG = 0
-        var sumB = 0
+        var redSum = 0
+        var greenSum = 0
+        var blueSum = 0
+        var alphaSum = 0
 
         for (color in colors) {
-            sumR += Color.red(color)
-            sumG += Color.green(color)
-            sumB += Color.blue(color)
+            redSum += Color.red(color)
+            greenSum += Color.green(color)
+            blueSum += Color.blue(color)
+            alphaSum += Color.alpha(color)
         }
 
-        val avgR = sumR / colors.size
-        val avgG = sumG / colors.size
-        val avgB = sumB / colors.size
-
-        return Color.rgb(avgR, avgG, avgB)
+        val count = colors.size
+        return Color.argb(
+            alphaSum / count,
+            redSum / count,
+            greenSum / count,
+            blueSum / count
+        )
     }
 
-    /**
-     * Enhance a color array to make gradients more visually appealing
-     * This adjusts saturation and ensures a good transition
-     */
-    private fun enhanceColorArray(colors: IntArray) {
-        for (i in colors.indices) {
-            val color = colors[i]
-
-            // Convert to HSV for easier manipulation
-            val hsv = FloatArray(3)
-            Color.colorToHSV(color, hsv)
-
-            // Enhance saturation slightly (0.0-1.0 scale)
-            hsv[1] = (hsv[1] * 1.2f).coerceAtMost(1.0f)
-
-            // Ensure value (brightness) is within a good range for gradients
-            if (i == 0) {
-                // First color (edge of screen) should be darker
-                hsv[2] = (hsv[2] * 0.7f).coerceIn(0.1f, 0.5f)
-            } else {
-                // Inner colors (closer to photo) should maintain brightness
-                hsv[2] = hsv[2].coerceIn(0.3f, 0.8f)
-            }
-
-            // Store enhanced color back in array
-            colors[i] = Color.HSVToColor(hsv)
-        }
-    }
-
-    /**
-     * Apply the photo edge gradient to the letterbox views
-     */
-    private fun applyPhotoEdgeGradient(edgeColors: Array<IntArray>, smoothTransition: Boolean, isNewPhoto: Boolean) {
-        try {
-            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val opacity = try {
-                prefs.getFloat(PREF_KEY_GRADIENT_OPACITY, 0.85f)
-            } catch (e: Exception) {
-                0.85f  // Default opacity
-            }
-
-            Log.d(TAG, "Applying photo-edge gradient with opacity: $opacity")
-
-            // Extract top and bottom edge colors
-            val topEdgeColors = edgeColors[0]
-            val bottomEdgeColors = edgeColors[1]
-
-            // Apply opacity to the colors
-            val topColorsWithOpacity = topEdgeColors.map { color ->
-                Color.argb(
-                    (opacity * 255).toInt().coerceIn(0, 255),
-                    Color.red(color),
-                    Color.green(color),
-                    Color.blue(color)
-                )
-            }.toIntArray()
-
-            val bottomColorsWithOpacity = bottomEdgeColors.map { color ->
-                Color.argb(
-                    (opacity * 255).toInt().coerceIn(0, 255),
-                    Color.red(color),
-                    Color.green(color),
-                    Color.blue(color)
-                )
-            }.toIntArray()
-
-            // Create top gradient (extending from the top edge of the photo)
-            val topGradient = GradientDrawable(
-                GradientDrawable.Orientation.BOTTOM_TOP,  // From photo to screen edge
-                topColorsWithOpacity
-            )
-
-            // Create bottom gradient (extending from the bottom edge of the photo)
-            val bottomGradient = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,  // From photo to screen edge
-                bottomColorsWithOpacity
-            )
-
-            // Apply gradients to the views on the main thread
-            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
-            mainHandler.post {
-                try {
-                    if (smoothTransition && isNewPhoto) {
-                        // For new photos, crossfade to the new gradient
-                        crossfadeToNewGradient(topLetterboxView, topGradient)
-                        crossfadeToNewGradient(bottomLetterboxView, bottomGradient)
-                    } else {
-                        // Direct application
-                        topLetterboxView?.setImageDrawable(topGradient)
-                        bottomLetterboxView?.setImageDrawable(bottomGradient)
-                    }
-                    Log.d(TAG, "Photo-edge gradient applied successfully")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error setting photo-edge gradient drawable", e)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in applyPhotoEdgeGradient", e)
-            // Fallback
-            createDefaultGradient()
-        }
-    }
-
-    /**
-     * Crossfade to a new gradient drawable
-     */
-    private fun crossfadeToNewGradient(view: ImageView?, newGradient: Drawable) {
-        // Skip if view isn't available
-        if (view == null) return
-
-        try {
-            // Create a fade-out animation for the current drawable
-            val fadeOut = ObjectAnimator.ofFloat(view, "alpha", 1f, 0f)
-            fadeOut.duration = 150
-
-            // Create a fade-in animation for the new drawable
-            val fadeIn = ObjectAnimator.ofFloat(view, "alpha", 0f, 1f)
-            fadeIn.duration = 200
-
-            // Set up the sequence
-            fadeOut.addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    // Change the drawable when fully faded out
-                    view.setImageDrawable(newGradient)
-                    // Start fade in
-                    fadeIn.start()
-                }
-            })
-
-            // Start the animation sequence
-            fadeOut.start()
-        } catch (e: Exception) {
-            // If animation fails, just set the drawable directly
-            Log.e(TAG, "Crossfade animation failed, applying gradient directly", e)
-            view.setImageDrawable(newGradient)
-        }
-    }
 }
