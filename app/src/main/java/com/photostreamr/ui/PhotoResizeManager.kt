@@ -67,6 +67,10 @@ class PhotoResizeManager @Inject constructor(
     private var bottomLetterboxView: ImageView? = null
     private var containerView: View? = null
 
+    // Cache for blurred edge bitmaps
+    private var cachedBlurredTopBitmap: Bitmap? = null
+    private var cachedBlurredBottomBitmap: Bitmap? = null
+
     private var lastPaletteCacheKey: String? = null
 
     // Job for coroutine management
@@ -129,6 +133,12 @@ class PhotoResizeManager @Inject constructor(
     private fun recycleBitmaps() {
         cachedBlurredBitmap?.recycle()
         cachedBlurredBitmap = null
+
+        cachedBlurredTopBitmap?.recycle()
+        cachedBlurredTopBitmap = null
+
+        cachedBlurredBottomBitmap?.recycle()
+        cachedBlurredBottomBitmap = null
 
         cachedMirrorTopBitmap?.recycle()
         cachedMirrorTopBitmap = null
@@ -311,8 +321,8 @@ class PhotoResizeManager @Inject constructor(
                 createDefaultGradient()
             }
             LETTERBOX_MODE_BLUR -> {
-                // Start with gray background
-                val darkGray = ColorDrawable(Color.DKGRAY)
+                // Start with dark gray for the blur placeholder
+                val darkGray = ColorDrawable(Color.parseColor("#222222"))
                 topLetterboxView?.setImageDrawable(darkGray)
                 bottomLetterboxView?.setImageDrawable(darkGray)
             }
@@ -352,13 +362,13 @@ class PhotoResizeManager @Inject constructor(
     }
 
     /**
-     * Apply a blurred version of the photo to the letterbox areas
+     * Apply a blurred version of the photo edges to the letterbox areas
      */
     private fun applyBlurLetterbox(drawable: Drawable, letterboxHeight: Int) {
-        // Use existing blurred bitmap if available
-        if (cachedBlurredBitmap != null) {
-            topLetterboxView?.setImageBitmap(cachedBlurredBitmap)
-            bottomLetterboxView?.setImageBitmap(cachedBlurredBitmap)
+        // Use existing blurred edge bitmaps if available
+        if (cachedBlurredTopBitmap != null && cachedBlurredBottomBitmap != null) {
+            topLetterboxView?.setImageBitmap(cachedBlurredTopBitmap)
+            bottomLetterboxView?.setImageBitmap(cachedBlurredBottomBitmap)
             return
         }
 
@@ -381,46 +391,177 @@ class PhotoResizeManager @Inject constructor(
                 // Convert drawable to bitmap for processing
                 val bitmap = drawableToBitmap(drawable)
                 if (bitmap == null) {
-                    Log.e(TAG, "Failed to convert drawable to bitmap for blur effect")
+                    Log.e(TAG, "Failed to convert drawable to bitmap for edge blur effect")
                     return@launch
                 }
 
-                // Scale down for better performance
-                val scaleFactor = 0.2f
-                val width = (bitmap.width * scaleFactor).toInt().coerceAtLeast(1)
-                val height = (bitmap.height * scaleFactor).toInt().coerceAtLeast(1)
+                // Calculate the height of the edge to extract
+                // We'll extract a bit more than we need for better blending
+                val edgeExtractionHeight = (letterboxHeight * 1.1).toInt().coerceAtMost(bitmap.height / 3)
 
-                val scaledBitmap = Bitmap.createScaledBitmap(bitmap, width, height, true)
+                // Calculate the scale factor to use for blurring efficiency
+                val scaleFactor = 0.5f
+
+                // Create top edge bitmap
+                val topEdgeBitmap = Bitmap.createBitmap(
+                    bitmap,
+                    0,
+                    0, // Start from the very top
+                    bitmap.width,
+                    edgeExtractionHeight.coerceAtMost(bitmap.height)
+                )
+
+                // Scale down for better performance
+                val scaledTopBitmap = Bitmap.createScaledBitmap(
+                    topEdgeBitmap,
+                    (bitmap.width * scaleFactor).toInt().coerceAtLeast(1),
+                    (edgeExtractionHeight * scaleFactor).toInt().coerceAtLeast(1),
+                    true
+                )
+
+                // Recycle intermediate bitmap
+                topEdgeBitmap.recycle()
+
+                // Create bottom edge bitmap
+                val bottomEdgeBitmap = Bitmap.createBitmap(
+                    bitmap,
+                    0,
+                    (bitmap.height - edgeExtractionHeight).coerceAtLeast(0), // Start from the bottom
+                    bitmap.width,
+                    edgeExtractionHeight.coerceAtMost(bitmap.height)
+                )
+
+                // Scale down for better performance
+                val scaledBottomBitmap = Bitmap.createScaledBitmap(
+                    bottomEdgeBitmap,
+                    (bitmap.width * scaleFactor).toInt().coerceAtLeast(1),
+                    (edgeExtractionHeight * scaleFactor).toInt().coerceAtLeast(1),
+                    true
+                )
+
+                // Recycle intermediate bitmap
+                bottomEdgeBitmap.recycle()
 
                 // Apply blur effect
                 val blurRadius = blurIntensity.coerceAtMost(MAX_BLUR_RADIUS)
-                val blurredBitmap = applyRenderScriptBlur(scaledBitmap, blurRadius)
 
-                if (blurredBitmap == null) {
-                    Log.e(TAG, "Failed to create blurred bitmap")
+                // Blur the top edge
+                val blurredTopBitmap = applyRenderScriptBlur(scaledTopBitmap, blurRadius)
+
+                // Blur the bottom edge
+                val blurredBottomBitmap = applyRenderScriptBlur(scaledBottomBitmap, blurRadius)
+
+                // Recycle scaled bitmaps
+                scaledTopBitmap.recycle()
+                scaledBottomBitmap.recycle()
+
+                if (blurredTopBitmap == null || blurredBottomBitmap == null) {
+                    Log.e(TAG, "Failed to create blurred edge bitmaps")
                     return@launch
                 }
 
-                // Save the blurred bitmap for reuse
-                cachedBlurredBitmap = blurredBitmap
+                // Create the final top bitmap - we need to flip the top edge and apply gradient fade
+                val finalTopBitmap = createExtendedEdgeBitmap(blurredTopBitmap, letterboxHeight, true)
+
+                // Create the final bottom bitmap - we need to flip the bottom edge and apply gradient fade
+                val finalBottomBitmap = createExtendedEdgeBitmap(blurredBottomBitmap, letterboxHeight, false)
+
+                // Recycle intermediate bitmaps
+                blurredTopBitmap.recycle()
+                blurredBottomBitmap.recycle()
+
+                if (finalTopBitmap == null || finalBottomBitmap == null) {
+                    Log.e(TAG, "Failed to create final edge bitmaps")
+                    return@launch
+                }
+
+                // Save the blurred bitmaps for reuse
+                cachedBlurredTopBitmap = finalTopBitmap
+                cachedBlurredBottomBitmap = finalBottomBitmap
 
                 // Apply on main thread
                 withContext(Dispatchers.Main) {
                     if (isActive) {
-                        topLetterboxView?.setImageBitmap(blurredBitmap)
-                        bottomLetterboxView?.setImageBitmap(blurredBitmap)
+                        topLetterboxView?.setImageBitmap(finalTopBitmap)
+                        bottomLetterboxView?.setImageBitmap(finalBottomBitmap)
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error applying blur effect", e)
-                withContext(Dispatchers.Main) {
-                    if (isActive) {
-                        // Fallback to black in case of error
-                        topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-                        bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Error applying edge blur effect", e)
+                    withContext(Dispatchers.Main) {
+                        if (isActive) {
+                            // Fallback to black in case of error
+                            topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+                            bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+                        }
                     }
+                } else {
+                    Log.d(TAG, "Edge blur processing was cancelled")
                 }
             }
+        }
+    }
+
+    /**
+     * Create a bitmap that appears to extend the edge of the photo into the letterbox
+     * This will flip the edge and apply a gradient fade
+     */
+    private fun createExtendedEdgeBitmap(edgeBitmap: Bitmap, targetHeight: Int, isTop: Boolean): Bitmap? {
+        try {
+            val width = edgeBitmap.width
+            val edgeHeight = edgeBitmap.height
+
+            // Create a bitmap for the full letterbox area
+            val resultBitmap = Bitmap.createBitmap(width, targetHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(resultBitmap)
+
+            // Fill with black first as a base/backup
+            canvas.drawColor(Color.BLACK)
+
+            // Get the edge bitmap and its height for calculations
+            val actualEdge = Bitmap.createScaledBitmap(edgeBitmap, width, targetHeight, true)
+
+            // For top letterbox: We need to flip the top edge of the photo vertically
+            // For bottom letterbox: We need to flip the bottom edge of the photo vertically
+            val matrix = Matrix()
+            matrix.setScale(1f, if (isTop) -1f else 1f) // Flip vertically if top
+
+            // For top letterbox: Position the flipped edge at the bottom of the letterbox
+            // For bottom letterbox: Position it at the top of the letterbox
+            if (isTop) {
+                matrix.postTranslate(0f, targetHeight.toFloat())
+            }
+
+            // Draw the transformed edge
+            canvas.drawBitmap(actualEdge, matrix, Paint().apply {
+                isFilterBitmap = true
+            })
+
+            // Recycle the actual edge bitmap
+            actualEdge.recycle()
+
+            // Create a gradient overlay to fade the edge out
+            val fadePaint = Paint().apply {
+                shader = LinearGradient(
+                    0f,
+                    if (isTop) 0f else targetHeight.toFloat(), // Start from top or bottom
+                    0f,
+                    if (isTop) targetHeight.toFloat() else 0f, // Go to bottom or top
+                    intArrayOf(Color.BLACK, Color.TRANSPARENT), // Fade from black to transparent
+                    floatArrayOf(0f, 1f), // Linear gradient
+                    Shader.TileMode.CLAMP
+                )
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+            }
+
+            // Apply the fade
+            canvas.drawRect(0f, 0f, width.toFloat(), targetHeight.toFloat(), fadePaint)
+
+            return resultBitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating extended edge bitmap", e)
+            return null
         }
     }
 
