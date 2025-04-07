@@ -243,6 +243,7 @@ class PhotoResizeManager @Inject constructor(
 
         // Only consider letterboxing if in FIT mode
         if (displayMode != DISPLAY_MODE_FIT) {
+            Log.d(TAG, "Not in FIT mode, no letterboxing applied")
             hideAllLetterboxing()
             return false
         }
@@ -273,6 +274,7 @@ class PhotoResizeManager @Inject constructor(
         // Also get the dimensions of the container
         val container = containerView
         if (container == null) {
+            Log.d(TAG, "Container view is null")
             hideAllLetterboxing()
             return false
         }
@@ -291,6 +293,17 @@ class PhotoResizeManager @Inject constructor(
         val containerRatio = containerWidth.toFloat() / containerHeight.toFloat()
         val isLandscapeContainer = containerRatio > 1.0f
 
+        // Enhanced logging for troubleshooting
+        Log.d(TAG, """
+        Photo dimensions: ${photoWidth}x${photoHeight}
+        Photo ratio: $photoRatio 
+        Is square photo: $isSquarePhoto
+        Is landscape photo: $isLandscape
+        Container dimensions: ${containerWidth}x${containerHeight}
+        Container ratio: $containerRatio
+        Is landscape container: $isLandscapeContainer
+    """.trimIndent())
+
         // Update current photo reference (for reuse in effect changes)
         if (drawable != currentPhoto) {
             // Reset cached resources since we have a new photo
@@ -298,67 +311,124 @@ class PhotoResizeManager @Inject constructor(
             currentPhoto = drawable
         }
 
-        // CASE 1: Landscape photo or square photo in portrait container
-        if ((isLandscape || isSquarePhoto) && !isLandscapeContainer) {
+        // CASE 1: Square photos - special handling
+        if (isSquarePhoto) {
+            Log.d(TAG, "Processing square photo...")
+
+            if (isLandscapeContainer) {
+                // Square photo in landscape container - apply vertical letterboxing
+                val scaledPhotoWidth = containerHeight // For square photos, width = height when fitting to height
+                val letterboxWidth = (containerWidth - scaledPhotoWidth) / 2
+
+                Log.d(TAG, "Square photo in landscape container: letterboxWidth = $letterboxWidth")
+
+                // Force letterboxing for square photos even with small margins (minimum 1 pixel)
+                if (letterboxWidth >= 1) {
+                    configureVerticalLetterboxViews(letterboxWidth)
+                    applyLetterboxMode(drawable, letterboxWidth, LETTERBOX_ORIENTATION_VERTICAL)
+                    isLetterboxActive = true
+                    activeLetterboxOrientation = LETTERBOX_ORIENTATION_VERTICAL
+                    return true
+                }
+            } else {
+                // Square photo in portrait container - apply horizontal letterboxing
+                val scaledPhotoHeight = containerWidth // For square photos, height = width when fitting to width
+                val letterboxHeight = (containerHeight - scaledPhotoHeight) / 2
+
+                Log.d(TAG, "Square photo in portrait container: letterboxHeight = $letterboxHeight")
+
+                // Force letterboxing for square photos even with small margins (minimum 1 pixel)
+                if (letterboxHeight >= 1) {
+                    configureHorizontalLetterboxViews(letterboxHeight)
+                    applyLetterboxMode(drawable, letterboxHeight, LETTERBOX_ORIENTATION_HORIZONTAL)
+                    isLetterboxActive = true
+                    activeLetterboxOrientation = LETTERBOX_ORIENTATION_HORIZONTAL
+                    return true
+                }
+            }
+        }
+        // CASE 2: Landscape photo in portrait container
+        else if (isLandscape && !isLandscapeContainer) {
             // Calculate the height the photo should have to maintain aspect ratio
             val scaledPhotoHeight = (containerWidth / photoRatio).toInt()
 
             // Calculate letterbox heights (how much space on top and bottom)
             val letterboxHeight = (containerHeight - scaledPhotoHeight) / 2
 
-            if (letterboxHeight <= 0) {
-                // If letterbox is too small, don't bother
-                hideAllLetterboxing()
-                return false
+            Log.d(TAG, "Landscape photo in portrait container: letterboxHeight = $letterboxHeight")
+
+            // Lower minimum threshold to 1 pixel
+            if (letterboxHeight >= 1) {
+                configureHorizontalLetterboxViews(letterboxHeight)
+                applyLetterboxMode(drawable, letterboxHeight, LETTERBOX_ORIENTATION_HORIZONTAL)
+                isLetterboxActive = true
+                activeLetterboxOrientation = LETTERBOX_ORIENTATION_HORIZONTAL
+                return true
             }
-
-            Log.d(TAG, "Applying horizontal letterboxing with height: $letterboxHeight pixels per band")
-
-            // Configure and show horizontal letterbox views
-            configureHorizontalLetterboxViews(letterboxHeight)
-
-            // Apply the current letterbox mode
-            applyLetterboxMode(drawable, letterboxHeight, LETTERBOX_ORIENTATION_HORIZONTAL)
-
-            // Mark letterboxing as active with horizontal orientation
-            isLetterboxActive = true
-            activeLetterboxOrientation = LETTERBOX_ORIENTATION_HORIZONTAL
-
-            return true
         }
-        // CASE 2: Portrait photo or square photo in landscape container
-        else if ((!isLandscape || isSquarePhoto) && isLandscapeContainer) {
+        // CASE 3: Portrait photo in landscape container
+        else if (!isLandscape && isLandscapeContainer) {
             // Calculate the width the photo should have to maintain aspect ratio
             val scaledPhotoWidth = (containerHeight * photoRatio).toInt()
 
             // Calculate letterbox widths (how much space on left and right)
             val letterboxWidth = (containerWidth - scaledPhotoWidth) / 2
 
-            if (letterboxWidth <= 0) {
-                // If letterbox is too small, don't bother
-                hideAllLetterboxing()
-                return false
+            Log.d(TAG, "Portrait photo in landscape container: letterboxWidth = $letterboxWidth")
+
+            // Lower minimum threshold to 1 pixel
+            if (letterboxWidth >= 1) {
+                configureVerticalLetterboxViews(letterboxWidth)
+                applyLetterboxMode(drawable, letterboxWidth, LETTERBOX_ORIENTATION_VERTICAL)
+                isLetterboxActive = true
+                activeLetterboxOrientation = LETTERBOX_ORIENTATION_VERTICAL
+                return true
+            }
+        }
+        // CASE 4: Landscape photo in landscape container (NEW CASE)
+        else if (isLandscape && isLandscapeContainer) {
+            // If the ratios are different enough, we should still apply letterboxing
+            // First try horizontal letterboxing (top/bottom) if the photo is less wide than the container
+            if (photoRatio < containerRatio) {
+                // Photo is less wide than container (relative to height) - apply vertical letterboxing
+                val scaledPhotoWidth = (containerHeight * photoRatio).toInt()
+                val letterboxWidth = (containerWidth - scaledPhotoWidth) / 2
+
+                Log.d(TAG, "Landscape photo in landscape container (photo less wide): letterboxWidth = $letterboxWidth")
+
+                if (letterboxWidth >= 1) {
+                    configureVerticalLetterboxViews(letterboxWidth)
+                    applyLetterboxMode(drawable, letterboxWidth, LETTERBOX_ORIENTATION_VERTICAL)
+                    isLetterboxActive = true
+                    activeLetterboxOrientation = LETTERBOX_ORIENTATION_VERTICAL
+                    return true
+                }
+            }
+            // Otherwise try vertical letterboxing (left/right) if the photo is wider than the container
+            else if (photoRatio > containerRatio) {
+                // Photo is wider than container (relative to height) - apply horizontal letterboxing
+                val scaledPhotoHeight = (containerWidth / photoRatio).toInt()
+                val letterboxHeight = (containerHeight - scaledPhotoHeight) / 2
+
+                Log.d(TAG, "Landscape photo in landscape container (photo more wide): letterboxHeight = $letterboxHeight")
+
+                if (letterboxHeight >= 1) {
+                    configureHorizontalLetterboxViews(letterboxHeight)
+                    applyLetterboxMode(drawable, letterboxHeight, LETTERBOX_ORIENTATION_HORIZONTAL)
+                    isLetterboxActive = true
+                    activeLetterboxOrientation = LETTERBOX_ORIENTATION_HORIZONTAL
+                    return true
+                }
             }
 
-            Log.d(TAG, "Applying vertical letterboxing with width: $letterboxWidth pixels per band")
-
-            // Configure and show vertical letterbox views
-            configureVerticalLetterboxViews(letterboxWidth)
-
-            // Apply the current letterbox mode
-            applyLetterboxMode(drawable, letterboxWidth, LETTERBOX_ORIENTATION_VERTICAL)
-
-            // Mark letterboxing as active with vertical orientation
-            isLetterboxActive = true
-            activeLetterboxOrientation = LETTERBOX_ORIENTATION_VERTICAL
-
-            return true
+            // If we get here, the photo and container have the same ratio or letterboxing is too small
+            Log.d(TAG, "Landscape photo in landscape container: no letterboxing needed or too small")
         }
-        else {
-            // No letterboxing needed
-            hideAllLetterboxing()
-            return false
-        }
+
+        // If we get here, no letterboxing was applied
+        Log.d(TAG, "No letterboxing condition met")
+        hideAllLetterboxing()
+        return false
     }
 
     private fun hideAllLetterboxing() {
@@ -1263,6 +1333,14 @@ class PhotoResizeManager @Inject constructor(
             }
             topLetterboxView?.setImageDrawable(placeholder)
             bottomLetterboxView?.setImageDrawable(placeholder)
+
+            // Make sure the views are visible
+            topLetterboxView?.visibility = View.VISIBLE
+            bottomLetterboxView?.visibility = View.VISIBLE
+
+            // Log the visibility state
+            Log.d(TAG, "topLetterboxView visibility: ${topLetterboxView?.visibility == View.VISIBLE}, " +
+                    "bottomLetterboxView visibility: ${bottomLetterboxView?.visibility == View.VISIBLE}")
         } else {
             // Vertical letterboxing (left/right)
             val placeholder = when (mode) {
@@ -1273,20 +1351,32 @@ class PhotoResizeManager @Inject constructor(
             }
             leftLetterboxView?.setImageDrawable(placeholder)
             rightLetterboxView?.setImageDrawable(placeholder)
+
+            // Make sure the views are visible
+            leftLetterboxView?.visibility = View.VISIBLE
+            rightLetterboxView?.visibility = View.VISIBLE
+
+            // Log the visibility state
+            Log.d(TAG, "leftLetterboxView visibility: ${leftLetterboxView?.visibility == View.VISIBLE}, " +
+                    "rightLetterboxView visibility: ${rightLetterboxView?.visibility == View.VISIBLE}")
         }
 
         // Apply the actual effect
         when (mode) {
             LETTERBOX_MODE_BLACK -> {
                 // Already applied placeholders
+                Log.d(TAG, "Using black letterbox mode")
             }
             LETTERBOX_MODE_BLUR -> {
+                Log.d(TAG, "Applying blur letterbox mode")
                 applyBlurLetterbox(drawable, size, orientation)
             }
             LETTERBOX_MODE_AMBIENT -> {
+                Log.d(TAG, "Applying ambient columns letterbox mode")
                 applyAmbientColumnsLetterbox(drawable, size, orientation)
             }
             LETTERBOX_MODE_AMBIENT_CLOUDS -> {
+                Log.d(TAG, "Applying ambient clouds letterbox mode")
                 applyAmbientCloudsLetterbox(drawable, size, orientation)
             }
         }
