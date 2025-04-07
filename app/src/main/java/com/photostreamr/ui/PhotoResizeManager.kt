@@ -43,21 +43,17 @@ class PhotoResizeManager @Inject constructor(
         // Letterbox fill modes
         const val LETTERBOX_MODE_BLACK = "black"
         const val LETTERBOX_MODE_BLUR = "blur"
-        // Removed the gradient option
-        const val LETTERBOX_MODE_MIRROR = "mirror"
         const val LETTERBOX_MODE_AMBIENT = "ambient"
         const val LETTERBOX_MODE_AMBIENT_CLOUDS = "ambient_clouds"
 
         // Default values
-        const val DEFAULT_DISPLAY_MODE = DISPLAY_MODE_FILL
-        const val DEFAULT_LETTERBOX_MODE = LETTERBOX_MODE_BLACK
+        const val DEFAULT_DISPLAY_MODE = DISPLAY_MODE_FIT
+        const val DEFAULT_LETTERBOX_MODE = LETTERBOX_MODE_AMBIENT_CLOUDS
 
         // Preference keys
         const val PREF_KEY_PHOTO_SCALE = "photo_scale"
         const val PREF_KEY_LETTERBOX_MODE = "letterbox_mode"
         const val PREF_KEY_BLUR_INTENSITY = "letterbox_blur_intensity"
-        // Removed the gradient opacity preference
-        const val PREF_KEY_AMBIENT_INTENSITY = "letterbox_ambient_intensity"
 
         // Constants for effects
         private const val DEFAULT_BLUR_RADIUS = 20f
@@ -97,16 +93,11 @@ class PhotoResizeManager @Inject constructor(
     // Cached letterbox resources
     private var currentPhoto: Drawable? = null
     private var cachedBlurredBitmap: Bitmap? = null
-    private var cachedMirrorTopBitmap: Bitmap? = null
-    private var cachedMirrorBottomBitmap: Bitmap? = null
     private var cachedPaletteColors: Array<IntArray>? = null
 
     // Track if letterboxing is currently active
     private var isLetterboxActive = false
 
-    /**
-     * Initializes the resize manager with the necessary views
-     */
     fun initialize(
         primaryView: ImageView,
         overlayView: ImageView,
@@ -129,9 +120,6 @@ class PhotoResizeManager @Inject constructor(
         overlayView.setBackgroundColor(Color.BLACK)
     }
 
-    /**
-     * Clean up resources when no longer needed
-     */
     fun cleanup() {
         managerJob.cancel()
         recycleBitmaps()
@@ -144,9 +132,6 @@ class PhotoResizeManager @Inject constructor(
         currentPhoto = null
     }
 
-    /**
-     * Recycle all cached bitmaps to free memory
-     */
     private fun recycleBitmaps() {
         cachedBlurredBitmap?.recycle()
         cachedBlurredBitmap = null
@@ -156,12 +141,6 @@ class PhotoResizeManager @Inject constructor(
 
         cachedBlurredBottomBitmap?.recycle()
         cachedBlurredBottomBitmap = null
-
-        cachedMirrorTopBitmap?.recycle()
-        cachedMirrorTopBitmap = null
-
-        cachedMirrorBottomBitmap?.recycle()
-        cachedMirrorBottomBitmap = null
 
         cachedTopAmbientBitmap?.recycle()
         cachedTopAmbientBitmap = null
@@ -181,9 +160,6 @@ class PhotoResizeManager @Inject constructor(
         cachedPaletteColors = null
     }
 
-    /**
-     * Apply the current display mode (fit or fill) to both photo views
-     */
     fun applyDisplayMode() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val displayMode = prefs.getString(PREF_KEY_PHOTO_SCALE, DEFAULT_DISPLAY_MODE) ?: DEFAULT_DISPLAY_MODE
@@ -201,12 +177,6 @@ class PhotoResizeManager @Inject constructor(
         Log.d(TAG, "Applied display mode: $displayMode, scale type: $scaleType")
     }
 
-    /**
-     * Process a photo for letterbox display if needed
-     * @param drawable The photo drawable to display
-     * @param imageView The ImageView that will display the photo (primary or overlay)
-     * @return true if letterboxing was applied, false otherwise
-     */
     fun processPhoto(drawable: Drawable, imageView: ImageView): Boolean {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val displayMode = prefs.getString(PREF_KEY_PHOTO_SCALE, DEFAULT_DISPLAY_MODE) ?: DEFAULT_DISPLAY_MODE
@@ -301,38 +271,12 @@ class PhotoResizeManager @Inject constructor(
         }
     }
 
-    /**
-     * Configure both letterbox views with the appropriate height and properties
-     */
-    private fun configureBothLetterboxViews(letterboxHeight: Int) {
-        topLetterboxView?.let { view ->
-            val params = view.layoutParams
-            params.height = letterboxHeight
-            view.layoutParams = params
-            view.visibility = View.VISIBLE
-        }
-
-        bottomLetterboxView?.let { view ->
-            val params = view.layoutParams
-            params.height = letterboxHeight
-            view.layoutParams = params
-            view.visibility = View.VISIBLE
-        }
-    }
-
-    /**
-     * Hide the letterboxing views when not needed
-     */
     private fun hideLetterboxing() {
         topLetterboxView?.visibility = View.GONE
         bottomLetterboxView?.visibility = View.GONE
         isLetterboxActive = false
     }
 
-    /**
-     * Apply a completely random, amorphous cloud-like ambient effect
-     * No refreshing - generate once and keep it
-     */
     private fun applyAmbientCloudsLetterbox(drawable: Drawable, letterboxHeight: Int) {
         // Check if we already have ambient bitmaps for this drawable
         val cacheKey = System.identityHashCode(drawable).toString()
@@ -416,10 +360,6 @@ class PhotoResizeManager @Inject constructor(
         }
     }
 
-    /**
-     * Create a completely random, amorphous cloud effect
-     * No structure, no patterns, just pure randomness with larger, more numerous clouds
-     */
     private fun createPurelyRandomCloudEffect(width: Int, height: Int, colors: List<Int>): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -565,9 +505,6 @@ class PhotoResizeManager @Inject constructor(
         return bitmap
     }
 
-    /**
-     * Adjust color for ambient effect - make them even lighter
-     */
     private fun adjustColorForAmbient(color: Int, random: Random): Int {
         // Convert to HSV
         val hsv = FloatArray(3)
@@ -590,7 +527,6 @@ class PhotoResizeManager @Inject constructor(
         return Color.HSVToColor(alpha, hsv)
     }
 
-    // Completely redesigned ambient columns letterbox effect to eliminate all stripes
     private fun applyAmbientColumnsLetterbox(drawable: Drawable, letterboxHeight: Int) {
         // Check if we already have ambient column bitmaps for this drawable
         val cacheKey = System.identityHashCode(drawable).toString()
@@ -599,21 +535,13 @@ class PhotoResizeManager @Inject constructor(
             lastAmbientColumnsCacheKey == cacheKey) {
             // Use existing cached ambient effect
             Log.d(TAG, "Using cached ambient columns effect")
-            topLetterboxView?.setImageBitmap(cachedTopAmbientColumnsBitmap)
-            bottomLetterboxView?.setImageBitmap(cachedBottomAmbientColumnsBitmap)
+            applyAmbientBitmapsToViews(cachedTopAmbientColumnsBitmap, cachedBottomAmbientColumnsBitmap)
             return
         }
 
         // Start with dark gray placeholder
         topLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 20, 20, 20)))
         bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.argb(255, 20, 20, 20)))
-
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val ambientIntensity = try {
-            prefs.getInt(PREF_KEY_AMBIENT_INTENSITY, 70) / 100f
-        } catch (e: ClassCastException) {
-            0.7f // Default intensity
-        }
 
         // Process ambient lighting in background
         managerScope.launch(Dispatchers.Default) {
@@ -625,87 +553,43 @@ class PhotoResizeManager @Inject constructor(
                     return@launch
                 }
 
-                // Create bitmaps for top and bottom letterbox areas at double width for smoother blur
-                val scaleFactor = 2.0f
-                val blurWidth = (bitmap.width * scaleFactor).toInt()
-                val blurHeight = (letterboxHeight * 1.5).toInt()
-
-                val topAmbientBitmap = Bitmap.createBitmap(blurWidth, blurHeight, Bitmap.Config.ARGB_8888)
-                val bottomAmbientBitmap = Bitmap.createBitmap(blurWidth, blurHeight, Bitmap.Config.ARGB_8888)
-
-                // Create canvases for drawing
-                val topCanvas = Canvas(topAmbientBitmap)
-                val bottomCanvas = Canvas(bottomAmbientBitmap)
-
-                // Fill with black initially
-                topCanvas.drawColor(Color.BLACK)
-                bottomCanvas.drawColor(Color.BLACK)
+                // This is a critical change: grab the proper width from the container view
+                val containerWidth = withContext(Dispatchers.Main) {
+                    containerView?.width ?: bitmap.width
+                }
 
                 // Sample colors from the edge of the image
                 val topColors = sampleEdgeColors(bitmap, true, 50)
                 val bottomColors = sampleEdgeColors(bitmap, false, 50)
 
                 // Filter color points to remove very narrow segments
-                val filteredTopColors = filterNarrowColorSegments(topColors, blurWidth)
-                val filteredBottomColors = filterNarrowColorSegments(bottomColors, blurWidth)
+                val filteredTopColors = filterNarrowColorSegments(topColors, bitmap.width)
+                val filteredBottomColors = filterNarrowColorSegments(bottomColors, bitmap.width)
 
-                // Create a much smoother gradient by sampling more points and using path-based gradients
-
-                // For top edge
-                val topGradientBitmap = createSmoothColorGradient(
-                    blurWidth,
-                    blurHeight,
+                // Create the gradient bitmaps using the EXACT container width
+                val topBitmap = createFullWidthGradientBitmap(
+                    containerWidth,
+                    letterboxHeight,
                     filteredTopColors,
                     true
                 )
-                topCanvas.drawBitmap(topGradientBitmap, 0f, 0f, null)
-                topGradientBitmap.recycle()
 
-                // For bottom edge
-                val bottomGradientBitmap = createSmoothColorGradient(
-                    blurWidth,
-                    blurHeight,
+                val bottomBitmap = createFullWidthGradientBitmap(
+                    containerWidth,
+                    letterboxHeight,
                     filteredBottomColors,
                     false
                 )
-                bottomCanvas.drawBitmap(bottomGradientBitmap, 0f, 0f, null)
-                bottomGradientBitmap.recycle()
-
-                // Apply extreme gaussian blur to eliminate any remaining hard edges
-                val topBlurred = applyMultipassBlur(topAmbientBitmap, 25f, 3)
-                val bottomBlurred = applyMultipassBlur(bottomAmbientBitmap, 25f, 3)
-
-                // Scale back down to original size
-                val finalTopBitmap = Bitmap.createScaledBitmap(
-                    topBlurred ?: topAmbientBitmap,
-                    bitmap.width,
-                    letterboxHeight,
-                    true
-                )
-
-                val finalBottomBitmap = Bitmap.createScaledBitmap(
-                    bottomBlurred ?: bottomAmbientBitmap,
-                    bitmap.width,
-                    letterboxHeight,
-                    true
-                )
 
                 // Cache for reuse
-                cachedTopAmbientColumnsBitmap = finalTopBitmap
-                cachedBottomAmbientColumnsBitmap = finalBottomBitmap
+                cachedTopAmbientColumnsBitmap = topBitmap
+                cachedBottomAmbientColumnsBitmap = bottomBitmap
                 lastAmbientColumnsCacheKey = cacheKey
-
-                // Recycle intermediate bitmaps
-                topAmbientBitmap.recycle()
-                bottomAmbientBitmap.recycle()
-                if (topBlurred != null && topBlurred != topAmbientBitmap) topBlurred.recycle()
-                if (bottomBlurred != null && bottomBlurred != bottomAmbientBitmap) bottomBlurred.recycle()
 
                 // Apply on main thread
                 withContext(Dispatchers.Main) {
                     if (isActive) {
-                        topLetterboxView?.setImageBitmap(finalTopBitmap)
-                        bottomLetterboxView?.setImageBitmap(finalBottomBitmap)
+                        applyAmbientBitmapsToViews(topBitmap, bottomBitmap)
                     }
                 }
             } catch (e: Exception) {
@@ -725,9 +609,146 @@ class PhotoResizeManager @Inject constructor(
         }
     }
 
-    /**
-     * Filter out color segments that are too narrow
-     */
+    private fun applyAmbientBitmapsToViews(topBitmap: Bitmap?, bottomBitmap: Bitmap?) {
+        // Set the letterbox view container backgrounds to black first
+        val parent1 = topLetterboxView?.parent as? ViewGroup
+        val parent2 = bottomLetterboxView?.parent as? ViewGroup
+
+        parent1?.setBackgroundColor(Color.BLACK)
+        parent2?.setBackgroundColor(Color.BLACK)
+
+        // Apply critical settings to the letterbox views
+        topLetterboxView?.apply {
+            layoutParams = layoutParams.apply {
+                // Ensure width matches parent exactly
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+            }
+            scaleType = ImageView.ScaleType.FIT_XY
+            adjustViewBounds = false
+            setPadding(0, 0, 0, 0)
+            setBackgroundColor(Color.BLACK)
+            setImageBitmap(topBitmap)
+        }
+
+        bottomLetterboxView?.apply {
+            layoutParams = layoutParams.apply {
+                // Ensure width matches parent exactly
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+            }
+            scaleType = ImageView.ScaleType.FIT_XY
+            adjustViewBounds = false
+            setPadding(0, 0, 0, 0)
+            setBackgroundColor(Color.BLACK)
+            setImageBitmap(bottomBitmap)
+        }
+    }
+
+    private fun createFullWidthGradientBitmap(width: Int, height: Int, colorPoints: List<Pair<Float, Int>>, isTopEdge: Boolean): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // Fill completely with black first
+        canvas.drawColor(Color.BLACK)
+
+        // If no color points, just return a black bitmap
+        if (colorPoints.isEmpty()) {
+            return bitmap
+        }
+
+        // Directly draw color rectangles across the full width
+        for (i in 0 until colorPoints.size - 1) {
+            val (startX, startColor) = colorPoints[i]
+            val (endX, endColor) = colorPoints[i + 1]
+
+            // Convert normalized coordinates to pixel positions
+            val x1 = (startX * width).toInt()
+            val x2 = (endX * width).toInt()
+
+            // Skip very narrow segments
+            if (x2 - x1 < MIN_COLOR_SEGMENT_WIDTH) continue
+
+            // Create a gradient paint
+            val paint = Paint().apply {
+                shader = LinearGradient(
+                    x1.toFloat(), 0f,
+                    x2.toFloat(), 0f,
+                    startColor,
+                    endColor,
+                    Shader.TileMode.CLAMP
+                )
+                isAntiAlias = true
+            }
+
+            // Draw the gradient rectangle
+            canvas.drawRect(x1.toFloat(), 0f, x2.toFloat(), height.toFloat(), paint)
+        }
+
+        // Apply vertical gradient for depth
+        val verticalPaint = Paint().apply {
+            shader = LinearGradient(
+                0f, if (isTopEdge) height.toFloat() else 0f,
+                0f, if (isTopEdge) 0f else height.toFloat(),
+                intArrayOf(
+                    Color.argb(255, 0, 0, 0),  // Full black
+                    Color.argb(0, 0, 0, 0)     // Transparent
+                ),
+                floatArrayOf(0f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+        }
+
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), verticalPaint)
+
+        // Apply a subtle blur for smoother gradients
+        return applySimpleBlur(bitmap, 8f) ?: bitmap
+    }
+
+    private fun enhanceColor(color: Int): Int {
+        val hsv = FloatArray(3)
+        Color.colorToHSV(color, hsv)
+
+        // Reduce saturation for a lighter, less intense look
+        hsv[1] = (hsv[1] * 0.85f).coerceAtMost(0.8f)
+
+        // Boost brightness significantly to make colors even lighter
+        hsv[2] = (hsv[2] * 1.75f + 0.2f).coerceAtMost(1.0f)
+
+        // Use a moderate alpha
+        return Color.HSVToColor(160, hsv)
+    }
+
+    private fun applySimpleBlur(source: Bitmap, radius: Float): Bitmap? {
+        try {
+            val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(output)
+            val paint = Paint()
+            paint.isAntiAlias = true
+            paint.maskFilter = BlurMaskFilter(radius, BlurMaskFilter.Blur.NORMAL)
+            canvas.drawBitmap(source, 0f, 0f, paint)
+            return output
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying simple blur", e)
+            return null
+        }
+    }
+
+    private fun configureBothLetterboxViews(letterboxHeight: Int) {
+        topLetterboxView?.let { view ->
+            val params = view.layoutParams
+            params.height = letterboxHeight
+            view.layoutParams = params
+            view.visibility = View.VISIBLE
+        }
+
+        bottomLetterboxView?.let { view ->
+            val params = view.layoutParams
+            params.height = letterboxHeight
+            view.layoutParams = params
+            view.visibility = View.VISIBLE
+        }
+    }
+
     private fun filterNarrowColorSegments(colorPoints: List<Pair<Float, Int>>, totalWidth: Int): List<Pair<Float, Int>> {
         if (colorPoints.size <= 2) {
             return colorPoints // Don't filter if we only have two points (full width)
@@ -760,7 +781,6 @@ class PhotoResizeManager @Inject constructor(
         return result
     }
 
-    // Sample colors evenly across the edge of an image
     private fun sampleEdgeColors(bitmap: Bitmap, isTopEdge: Boolean, sampleCount: Int): List<Pair<Float, Int>> {
         val result = mutableListOf<Pair<Float, Int>>()
         val width = bitmap.width
@@ -793,147 +813,6 @@ class PhotoResizeManager @Inject constructor(
         return result
     }
 
-    // Create an ultra-smooth color gradient from sampled points
-    private fun createSmoothColorGradient(width: Int, height: Int, colorPoints: List<Pair<Float, Int>>, isTopEdge: Boolean): Bitmap {
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-
-        // Fill with black initially
-        canvas.drawColor(Color.BLACK)
-
-        // First pass: Create smooth color bands with wide overlap
-        for (i in 0 until colorPoints.size - 1) {
-            val (startX, startColor) = colorPoints[i]
-            val (endX, endColor) = colorPoints[i + 1]
-
-            // Convert normalized coordinates to pixel positions
-            val x1 = startX * width
-            val x2 = endX * width
-
-            // Create a wide linear gradient between points
-            val gradient = LinearGradient(
-                x1, 0f,
-                x2, 0f,
-                startColor,
-                endColor,
-                Shader.TileMode.CLAMP
-            )
-
-            val paint = Paint().apply {
-                shader = gradient
-                isAntiAlias = true
-            }
-
-            // Draw a rectangle covering this segment
-            canvas.drawRect(x1, 0f, x2, height.toFloat(), paint)
-        }
-
-        // Second pass: Apply vertical gradient for depth
-        val verticalGradient = LinearGradient(
-            0f, if (isTopEdge) height.toFloat() else 0f,
-            0f, if (isTopEdge) 0f else height.toFloat(),
-            intArrayOf(
-                Color.argb(255, 0, 0, 0),  // Full black at one end
-                Color.argb(0, 0, 0, 0)     // Transparent at the other end
-            ),
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP
-        )
-
-        val verticalPaint = Paint().apply {
-            shader = verticalGradient
-            xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-        }
-
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), verticalPaint)
-
-        return bitmap
-    }
-
-    // Multipass blur for extremely smooth gradients
-    private fun applyMultipassBlur(bitmap: Bitmap, radius: Float, passes: Int): Bitmap? {
-        try {
-            var currentBitmap = bitmap
-            var resultBitmap: Bitmap? = null
-
-            // Apply multiple blur passes with diminishing radius
-            for (i in 0 until passes) {
-                val passRadius = radius * (1f - (i * 0.2f)) // Gradually reduce radius in later passes
-
-                val blurredBitmap = Bitmap.createBitmap(
-                    currentBitmap.width,
-                    currentBitmap.height,
-                    Bitmap.Config.ARGB_8888
-                )
-
-                val canvas = Canvas(blurredBitmap)
-                val paint = Paint()
-                paint.isAntiAlias = true
-                paint.maskFilter = BlurMaskFilter(passRadius, BlurMaskFilter.Blur.NORMAL)
-                canvas.drawBitmap(currentBitmap, 0f, 0f, paint)
-
-                // If we created an intermediate bitmap, recycle it
-                if (resultBitmap != null && resultBitmap != bitmap) {
-                    resultBitmap.recycle()
-                }
-
-                resultBitmap = blurredBitmap
-                currentBitmap = blurredBitmap
-            }
-
-            return resultBitmap
-        } catch (e: Exception) {
-            Log.e(TAG, "Error applying multipass blur", e)
-            return null
-        }
-    }
-
-    // Enhance color to make it more visible and lighter
-    private fun enhanceColor(color: Int): Int {
-        val hsv = FloatArray(3)
-        Color.colorToHSV(color, hsv)
-
-        // Slightly reduce saturation for a lighter, less intense look
-        hsv[1] = (hsv[1] * 1.2f).coerceAtMost(0.9f)
-
-        // Boost brightness by 50% instead of 30% to make colors lighter
-        hsv[2] = (hsv[2] * 1.5f + 0.1f).coerceAtMost(1.0f)
-
-        // Ensure alpha is high enough for visibility but not too opaque
-        return Color.HSVToColor(180, hsv)
-    }
-
-    // Simple and reliable blur function that works consistently
-    private fun simpleBlur(source: Bitmap, radius: Float): Bitmap? {
-        try {
-            val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(output)
-            val paint = Paint()
-            paint.isAntiAlias = true
-
-            // Apply two-pass blur for more even results
-            // First horizontal blur
-            paint.maskFilter = BlurMaskFilter(radius, BlurMaskFilter.Blur.NORMAL)
-            canvas.drawBitmap(source, 0f, 0f, paint)
-
-            // Second blur pass with different radius
-            val secondBlurPaint = Paint()
-            secondBlurPaint.isAntiAlias = true
-            secondBlurPaint.maskFilter = BlurMaskFilter(radius * 0.7f, BlurMaskFilter.Blur.NORMAL)
-
-            // Create a temporary bitmap for the second pass
-            val tempBitmap = Bitmap.createBitmap(output)
-            val tempCanvas = Canvas(output)
-            tempCanvas.drawBitmap(tempBitmap, 0f, 0f, secondBlurPaint)
-            tempBitmap.recycle()
-
-            return output
-        } catch (e: Exception) {
-            Log.e(TAG, "Error applying simple blur", e)
-            return null
-        }
-    }
-
     private fun applyLetterboxMode(drawable: Drawable, letterboxHeight: Int) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val mode = prefs.getString(PREF_KEY_LETTERBOX_MODE, DEFAULT_LETTERBOX_MODE) ?: DEFAULT_LETTERBOX_MODE
@@ -955,11 +834,6 @@ class PhotoResizeManager @Inject constructor(
                 val darkGray = ColorDrawable(Color.parseColor("#222222"))
                 topLetterboxView?.setImageDrawable(darkGray)
                 bottomLetterboxView?.setImageDrawable(darkGray)
-            }
-            LETTERBOX_MODE_MIRROR -> {
-                // Start with black
-                topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-                bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
             }
             LETTERBOX_MODE_AMBIENT -> {
                 // Start with black for ambient effect
@@ -986,9 +860,6 @@ class PhotoResizeManager @Inject constructor(
             LETTERBOX_MODE_BLUR -> {
                 applyBlurLetterbox(drawable, letterboxHeight)
             }
-            LETTERBOX_MODE_MIRROR -> {
-                applyMirrorLetterbox(drawable, letterboxHeight)
-            }
             LETTERBOX_MODE_AMBIENT -> {
                 applyAmbientColumnsLetterbox(drawable, letterboxHeight)
             }
@@ -998,10 +869,6 @@ class PhotoResizeManager @Inject constructor(
         }
     }
 
-    /**
-     * Apply a blurred version of the photo edges to the letterbox areas
-     * Simply extracts the top and bottom parts of the original photo and blurs them
-     */
     private fun applyBlurLetterbox(drawable: Drawable, letterboxHeight: Int) {
         // Use existing blurred edge bitmaps if available
         if (cachedBlurredTopBitmap != null && cachedBlurredBottomBitmap != null) {
@@ -1069,100 +936,59 @@ class PhotoResizeManager @Inject constructor(
                     true
                 )
 
-                // Create RenderScript
-                try {
-                    val rs = RenderScript.create(context)
-                    val blurScript = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
-
-                    // Allocate memory for Renderscript to work with
-                    val topAllocationIn = Allocation.createFromBitmap(rs, scaledTopBitmap)
-                    val topAllocationOut = Allocation.createTyped(rs, topAllocationIn.type)
-
-                    val bottomAllocationIn = Allocation.createFromBitmap(rs, scaledBottomBitmap)
-                    val bottomAllocationOut = Allocation.createTyped(rs, bottomAllocationIn.type)
-
-                    // Set the blur radius
-                    blurScript.setRadius(blurRadius)
-
-                    // Perform the blur
-                    blurScript.setInput(topAllocationIn)
-                    blurScript.forEach(topAllocationOut)
-                    topAllocationOut.copyTo(scaledTopBitmap)
-
-                    blurScript.setInput(bottomAllocationIn)
-                    blurScript.forEach(bottomAllocationOut)
-                    bottomAllocationOut.copyTo(scaledBottomBitmap)
-
-                    // Scale back up to full size (with blur effect applied)
-                    val blurredTopBitmap = Bitmap.createScaledBitmap(
-                        scaledTopBitmap,
-                        originalBitmap.width,
-                        letterboxHeight,
-                        true
-                    )
-
-                    val blurredBottomBitmap = Bitmap.createScaledBitmap(
-                        scaledBottomBitmap,
-                        originalBitmap.width,
-                        letterboxHeight,
-                        true
-                    )
-
-                    // Clean up resources
-                    topAllocationIn.destroy()
-                    topAllocationOut.destroy()
-                    bottomAllocationIn.destroy()
-                    bottomAllocationOut.destroy()
-                    blurScript.destroy()
-                    rs.destroy()
-
-                    // Cache for reuse
-                    cachedBlurredTopBitmap = blurredTopBitmap
-                    cachedBlurredBottomBitmap = blurredBottomBitmap
-
-                    // Apply on main thread
-                    withContext(Dispatchers.Main) {
-                        if (isActive) {
-                            topLetterboxView?.setImageBitmap(blurredTopBitmap)
-                            bottomLetterboxView?.setImageBitmap(blurredBottomBitmap)
-                        }
-                    }
-                } catch (e: Exception) {
-                    // Fallback to simple blur if RenderScript fails
-                    Log.e(TAG, "Error applying RenderScript blur, falling back to simple blur", e)
-
-                    val blurredTopBitmap = simpleBlur(topEdgeBitmap, blurRadius)
-                    val blurredBottomBitmap = simpleBlur(bottomEdgeBitmap, blurRadius)
-
-                    // Cache for reuse
-                    cachedBlurredTopBitmap = blurredTopBitmap
-                    cachedBlurredBottomBitmap = blurredBottomBitmap
-
-                    // Apply on main thread
-                    withContext(Dispatchers.Main) {
-                        if (isActive) {
-                            if (blurredTopBitmap != null) {
-                                topLetterboxView?.setImageBitmap(blurredTopBitmap)
-                            }
-                            if (blurredBottomBitmap != null) {
-                                bottomLetterboxView?.setImageBitmap(blurredBottomBitmap)
-                            }
-                        }
-                    }
-                }
-
-                // Clean up temporary bitmaps
+                // Recycle original edges
                 topEdgeBitmap.recycle()
                 bottomEdgeBitmap.recycle()
+
+                // Apply blur
+                val blurredTopBitmap = applyRenderScriptBlur(scaledTopBitmap, blurRadius)
+                val blurredBottomBitmap = applyRenderScriptBlur(scaledBottomBitmap, blurRadius)
+
+                // Recycle scaled bitmaps
                 scaledTopBitmap.recycle()
                 scaledBottomBitmap.recycle()
 
+                if (blurredTopBitmap == null || blurredBottomBitmap == null) {
+                    Log.e(TAG, "Failed to create blurred edge bitmaps")
+                    return@launch
+                }
+
+                // Scale back to full width but maintain original aspect ratio
+                val topFinalBitmap = Bitmap.createScaledBitmap(
+                    blurredTopBitmap,
+                    originalBitmap.width,
+                    (blurredTopBitmap.height * (originalBitmap.width.toFloat() / blurredTopBitmap.width)).toInt(),
+                    true
+                )
+
+                val bottomFinalBitmap = Bitmap.createScaledBitmap(
+                    blurredBottomBitmap,
+                    originalBitmap.width,
+                    (blurredBottomBitmap.height * (originalBitmap.width.toFloat() / blurredBottomBitmap.width)).toInt(),
+                    true
+                )
+
+                // Recycle blurred bitmaps
+                blurredTopBitmap.recycle()
+                blurredBottomBitmap.recycle()
+
+                // Save for reuse
+                cachedBlurredTopBitmap = topFinalBitmap
+                cachedBlurredBottomBitmap = bottomFinalBitmap
+
+                // Apply on main thread
+                withContext(Dispatchers.Main) {
+                    if (isActive) {
+                        topLetterboxView?.setImageBitmap(topFinalBitmap)
+                        bottomLetterboxView?.setImageBitmap(bottomFinalBitmap)
+                    }
+                }
             } catch (e: Exception) {
                 if (e !is CancellationException) {
                     Log.e(TAG, "Error applying edge blur effect", e)
                     withContext(Dispatchers.Main) {
                         if (isActive) {
-                            // Fallback to black
+                            // Fallback to black in case of error
                             topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
                             bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
                         }
@@ -1175,189 +1001,44 @@ class PhotoResizeManager @Inject constructor(
     }
 
     /**
-     * Apply a mirror effect in the letterbox areas
-     * Extracts the top and bottom parts of the original photo, flips them, and applies blur
+     * Apply a blur effect using RenderScript
      */
-    private fun applyMirrorLetterbox(drawable: Drawable, letterboxHeight: Int) {
-        // Use existing mirrored bitmaps if available
-        if (cachedMirrorTopBitmap != null && cachedMirrorBottomBitmap != null) {
-            topLetterboxView?.setImageBitmap(cachedMirrorTopBitmap)
-            bottomLetterboxView?.setImageBitmap(cachedMirrorBottomBitmap)
-            return
-        }
+    private fun applyRenderScriptBlur(bitmap: Bitmap, blurRadius: Float): Bitmap? {
+        var rs: RenderScript? = null
+        var input: Allocation? = null
+        var output: Allocation? = null
+        var script: ScriptIntrinsicBlur? = null
 
-        // Start with placeholder
-        topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-        bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
+        try {
+            // Create a mutable copy to avoid "bitmap is immutable" errors
+            val outputBitmap = bitmap.copy(bitmap.config, true)
 
-        // Process mirror in background
-        managerScope.launch(Dispatchers.Default) {
+            rs = RenderScript.create(context)
+            input = Allocation.createFromBitmap(rs, bitmap)
+            output = Allocation.createFromBitmap(rs, outputBitmap)
+
+            script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
+            script.setRadius(blurRadius.coerceAtMost(MAX_BLUR_RADIUS))
+            script.setInput(input)
+            script.forEach(output)
+
+            output.copyTo(outputBitmap)
+
+            return outputBitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying RenderScript blur", e)
+            return null
+        } finally {
+            // Properly clean up all RenderScript resources
             try {
-                // Convert drawable to bitmap for processing
-                val originalBitmap = drawableToBitmap(drawable)
-                if (originalBitmap == null) {
-                    Log.e(TAG, "Failed to convert drawable to bitmap for mirror effect")
-                    return@launch
-                }
-
-                // Extract the top and bottom edges for mirroring
-                val topEdgeHeight = (originalBitmap.height * 0.15f).toInt().coerceAtMost(letterboxHeight)
-                val bottomEdgeHeight = (originalBitmap.height * 0.15f).toInt().coerceAtMost(letterboxHeight)
-
-                val topEdgeBitmap = Bitmap.createBitmap(
-                    originalBitmap,
-                    0,
-                    0,
-                    originalBitmap.width,
-                    topEdgeHeight
-                )
-
-                val bottomEdgeBitmap = Bitmap.createBitmap(
-                    originalBitmap,
-                    0,
-                    originalBitmap.height - bottomEdgeHeight,
-                    originalBitmap.width,
-                    bottomEdgeHeight
-                )
-
-                // Create mirrored versions
-                val topMirroredBitmap = Bitmap.createBitmap(
-                    originalBitmap.width,
-                    letterboxHeight,
-                    Bitmap.Config.ARGB_8888
-                )
-
-                val bottomMirroredBitmap = Bitmap.createBitmap(
-                    originalBitmap.width,
-                    letterboxHeight,
-                    Bitmap.Config.ARGB_8888
-                )
-
-                // Create Canvas objects for drawing
-                val topCanvas = Canvas(topMirroredBitmap)
-                val bottomCanvas = Canvas(bottomMirroredBitmap)
-
-                // Set up mirror matrices
-                val topMatrix = Matrix()
-                topMatrix.preScale(1f, -1f) // Flip vertically for top letterbox
-
-                val bottomMatrix = Matrix()
-                bottomMatrix.preScale(1f, -1f) // Flip vertically for bottom letterbox
-
-                // Draw the mirrored images
-                // For top letterbox, draw at the bottom of the canvas
-                topCanvas.drawBitmap(
-                    topEdgeBitmap,
-                    topMatrix,
-                    Paint().apply { isFilterBitmap = true }
-                )
-
-                // For bottom letterbox, draw at the top of the canvas
-                bottomCanvas.drawBitmap(
-                    bottomEdgeBitmap,
-                    bottomMatrix,
-                    Paint().apply { isFilterBitmap = true }
-                )
-
-                // Apply a soft blur to make the mirrored effect less harsh
-                try {
-                    val rs = RenderScript.create(context)
-                    val blurScript = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
-
-                    // Set up for top letterbox
-                    val topAllocationIn = Allocation.createFromBitmap(rs, topMirroredBitmap)
-                    val topAllocationOut = Allocation.createTyped(rs, topAllocationIn.type)
-
-                    // Set up for bottom letterbox
-                    val bottomAllocationIn = Allocation.createFromBitmap(rs, bottomMirroredBitmap)
-                    val bottomAllocationOut = Allocation.createTyped(rs, bottomAllocationIn.type)
-
-                    // Set blur radius (light blur)
-                    blurScript.setRadius(5f)
-
-                    // Process top letterbox
-                    blurScript.setInput(topAllocationIn)
-                    blurScript.forEach(topAllocationOut)
-                    topAllocationOut.copyTo(topMirroredBitmap)
-
-                    // Process bottom letterbox
-                    blurScript.setInput(bottomAllocationIn)
-                    blurScript.forEach(bottomAllocationOut)
-                    bottomAllocationOut.copyTo(bottomMirroredBitmap)
-
-                    // Clean up RenderScript resources
-                    topAllocationIn.destroy()
-                    topAllocationOut.destroy()
-                    bottomAllocationIn.destroy()
-                    bottomAllocationOut.destroy()
-                    blurScript.destroy()
-                    rs.destroy()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error applying blur to mirrored images", e)
-                    // Continue without blur if RenderScript fails
-                }
-
-                // Apply a gradient to fade the mirror effect towards the edges
-                applyFadeGradientToMirror(topMirroredBitmap, true)
-                applyFadeGradientToMirror(bottomMirroredBitmap, false)
-
-                // Cache for reuse
-                cachedMirrorTopBitmap = topMirroredBitmap
-                cachedMirrorBottomBitmap = bottomMirroredBitmap
-
-                // Apply on main thread
-                withContext(Dispatchers.Main) {
-                    if (isActive) {
-                        topLetterboxView?.setImageBitmap(topMirroredBitmap)
-                        bottomLetterboxView?.setImageBitmap(bottomMirroredBitmap)
-                    }
-                }
-
-                // Clean up temporary bitmaps
-                topEdgeBitmap.recycle()
-                bottomEdgeBitmap.recycle()
-
+                script?.destroy()
+                input?.destroy()
+                output?.destroy()
+                rs?.destroy()
             } catch (e: Exception) {
-                if (e !is CancellationException) {
-                    Log.e(TAG, "Error applying mirror effect", e)
-                    withContext(Dispatchers.Main) {
-                        if (isActive) {
-                            // Fallback to black
-                            topLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-                            bottomLetterboxView?.setImageDrawable(ColorDrawable(Color.BLACK))
-                        }
-                    }
-                } else {
-                    Log.d(TAG, "Mirror effect processing was cancelled")
-                }
+                Log.e(TAG, "Error cleaning up RenderScript resources", e)
             }
         }
-    }
-
-    /**
-     * Apply a gradient to fade the mirrored image
-     */
-    private fun applyFadeGradientToMirror(bitmap: Bitmap, isTopLetterbox: Boolean) {
-        val canvas = Canvas(bitmap)
-        val paint = Paint()
-
-        // Create linear gradient for fading effect
-        val gradient = LinearGradient(
-            0f,
-            if (isTopLetterbox) bitmap.height.toFloat() else 0f,
-            0f,
-            if (isTopLetterbox) 0f else bitmap.height.toFloat(),
-            intArrayOf(
-                Color.argb(180, 0, 0, 0),  // Semi-transparent black
-                Color.argb(255, 0, 0, 0)   // Opaque black
-            ),
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP
-        )
-
-        paint.shader = gradient
-        paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-        canvas.drawRect(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat(), paint)
     }
 
     /**
@@ -1391,29 +1072,23 @@ class PhotoResizeManager @Inject constructor(
      * Convert a drawable to a bitmap
      */
     private fun drawableToBitmap(drawable: Drawable): Bitmap? {
-        if (drawable is BitmapDrawable) {
-            val bitmapDrawable = drawable as BitmapDrawable
-            if (bitmapDrawable.bitmap != null) {
-                return bitmapDrawable.bitmap
+        return try {
+            if (drawable is BitmapDrawable) {
+                return drawable.bitmap
             }
-        }
 
-        val intrinsicWidth = drawable.intrinsicWidth
-        val intrinsicHeight = drawable.intrinsicHeight
+            val width = drawable.intrinsicWidth.coerceAtLeast(1)
+            val height = drawable.intrinsicHeight.coerceAtLeast(1)
 
-        if (intrinsicWidth <= 0 || intrinsicHeight <= 0) {
-            return null
-        }
-
-        try {
-            val bitmap = Bitmap.createBitmap(intrinsicWidth, intrinsicHeight, Bitmap.Config.ARGB_8888)
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             drawable.setBounds(0, 0, canvas.width, canvas.height)
             drawable.draw(canvas)
-            return bitmap
-        } catch (e: OutOfMemoryError) {
-            Log.e(TAG, "Out of memory when converting drawable to bitmap", e)
-            return null
+
+            bitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Error converting drawable to bitmap", e)
+            null
         }
     }
 }
