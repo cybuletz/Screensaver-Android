@@ -363,9 +363,9 @@ class PhotoDisplayManager @Inject constructor(
 
         // Store lifecycleScope in a local variable
         val currentScope = lifecycleScope ?: return
-        val containerView = containerView ?: return
+        val views = this.views ?: return  // Use this instead of direct containerView reference
 
-        // Get available photos and filter out Google Photos URIs that aren't cached
+// Get available photos and filter out Google Photos URIs that aren't cached
         currentScope.launch {
             try {
                 val photoCount = photoManager.getPhotoCount()
@@ -381,11 +381,12 @@ class PhotoDisplayManager @Inject constructor(
                     PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
                 PhotoResizeManager.DEFAULT_DISPLAY_MODE
 
-                if (displayMode == DISPLAY_MODE_MULTI_TEMPLATE) {
+                if (displayMode == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
                     // Use the MultiPhotoLayoutManager to create and display a template
-                    val templateType = prefs.getInt(TEMPLATE_TYPE_KEY, TEMPLATE_TYPE_DEFAULT)
-                    val containerWidth = containerView.width
-                    val containerHeight = containerView.height
+                    val templateType = prefs.getInt(PhotoResizeManager.TEMPLATE_TYPE_KEY,
+                        PhotoResizeManager.TEMPLATE_TYPE_DEFAULT)
+                    val containerWidth = views.container.width
+                    val containerHeight = views.container.height
 
                     // Start preloading for upcoming photos
                     photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)

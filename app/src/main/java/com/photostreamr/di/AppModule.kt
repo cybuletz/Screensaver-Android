@@ -33,6 +33,8 @@ import com.photostreamr.photos.PhotoUriManager
 import com.photostreamr.security.AppAuthManager
 import com.photostreamr.security.BiometricHelper
 import com.photostreamr.security.SecurityPreferences
+import com.photostreamr.ui.MultiPhotoLayoutManager
+import com.photostreamr.ui.PhotoPreloader
 import com.photostreamr.ui.PhotoResizeManager
 import com.photostreamr.version.AppVersionManager
 
@@ -94,6 +96,8 @@ object AppModule {
         return PhotoLoadingManager(context, coroutineScope)
     }
 
+
+
     @Provides
     @Singleton
     fun providePhotoResizeManager(
@@ -112,7 +116,9 @@ object AppModule {
         spotifyPreferences: SpotifyPreferences,
         adManager: AdManager,
         appVersionManager: AppVersionManager,
-        photoResizeManager: PhotoResizeManager
+        photoResizeManager: PhotoResizeManager,
+        photoPreloader: PhotoPreloader,
+        multiPhotoLayoutManager: MultiPhotoLayoutManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
@@ -122,10 +128,30 @@ object AppModule {
             spotifyPreferences = spotifyPreferences,
             adManager = adManager,
             appVersionManager = appVersionManager,
-            photoResizeManager = photoResizeManager
+            photoResizeManager = photoResizeManager,
+            photoPreloader = photoPreloader,
+            multiPhotoLayoutManager = multiPhotoLayoutManager
         )
     }
 
+    @Provides
+    @Singleton
+    fun providePhotoPreloader(
+        @ApplicationContext context: Context,
+        photoRepository: PhotoRepository
+    ): PhotoPreloader {
+        return PhotoPreloader(context, photoRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideMultiPhotoLayoutManager(
+        @ApplicationContext context: Context,
+        photoRepository: PhotoRepository,
+        photoPreloader: PhotoPreloader
+    ): MultiPhotoLayoutManager {
+        return MultiPhotoLayoutManager(context, photoRepository, photoPreloader)
+    }
 
     @Provides
     @Singleton

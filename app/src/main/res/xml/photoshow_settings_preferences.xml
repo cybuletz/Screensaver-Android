@@ -21,6 +21,17 @@
         android:defaultValue="fill"
         android:icon="@drawable/ic_aspect_ratio" />
 
+
+    <ListPreference
+        app:key="template_layout_type"
+        app:title="Template Layout"
+        app:summary="%s"
+        app:entries="@array/template_layout_entries"
+        app:entryValues="@array/template_layout_values"
+        app:defaultValue="0"
+        app:iconSpaceReserved="false"
+        app:dependency="photo_scale" />
+
     <!-- New Letterbox Settings Category -->
     <PreferenceCategory
         android:title="@string/pref_letterbox_category"
