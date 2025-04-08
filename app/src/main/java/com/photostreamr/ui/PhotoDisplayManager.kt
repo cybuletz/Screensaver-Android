@@ -68,9 +68,9 @@ class PhotoDisplayManager @Inject constructor(
     private val appVersionManager: AppVersionManager,
     private val photoResizeManager: PhotoResizeManager,
     private val photoPreloader: PhotoPreloader,
-    private val multiPhotoLayoutManager: MultiPhotoLayoutManager
+    private val enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager
 ) : PhotoTransitionEffects.TransitionCompletionCallback,
-    MultiPhotoLayoutManager.TemplateReadyCallback {
+    EnhancedMultiPhotoLayoutManager.TemplateReadyCallback {
 
     private val transitionEffects = PhotoTransitionEffects(context)
 
@@ -550,7 +550,7 @@ class PhotoDisplayManager @Inject constructor(
                     return@launch
                 }
 
-                multiPhotoLayoutManager.createTemplate(
+                enhancedMultiPhotoLayoutManager.createTemplate(
                     containerWidth = containerWidth,
                     containerHeight = containerHeight,
                     currentPhotoIndex = currentPhotoIndex,
@@ -1153,7 +1153,7 @@ class PhotoDisplayManager @Inject constructor(
 
             // Clean up preloading components
             photoPreloader.cleanup()
-            multiPhotoLayoutManager.cleanup()
+            enhancedMultiPhotoLayoutManager.cleanup()
 
             // Clean up resize manager
             photoResizeManager.cleanup()

@@ -33,9 +33,12 @@ import com.photostreamr.photos.PhotoUriManager
 import com.photostreamr.security.AppAuthManager
 import com.photostreamr.security.BiometricHelper
 import com.photostreamr.security.SecurityPreferences
+import com.photostreamr.ui.EnhancedMultiPhotoLayoutManager
 import com.photostreamr.ui.MultiPhotoLayoutManager
 import com.photostreamr.ui.PhotoPreloader
 import com.photostreamr.ui.PhotoResizeManager
+import com.photostreamr.ui.SmartPhotoLayoutManager
+import com.photostreamr.ui.SmartTemplateHelper
 import com.photostreamr.version.AppVersionManager
 
 @Module
@@ -96,8 +99,6 @@ object AppModule {
         return PhotoLoadingManager(context, coroutineScope)
     }
 
-
-
     @Provides
     @Singleton
     fun providePhotoResizeManager(
@@ -118,7 +119,7 @@ object AppModule {
         appVersionManager: AppVersionManager,
         photoResizeManager: PhotoResizeManager,
         photoPreloader: PhotoPreloader,
-        multiPhotoLayoutManager: MultiPhotoLayoutManager
+        enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
@@ -130,7 +131,41 @@ object AppModule {
             appVersionManager = appVersionManager,
             photoResizeManager = photoResizeManager,
             photoPreloader = photoPreloader,
-            multiPhotoLayoutManager = multiPhotoLayoutManager
+            enhancedMultiPhotoLayoutManager = enhancedMultiPhotoLayoutManager
+        )
+    }
+
+    @Provides
+    @Singleton
+    fun provideSmartPhotoLayoutManager(context: Context): SmartPhotoLayoutManager {
+        return SmartPhotoLayoutManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSmartTemplateHelper(
+        context: Context,
+        smartPhotoLayoutManager: SmartPhotoLayoutManager,
+        photoResizeManager: PhotoResizeManager
+    ): SmartTemplateHelper {
+        return SmartTemplateHelper(context, smartPhotoLayoutManager, photoResizeManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideEnhancedMultiPhotoLayoutManager(
+        context: Context,
+        photoRepository: PhotoRepository,
+        photoPreloader: PhotoPreloader,
+        smartPhotoLayoutManager: SmartPhotoLayoutManager,
+        smartTemplateHelper: SmartTemplateHelper
+    ): EnhancedMultiPhotoLayoutManager {
+        return EnhancedMultiPhotoLayoutManager(
+            context,
+            photoRepository,
+            photoPreloader,
+            smartPhotoLayoutManager,
+            smartTemplateHelper
         )
     }
 

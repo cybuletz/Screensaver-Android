@@ -158,6 +158,8 @@ dependencies {
     implementation("com.google.android.play:feature-delivery:2.1.0")
     implementation("com.google.android.play:feature-delivery-ktx:2.1.0")
 
+    implementation("com.google.mlkit:face-detection:16.1.6")
+
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
