@@ -44,6 +44,15 @@ class MultiPhotoLayoutManager @Inject constructor(
         const val LAYOUT_TYPE_3_MAIN_RIGHT = 3
         const val LAYOUT_TYPE_4_GRID = 4
 
+        // Add new dynamic layout types
+        const val LAYOUT_TYPE_DYNAMIC = 5
+        const val LAYOUT_TYPE_DYNAMIC_COLLAGE = 6
+        const val LAYOUT_TYPE_DYNAMIC_MASONRY = 7
+
+        // Minimum number of photos for dynamic layouts
+        const val MIN_PHOTOS_DYNAMIC = 3
+        private const val MAX_PHOTOS_DYNAMIC = 7
+
         // Border settings
         private const val BORDER_WIDTH = 8f
         private const val BORDER_COLOR = Color.WHITE
@@ -120,7 +129,8 @@ class MultiPhotoLayoutManager @Inject constructor(
         createTemplateWithValidDimensions(containerWidth, containerHeight, currentPhotoIndex, layoutType, callback)
     }
 
-    private fun createTemplateWithValidDimensions(
+    // Update createTemplate method in MultiPhotoLayoutManager.kt
+    fun createTemplateWithValidDimensions(
         width: Int,
         height: Int,
         currentPhotoIndex: Int,
@@ -136,7 +146,8 @@ class MultiPhotoLayoutManager @Inject constructor(
                 }
 
                 // Determine indices of photos to include in template
-                val photoIndices = getPhotoIndices(currentPhotoIndex, photoCount, getRequiredPhotoCount(layoutType))
+                val requiredCount = getRequiredPhotoCount(layoutType)
+                val photoIndices = getPhotoIndices(currentPhotoIndex, photoCount, requiredCount)
 
                 // Load all required photos
                 val photoBitmaps = withContext(Dispatchers.IO) {
@@ -165,6 +176,15 @@ class MultiPhotoLayoutManager @Inject constructor(
                     LAYOUT_TYPE_4_GRID -> createFourPhotoGridTemplate(
                         width, height, photoBitmaps
                     )
+                    LAYOUT_TYPE_DYNAMIC -> createDynamicTemplate(
+                        width, height, photoBitmaps
+                    )
+                    LAYOUT_TYPE_DYNAMIC_COLLAGE -> createDynamicCollageTemplate(
+                        width, height, photoBitmaps
+                    )
+                    LAYOUT_TYPE_DYNAMIC_MASONRY -> createDynamicMasonryTemplate(
+                        width, height, photoBitmaps
+                    )
                     else -> {
                         callback.onTemplateError("Unknown layout type")
                         return@launch
@@ -190,6 +210,9 @@ class MultiPhotoLayoutManager @Inject constructor(
             LAYOUT_TYPE_2_VERTICAL, LAYOUT_TYPE_2_HORIZONTAL -> 2
             LAYOUT_TYPE_3_MAIN_LEFT, LAYOUT_TYPE_3_MAIN_RIGHT -> 3
             LAYOUT_TYPE_4_GRID -> 4
+            LAYOUT_TYPE_DYNAMIC -> MIN_PHOTOS_DYNAMIC
+            LAYOUT_TYPE_DYNAMIC_COLLAGE -> MIN_PHOTOS_DYNAMIC
+            LAYOUT_TYPE_DYNAMIC_MASONRY -> MIN_PHOTOS_DYNAMIC
             else -> 2
         }
     }
@@ -670,36 +693,61 @@ class MultiPhotoLayoutManager @Inject constructor(
     }
 
     /**
-     * Helper method to draw a photo in a specified rectangle while maintaining aspect ratio
+     * Improved method to draw a photo in a specified rectangle while maintaining aspect ratio
+     * and ensuring proper filling of the space without edge slivers
      */
     private fun drawPhotoInRect(canvas: Canvas, photo: Bitmap, rect: Rect) {
         // Calculate scaling factors
         val sourceRatio = photo.width.toFloat() / photo.height
         val targetRatio = rect.width().toFloat() / rect.height()
 
-        val scale: Float
-        val offsetX: Float
-        val offsetY: Float
-
-        if (sourceRatio > targetRatio) {
-            // Source is wider than target: scale to fit height
-            scale = rect.height().toFloat() / photo.height
-            offsetX = (rect.width() - photo.width * scale) / 2
-            offsetY = 0f
-        } else {
-            // Source is taller than target: scale to fit width
-            scale = rect.width().toFloat() / photo.width
-            offsetX = 0f
-            offsetY = (rect.height() - photo.height * scale) / 2
-        }
-
         // Create matrix for transformation
         val matrix = Matrix()
-        matrix.setScale(scale, scale)
-        matrix.postTranslate(rect.left + offsetX, rect.top + offsetY)
 
-        // Draw the bitmap
+        // We'll always use CENTER_CROP approach for better filling
+        // This ensures photo always fills the entire rectangle
+        var scale: Float
+        var offsetX = 0f
+        var offsetY = 0f
+
+        if (sourceRatio > targetRatio) {
+            // Source is wider than target: scale to fit height and crop sides
+            scale = rect.height().toFloat() / photo.height
+
+            // Calculate how much to crop from sides
+            val scaledWidth = photo.width * scale
+            val cropX = (scaledWidth - rect.width()) / 2
+
+            // Scale then translate to center the photo
+            matrix.setScale(scale, scale)
+            matrix.postTranslate(rect.left - cropX, rect.top.toFloat())
+        } else {
+            // Source is taller than target: scale to fit width and crop top/bottom
+            scale = rect.width().toFloat() / photo.width
+
+            // Calculate how much to crop from top/bottom
+            val scaledHeight = photo.height * scale
+            val cropY = (scaledHeight - rect.height()) / 2
+
+            // Scale then translate to center the photo
+            matrix.setScale(scale, scale)
+            matrix.postTranslate(rect.left.toFloat(), rect.top - cropY)
+        }
+
+        // Add a small zoom factor to ensure no tiny gaps at edges due to rounding
+        val zoomFactor = 1.005f
+        matrix.postScale(zoomFactor, zoomFactor, rect.centerX().toFloat(), rect.centerY().toFloat())
+
+        // Draw the bitmap with the calculated transformation
         canvas.drawBitmap(photo, matrix, null)
+
+        // Draw debug border to see section boundaries during development
+        // val debugPaint = Paint().apply {
+        //     style = Paint.Style.STROKE
+        //     color = Color.RED
+        //     strokeWidth = 2f
+        // }
+        // canvas.drawRect(rect, debugPaint)
     }
 
     /**
@@ -720,5 +768,429 @@ class MultiPhotoLayoutManager @Inject constructor(
     fun cleanup() {
         clearCache()
         managerJob.cancel()
+    }
+
+    /**
+     * Creates a dynamic template with varied layout
+     */
+    private fun createDynamicTemplate(
+        width: Int,
+        height: Int,
+        photos: List<Bitmap>
+    ): Bitmap {
+        // Choose a dynamic layout style based on available photos
+        val effectivePhotos = photos.take(MAX_PHOTOS_DYNAMIC)
+
+        return when (kotlin.random.Random.nextInt(3)) {
+            0 -> createDynamicGridTemplate(width, height, effectivePhotos)
+            1 -> createDynamicCollageTemplate(width, height, effectivePhotos)
+            else -> createDynamicMasonryTemplate(width, height, effectivePhotos)
+        }
+    }
+
+    /**
+     * Creates a dynamic grid template with varied cell sizes
+     */
+    private fun createDynamicGridTemplate(
+        width: Int,
+        height: Int,
+        photos: List<Bitmap>
+    ): Bitmap {
+        val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(resultBitmap)
+
+        // Fill with black background
+        canvas.drawColor(Color.BLACK)
+
+        val paint = Paint().apply {
+            isAntiAlias = true
+            color = BORDER_COLOR
+            style = Paint.Style.STROKE
+            strokeWidth = BORDER_WIDTH
+        }
+
+        // Determine grid layout based on photo count
+        val photoCount = photos.size
+
+        // Create rectangles for photo placement
+        val rects = when {
+            photoCount <= 3 -> createThreePhotoGrid(width, height)
+            photoCount <= 4 -> createFourPhotoGrid(width, height)
+            photoCount <= 5 -> createFivePhotoGrid(width, height)
+            else -> createSixPlusPhotoGrid(width, height, photoCount)
+        }
+
+        // Draw photos into rectangles
+        rects.forEachIndexed { index, rect ->
+            if (index < photos.size) {
+                drawPhotoInRect(canvas, photos[index], rect)
+            }
+        }
+
+        // Draw borders
+        rects.forEach { rect ->
+            canvas.drawRect(rect, paint)
+        }
+
+        return resultBitmap
+    }
+
+    /**
+     * Creates a dynamic collage template with overlapping photos
+     */
+    private fun createDynamicCollageTemplate(
+        width: Int,
+        height: Int,
+        photos: List<Bitmap>
+    ): Bitmap {
+        val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(resultBitmap)
+
+        // Fill with black background
+        canvas.drawColor(Color.BLACK)
+
+        val paint = Paint().apply {
+            isAntiAlias = true
+            color = BORDER_COLOR
+            style = Paint.Style.STROKE
+            strokeWidth = BORDER_WIDTH
+        }
+
+        // Create slightly rotated and overlapping rectangles
+        val rects = mutableListOf<Rect>()
+        val rotations = mutableListOf<Float>()
+
+        // Size the main photo to be centered and a bit smaller than the screen
+        val mainPhotoSize = min(width, height) * 0.7f
+        val mainPhotoLeft = (width - mainPhotoSize) / 2
+        val mainPhotoTop = (height - mainPhotoSize) / 2
+
+        // Add the main photo rectangle
+        rects.add(Rect(
+            mainPhotoLeft.toInt(),
+            mainPhotoTop.toInt(),
+            (mainPhotoLeft + mainPhotoSize).toInt(),
+            (mainPhotoTop + mainPhotoSize).toInt()
+        ))
+        rotations.add(0f)  // No rotation for main photo
+
+        // Add additional photo rectangles with slight overlap and rotation
+        val random = kotlin.random.Random
+        for (i in 1 until photos.size) {
+            // Random size between 40% to 65% of the main photo
+            val photoSize = mainPhotoSize * (0.4f + random.nextFloat() * 0.25f)
+
+            // Random position with some overlap with main photo
+            val overlap = photoSize * 0.2f
+            val left = random.nextFloat() * (width - photoSize + overlap) - overlap/2
+            val top = random.nextFloat() * (height - photoSize + overlap) - overlap/2
+
+            rects.add(Rect(
+                left.toInt(),
+                top.toInt(),
+                (left + photoSize).toInt(),
+                (top + photoSize).toInt()
+            ))
+
+            // Random slight rotation between -10 and 10 degrees
+            rotations.add((random.nextFloat() * 20f) - 10f)
+        }
+
+        // Draw photos in reverse order so main photo is on top
+        for (i in photos.size - 1 downTo 0) {
+            if (i < rects.size && i < rotations.size) {
+                drawRotatedPhotoInRect(canvas, photos[i], rects[i], rotations[i])
+                canvas.drawRect(rects[i], paint)
+            }
+        }
+
+        return resultBitmap
+    }
+
+    /**
+     * Creates a dynamic masonry template (like Pinterest)
+     */
+    private fun createDynamicMasonryTemplate(
+        width: Int,
+        height: Int,
+        photos: List<Bitmap>
+    ): Bitmap {
+        val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(resultBitmap)
+
+        // Fill with black background
+        canvas.drawColor(Color.BLACK)
+
+        val paint = Paint().apply {
+            isAntiAlias = true
+            color = BORDER_COLOR
+            style = Paint.Style.STROKE
+            strokeWidth = BORDER_WIDTH
+        }
+
+        // Determine number of columns based on photo count and orientation
+        val numColumns = if (width > height) {
+            when {
+                photos.size <= 3 -> 3
+                else -> 4
+            }
+        } else {
+            when {
+                photos.size <= 3 -> 2
+                else -> 3
+            }
+        }
+
+        // Column width with border spacing
+        val colWidth = (width - (numColumns + 1) * BORDER_WIDTH) / numColumns
+
+        // Track the current bottom of each column
+        val columnBottoms = FloatArray(numColumns) { (BORDER_WIDTH) }
+
+        // Distribute photos across columns
+        photos.forEachIndexed { index, photo ->
+            // Find column with the smallest bottom value
+            val colIndex = columnBottoms.indices.minByOrNull { columnBottoms[it] } ?: 0
+
+            // Calculate aspect-correct height based on photo dimensions
+            val photoRatio = photo.height.toFloat() / photo.width
+            val cellHeight = (colWidth * photoRatio)
+
+            // Create rect for this photo
+            val left = BORDER_WIDTH + colIndex * (colWidth + BORDER_WIDTH)
+            val top = columnBottoms[colIndex]
+            val right = left + colWidth
+            val bottom = top + cellHeight
+
+            val rect = Rect(
+                left.toInt(),
+                top.toInt(),
+                right.toInt(),
+                bottom.toInt()
+            )
+
+            // Draw the photo and its border
+            drawPhotoInRect(canvas, photo, rect)
+            canvas.drawRect(rect, paint)
+
+            // Update column bottom
+            columnBottoms[colIndex] = bottom + BORDER_WIDTH
+        }
+
+        return resultBitmap
+    }
+
+    /**
+     * Helper method to draw a photo with rotation
+     */
+    private fun drawRotatedPhotoInRect(canvas: Canvas, photo: Bitmap, rect: Rect, rotation: Float) {
+        // Save canvas state before rotation
+        canvas.save()
+
+        // Rotate around center of rectangle
+        canvas.rotate(
+            rotation,
+            rect.exactCenterX(),
+            rect.exactCenterY()
+        )
+
+        // Draw photo
+        drawPhotoInRect(canvas, photo, rect)
+
+        // Restore canvas to previous state
+        canvas.restore()
+    }
+
+    /**
+     * Helper method to create grid for 3 photos
+     */
+    private fun createThreePhotoGrid(width: Int, height: Int): List<Rect> {
+        val rects = mutableListOf<Rect>()
+
+        if (width > height) {
+            // Landscape orientation: large photo on left, two stacked on right
+            val leftWidth = (width * 0.6).toInt()
+            val rightWidth = width - leftWidth - BORDER_WIDTH.toInt()
+
+            // Left large photo
+            rects.add(Rect(0, 0, leftWidth, height))
+
+            // Top right photo
+            rects.add(Rect(
+                leftWidth + BORDER_WIDTH.toInt(),
+                0,
+                width,
+                height / 2 - BORDER_WIDTH.toInt() / 2
+            ))
+
+            // Bottom right photo
+            rects.add(Rect(
+                leftWidth + BORDER_WIDTH.toInt(),
+                height / 2 + BORDER_WIDTH.toInt() / 2,
+                width,
+                height
+            ))
+        } else {
+            // Portrait orientation: large photo on top, two side by side on bottom
+            val topHeight = (height * 0.6).toInt()
+            val bottomHeight = height - topHeight - BORDER_WIDTH.toInt()
+
+            // Top large photo
+            rects.add(Rect(0, 0, width, topHeight))
+
+            // Bottom left photo
+            rects.add(Rect(
+                0,
+                topHeight + BORDER_WIDTH.toInt(),
+                width / 2 - BORDER_WIDTH.toInt() / 2,
+                height
+            ))
+
+            // Bottom right photo
+            rects.add(Rect(
+                width / 2 + BORDER_WIDTH.toInt() / 2,
+                topHeight + BORDER_WIDTH.toInt(),
+                width,
+                height
+            ))
+        }
+
+        return rects
+    }
+
+    /**
+     * Helper method to create grid for 4 photos
+     */
+    private fun createFourPhotoGrid(width: Int, height: Int): List<Rect> {
+        val rects = mutableListOf<Rect>()
+
+        // Simple 2x2 grid
+        val halfWidth = width / 2
+        val halfHeight = height / 2
+
+        // Top left
+        rects.add(Rect(
+            0,
+            0,
+            halfWidth - BORDER_WIDTH.toInt() / 2,
+            halfHeight - BORDER_WIDTH.toInt() / 2
+        ))
+
+        // Top right
+        rects.add(Rect(
+            halfWidth + BORDER_WIDTH.toInt() / 2,
+            0,
+            width,
+            halfHeight - BORDER_WIDTH.toInt() / 2
+        ))
+
+        // Bottom left
+        rects.add(Rect(
+            0,
+            halfHeight + BORDER_WIDTH.toInt() / 2,
+            halfWidth - BORDER_WIDTH.toInt() / 2,
+            height
+        ))
+
+        // Bottom right
+        rects.add(Rect(
+            halfWidth + BORDER_WIDTH.toInt() / 2,
+            halfHeight + BORDER_WIDTH.toInt() / 2,
+            width,
+            height
+        ))
+
+        return rects
+    }
+
+    /**
+     * Helper method to create grid for 5 photos
+     */
+    private fun createFivePhotoGrid(width: Int, height: Int): List<Rect> {
+        val rects = mutableListOf<Rect>()
+
+        if (width > height) {
+            // Landscape: 3 photos on top row, 2 on bottom
+            val rowHeight = height / 2
+            val topColWidth = width / 3
+            val bottomColWidth = width / 2
+
+            // Top row - 3 photos
+            for (i in 0 until 3) {
+                rects.add(Rect(
+                    i * topColWidth + (if (i > 0) BORDER_WIDTH.toInt() else 0),
+                    0,
+                    (i + 1) * topColWidth - (if (i < 2) BORDER_WIDTH.toInt() else 0),
+                    rowHeight - BORDER_WIDTH.toInt() / 2
+                ))
+            }
+
+            // Bottom row - 2 photos
+            for (i in 0 until 2) {
+                rects.add(Rect(
+                    i * bottomColWidth + (if (i > 0) BORDER_WIDTH.toInt() else 0),
+                    rowHeight + BORDER_WIDTH.toInt() / 2,
+                    (i + 1) * bottomColWidth - (if (i < 1) BORDER_WIDTH.toInt() else 0),
+                    height
+                ))
+            }
+        } else {
+            // Portrait: 2 photos on top row, 3 on bottom
+            val rowHeight = height / 2
+            val topColWidth = width / 2
+            val bottomColWidth = width / 3
+
+            // Top row - 2 photos
+            for (i in 0 until 2) {
+                rects.add(Rect(
+                    i * topColWidth + (if (i > 0) BORDER_WIDTH.toInt() else 0),
+                    0,
+                    (i + 1) * topColWidth - (if (i < 1) BORDER_WIDTH.toInt() else 0),
+                    rowHeight - BORDER_WIDTH.toInt() / 2
+                ))
+            }
+
+            // Bottom row - 3 photos
+            for (i in 0 until 3) {
+                rects.add(Rect(
+                    i * bottomColWidth + (if (i > 0) BORDER_WIDTH.toInt() else 0),
+                    rowHeight + BORDER_WIDTH.toInt() / 2,
+                    (i + 1) * bottomColWidth - (if (i < 2) BORDER_WIDTH.toInt() else 0),
+                    height
+                ))
+            }
+        }
+
+        return rects
+    }
+
+    /**
+     * Helper method to create grid for 6 or more photos
+     */
+    private fun createSixPlusPhotoGrid(width: Int, height: Int, photoCount: Int): List<Rect> {
+        val rects = mutableListOf<Rect>()
+
+        // For 6+ photos, create a grid with dynamic cell counts
+        val numColumns = if (width > height) 3 else 2
+        val numRows = (photoCount + numColumns - 1) / numColumns  // Ceiling division
+
+        val cellWidth = width / numColumns
+        val cellHeight = height / numRows
+
+        for (row in 0 until numRows) {
+            for (col in 0 until numColumns) {
+                val index = row * numColumns + col
+                if (index < photoCount) {
+                    rects.add(Rect(
+                        col * cellWidth + (if (col > 0) BORDER_WIDTH.toInt() / 2 else 0),
+                        row * cellHeight + (if (row > 0) BORDER_WIDTH.toInt() / 2 else 0),
+                        (col + 1) * cellWidth - (if (col < numColumns - 1) BORDER_WIDTH.toInt() / 2 else 0),
+                        (row + 1) * cellHeight - (if (row < numRows - 1) BORDER_WIDTH.toInt() / 2 else 0)
+                    ))
+                }
+            }
+        }
+
+        return rects
     }
 }

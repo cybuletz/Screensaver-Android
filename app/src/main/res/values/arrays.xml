@@ -147,20 +147,28 @@
     </string-array>
 
     <!-- Template Layout Types -->
-    <string-array name="template_layout_entries">
-        <item>2 Photos Vertical</item>
-        <item>2 Photos Horizontal</item>
+    <string-array name="template_type_entries">
+        <item>2 Photos (Vertical Split)</item>
+        <item>2 Photos (Horizontal Split)</item>
         <item>3 Photos (Main Left)</item>
         <item>3 Photos (Main Right)</item>
-        <item>4 Photos Grid</item>
+        <item>4 Photos (Grid)</item>
+        <item>Dynamic (Google Home Style)</item>
+        <item>Dynamic Collage</item>
+        <item>Dynamic Masonry (Pinterest Style)</item>
+        <item>Random - All Types</item>
     </string-array>
 
-    <string-array name="template_layout_values">
+    <string-array name="template_type_values">
         <item>0</item>
         <item>1</item>
         <item>2</item>
         <item>3</item>
         <item>4</item>
+        <item>dynamic</item>
+        <item>collage</item>
+        <item>masonry</item>
+        <item>random</item>
     </string-array>
 
     <!-- Letterbox Mode Options -->

@@ -490,16 +490,27 @@ class PhotoDisplayManager @Inject constructor(
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val templateTypeStr = prefs.getString(PhotoResizeManager.TEMPLATE_TYPE_KEY,
             PhotoResizeManager.TEMPLATE_TYPE_DEFAULT.toString())
-        val templateType = templateTypeStr?.toIntOrNull() ?: PhotoResizeManager.TEMPLATE_TYPE_DEFAULT
 
-        // Ensure a random template type is chosen each time
+        // Allow for dynamic templates via preference
+        val templateType = when (templateTypeStr) {
+            // Map special values to our new template types
+            "dynamic" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
+            "collage" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
+            "masonry" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+            else -> templateTypeStr?.toIntOrNull() ?: PhotoResizeManager.TEMPLATE_TYPE_DEFAULT
+        }
+
+        // Ensure a random template type is chosen each time if random is enabled
         val random = kotlin.random.Random.Default
         val availableTemplateTypes = listOf(
             MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
             MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
             MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
             MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
+            MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
+            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
+            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
         )
 
         // Use random template type if appropriate
@@ -525,6 +536,10 @@ class PhotoDisplayManager @Inject constructor(
                     MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
                     MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> 3
                     MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> 4
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY ->
+                        MultiPhotoLayoutManager.MIN_PHOTOS_DYNAMIC
                     else -> 2
                 }
 
