@@ -42,6 +42,11 @@ class PhotoResizeManager @Inject constructor(
         // Photo display modes
         const val DISPLAY_MODE_FILL = "fill"  // Use centerCrop - fills screen but may crop
         const val DISPLAY_MODE_FIT = "fit"    // Use fitCenter - no crop but may have letterbox
+        const val DISPLAY_MODE_MULTI_TEMPLATE = "multi_template"
+
+        // Template layout types
+        const val TEMPLATE_TYPE_KEY = "template_layout_type"
+        const val TEMPLATE_TYPE_DEFAULT = 0  // 2 photos vertical
 
         // Letterbox fill modes
         const val LETTERBOX_MODE_BLACK = "black"

@@ -66,8 +66,11 @@ class PhotoDisplayManager @Inject constructor(
     private val spotifyPreferences: SpotifyPreferences,
     private val adManager: AdManager,
     private val appVersionManager: AppVersionManager,
-    private val photoResizeManager: PhotoResizeManager
-) : PhotoTransitionEffects.TransitionCompletionCallback {
+    private val photoResizeManager: PhotoResizeManager,
+    private val photoPreloader: PhotoPreloader,
+    private val multiPhotoLayoutManager: MultiPhotoLayoutManager
+) : PhotoTransitionEffects.TransitionCompletionCallback,
+    MultiPhotoLayoutManager.TemplateReadyCallback {
 
     private val transitionEffects = PhotoTransitionEffects(context)
 
@@ -151,6 +154,61 @@ class PhotoDisplayManager @Inject constructor(
                 }
             }
         }
+    }
+
+    override fun onTemplateReady(result: Drawable, layoutType: Int) {
+        val views = this.views ?: return
+        val currentScope = lifecycleScope ?: return
+
+        if (isTransitioning) {
+            return  // Don't interrupt existing transitions
+        }
+
+        isTransitioning = true
+
+        currentScope.launch {
+            try {
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
+
+                resetViewProperties(views)
+
+                Log.d(TAG, "Displaying multi-photo template with layout type: $layoutType")
+
+                withContext(Dispatchers.Main) {
+                    views.overlayView.setImageDrawable(result)
+                    views.overlayView.visibility = View.VISIBLE
+
+                    // Use the transition effects system for consistency
+                    val transitionViews = PhotoTransitionEffects.TransitionViews(
+                        primaryView = views.primaryView,
+                        overlayView = views.overlayView,
+                        container = views.container,
+                        topLetterboxView = views.topLetterboxView,
+                        bottomLetterboxView = views.bottomLetterboxView
+                    )
+
+                    transitionEffects.performTransition(
+                        views = transitionViews,
+                        resource = result,
+                        nextIndex = currentPhotoIndex,
+                        transitionEffect = transitionEffect,
+                        transitionDuration = transitionDuration,
+                        callback = this@PhotoDisplayManager
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error displaying template", e)
+                isTransitioning = false
+                loadAndDisplayPhoto(false)  // Fall back to regular photo display
+            }
+        }
+    }
+
+    override fun onTemplateError(error: String) {
+        Log.e(TAG, "Template creation error: $error")
+        isTransitioning = false
+        loadAndDisplayPhoto(false)  // Fall back to regular photo display
     }
 
     override fun onTransitionCompleted(resource: Drawable, nextIndex: Int) {
@@ -303,9 +361,9 @@ class PhotoDisplayManager @Inject constructor(
             return
         }
 
-
         // Store lifecycleScope in a local variable
         val currentScope = lifecycleScope ?: return
+        val containerView = containerView ?: return
 
         // Get available photos and filter out Google Photos URIs that aren't cached
         currentScope.launch {
@@ -317,10 +375,38 @@ class PhotoDisplayManager @Inject constructor(
                     return@launch
                 }
 
-                // Find a valid photo to display
+                // Check if we're in multi-template mode
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                val displayMode = prefs.getString(PhotoResizeManager.PREF_KEY_PHOTO_SCALE,
+                    PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
+                PhotoResizeManager.DEFAULT_DISPLAY_MODE
+
+                if (displayMode == DISPLAY_MODE_MULTI_TEMPLATE) {
+                    // Use the MultiPhotoLayoutManager to create and display a template
+                    val templateType = prefs.getInt(TEMPLATE_TYPE_KEY, TEMPLATE_TYPE_DEFAULT)
+                    val containerWidth = containerView.width
+                    val containerHeight = containerView.height
+
+                    // Start preloading for upcoming photos
+                    photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
+
+                    multiPhotoLayoutManager.createTemplate(
+                        containerWidth = containerWidth,
+                        containerHeight = containerHeight,
+                        currentPhotoIndex = currentPhotoIndex,
+                        layoutType = templateType,
+                        callback = this@PhotoDisplayManager
+                    )
+                    return@launch
+                }
+
+                // Find a valid photo to display for normal modes
                 var foundValidPhoto = false
                 var attemptsCount = 0
                 val maxAttempts = photoCount * 2 // Prevent infinite loops
+
+                // Start preloading for upcoming photos
+                photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
 
                 while (!foundValidPhoto && attemptsCount < maxAttempts) {
                     attemptsCount++
@@ -361,6 +447,7 @@ class PhotoDisplayManager @Inject constructor(
             }
         }
     }
+
 
     private fun displayPhoto(photoIndex: Int, uri: String, isCached: Boolean) {
         val views = this.views ?: return
@@ -640,7 +727,6 @@ class PhotoDisplayManager @Inject constructor(
                 visibility = View.VISIBLE
             }
 
-
             // Reset overlay view properties
             views.overlayView.apply {
                 alpha = 0f
@@ -660,6 +746,10 @@ class PhotoDisplayManager @Inject constructor(
 
             isTransitioning = false
             currentPhotoIndex = nextIndex
+
+            // Update preloader with new current index
+            photoPreloader.updateCurrentIndex(currentPhotoIndex)
+
             // Notify AdManager of the photo count for ad frequency tracking
             adManager.updatePhotoCount(currentPhotoIndex)
             Log.d(TAG, "Transition completed to photo $nextIndex")
@@ -888,6 +978,9 @@ class PhotoDisplayManager @Inject constructor(
         displayJob?.cancel()
         displayJob = null
 
+        // Stop photo preloading
+        photoPreloader.stopPreloading()
+
         // Handle photostreamr state
         isScreensaverActive = false
 
@@ -906,6 +999,10 @@ class PhotoDisplayManager @Inject constructor(
         Log.d(TAG, "Cleaning up PhotoDisplayManager, clearCache: $clearCache")
         managerScope.launch {
             stopPhotoDisplay()  // This will handle Spotify cleanup
+
+            // Clean up preloading components
+            photoPreloader.cleanup()
+            multiPhotoLayoutManager.cleanup()
 
             // Clean up resize manager
             photoResizeManager.cleanup()

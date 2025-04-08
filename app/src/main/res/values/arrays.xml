@@ -135,15 +135,32 @@
 
     <!-- Photo Scale Options -->
     <string-array name="photo_scale_options">
-        <item>@string/photo_scale_fit</item>
-        <item>@string/photo_scale_fill</item>
-        <item>@string/photo_scale_original</item>
+        <item>Fill Screen (may crop photos)</item>
+        <item>Fit Screen (may show letterbox)</item>
+        <item>Multi-Photo Template</item>
     </string-array>
 
     <string-array name="photo_scale_values">
-        <item>fit</item>
         <item>fill</item>
-        <item>original</item>
+        <item>fit</item>
+        <item>multi_template</item>
+    </string-array>
+
+    <!-- Template Layout Types -->
+    <string-array name="template_layout_entries">
+        <item>2 Photos Vertical</item>
+        <item>2 Photos Horizontal</item>
+        <item>3 Photos (Main Left)</item>
+        <item>3 Photos (Main Right)</item>
+        <item>4 Photos Grid</item>
+    </string-array>
+
+    <string-array name="template_layout_values">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
     </string-array>
 
     <!-- Letterbox Mode Options -->
