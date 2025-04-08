@@ -61,6 +61,7 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
 
     /**
      * Create a template based on available photos and container dimensions
+     * ENHANCED: Better handling of template type selection
      */
     fun createTemplate(
         containerWidth: Int,
@@ -118,7 +119,8 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
                         smartTemplateHelper.determineBestTemplate(
                             photoBitmaps,
                             containerWidth,
-                            containerHeight
+                            containerHeight,
+                            layoutType  // Pass requested type for context
                         )
                     }
                 } else {
@@ -134,6 +136,7 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
 
                 // If not compatible, fall back to a more suitable layout
                 val effectiveLayoutType = if (!isCompatible) {
+                    Log.d(TAG, "Template type $finalLayoutType not compatible with orientation, using fallback")
                     if (containerWidth > containerHeight) {
                         LAYOUT_TYPE_2_HORIZONTAL
                     } else {

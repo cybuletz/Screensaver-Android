@@ -491,37 +491,39 @@ class PhotoDisplayManager @Inject constructor(
         val templateTypeStr = prefs.getString(PhotoResizeManager.TEMPLATE_TYPE_KEY,
             PhotoResizeManager.TEMPLATE_TYPE_DEFAULT.toString())
 
-        // Allow for dynamic templates via preference
+        // Map string values to template types
         val templateType = when (templateTypeStr) {
-            // Map special values to our new template types
+            // Map specific values
+            "0" -> MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
+            "1" -> MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
+            "2" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT
+            "3" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT
+            "4" -> MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
             "dynamic" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
             "collage" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
             "masonry" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+            "random" -> -1  // Special value for random
             else -> templateTypeStr?.toIntOrNull() ?: PhotoResizeManager.TEMPLATE_TYPE_DEFAULT
         }
 
-        // Ensure a random template type is chosen each time if random is enabled
-        val random = kotlin.random.Random.Default
-        val availableTemplateTypes = listOf(
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
-        )
-
-        // Use random template type if appropriate
-        val useRandomTemplates = prefs.getBoolean("random_template_types", true)
-        val finalTemplateType = if (useRandomTemplates) {
-            availableTemplateTypes[random.nextInt(availableTemplateTypes.size)]
+        // Handle random template type selection
+        val finalTemplateType = if (templateType == -1) {
+            // User selected random templates, pick one at random
+            val availableTemplateTypes = listOf(
+                MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
+                MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
+                MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
+                MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+                MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+                MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
+                MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+            )
+            availableTemplateTypes[Random.Default.nextInt(availableTemplateTypes.size)]
         } else {
             templateType
         }
 
-        Log.d(TAG, "Creating template with type: $finalTemplateType")
+        Log.d(TAG, "Creating template with type: $finalTemplateType (from setting: $templateTypeStr)")
 
         // Start preloading for upcoming photos
         photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
@@ -933,6 +935,10 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    /**
+     * Update display settings and apply changes
+     * ENHANCED: Better handling of display mode changes
+     */
     fun updateSettings(transitionDuration: Long? = null, showLocation: Boolean? = null, isRandomOrder: Boolean? = null) {
         Log.d(TAG, "Updating settings")
 
@@ -943,7 +949,18 @@ class PhotoDisplayManager @Inject constructor(
         // Apply current display mode (fill or fit)
         photoResizeManager.applyDisplayMode()
 
-        // Make sure we restart photo display to apply any letterbox changes
+        // Get the current display mode
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val displayMode = prefs.getString(PhotoResizeManager.PREF_KEY_PHOTO_SCALE,
+            PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
+        PhotoResizeManager.DEFAULT_DISPLAY_MODE
+
+        // Log the current template type setting
+        val templateType = prefs.getString(PhotoResizeManager.TEMPLATE_TYPE_KEY,
+            PhotoResizeManager.TEMPLATE_TYPE_DEFAULT.toString())
+        Log.d(TAG, "Current settings - Display mode: $displayMode, Template type: $templateType")
+
+        // Make sure we restart photo display to apply any changes
         val currentScope = lifecycleScope ?: return
         currentScope.launch {
             stopPhotoDisplay()

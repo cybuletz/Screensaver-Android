@@ -30,18 +30,38 @@ class SmartTemplateHelper @Inject constructor(
 
     /**
      * Determine the best template type based on photos and container dimensions
+     * ENHANCED: Now respects specific template type selection
      */
     suspend fun determineBestTemplate(
         photos: List<Bitmap>,
         containerWidth: Int,
-        containerHeight: Int
-    ): Int = withContext(Dispatchers.Default) {
+        containerHeight: Int,
+        requestedTemplateType: Int = MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
+    ) = withContext(Dispatchers.Default) {
         if (photos.size < 2) {
             return@withContext -1 // Use single photo display
         }
 
         try {
-            // Analyze all photos for face detection and other properties
+            // If a specific template type was requested (not DYNAMIC), honor it
+            if (requestedTemplateType != MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC) {
+                // Check if template is compatible with current orientation
+                val isCompatible = isTemplateCompatibleWithOrientation(
+                    requestedTemplateType,
+                    containerWidth,
+                    containerHeight
+                )
+
+                // Return the requested type if compatible, otherwise find a suitable one
+                if (isCompatible) {
+                    Log.d(TAG, "Using specifically requested template type: $requestedTemplateType")
+                    return@withContext requestedTemplateType
+                } else {
+                    Log.d(TAG, "Requested template $requestedTemplateType not compatible with orientation, finding alternative")
+                }
+            }
+
+            // For DYNAMIC type or incompatible type, analyze photos to find best layout
             val photoAnalyses = smartPhotoLayoutManager.analyzePhotos(photos)
 
             // Get the best layout based on analyses
