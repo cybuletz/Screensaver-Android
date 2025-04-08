@@ -46,7 +46,7 @@ class PhotoResizeManager @Inject constructor(
 
         // Template layout types
         const val TEMPLATE_TYPE_KEY = "template_layout_type"
-        const val TEMPLATE_TYPE_DEFAULT = 0  // 2 photos vertical
+        const val TEMPLATE_TYPE_DEFAULT = 0
 
         // Letterbox fill modes
         const val LETTERBOX_MODE_BLACK = "black"
