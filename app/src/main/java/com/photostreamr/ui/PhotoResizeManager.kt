@@ -62,6 +62,8 @@ class PhotoResizeManager @Inject constructor(
         const val PREF_KEY_PHOTO_SCALE = "photo_scale"
         const val PREF_KEY_LETTERBOX_MODE = "letterbox_mode"
         const val PREF_KEY_BLUR_INTENSITY = "letterbox_blur_intensity"
+        const val PREF_RANDOM_TEMPLATE_TYPES = "random_template_types"
+
 
         // Constants for effects
         private const val DEFAULT_BLUR_RADIUS = 20f

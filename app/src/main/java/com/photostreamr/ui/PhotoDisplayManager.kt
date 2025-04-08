@@ -161,6 +161,7 @@ class PhotoDisplayManager @Inject constructor(
         val currentScope = lifecycleScope ?: return
 
         if (isTransitioning) {
+            Log.d(TAG, "Skipping template display - transition in progress")
             return  // Don't interrupt existing transitions
         }
 
@@ -199,7 +200,7 @@ class PhotoDisplayManager @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error displaying template", e)
-                isTransitioning = false
+                isTransitioning = false // Make sure to reset flag even on error
                 loadAndDisplayPhoto(false)  // Fall back to regular photo display
             }
         }
@@ -213,7 +214,31 @@ class PhotoDisplayManager @Inject constructor(
 
     override fun onTransitionCompleted(resource: Drawable, nextIndex: Int) {
         val currentViews = views ?: return
+
+        // Complete the current transition
         completeTransition(currentViews, resource, nextIndex)
+
+        // CRITICAL: Force the photo index to advance for multi-template mode
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val displayMode = prefs.getString(PhotoResizeManager.PREF_KEY_PHOTO_SCALE,
+            PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
+        PhotoResizeManager.DEFAULT_DISPLAY_MODE
+
+        if (displayMode == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
+            // Launch a coroutine to safely call getNextPhotoIndex
+            lifecycleScope?.launch {
+                try {
+                    // Get the next photo index for the next template
+                    val nextPhotoIndex = getNextPhotoIndex(currentPhotoIndex, photoManager.getPhotoCount())
+
+                    // Update the current index
+                    currentPhotoIndex = nextPhotoIndex
+                    Log.d(TAG, "Advanced to next photo index for templates: $currentPhotoIndex")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error advancing to next photo index", e)
+                }
+            }
+        }
     }
 
     fun isScreensaverActive(): Boolean = isScreensaverActive
@@ -363,7 +388,7 @@ class PhotoDisplayManager @Inject constructor(
 
         // Store lifecycleScope in a local variable
         val currentScope = lifecycleScope ?: return
-        val views = this.views ?: return  // Use this instead of direct containerView reference
+        val views = this.views ?: return
 
         // Get available photos and filter out Google Photos URIs that aren't cached
         currentScope.launch {
@@ -382,24 +407,34 @@ class PhotoDisplayManager @Inject constructor(
                 PhotoResizeManager.DEFAULT_DISPLAY_MODE
 
                 if (displayMode == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
-                    // Use the MultiPhotoLayoutManager to create and display a template
-                    val templateTypeStr = prefs.getString(PhotoResizeManager.TEMPLATE_TYPE_KEY,
-                        PhotoResizeManager.TEMPLATE_TYPE_DEFAULT.toString())
-                    val templateType = templateTypeStr?.toIntOrNull() ?: PhotoResizeManager.TEMPLATE_TYPE_DEFAULT
-
+                    // Always check container dimensions first
                     val containerWidth = views.container.width
                     val containerHeight = views.container.height
 
-                    // Start preloading for upcoming photos
-                    photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
+                    if (containerWidth <= 0 || containerHeight <= 0) {
+                        Log.e(TAG, "Container has invalid dimensions: ${containerWidth}x${containerHeight}")
 
-                    multiPhotoLayoutManager.createTemplate(
-                        containerWidth = containerWidth,
-                        containerHeight = containerHeight,
-                        currentPhotoIndex = currentPhotoIndex,
-                        layoutType = templateType,
-                        callback = this@PhotoDisplayManager
-                    )
+                        // Add delay and retry once for container measurements
+                        currentScope.launch {
+                            delay(100)
+                            val updatedWidth = views.container.width
+                            val updatedHeight = views.container.height
+
+                            if (updatedWidth > 0 && updatedHeight > 0) {
+                                Log.d(TAG, "Container dimensions valid after delay: ${updatedWidth}x${updatedHeight}")
+
+                                // Use the MultiPhotoLayoutManager to create and display a template
+                                createAndDisplayTemplate(views, updatedWidth, updatedHeight)
+                            } else {
+                                Log.e(TAG, "Container still has invalid dimensions after delay")
+                                showErrorMessage("Layout error - please restart the app")
+                            }
+                        }
+                        return@launch
+                    }
+
+                    // Container dimensions are valid, proceed with template creation
+                    createAndDisplayTemplate(views, containerWidth, containerHeight)
                     return@launch
                 }
 
@@ -451,6 +486,68 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    private fun createAndDisplayTemplate(views: Views, containerWidth: Int, containerHeight: Int) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val templateTypeStr = prefs.getString(PhotoResizeManager.TEMPLATE_TYPE_KEY,
+            PhotoResizeManager.TEMPLATE_TYPE_DEFAULT.toString())
+        val templateType = templateTypeStr?.toIntOrNull() ?: PhotoResizeManager.TEMPLATE_TYPE_DEFAULT
+
+        // Ensure a random template type is chosen each time
+        val random = kotlin.random.Random.Default
+        val availableTemplateTypes = listOf(
+            MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
+            MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
+            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
+            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+            MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
+        )
+
+        // Use random template type if appropriate
+        val useRandomTemplates = prefs.getBoolean("random_template_types", true)
+        val finalTemplateType = if (useRandomTemplates) {
+            availableTemplateTypes[random.nextInt(availableTemplateTypes.size)]
+        } else {
+            templateType
+        }
+
+        Log.d(TAG, "Creating template with type: $finalTemplateType")
+
+        // Start preloading for upcoming photos
+        photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
+
+        // Add safety check for available photos
+        lifecycleScope?.launch {
+            try {
+                val photoCount = photoManager.getPhotoCount()
+                val minPhotosNeeded = when (finalTemplateType) {
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> 2
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> 3
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> 4
+                    else -> 2
+                }
+
+                if (photoCount < minPhotosNeeded) {
+                    Log.w(TAG, "Not enough photos for selected template type. Needed: $minPhotosNeeded, Available: $photoCount")
+                    // Fall back to single photo display
+                    loadAndDisplayPhoto(false)
+                    return@launch
+                }
+
+                multiPhotoLayoutManager.createTemplate(
+                    containerWidth = containerWidth,
+                    containerHeight = containerHeight,
+                    currentPhotoIndex = currentPhotoIndex,
+                    layoutType = finalTemplateType,
+                    callback = this@PhotoDisplayManager
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error preparing template display", e)
+                loadAndDisplayPhoto(false) // Fall back to regular photo display
+            }
+        }
+    }
 
     private fun displayPhoto(photoIndex: Int, uri: String, isCached: Boolean) {
         val views = this.views ?: return
@@ -747,8 +844,44 @@ class PhotoDisplayManager @Inject constructor(
             // Hide any remaining messages
             hideAllMessages()
 
+            // CRITICAL - reset the transitioning flag to allow the next transition
             isTransitioning = false
+
+            // Set the current photo index
             currentPhotoIndex = nextIndex
+
+            // For multi-template mode, schedule advancing to the next index
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            val displayMode = prefs.getString(PhotoResizeManager.PREF_KEY_PHOTO_SCALE,
+                PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
+            PhotoResizeManager.DEFAULT_DISPLAY_MODE
+
+            if (displayMode == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
+                // Schedule advancement to the next index for future templates
+                lifecycleScope?.launch {
+                    try {
+                        // Wait for a very short time to ensure we're out of the current operation
+                        delay(50)
+
+                        // Get the next photo index for the future template (but don't set it yet)
+                        // This just helps with preloading
+                        val futureIndex = getNextPhotoIndex(currentPhotoIndex, photoManager.getPhotoCount())
+
+                        // Start preloading for this future index
+                        photoPreloader.updateCurrentIndex(futureIndex)
+
+                        // Schedule the next template after the interval
+                        delay(getIntervalMillis() - 50) // Subtract the small delay from earlier
+
+                        if (!isTransitioning) {
+                            Log.d(TAG, "Scheduling next template display after interval")
+                            loadAndDisplayPhoto()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in template advancement scheduling", e)
+                    }
+                }
+            }
 
             // Update preloader with new current index
             photoPreloader.updateCurrentIndex(currentPhotoIndex)
@@ -759,7 +892,7 @@ class PhotoDisplayManager @Inject constructor(
 
         } catch (e: Exception) {
             Log.e(TAG, "Error in completeTransition", e)
-            isTransitioning = false
+            isTransitioning = false // Always reset this flag even on error
         }
     }
 

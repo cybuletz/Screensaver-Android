@@ -1,6 +1,7 @@
 package com.photostreamr.ui
 
 import android.content.Context
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.Log
 import com.bumptech.glide.Glide
@@ -98,7 +99,16 @@ class PhotoPreloader @Inject constructor(
      * Get a preloaded resource if available
      */
     fun getPreloadedResource(url: String): Drawable? {
-        return preloadedResources[url]
+        val resource = preloadedResources[url] ?: return null
+
+        // Check if it's a BitmapDrawable and if the bitmap is recycled
+        if (resource is BitmapDrawable && resource.bitmap.isRecycled) {
+            // Remove the recycled resource from our cache
+            preloadedResources.remove(url)
+            return null
+        }
+
+        return resource
     }
 
     /**
@@ -106,6 +116,18 @@ class PhotoPreloader @Inject constructor(
      */
     fun removePreloadedResource(url: String) {
         preloadedResources.remove(url)
+
+        // Periodically clean up any recycled bitmaps
+        if (kotlin.random.Random.nextInt(10) == 0) {  // 10% chance to clean up
+            val iterator = preloadedResources.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                val drawable = entry.value
+                if (drawable is BitmapDrawable && drawable.bitmap.isRecycled) {
+                    iterator.remove()
+                }
+            }
+        }
     }
 
     /**

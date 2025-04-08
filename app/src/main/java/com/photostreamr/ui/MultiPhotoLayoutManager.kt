@@ -62,6 +62,22 @@ class MultiPhotoLayoutManager @Inject constructor(
         fun onTemplateError(error: String)
     }
 
+    private fun safeGetBitmap(url: String): Bitmap? {
+        // Check if the bitmap exists in cache and is not recycled
+        val cached = imageCache[url]
+        if (cached != null && !cached.isRecycled) {
+            return cached
+        }
+
+        // Remove any recycled bitmaps from cache
+        if (cached != null && cached.isRecycled) {
+            imageCache.remove(url)
+        }
+
+        return null
+    }
+
+
     /**
      * Create a multi-photo template based on the specified layout type
      */
@@ -72,11 +88,45 @@ class MultiPhotoLayoutManager @Inject constructor(
         layoutType: Int,
         callback: TemplateReadyCallback
     ) {
+        // Clean up resources before creating a new template
+        prepareCacheForNewTemplate()
+
+        // Add validation and fallback for container dimensions
         if (containerWidth <= 0 || containerHeight <= 0) {
-            callback.onTemplateError("Invalid container dimensions")
-            return
+            // Try to get dimensions directly from context if passed dimensions are invalid
+            val metrics = context.resources.displayMetrics
+            val screenWidth = metrics.widthPixels
+            val screenHeight = metrics.heightPixels
+
+            if (screenWidth > 0 && screenHeight > 0) {
+                Log.d(TAG, "Using screen dimensions as fallback: ${screenWidth}x${screenHeight}")
+
+                // Retry with screen dimensions
+                createTemplateWithValidDimensions(
+                    screenWidth,
+                    screenHeight,
+                    currentPhotoIndex,
+                    layoutType,
+                    callback
+                )
+                return
+            } else {
+                callback.onTemplateError("Invalid container dimensions and couldn't get screen dimensions")
+                return
+            }
         }
 
+        // Continue with valid dimensions
+        createTemplateWithValidDimensions(containerWidth, containerHeight, currentPhotoIndex, layoutType, callback)
+    }
+
+    private fun createTemplateWithValidDimensions(
+        width: Int,
+        height: Int,
+        currentPhotoIndex: Int,
+        layoutType: Int,
+        callback: TemplateReadyCallback
+    ) {
         managerScope.launch {
             try {
                 val photoCount = photoManager.getPhotoCount()
@@ -101,19 +151,19 @@ class MultiPhotoLayoutManager @Inject constructor(
                 // Create the template based on layout type
                 val templateBitmap = when (layoutType) {
                     LAYOUT_TYPE_2_VERTICAL -> createTwoPhotoVerticalTemplate(
-                        containerWidth, containerHeight, photoBitmaps
+                        width, height, photoBitmaps
                     )
                     LAYOUT_TYPE_2_HORIZONTAL -> createTwoPhotoHorizontalTemplate(
-                        containerWidth, containerHeight, photoBitmaps
+                        width, height, photoBitmaps
                     )
                     LAYOUT_TYPE_3_MAIN_LEFT -> createThreePhotoMainLeftTemplate(
-                        containerWidth, containerHeight, photoBitmaps
+                        width, height, photoBitmaps
                     )
                     LAYOUT_TYPE_3_MAIN_RIGHT -> createThreePhotoMainRightTemplate(
-                        containerWidth, containerHeight, photoBitmaps
+                        width, height, photoBitmaps
                     )
                     LAYOUT_TYPE_4_GRID -> createFourPhotoGridTemplate(
-                        containerWidth, containerHeight, photoBitmaps
+                        width, height, photoBitmaps
                     )
                     else -> {
                         callback.onTemplateError("Unknown layout type")
@@ -149,15 +199,56 @@ class MultiPhotoLayoutManager @Inject constructor(
      */
     private fun getPhotoIndices(currentIndex: Int, totalPhotos: Int, requiredCount: Int): List<Int> {
         val indices = mutableListOf<Int>()
-        indices.add(currentIndex) // Always include current photo
+        val usedIndices = mutableSetOf<Int>()
 
-        // Add subsequent photos (wrapping around if necessary)
-        var nextIndex = (currentIndex + 1) % totalPhotos
-        while (indices.size < requiredCount && nextIndex != currentIndex) {
-            indices.add(nextIndex)
-            nextIndex = (nextIndex + 1) % totalPhotos
+        // Start with current photo
+        indices.add(currentIndex)
+        usedIndices.add(currentIndex)
+
+        // If we don't have enough photos, just return what we can
+        if (totalPhotos < requiredCount) {
+            // Add whatever additional photos we can
+            var nextIndex = (currentIndex + 1) % totalPhotos
+            while (indices.size < totalPhotos && nextIndex != currentIndex) {
+                indices.add(nextIndex)
+                nextIndex = (nextIndex + 1) % totalPhotos
+            }
+
+            Log.w(TAG, "Not enough unique photos (needed: $requiredCount, available: $totalPhotos)")
+            return indices
         }
 
+        // We have enough photos, ensure we get unique ones
+        val random = java.util.Random()
+
+        // Add subsequent photos, ensuring they're unique
+        while (indices.size < requiredCount) {
+            // Try to get a random index not already used
+            var nextIndex: Int
+            var attempts = 0
+
+            do {
+                nextIndex = random.nextInt(totalPhotos)
+                attempts++
+
+                // If we're struggling to find unique photos, use sequential as backup
+                if (attempts > 50) {
+                    for (i in 0 until totalPhotos) {
+                        if (!usedIndices.contains(i)) {
+                            nextIndex = i
+                            break
+                        }
+                    }
+                    break
+                }
+            } while (usedIndices.contains(nextIndex))
+
+            // Add the unique index
+            indices.add(nextIndex)
+            usedIndices.add(nextIndex)
+        }
+
+        Log.d(TAG, "Selected unique photo indices: $indices")
         return indices
     }
 
@@ -181,61 +272,70 @@ class MultiPhotoLayoutManager @Inject constructor(
                         photoUrl
                     }
 
-                    // Check if already in our local cache
-                    if (imageCache.containsKey(urlToUse)) {
-                        return@async imageCache[urlToUse]
+                    // Safely check for cached bitmap
+                    val cachedBitmap = safeGetBitmap(urlToUse)
+                    if (cachedBitmap != null) {
+                        return@async cachedBitmap
                     }
 
                     // Check if preloaded
                     val preloadedResource = photoPreloader.getPreloadedResource(urlToUse)
                     if (preloadedResource != null) {
                         try {
-                            val bitmap = preloadedResource.toBitmap()
-                            imageCache[urlToUse] = bitmap
-                            return@async bitmap
+                            // Create a copy of the bitmap to avoid recycling issues
+                            val source = preloadedResource.toBitmap()
+                            val copy = source.copy(source.config, true)
+                            imageCache[urlToUse] = copy
+                            return@async copy
                         } catch (e: Exception) {
                             Log.e(TAG, "Error converting preloaded resource to bitmap", e)
                         }
                     }
 
-                    // Load with Glide
-                    val bitmap = suspendCancellableCoroutine<Bitmap?> { continuation ->
-                        Glide.with(context)
-                            .asBitmap()
-                            .load(urlToUse)
-                            .diskCacheStrategy(DiskCacheStrategy.ALL)
-                            .listener(object : RequestListener<Bitmap> {
-                                override fun onLoadFailed(
-                                    e: GlideException?,
-                                    model: Any?,
-                                    target: Target<Bitmap>,
-                                    isFirstResource: Boolean
-                                ): Boolean {
-                                    Log.e(TAG, "Failed to load bitmap: $urlToUse", e)
-                                    continuation.resume(null, null)
-                                    return false
-                                }
+                    // Load with Glide - use a try-catch to handle exceptions
+                    try {
+                        val bitmap = suspendCancellableCoroutine<Bitmap?> { continuation ->
+                            Glide.with(context)
+                                .asBitmap()
+                                .load(urlToUse)
+                                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                                .listener(object : RequestListener<Bitmap> {
+                                    override fun onLoadFailed(
+                                        e: GlideException?,
+                                        model: Any?,
+                                        target: Target<Bitmap>,
+                                        isFirstResource: Boolean
+                                    ): Boolean {
+                                        Log.e(TAG, "Failed to load bitmap: $urlToUse", e)
+                                        continuation.resume(null, null)
+                                        return false
+                                    }
 
-                                override fun onResourceReady(
-                                    resource: Bitmap,
-                                    model: Any,
-                                    target: Target<Bitmap>,
-                                    dataSource: DataSource,
-                                    isFirstResource: Boolean
-                                ): Boolean {
-                                    continuation.resume(resource, null)
-                                    return true
-                                }
-                            })
-                            .submit()
-                            .get()
+                                    override fun onResourceReady(
+                                        resource: Bitmap,
+                                        model: Any,
+                                        target: Target<Bitmap>,
+                                        dataSource: DataSource,
+                                        isFirstResource: Boolean
+                                    ): Boolean {
+                                        // Make a copy to avoid recycling issues
+                                        val copy = resource.copy(resource.config, true)
+                                        continuation.resume(copy, null)
+                                        return true
+                                    }
+                                })
+                                .submit()
+                        }
+
+                        if (bitmap != null && !bitmap.isRecycled) {
+                            imageCache[urlToUse] = bitmap
+                            return@async bitmap
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Exception loading bitmap with Glide", e)
                     }
 
-                    if (bitmap != null) {
-                        imageCache[urlToUse] = bitmap
-                    }
-
-                    return@async bitmap
+                    return@async null
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading photo bitmap", e)
                     return@async null
@@ -245,10 +345,27 @@ class MultiPhotoLayoutManager @Inject constructor(
 
         // Await all results and filter out nulls
         deferredResults.awaitAll().filterNotNull().forEach {
-            results.add(it)
+            if (!it.isRecycled) {
+                results.add(it)
+            } else {
+                Log.w(TAG, "Filtered out recycled bitmap")
+            }
         }
 
         results
+    }
+
+    fun prepareCacheForNewTemplate() {
+        // Clear existing bitmaps to prevent resource issues
+        val iterator = imageCache.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            val bitmap = entry.value
+            if (bitmap.isRecycled) {
+                // Remove already recycled bitmaps
+                iterator.remove()
+            }
+        }
     }
 
     /**
