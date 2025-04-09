@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.Log
-import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.engine.GlideException
@@ -26,8 +25,8 @@ class PhotoPreloader @Inject constructor(
 ) {
     companion object {
         private const val TAG = "PhotoPreloader"
-        private const val DEFAULT_PRELOAD_COUNT = 3 // Number of photos to preload ahead
-        private const val MAX_CONCURRENT_PRELOADS = 2 // Maximum concurrent preload operations
+        private const val DEFAULT_PRELOAD_COUNT = 3
+        private const val MAX_CONCURRENT_PRELOADS = 2
     }
 
     private val preloaderJob = SupervisorJob()
@@ -80,29 +79,12 @@ class PhotoPreloader @Inject constructor(
         isPreloading = false
         preloadQueue.clear()
 
-        // Properly clean up resources
-        clearPreloadedResources()
-    }
-
-    /**
-     * Clear all preloaded resources
-     */
-    fun clearPreloadedResources() {
-        // Use BitmapMemoryManager to help with cleanup
-        preloadedResources.forEach { (key, drawable) ->
-            if (drawable is BitmapDrawable && !drawable.bitmap.isRecycled) {
-                Log.d(TAG, "Recycling bitmap from preloaded resource: $key")
-                bitmapMemoryManager.recycleBitmapFromDrawable(drawable)
-            }
-        }
-
+        // Let resources be cleared by Glide - don't manually recycle
         preloadedResources.clear()
-        Log.d(TAG, "All preloaded resources cleared")
     }
 
     /**
      * Set the number of photos to preload ahead
-     * Dynamically adjusts based on memory conditions
      */
     fun setPreloadCount(count: Int) {
         preloadCount = count.coerceIn(1, 5) // Reasonable limits
@@ -117,6 +99,7 @@ class PhotoPreloader @Inject constructor(
 
     /**
      * Get a preloaded resource if available
+     * Checks if bitmap is recycled before returning
      */
     fun getPreloadedResource(url: String): Drawable? {
         val resource = preloadedResources[url] ?: return null
@@ -273,7 +256,7 @@ class PhotoPreloader @Inject constructor(
                 ): Boolean {
                     Log.d(TAG, "Successfully preloaded: $url")
 
-                    // Register this bitmap with the memory manager if it's a BitmapDrawable
+                    // Register this bitmap with the memory manager for tracking
                     if (resource is BitmapDrawable && !resource.bitmap.isRecycled) {
                         bitmapMemoryManager.registerActiveBitmap("preload:$url", resource.bitmap)
                     }

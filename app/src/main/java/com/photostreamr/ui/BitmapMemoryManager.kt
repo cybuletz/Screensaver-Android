@@ -42,7 +42,7 @@ class BitmapMemoryManager @Inject constructor(
     private var cleanupPhotosRemaining = 0
     private var photosSinceLastCleanup = 0
 
-    // Track active bitmaps
+    // Track active bitmaps (using WeakReferences to avoid memory leaks)
     private val activeBitmaps = ConcurrentHashMap<String, WeakReference<Bitmap>>()
 
     // Coroutine management
@@ -115,12 +115,13 @@ class BitmapMemoryManager @Inject constructor(
 
         Log.d(TAG, "Starting cleanup cycle with $cleanupPhotosRemaining photos, memory pressure: $memoryPressureLevel")
 
-        // Force a garbage collection to help with cleanup
-        System.gc()
+        // Clear memory caches
+        clearMemoryCaches()
     }
 
     /**
      * Register a bitmap that's currently being displayed
+     * IMPORTANT: Only tracks the bitmap with a WeakReference, doesn't take ownership
      */
     fun registerActiveBitmap(key: String, bitmap: Bitmap) {
         if (bitmap.isRecycled) {
@@ -134,43 +135,40 @@ class BitmapMemoryManager @Inject constructor(
 
     /**
      * Unregister a bitmap that's no longer being displayed
+     * IMPORTANT: Does NOT recycle the bitmap, only removes our reference to it
      */
     fun unregisterActiveBitmap(key: String) {
-        activeBitmaps.remove(key)?.get()?.let { bitmap ->
-            if (!bitmap.isRecycled) {
-                Log.d(TAG, "Unregistered active bitmap: $key")
-            }
+        activeBitmaps.remove(key)?.get()?.let {
+            Log.d(TAG, "Unregistered active bitmap: $key")
         }
     }
 
     /**
-     * Force cleanup of all cached bitmaps in Glide and our tracking
+     * Clear memory caches without directly recycling bitmaps
      */
-    fun forceCleanupMemory() {
+    fun clearMemoryCaches() {
         managerScope.launch {
-            // Clean up our own tracked bitmaps
-            val iterator = activeBitmaps.entries.iterator()
-            while (iterator.hasNext()) {
-                val entry = iterator.next()
-                val bitmap = entry.value.get()
+            try {
+                // Clean up our tracking map
+                cleanupTrackingMap()
 
-                if (bitmap == null || bitmap.isRecycled) {
-                    iterator.remove()
+                // Clear Glide's memory cache on main thread
+                withContext(Dispatchers.Main) {
+                    try {
+                        Log.d(TAG, "Clearing Glide memory cache")
+                        Glide.get(context).clearMemory()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error clearing Glide memory cache", e)
+                    }
                 }
-            }
 
-            // Clear Glide memory cache
-            withContext(Dispatchers.Main) {
-                try {
-                    Log.d(TAG, "Clearing Glide memory cache")
-                    Glide.get(context).clearMemory()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error clearing Glide memory cache", e)
-                }
-            }
+                // Request garbage collection
+                Log.d(TAG, "Requesting garbage collection")
+                System.gc()
 
-            // Force garbage collection
-            System.gc()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in clearMemoryCaches", e)
+            }
         }
     }
 
@@ -185,16 +183,17 @@ class BitmapMemoryManager @Inject constructor(
                     val usedPercent = memoryInfo.usedPercent
 
                     // Update memory pressure level
+                    val previousLevel = memoryPressureLevel
                     memoryPressureLevel = when {
                         usedPercent >= SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT -> {
-                            if (memoryPressureLevel != MemoryPressureLevel.SEVERE) {
+                            if (previousLevel != MemoryPressureLevel.SEVERE) {
                                 Log.w(TAG, "Severe memory pressure detected: $usedPercent%")
-                                forceCleanupMemory()
+                                clearMemoryCaches()
                             }
                             MemoryPressureLevel.SEVERE
                         }
                         usedPercent >= MEMORY_PRESSURE_THRESHOLD_PERCENT -> {
-                            if (memoryPressureLevel != MemoryPressureLevel.ELEVATED) {
+                            if (previousLevel != MemoryPressureLevel.ELEVATED) {
                                 Log.w(TAG, "Elevated memory pressure detected: $usedPercent%")
                             }
                             MemoryPressureLevel.ELEVATED
@@ -202,11 +201,11 @@ class BitmapMemoryManager @Inject constructor(
                         else -> MemoryPressureLevel.NORMAL
                     }
 
-                    // Check for recycled bitmaps in our tracking
+                    // Periodically clean tracking map
                     cleanupTrackingMap()
 
                     // Log active bitmap count periodically
-                    Log.d(TAG, "Memory monitoring: ${activeBitmaps.size} active bitmaps, memory usage: $usedPercent%")
+                    Log.d(TAG, "Memory: ${activeBitmaps.size} tracked bitmaps, usage: $usedPercent%, level: $memoryPressureLevel")
 
                 } catch (e: Exception) {
                     if (e !is CancellationException) {
@@ -219,15 +218,25 @@ class BitmapMemoryManager @Inject constructor(
         }
     }
 
+    /**
+     * Remove any NULL or recycled bitmap references from our tracking
+     */
     private fun cleanupTrackingMap() {
         val iterator = activeBitmaps.entries.iterator()
+        var removedCount = 0
+
         while (iterator.hasNext()) {
             val entry = iterator.next()
             val bitmap = entry.value.get()
 
             if (bitmap == null || bitmap.isRecycled) {
                 iterator.remove()
+                removedCount++
             }
+        }
+
+        if (removedCount > 0) {
+            Log.d(TAG, "Removed $removedCount stale entries from bitmap tracking")
         }
     }
 
@@ -253,20 +262,6 @@ class BitmapMemoryManager @Inject constructor(
         val usedMemory: Long,
         val usedPercent: Float
     )
-
-    /**
-     * Safely recycle all bitmaps in a drawable
-     */
-    fun recycleBitmapFromDrawable(drawable: Drawable?) {
-        if (drawable == null) return
-
-        if (drawable is BitmapDrawable) {
-            val bitmap = drawable.bitmap
-            if (!bitmap.isRecycled) {
-                bitmap.recycle()
-            }
-        }
-    }
 
     fun cleanup() {
         managerJob.cancel()

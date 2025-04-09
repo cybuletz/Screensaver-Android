@@ -460,7 +460,7 @@ class PhotoDisplayManager @Inject constructor(
                     return@launch
                 }
 
-                // We're in template mode and memory manager says it's okay to show a template
+                // Continue with template mode
                 val containerWidth = views.container.width
                 val containerHeight = views.container.height
 
@@ -475,8 +475,6 @@ class PhotoDisplayManager @Inject constructor(
 
                         if (updatedWidth > 0 && updatedHeight > 0) {
                             Log.d(TAG, "Container dimensions valid after delay: ${updatedWidth}x${updatedHeight}")
-
-                            // Use the MultiPhotoLayoutManager to create and display a template
                             createAndDisplayTemplate(views, updatedWidth, updatedHeight)
                         } else {
                             Log.e(TAG, "Container still has invalid dimensions after delay")
@@ -1170,11 +1168,14 @@ class PhotoDisplayManager @Inject constructor(
         displayJob?.cancel()
         displayJob = null
 
-        // Force cleanup when stopping display
-        bitmapMemoryManager.forceCleanupMemory()
+        // Clear our tracking but don't force recycling
+        if (lastPhotoUrl != null) {
+            bitmapMemoryManager.unregisterActiveBitmap("display:$lastPhotoUrl")
+            lastPhotoUrl = null
+        }
 
-        // Clear last photo URL
-        lastPhotoUrl = null
+        // Ask Glide to clear memory
+        bitmapMemoryManager.clearMemoryCaches()
 
         Log.d(TAG, "Photo display stopped")
     }
