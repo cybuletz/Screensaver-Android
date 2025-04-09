@@ -33,6 +33,7 @@ import com.photostreamr.photos.PhotoUriManager
 import com.photostreamr.security.AppAuthManager
 import com.photostreamr.security.BiometricHelper
 import com.photostreamr.security.SecurityPreferences
+import com.photostreamr.ui.BitmapMemoryManager
 import com.photostreamr.ui.EnhancedMultiPhotoLayoutManager
 import com.photostreamr.ui.MultiPhotoLayoutManager
 import com.photostreamr.ui.PhotoPreloader
@@ -119,7 +120,8 @@ object AppModule {
         appVersionManager: AppVersionManager,
         photoResizeManager: PhotoResizeManager,
         photoPreloader: PhotoPreloader,
-        enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager
+        enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager,
+        bitmapMemoryManager: BitmapMemoryManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
@@ -131,8 +133,18 @@ object AppModule {
             appVersionManager = appVersionManager,
             photoResizeManager = photoResizeManager,
             photoPreloader = photoPreloader,
-            enhancedMultiPhotoLayoutManager = enhancedMultiPhotoLayoutManager
+            enhancedMultiPhotoLayoutManager = enhancedMultiPhotoLayoutManager,
+            bitmapMemoryManager = bitmapMemoryManager
         )
+    }
+
+
+    @Provides
+    @Singleton
+    fun provideBitmapMemoryManager(
+        @ApplicationContext context: Context
+    ): BitmapMemoryManager {
+        return BitmapMemoryManager(context)
     }
 
     @Provides
@@ -173,9 +185,10 @@ object AppModule {
     @Singleton
     fun providePhotoPreloader(
         @ApplicationContext context: Context,
-        photoRepository: PhotoRepository
+        photoRepository: PhotoRepository,
+        bitmapMemoryManager: BitmapMemoryManager
     ): PhotoPreloader {
-        return PhotoPreloader(context, photoRepository)
+        return PhotoPreloader(context, photoRepository, bitmapMemoryManager)
     }
 
     @Provides

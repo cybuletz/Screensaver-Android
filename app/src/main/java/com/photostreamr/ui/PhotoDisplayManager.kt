@@ -68,7 +68,8 @@ class PhotoDisplayManager @Inject constructor(
     private val appVersionManager: AppVersionManager,
     private val photoResizeManager: PhotoResizeManager,
     private val photoPreloader: PhotoPreloader,
-    private val enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager
+    private val enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager,
+    private val bitmapMemoryManager: BitmapMemoryManager
 ) : PhotoTransitionEffects.TransitionCompletionCallback,
     EnhancedMultiPhotoLayoutManager.TemplateReadyCallback {
 
@@ -390,6 +391,9 @@ class PhotoDisplayManager @Inject constructor(
         val currentScope = lifecycleScope ?: return
         val views = this.views ?: return
 
+        // Check if we should show a single photo for memory cleanup or variety
+        val shouldShowSinglePhoto = bitmapMemoryManager.shouldShowSinglePhoto()
+
         // Get available photos and filter out Google Photos URIs that aren't cached
         currentScope.launch {
             try {
@@ -406,85 +410,91 @@ class PhotoDisplayManager @Inject constructor(
                     PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
                 PhotoResizeManager.DEFAULT_DISPLAY_MODE
 
-                if (displayMode == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
-                    // Always check container dimensions first
-                    val containerWidth = views.container.width
-                    val containerHeight = views.container.height
-
-                    if (containerWidth <= 0 || containerHeight <= 0) {
-                        Log.e(TAG, "Container has invalid dimensions: ${containerWidth}x${containerHeight}")
-
-                        // Add delay and retry once for container measurements
-                        currentScope.launch {
-                            delay(100)
-                            val updatedWidth = views.container.width
-                            val updatedHeight = views.container.height
-
-                            if (updatedWidth > 0 && updatedHeight > 0) {
-                                Log.d(TAG, "Container dimensions valid after delay: ${updatedWidth}x${updatedHeight}")
-
-                                // Use the MultiPhotoLayoutManager to create and display a template
-                                createAndDisplayTemplate(views, updatedWidth, updatedHeight)
-                            } else {
-                                Log.e(TAG, "Container still has invalid dimensions after delay")
-                                showErrorMessage("Layout error - please restart the app")
-                            }
-                        }
-                        return@launch
+                // If memory manager suggests showing a single photo, or we're not in template mode
+                if (shouldShowSinglePhoto || displayMode != PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
+                    if (shouldShowSinglePhoto) {
+                        Log.d(TAG, "Showing single photo for memory management or visual variety")
                     }
 
-                    // Container dimensions are valid, proceed with template creation
-                    createAndDisplayTemplate(views, containerWidth, containerHeight)
+                    // Find a valid photo to display
+                    var foundValidPhoto = false
+                    var attemptsCount = 0
+                    val maxAttempts = photoCount * 2 // Prevent infinite loops
+
+                    // Start preloading for upcoming photos
+                    photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
+
+                    while (!foundValidPhoto && attemptsCount < maxAttempts) {
+                        attemptsCount++
+                        val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
+                        val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: continue
+
+                        // Check if this is a Google Photos URI
+                        val isGooglePhotosUri = nextUrl.contains("com.google.android.apps.photos") ||
+                                nextUrl.contains("googleusercontent.com")
+
+                        if (isGooglePhotosUri) {
+                            // For Google Photos URIs, only use if we have a cached version
+                            val cachedUri = photoManager.persistentPhotoCache?.getCachedPhotoUri(nextUrl)
+                            if (cachedUri != null) {
+                                // We have a cached version, use it
+                                displayPhoto(nextIndex, cachedUri, true)
+                                foundValidPhoto = true
+                            } else {
+                                // No cached version, skip to next photo
+                                Log.d(TAG, "Skipping uncached Google Photos URI: $nextUrl")
+                                currentPhotoIndex = nextIndex
+                            }
+                        } else {
+                            // Regular URI, display directly
+                            displayPhoto(nextIndex, nextUrl, false)
+                            foundValidPhoto = true
+                        }
+                    }
+
+                    // If no valid photo was found after checking all photos
+                    if (!foundValidPhoto) {
+                        Log.d(TAG, "No valid cached photos available, showing default photo")
+                        showNoPhotosMessage()
+                    }
                     return@launch
                 }
 
-                // Find a valid photo to display for normal modes
-                var foundValidPhoto = false
-                var attemptsCount = 0
-                val maxAttempts = photoCount * 2 // Prevent infinite loops
+                // We're in template mode and memory manager says it's okay to show a template
+                val containerWidth = views.container.width
+                val containerHeight = views.container.height
 
-                // Start preloading for upcoming photos
-                photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
+                if (containerWidth <= 0 || containerHeight <= 0) {
+                    Log.e(TAG, "Container has invalid dimensions: ${containerWidth}x${containerHeight}")
 
-                while (!foundValidPhoto && attemptsCount < maxAttempts) {
-                    attemptsCount++
-                    val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
-                    val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: continue
+                    // Add delay and retry once for container measurements
+                    currentScope.launch {
+                        delay(100)
+                        val updatedWidth = views.container.width
+                        val updatedHeight = views.container.height
 
-                    // Check if this is a Google Photos URI
-                    val isGooglePhotosUri = nextUrl.contains("com.google.android.apps.photos") ||
-                            nextUrl.contains("googleusercontent.com")
+                        if (updatedWidth > 0 && updatedHeight > 0) {
+                            Log.d(TAG, "Container dimensions valid after delay: ${updatedWidth}x${updatedHeight}")
 
-                    if (isGooglePhotosUri) {
-                        // For Google Photos URIs, only use if we have a cached version
-                        val cachedUri = photoManager.persistentPhotoCache?.getCachedPhotoUri(nextUrl)
-                        if (cachedUri != null) {
-                            // We have a cached version, use it
-                            displayPhoto(nextIndex, cachedUri, true)
-                            foundValidPhoto = true
+                            // Use the MultiPhotoLayoutManager to create and display a template
+                            createAndDisplayTemplate(views, updatedWidth, updatedHeight)
                         } else {
-                            // No cached version, skip to next photo
-                            Log.d(TAG, "Skipping uncached Google Photos URI: $nextUrl")
-                            currentPhotoIndex = nextIndex
+                            Log.e(TAG, "Container still has invalid dimensions after delay")
+                            showErrorMessage("Layout error - please restart the app")
                         }
-                    } else {
-                        // Regular URI, display directly
-                        displayPhoto(nextIndex, nextUrl, false)
-                        foundValidPhoto = true
                     }
+                    return@launch
                 }
 
-                // If no valid photo was found after checking all photos
-                if (!foundValidPhoto) {
-                    Log.d(TAG, "No valid cached photos available, showing default photo")
-                    showNoPhotosMessage()
-                }
+                // Container dimensions are valid, proceed with template creation
+                createAndDisplayTemplate(views, containerWidth, containerHeight)
             } catch (e: Exception) {
                 Log.e(TAG, "Error finding valid photo", e)
                 showDefaultPhoto()
             }
         }
     }
+
 
     private fun createAndDisplayTemplate(views: Views, containerWidth: Int, containerHeight: Int) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
@@ -826,6 +836,11 @@ class PhotoDisplayManager @Inject constructor(
         }
 
         try {
+            // Unregister the previous photo bitmap
+            if (lastPhotoUrl != null) {
+                bitmapMemoryManager.unregisterActiveBitmap("display:$lastPhotoUrl")
+            }
+
             // Try to apply letterboxing if needed (only happens if in "fit" mode)
             photoResizeManager.processPhoto(resource, views.primaryView)
 
@@ -866,6 +881,13 @@ class PhotoDisplayManager @Inject constructor(
 
             // Set the current photo index
             currentPhotoIndex = nextIndex
+
+            // Get new URL and register the bitmap
+            val newPhotoUrl = photoManager.getPhotoUrl(nextIndex)
+            if (newPhotoUrl != null && resource is BitmapDrawable && !resource.bitmap.isRecycled) {
+                bitmapMemoryManager.registerActiveBitmap("display:$newPhotoUrl", resource.bitmap)
+                lastPhotoUrl = newPhotoUrl
+            }
 
             // For multi-template mode, schedule advancing to the next index
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
@@ -912,6 +934,7 @@ class PhotoDisplayManager @Inject constructor(
             isTransitioning = false // Always reset this flag even on error
         }
     }
+
 
     private fun Drawable.toBitmap(): Bitmap? {
         return try {
@@ -1142,50 +1165,31 @@ class PhotoDisplayManager @Inject constructor(
     }
 
     fun stopPhotoDisplay() {
-        Log.d(TAG, "Stopping photo display")
+        isScreensaverActive = false
+        photoPreloader.stopPreloading()
         displayJob?.cancel()
         displayJob = null
 
-        // Stop photo preloading
-        photoPreloader.stopPreloading()
+        // Force cleanup when stopping display
+        bitmapMemoryManager.forceCleanupMemory()
 
-        // Handle photostreamr state
-        isScreensaverActive = false
+        // Clear last photo URL
+        lastPhotoUrl = null
 
-        // Notify Spotify if we were actually displaying photos
-        if (wasDisplayingPhotos && spotifyPreferences.isEnabled()) {
-            spotifyManager.onScreensaverStopped()
-        }
-        wasDisplayingPhotos = false
+        Log.d(TAG, "Photo display stopped")
     }
 
     fun clearPhotoCache() {
         photoCache.cleanup()
     }
 
-    fun cleanup(clearCache: Boolean = false) {
-        Log.d(TAG, "Cleaning up PhotoDisplayManager, clearCache: $clearCache")
-        managerScope.launch {
-            stopPhotoDisplay()  // This will handle Spotify cleanup
-
-            // Clean up preloading components
-            photoPreloader.cleanup()
-            enhancedMultiPhotoLayoutManager.cleanup()
-
-            // Clean up resize manager
-            photoResizeManager.cleanup()
-
-            views = null
-            lifecycleScope = null
-            _photoLoadingState.value = LoadingState.IDLE
-
-            if (clearCache) {
-                withContext(Dispatchers.IO) {
-                    photoCache.cleanup()
-                }
-            }
-        }
+    fun cleanup() {
+        displayJob?.cancel()
         managerJob.cancel()
+
+        // Clean up resources
+        photoPreloader.cleanup()
+        lastPhotoUrl = null
     }
 
     fun updatePhotoSources(virtualAlbumPhotos: List<Uri> = emptyList()) {

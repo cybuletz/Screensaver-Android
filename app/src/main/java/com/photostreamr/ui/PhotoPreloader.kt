@@ -21,7 +21,8 @@ import kotlin.random.Random
 @Singleton
 class PhotoPreloader @Inject constructor(
     private val context: Context,
-    private val photoManager: PhotoRepository
+    private val photoManager: PhotoRepository,
+    private val bitmapMemoryManager: BitmapMemoryManager
 ) {
     companion object {
         private const val TAG = "PhotoPreloader"
@@ -78,11 +79,30 @@ class PhotoPreloader @Inject constructor(
     fun stopPreloading() {
         isPreloading = false
         preloadQueue.clear()
+
+        // Properly clean up resources
+        clearPreloadedResources()
+    }
+
+    /**
+     * Clear all preloaded resources
+     */
+    fun clearPreloadedResources() {
+        // Use BitmapMemoryManager to help with cleanup
+        preloadedResources.forEach { (key, drawable) ->
+            if (drawable is BitmapDrawable && !drawable.bitmap.isRecycled) {
+                Log.d(TAG, "Recycling bitmap from preloaded resource: $key")
+                bitmapMemoryManager.recycleBitmapFromDrawable(drawable)
+            }
+        }
+
         preloadedResources.clear()
+        Log.d(TAG, "All preloaded resources cleared")
     }
 
     /**
      * Set the number of photos to preload ahead
+     * Dynamically adjusts based on memory conditions
      */
     fun setPreloadCount(count: Int) {
         preloadCount = count.coerceIn(1, 5) // Reasonable limits
@@ -118,15 +138,29 @@ class PhotoPreloader @Inject constructor(
         preloadedResources.remove(url)
 
         // Periodically clean up any recycled bitmaps
-        if (kotlin.random.Random.nextInt(10) == 0) {  // 10% chance to clean up
-            val iterator = preloadedResources.entries.iterator()
-            while (iterator.hasNext()) {
-                val entry = iterator.next()
-                val drawable = entry.value
-                if (drawable is BitmapDrawable && drawable.bitmap.isRecycled) {
-                    iterator.remove()
-                }
+        if (random.nextInt(10) == 0) {  // 10% chance to clean up
+            cleanupRecycledResources()
+        }
+    }
+
+    /**
+     * Clean up any recycled bitmaps in our cache
+     */
+    private fun cleanupRecycledResources() {
+        val iterator = preloadedResources.entries.iterator()
+        var count = 0
+
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            val drawable = entry.value
+            if (drawable is BitmapDrawable && drawable.bitmap.isRecycled) {
+                iterator.remove()
+                count++
             }
+        }
+
+        if (count > 0) {
+            Log.d(TAG, "Removed $count recycled bitmaps from preload cache")
         }
     }
 
@@ -238,6 +272,12 @@ class PhotoPreloader @Inject constructor(
                     isFirstResource: Boolean
                 ): Boolean {
                     Log.d(TAG, "Successfully preloaded: $url")
+
+                    // Register this bitmap with the memory manager if it's a BitmapDrawable
+                    if (resource is BitmapDrawable && !resource.bitmap.isRecycled) {
+                        bitmapMemoryManager.registerActiveBitmap("preload:$url", resource.bitmap)
+                    }
+
                     preloadedResources[url] = resource
                     activePreloads--
 
