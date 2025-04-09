@@ -123,7 +123,7 @@ class PhotoDisplayManager @Inject constructor(
     private var displayJob: Job? = null
 
     // Settings
-    private var transitionDuration: Long = 1000
+    private var transitionDuration: Long = 5000
     private var showLocation: Boolean = false
     private var isRandomOrder: Boolean = false
 
@@ -173,6 +173,12 @@ class PhotoDisplayManager @Inject constructor(
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
                 val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
 
+                // Get the current transition duration setting (1-5 seconds)
+                val transitionDurationSetting = prefs.getInt("transition_duration", 2)
+                val effectiveTransitionDuration = transitionDurationSetting * 1000L
+
+                Log.d(TAG, "Applying template transition with duration: $effectiveTransitionDuration ms")
+
                 resetViewProperties(views)
 
                 Log.d(TAG, "Displaying multi-photo template with layout type: $layoutType")
@@ -195,7 +201,7 @@ class PhotoDisplayManager @Inject constructor(
                         resource = result,
                         nextIndex = currentPhotoIndex,
                         transitionEffect = transitionEffect,
-                        transitionDuration = transitionDuration,
+                        transitionDuration = effectiveTransitionDuration,
                         callback = this@PhotoDisplayManager
                     )
                 }
@@ -268,11 +274,6 @@ class PhotoDisplayManager @Inject constructor(
         photoCache.savePhotoState(true, url)
     }
 
-    private fun getIntervalMillis(): Long {
-        val seconds = prefs.getInt(PREF_KEY_INTERVAL, DEFAULT_INTERVAL_SECONDS)
-        return seconds * MILLIS_PER_SECOND
-    }
-
     private fun handleCacheError() {
         lifecycleScope?.launch {
             try {
@@ -316,6 +317,12 @@ class PhotoDisplayManager @Inject constructor(
             // Apply current display mode (fill or fit)
             photoResizeManager.applyDisplayMode()
         }
+
+        // Read transition duration from preferences
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val transitionDurationSetting = prefs.getInt("transition_duration", 2)
+        this.transitionDuration = transitionDurationSetting * 1000L
+        Log.d(TAG, "Initialized transition duration to: ${this.transitionDuration}ms")
 
         // Store scope locally to avoid smart cast issue
         val currentScope = scope
@@ -687,7 +694,6 @@ class PhotoDisplayManager @Inject constructor(
     }
 
     fun startPhotoDisplay() {
-        val currentScope = lifecycleScope ?: return
         val interval = getIntervalMillis()
         Log.d(TAG, "Starting photo display with interval: ${interval}ms")
 
@@ -715,22 +721,9 @@ class PhotoDisplayManager @Inject constructor(
         }
 
         wasDisplayingPhotos = true
-        displayJob = currentScope.launch {
-            try {
-                // Start with first photo immediately
-                loadAndDisplayPhoto(false)
 
-                // Then continue with regular interval
-                while (isActive) {
-                    delay(getIntervalMillis()) // Always get fresh value
-                    loadAndDisplayPhoto()
-                }
-            } catch (e: Exception) {
-                if (e !is CancellationException) {
-                    Log.e(TAG, "Error in photo display loop", e)
-                }
-            }
-        }
+        // Just load the first photo immediately - the rest will be scheduled by completeTransition
+        loadAndDisplayPhoto(false)
     }
 
     private fun resetViewProperties(views: Views) {
@@ -827,6 +820,9 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    /**
+     * Fixes the timing issues with photo intervals and template transitions
+     */
     private fun completeTransition(views: Views, resource: Drawable, nextIndex: Int) {
         if (!isMainThread()) {
             views.container.post { completeTransition(views, resource, nextIndex) }
@@ -887,35 +883,24 @@ class PhotoDisplayManager @Inject constructor(
                 lastPhotoUrl = newPhotoUrl
             }
 
-            // For multi-template mode, schedule advancing to the next index
+            // For multi-template mode, update the next photo index
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
             val displayMode = prefs.getString(PhotoResizeManager.PREF_KEY_PHOTO_SCALE,
                 PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
             PhotoResizeManager.DEFAULT_DISPLAY_MODE
 
             if (displayMode == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
-                // Schedule advancement to the next index for future templates
+                // Launch a coroutine to safely call getNextPhotoIndex
                 lifecycleScope?.launch {
                     try {
-                        // Wait for a very short time to ensure we're out of the current operation
-                        delay(50)
+                        // Get the next photo index for the next template
+                        val nextPhotoIndex = getNextPhotoIndex(currentPhotoIndex, photoManager.getPhotoCount())
 
-                        // Get the next photo index for the future template (but don't set it yet)
-                        // This just helps with preloading
-                        val futureIndex = getNextPhotoIndex(currentPhotoIndex, photoManager.getPhotoCount())
-
-                        // Start preloading for this future index
-                        photoPreloader.updateCurrentIndex(futureIndex)
-
-                        // Schedule the next template after the interval
-                        delay(getIntervalMillis() - 50) // Subtract the small delay from earlier
-
-                        if (!isTransitioning) {
-                            Log.d(TAG, "Scheduling next template display after interval")
-                            loadAndDisplayPhoto()
-                        }
+                        // Update the current index
+                        currentPhotoIndex = nextPhotoIndex
+                        Log.d(TAG, "Advanced to next photo index for templates: $currentPhotoIndex")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error in template advancement scheduling", e)
+                        Log.e(TAG, "Error advancing to next photo index", e)
                     }
                 }
             }
@@ -927,10 +912,45 @@ class PhotoDisplayManager @Inject constructor(
             adManager.updatePhotoCount(currentPhotoIndex)
             Log.d(TAG, "Transition completed to photo $nextIndex")
 
+            // IMPORTANT: Schedule the next photo display only once, regardless of display mode
+            displayJob?.cancel()
+            displayJob = lifecycleScope?.launch {
+                try {
+                    // Get the full interval from preferences
+                    val fullInterval = getIntervalMillis()
+                    Log.d(TAG, "Photo interval from preferences: ${fullInterval/1000} seconds ($fullInterval ms)")
+                    Log.d(TAG, "Scheduling next template display after interval: $fullInterval ms")
+
+                    // Wait for the FULL interval
+                    delay(fullInterval)
+
+                    // Then load the next photo/template
+                    if (!isTransitioning) {
+                        loadAndDisplayPhoto()
+                    }
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Log.e(TAG, "Error scheduling next photo", e)
+                    }
+                }
+            }
+
         } catch (e: Exception) {
             Log.e(TAG, "Error in completeTransition", e)
             isTransitioning = false // Always reset this flag even on error
         }
+    }
+
+    /**
+     * Get the current interval in milliseconds from preferences
+     * Always reads fresh from preferences to ensure it uses the latest user setting
+     */
+    private fun getIntervalMillis(): Long {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val seconds = prefs.getInt(PREF_KEY_INTERVAL, DEFAULT_INTERVAL_SECONDS)
+        val milliseconds = seconds * MILLIS_PER_SECOND
+        Log.d(TAG, "Photo interval from preferences: $seconds seconds ($milliseconds ms)")
+        return milliseconds
     }
 
 
@@ -963,7 +983,18 @@ class PhotoDisplayManager @Inject constructor(
     fun updateSettings(transitionDuration: Long? = null, showLocation: Boolean? = null, isRandomOrder: Boolean? = null) {
         Log.d(TAG, "Updating settings")
 
-        transitionDuration?.let { this.transitionDuration = it }
+        // If transition duration is provided, update it, otherwise get it from preferences
+        if (transitionDuration != null) {
+            this.transitionDuration = transitionDuration
+            Log.d(TAG, "Setting transition duration to: $transitionDuration ms")
+        } else {
+            // Read from preferences if not explicitly provided
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            val durationSetting = prefs.getInt("transition_duration", 2)
+            this.transitionDuration = durationSetting * 1000L
+            Log.d(TAG, "Using transition duration from preferences: ${this.transitionDuration} ms")
+        }
+
         showLocation?.let { this.showLocation = it }
         isRandomOrder?.let { this.isRandomOrder = it }
 
@@ -979,7 +1010,7 @@ class PhotoDisplayManager @Inject constructor(
         // Log the current template type setting
         val templateType = prefs.getString(PhotoResizeManager.TEMPLATE_TYPE_KEY,
             PhotoResizeManager.TEMPLATE_TYPE_DEFAULT.toString())
-        Log.d(TAG, "Current settings - Display mode: $displayMode, Template type: $templateType")
+        Log.d(TAG, "Current settings - Display mode: $displayMode, Template type: $templateType, Transition duration: ${this.transitionDuration}ms")
 
         // Make sure we restart photo display to apply any changes
         val currentScope = lifecycleScope ?: return

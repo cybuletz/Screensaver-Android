@@ -47,6 +47,9 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
         // Border settings
         private const val BORDER_WIDTH = 8f
         private const val BORDER_COLOR = Color.WHITE
+
+        // Default transition duration in ms if preference not found
+        private const val DEFAULT_TRANSITION_DURATION_MS = 2000L
     }
 
     // Job for coroutine management
@@ -57,6 +60,16 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
     interface TemplateReadyCallback {
         fun onTemplateReady(result: Drawable, layoutType: Int)
         fun onTemplateError(error: String)
+    }
+
+    /**
+     * Get the transition duration from preferences in milliseconds
+     */
+    private fun getTransitionDurationMs(): Long {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        // Get the value (1-5) from preferences and convert to milliseconds
+        val durationSetting = prefs.getInt("transition_duration", 2)
+        return durationSetting * 1000L
     }
 
     /**
@@ -407,6 +420,32 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
                 Log.w(TAG, "Continuation was cancelled during exception", it)
             }
         }
+    }
+
+    /**
+     * Apply transition to the template with the correct duration from settings
+     */
+    fun applyTemplateTransition(
+        views: PhotoTransitionEffects.TransitionViews,
+        drawable: Drawable,
+        nextIndex: Int,
+        callback: PhotoTransitionEffects.TransitionCompletionCallback
+    ) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
+        val transitionDuration = getTransitionDurationMs()
+
+        Log.d(TAG, "Applying template transition with duration: $transitionDuration ms")
+
+        val transitionEffects = PhotoTransitionEffects(context)
+        transitionEffects.performTransition(
+            views = views,
+            resource = drawable,
+            nextIndex = nextIndex,
+            transitionEffect = transitionEffect,
+            transitionDuration = transitionDuration,
+            callback = callback
+        )
     }
 
     /**
