@@ -1,14 +1,21 @@
 package com.photostreamr.ui
 
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
+import android.os.Debug
 import android.util.Log
 import com.bumptech.glide.Glide
 import kotlinx.coroutines.*
 import java.lang.ref.WeakReference
+import java.text.DecimalFormat
+import java.text.SimpleDateFormat
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
@@ -35,6 +42,9 @@ class BitmapMemoryManager @Inject constructor(
 
         // Random single photo frequency for visual variety (1 in X chance)
         private const val VARIETY_SINGLE_PHOTO_CHANCE = 5
+
+        // Memory logging interval
+        private const val LOG_MEMORY_INTERVAL_MS = 30000L // 30 seconds
     }
 
     // Track active cleanup state
@@ -52,14 +62,39 @@ class BitmapMemoryManager @Inject constructor(
     // Track memory state
     private var memoryPressureLevel = MemoryPressureLevel.NORMAL
 
+    // Memory metrics tracking
+    private val totalBitmapMemory = AtomicLong(0)
+    private var lastCleanupTime: Long = 0
+    private var memoryBeforeLastCleanup: Long = 0
+    private var memoryAfterLastCleanup: Long = 0
+    private val decimalFormat = DecimalFormat("#.##")
+    private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+
+    // Memory history for tracking trends
+    private val memoryHistory = LinkedList<MemorySnapshot>()
+    private val maxHistorySize = 10
+
     enum class MemoryPressureLevel {
         NORMAL,
         ELEVATED,
         SEVERE
     }
 
+    data class MemorySnapshot(
+        val timestamp: Long,
+        val totalMemory: Long,
+        val usedMemory: Long,
+        val usedPercent: Float,
+        val bitmapCount: Int,
+        val estimatedBitmapMemory: Long
+    ) {
+        fun getFormattedTimestamp(): String =
+            SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(timestamp))
+    }
+
     init {
         startMemoryMonitoring()
+        startDetailedMemoryLogging()
     }
 
     /**
@@ -76,6 +111,8 @@ class BitmapMemoryManager @Inject constructor(
             if (cleanupPhotosRemaining <= 0) {
                 isInCleanupCycle = false
                 Log.d(TAG, "Cleanup cycle completed")
+                // Trigger memory logging after cleanup cycle completes
+                logMemoryMetrics("🧹 Cleanup cycle completed")
             }
 
             return true
@@ -113,7 +150,13 @@ class BitmapMemoryManager @Inject constructor(
             DEFAULT_CLEANUP_CYCLE_LENGTH
         }
 
-        Log.d(TAG, "Starting cleanup cycle with $cleanupPhotosRemaining photos, memory pressure: $memoryPressureLevel")
+        // Log memory state before cleanup
+        lastCleanupTime = System.currentTimeMillis()
+        val memoryInfo = getMemoryInfo()
+        memoryBeforeLastCleanup = memoryInfo.usedMemory
+
+        Log.d(TAG, "🚨 Starting cleanup cycle with $cleanupPhotosRemaining photos, memory pressure: $memoryPressureLevel")
+        Log.d(TAG, "💾 Memory before cleanup: ${formatBytes(memoryBeforeLastCleanup)} / ${formatBytes(memoryInfo.maxMemory)} (${decimalFormat.format(memoryInfo.usedPercent)}%)")
 
         // Clear memory caches
         clearMemoryCaches()
@@ -129,17 +172,24 @@ class BitmapMemoryManager @Inject constructor(
             return
         }
 
+        // Calculate bitmap memory size
+        val byteCount = calculateBitmapSize(bitmap)
+        totalBitmapMemory.addAndGet(byteCount)
+
         activeBitmaps[key] = WeakReference(bitmap)
-        Log.d(TAG, "Registered active bitmap: $key, current active count: ${activeBitmaps.size}")
+        Log.d(TAG, "📊 Registered bitmap: $key (${formatBytes(byteCount)}), total tracked: ${activeBitmaps.size}")
     }
 
     /**
      * Unregister a bitmap that's no longer being displayed
-     * IMPORTANT: Does NOT recycle the bitmap, only removes our reference to it
      */
     fun unregisterActiveBitmap(key: String) {
-        activeBitmaps.remove(key)?.get()?.let {
-            Log.d(TAG, "Unregistered active bitmap: $key")
+        activeBitmaps.remove(key)?.get()?.let { bitmap ->
+            if (!bitmap.isRecycled) {
+                val byteCount = calculateBitmapSize(bitmap)
+                totalBitmapMemory.addAndGet(-byteCount)
+                Log.d(TAG, "🗑️ Unregistered bitmap: $key (${formatBytes(byteCount)})")
+            }
         }
     }
 
@@ -149,13 +199,18 @@ class BitmapMemoryManager @Inject constructor(
     fun clearMemoryCaches() {
         managerScope.launch {
             try {
+                // Log state before cleanup
+                val beforeInfo = getMemoryInfo()
+                val beforeCount = activeBitmaps.size
+                val beforeBitmapMem = calculateTotalTrackedBitmapMemory()
+
                 // Clean up our tracking map
                 cleanupTrackingMap()
 
                 // Clear Glide's memory cache on main thread
                 withContext(Dispatchers.Main) {
                     try {
-                        Log.d(TAG, "Clearing Glide memory cache")
+                        Log.d(TAG, "🧹 Clearing Glide memory cache")
                         Glide.get(context).clearMemory()
                     } catch (e: Exception) {
                         Log.e(TAG, "Error clearing Glide memory cache", e)
@@ -163,12 +218,154 @@ class BitmapMemoryManager @Inject constructor(
                 }
 
                 // Request garbage collection
-                Log.d(TAG, "Requesting garbage collection")
+                Log.d(TAG, "🗑️ Requesting garbage collection")
                 System.gc()
+
+                // Allow some time for GC to complete
+                delay(200)
+
+                // Log state after cleanup
+                val afterInfo = getMemoryInfo()
+                val afterCount = activeBitmaps.size
+                val afterBitmapMem = calculateTotalTrackedBitmapMemory()
+
+                // Record memory after cleanup
+                memoryAfterLastCleanup = afterInfo.usedMemory
+
+                // Calculate and log memory freed
+                val memoryFreed = memoryBeforeLastCleanup - memoryAfterLastCleanup
+                val removedBitmaps = beforeCount - afterCount
+                val bitmapMemFreed = beforeBitmapMem - afterBitmapMem
+
+                Log.d(TAG, """
+                    🧹 Memory cleanup complete:
+                    • Memory before: ${formatBytes(beforeInfo.usedMemory)} (${decimalFormat.format(beforeInfo.usedPercent)}%)
+                    • Memory after:  ${formatBytes(afterInfo.usedMemory)} (${decimalFormat.format(afterInfo.usedPercent)}%)
+                    • Memory freed:  ${formatBytes(memoryFreed.coerceAtLeast(0))}
+                    
+                    • Bitmaps before: $beforeCount (${formatBytes(beforeBitmapMem)})
+                    • Bitmaps after:  $afterCount (${formatBytes(afterBitmapMem)})
+                    • Bitmaps freed:  $removedBitmaps (${formatBytes(bitmapMemFreed.coerceAtLeast(0))})
+                """.trimIndent())
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error in clearMemoryCaches", e)
             }
+        }
+    }
+
+    /**
+     * Start periodic detailed memory logging
+     */
+    private fun startDetailedMemoryLogging() {
+        managerScope.launch {
+            while (isActive) {
+                try {
+                    logMemoryMetrics("📊 Periodic memory report")
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Log.e(TAG, "Error logging memory metrics", e)
+                    }
+                }
+                delay(LOG_MEMORY_INTERVAL_MS)
+            }
+        }
+    }
+
+    /**
+     * Log detailed memory metrics
+     */
+    fun logMemoryMetrics(reason: String) {
+        val memInfo = getMemoryInfo()
+        val trackedBitmaps = activeBitmaps.size
+        val trackedBitmapMem = calculateTotalTrackedBitmapMemory()
+        val nativeHeap = Debug.getNativeHeapAllocatedSize()
+
+        // Get ActivityManager memory info
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        val systemAvailMem = memoryInfo.availMem
+        val systemTotalMem = memoryInfo.totalMem
+        val systemLowMemory = memoryInfo.lowMemory
+
+        // Add to memory history
+        val snapshot = MemorySnapshot(
+            timestamp = System.currentTimeMillis(),
+            totalMemory = memInfo.maxMemory,
+            usedMemory = memInfo.usedMemory,
+            usedPercent = memInfo.usedPercent,
+            bitmapCount = trackedBitmaps,
+            estimatedBitmapMemory = trackedBitmapMem
+        )
+
+        synchronized(memoryHistory) {
+            memoryHistory.add(snapshot)
+            if (memoryHistory.size > maxHistorySize) {
+                memoryHistory.removeFirst()
+            }
+        }
+
+        Log.i(TAG, """
+            $reason
+            📱 App Memory:
+            • Java heap: ${formatBytes(memInfo.usedMemory)} / ${formatBytes(memInfo.maxMemory)} (${decimalFormat.format(memInfo.usedPercent)}%)
+            • Native heap: ${formatBytes(nativeHeap)}
+            • Memory pressure: $memoryPressureLevel
+            
+            🖼️ Bitmap Memory:
+            • Tracked bitmaps: $trackedBitmaps
+            • Estimated bitmap memory: ${formatBytes(trackedBitmapMem)}
+            
+            💻 System Memory:
+            • Available: ${formatBytes(systemAvailMem)} / ${formatBytes(systemTotalMem)} (${decimalFormat.format(systemAvailMem.toFloat() / systemTotalMem * 100)}%)
+            • Low memory state: $systemLowMemory
+            
+            ${getMemoryTrendReport()}
+        """.trimIndent())
+    }
+
+    /**
+     * Generate a memory trend report based on history
+     */
+    private fun getMemoryTrendReport(): String {
+        if (memoryHistory.size < 2) return "📈 Memory trend: Insufficient data"
+
+        val oldest = memoryHistory.first
+        val newest = memoryHistory.last
+
+        val memoryDiff = newest.usedMemory - oldest.usedMemory
+        val percentDiff = newest.usedPercent - oldest.usedPercent
+        val bitmapCountDiff = newest.bitmapCount - oldest.bitmapCount
+        val bitmapMemDiff = newest.estimatedBitmapMemory - oldest.estimatedBitmapMemory
+
+        val trend = when {
+            percentDiff > 5 -> "🔴 INCREASING rapidly"
+            percentDiff > 2 -> "🟠 INCREASING"
+            percentDiff < -5 -> "🟢 DECREASING rapidly"
+            percentDiff < -2 -> "🟢 DECREASING"
+            else -> "🟡 STABLE"
+        }
+
+        return """
+            📈 Memory trend ($trend):
+            • Memory change: ${formatBytes(memoryDiff)} (${decimalFormat.format(percentDiff)}%)
+            • Bitmap count change: $bitmapCountDiff
+            • Bitmap memory change: ${formatBytes(bitmapMemDiff)}
+            • Time period: ${formatTimeDifference(newest.timestamp - oldest.timestamp)}
+        """.trimIndent()
+    }
+
+    /**
+     * Format a time difference in ms to a human-readable string
+     */
+    private fun formatTimeDifference(diffMs: Long): String {
+        val seconds = diffMs / 1000
+        val minutes = seconds / 60
+
+        return when {
+            minutes > 0 -> "$minutes min ${seconds % 60} sec"
+            else -> "$seconds sec"
         }
     }
 
@@ -187,14 +384,16 @@ class BitmapMemoryManager @Inject constructor(
                     memoryPressureLevel = when {
                         usedPercent >= SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT -> {
                             if (previousLevel != MemoryPressureLevel.SEVERE) {
-                                Log.w(TAG, "Severe memory pressure detected: $usedPercent%")
+                                Log.w(TAG, "⚠️ SEVERE memory pressure detected: $usedPercent%")
+                                logMemoryMetrics("⚠️ SEVERE memory pressure detected")
                                 clearMemoryCaches()
                             }
                             MemoryPressureLevel.SEVERE
                         }
                         usedPercent >= MEMORY_PRESSURE_THRESHOLD_PERCENT -> {
                             if (previousLevel != MemoryPressureLevel.ELEVATED) {
-                                Log.w(TAG, "Elevated memory pressure detected: $usedPercent%")
+                                Log.w(TAG, "⚠️ ELEVATED memory pressure detected: $usedPercent%")
+                                logMemoryMetrics("⚠️ ELEVATED memory pressure detected")
                             }
                             MemoryPressureLevel.ELEVATED
                         }
@@ -204,8 +403,8 @@ class BitmapMemoryManager @Inject constructor(
                     // Periodically clean tracking map
                     cleanupTrackingMap()
 
-                    // Log active bitmap count periodically
-                    Log.d(TAG, "Memory: ${activeBitmaps.size} tracked bitmaps, usage: $usedPercent%, level: $memoryPressureLevel")
+                    // Log memory state every 30 seconds
+                    Log.d(TAG, "📊 Memory: ${formatBytes(memoryInfo.usedMemory)} / ${formatBytes(memoryInfo.maxMemory)} (${decimalFormat.format(usedPercent)}%), ${activeBitmaps.size} tracked bitmaps, level: $memoryPressureLevel")
 
                 } catch (e: Exception) {
                     if (e !is CancellationException) {
@@ -213,7 +412,7 @@ class BitmapMemoryManager @Inject constructor(
                     }
                 }
 
-                delay(10000) // Check every 10 seconds
+                delay(5000) // Check every 5 seconds
             }
         }
     }
@@ -236,8 +435,56 @@ class BitmapMemoryManager @Inject constructor(
         }
 
         if (removedCount > 0) {
-            Log.d(TAG, "Removed $removedCount stale entries from bitmap tracking")
+            Log.d(TAG, "🧹 Removed $removedCount stale entries from bitmap tracking")
         }
+    }
+
+    /**
+     * Calculate total memory used by tracked bitmaps
+     */
+    private fun calculateTotalTrackedBitmapMemory(): Long {
+        var total = 0L
+
+        for (entry in activeBitmaps) {
+            val bitmap = entry.value.get() ?: continue
+            if (!bitmap.isRecycled) {
+                total += calculateBitmapSize(bitmap)
+            }
+        }
+
+        return total
+    }
+
+    /**
+     * Calculate the memory size of a bitmap
+     */
+    private fun calculateBitmapSize(bitmap: Bitmap): Long {
+        if (bitmap.isRecycled) return 0L
+
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                bitmap.allocationByteCount.toLong()
+            } else {
+                bitmap.byteCount.toLong()
+            }
+        } catch (e: Exception) {
+            // Fallback calculation
+            bitmap.width * bitmap.height * (if (bitmap.config == Bitmap.Config.ARGB_8888) 4 else 2).toLong()
+        }
+    }
+
+    /**
+     * Format bytes to human-readable string
+     */
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 0) return "0 B"
+        if (bytes < 1024) return "$bytes B"
+
+        val units = arrayOf("B", "KB", "MB", "GB")
+        val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+        val value = bytes.toDouble() / Math.pow(1024.0, digitGroups.toDouble())
+
+        return "${decimalFormat.format(value)} ${units[digitGroups]}"
     }
 
     /**
@@ -246,21 +493,29 @@ class BitmapMemoryManager @Inject constructor(
     private fun getMemoryInfo(): MemoryInfo {
         val runtime = Runtime.getRuntime()
         val maxMemory = runtime.maxMemory()
-        val usedMemory = runtime.totalMemory() - runtime.freeMemory()
+        val totalMemory = runtime.totalMemory()
+        val freeMemory = runtime.freeMemory()
+        val usedMemory = totalMemory - freeMemory
 
         val usedPercent = (usedMemory.toFloat() / maxMemory.toFloat()) * 100
 
         return MemoryInfo(
             maxMemory = maxMemory,
+            totalMemory = totalMemory,
+            freeMemory = freeMemory,
             usedMemory = usedMemory,
-            usedPercent = usedPercent
+            usedPercent = usedPercent,
+            trackedBitmaps = activeBitmaps.size
         )
     }
 
     data class MemoryInfo(
         val maxMemory: Long,
+        val totalMemory: Long,
+        val freeMemory: Long,
         val usedMemory: Long,
-        val usedPercent: Float
+        val usedPercent: Float,
+        val trackedBitmaps: Int
     )
 
     fun cleanup() {
