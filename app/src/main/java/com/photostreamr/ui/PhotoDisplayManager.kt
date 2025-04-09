@@ -69,7 +69,9 @@ class PhotoDisplayManager @Inject constructor(
     private val photoResizeManager: PhotoResizeManager,
     private val photoPreloader: PhotoPreloader,
     private val enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager,
-    private val bitmapMemoryManager: BitmapMemoryManager
+    private val bitmapMemoryManager: BitmapMemoryManager,
+    private val smartTemplateHelper: SmartTemplateHelper,
+    private val smartPhotoLayoutManager: SmartPhotoLayoutManager
 ) : PhotoTransitionEffects.TransitionCompletionCallback,
     EnhancedMultiPhotoLayoutManager.TemplateReadyCallback {
 
@@ -411,90 +413,266 @@ class PhotoDisplayManager @Inject constructor(
                     return@launch
                 }
 
-                // Check if we're in multi-template mode
+                // Check which display mode we're in
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
                 val displayMode = prefs.getString(PhotoResizeManager.PREF_KEY_PHOTO_SCALE,
                     PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
                 PhotoResizeManager.DEFAULT_DISPLAY_MODE
 
-                // If memory manager suggests showing a single photo, or we're not in template mode
-                if (shouldShowSinglePhoto || displayMode != PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
-                    if (shouldShowSinglePhoto) {
-                        Log.d(TAG, "Showing single photo for memory management or visual variety")
+                Log.d(TAG, "Current display mode: $displayMode")
+
+                // Handle based on display mode
+                when (displayMode) {
+                    PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE -> {
+                        // [Keep existing multi-template code]
+                        handleMultiTemplateMode(views, currentScope)
                     }
+                    PhotoResizeManager.DISPLAY_MODE_SMART_FILL -> {
+                        // Smart fill uses ML-based cropping for single photo display
+                        handleSmartFillMode(views, currentScope)
+                    }
+                    else -> {
+                        // Standard single photo display (fill or fit)
+                        handleSinglePhotoMode(views, currentScope)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error finding valid photo", e)
+                showDefaultPhoto()
+            }
+        }
+    }
 
-                    // Find a valid photo to display
-                    var foundValidPhoto = false
-                    var attemptsCount = 0
-                    val maxAttempts = photoCount * 2 // Prevent infinite loops
+    // New helper method for handling multi-template mode
+    private fun handleMultiTemplateMode(views: Views, currentScope: CoroutineScope) {
+        val containerWidth = views.container.width
+        val containerHeight = views.container.height
 
-                    // Start preloading for upcoming photos
-                    photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
+        if (containerWidth <= 0 || containerHeight <= 0) {
+            Log.e(TAG, "Container has invalid dimensions: ${containerWidth}x${containerHeight}")
 
-                    while (!foundValidPhoto && attemptsCount < maxAttempts) {
-                        attemptsCount++
-                        val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
-                        val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: continue
+            // Add delay and retry once for container measurements
+            currentScope.launch {
+                delay(100)
+                val updatedWidth = views.container.width
+                val updatedHeight = views.container.height
 
-                        // Check if this is a Google Photos URI
-                        val isGooglePhotosUri = nextUrl.contains("com.google.android.apps.photos") ||
-                                nextUrl.contains("googleusercontent.com")
+                if (updatedWidth > 0 && updatedHeight > 0) {
+                    Log.d(TAG, "Container dimensions valid after delay: ${updatedWidth}x${updatedHeight}")
+                    createAndDisplayTemplate(views, updatedWidth, updatedHeight)
+                } else {
+                    Log.e(TAG, "Container still has invalid dimensions after delay")
+                    showErrorMessage("Layout error - please restart the app")
+                }
+            }
+            return
+        }
 
-                        if (isGooglePhotosUri) {
-                            // For Google Photos URIs, only use if we have a cached version
-                            val cachedUri = photoManager.persistentPhotoCache?.getCachedPhotoUri(nextUrl)
-                            if (cachedUri != null) {
-                                // We have a cached version, use it
-                                displayPhoto(nextIndex, cachedUri, true)
-                                foundValidPhoto = true
-                            } else {
-                                // No cached version, skip to next photo
-                                Log.d(TAG, "Skipping uncached Google Photos URI: $nextUrl")
-                                currentPhotoIndex = nextIndex
-                            }
-                        } else {
-                            // Regular URI, display directly
-                            displayPhoto(nextIndex, nextUrl, false)
+        // Container dimensions are valid, proceed with template creation
+        createAndDisplayTemplate(views, containerWidth, containerHeight)
+    }
+
+    // New helper method for handling smart fill mode (ML-based cropping)
+    private fun handleSmartFillMode(views: Views, currentScope: CoroutineScope) {
+        Log.d(TAG, "Using smart fill mode with ML-based cropping")
+
+        // Start preloading for upcoming photos
+        photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
+
+        currentScope.launch {
+            try {
+                val photoCount = photoManager.getPhotoCount()
+                // Find a valid photo to display
+                var foundValidPhoto = false
+                var attemptsCount = 0
+                val maxAttempts = photoCount * 2 // Prevent infinite loops
+
+                while (!foundValidPhoto && attemptsCount < maxAttempts) {
+                    attemptsCount++
+                    val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
+                    val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: continue
+
+                    // Check if this is a Google Photos URI
+                    val isGooglePhotosUri = nextUrl.contains("com.google.android.apps.photos") ||
+                            nextUrl.contains("googleusercontent.com")
+
+                    if (isGooglePhotosUri) {
+                        // For Google Photos URIs, only use if we have a cached version
+                        val cachedUri = photoManager.persistentPhotoCache?.getCachedPhotoUri(nextUrl)
+                        if (cachedUri != null) {
+                            // We have a cached version, use smart crop with ML
+                            displaySmartCroppedPhoto(nextIndex, cachedUri, true)
                             foundValidPhoto = true
+                        } else {
+                            // No cached version, skip to next photo
+                            Log.d(TAG, "Skipping uncached Google Photos URI: $nextUrl")
+                            currentPhotoIndex = nextIndex
                         }
+                    } else {
+                        // Regular URI, display with smart crop
+                        displaySmartCroppedPhoto(nextIndex, nextUrl, false)
+                        foundValidPhoto = true
                     }
-
-                    // If no valid photo was found after checking all photos
-                    if (!foundValidPhoto) {
-                        Log.d(TAG, "No valid cached photos available, showing default photo")
-                        showNoPhotosMessage()
-                    }
-                    return@launch
                 }
 
-                // Continue with template mode
+                // If no valid photo was found after checking all photos
+                if (!foundValidPhoto) {
+                    Log.d(TAG, "No valid cached photos available, showing default photo")
+                    showNoPhotosMessage()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in smart fill mode", e)
+                showDefaultPhoto()
+            }
+        }
+    }
+
+    // Helper method for displaying a photo with fit scalling and with smart ML-based cropping
+    private fun displaySmartCroppedPhoto(photoIndex: Int, uri: String, isCached: Boolean) {
+        val views = this.views ?: return
+        val currentScope = lifecycleScope ?: return
+
+        isTransitioning = true
+
+        currentScope.launch {
+            try {
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
+                val startTime = System.currentTimeMillis()
                 val containerWidth = views.container.width
                 val containerHeight = views.container.height
 
-                if (containerWidth <= 0 || containerHeight <= 0) {
-                    Log.e(TAG, "Container has invalid dimensions: ${containerWidth}x${containerHeight}")
+                resetViewProperties(views)
 
-                    // Add delay and retry once for container measurements
-                    currentScope.launch {
-                        delay(100)
-                        val updatedWidth = views.container.width
-                        val updatedHeight = views.container.height
+                Log.d(TAG, "Displaying smart cropped photo $photoIndex: $uri" + (if(isCached) " (cached)" else ""))
 
-                        if (updatedWidth > 0 && updatedHeight > 0) {
-                            Log.d(TAG, "Container dimensions valid after delay: ${updatedWidth}x${updatedHeight}")
-                            createAndDisplayTemplate(views, updatedWidth, updatedHeight)
+                withContext(Dispatchers.Main) {
+                    GlideApp.with(context)
+                        .asBitmap()
+                        .load(uri)
+                        .diskCacheStrategy(DiskCacheStrategy.ALL)
+                        .error(R.drawable.default_photo)
+                        .listener(object : RequestListener<Bitmap> {
+                            override fun onLoadFailed(
+                                e: GlideException?,
+                                model: Any?,
+                                target: Target<Bitmap>,
+                                isFirstResource: Boolean
+                            ): Boolean {
+                                Log.e(TAG, "Failed to load photo for smart crop: $model", e)
+                                isTransitioning = false
+
+                                // Skip to next photo
+                                currentPhotoIndex = photoIndex
+                                loadAndDisplayPhoto(false)
+                                return false
+                            }
+
+                            override fun onResourceReady(
+                                resource: Bitmap,
+                                model: Any,
+                                target: Target<Bitmap>,
+                                dataSource: DataSource,
+                                isFirstResource: Boolean
+                            ): Boolean {
+                                // Process with smart ML-based cropping
+                                currentScope.launch {
+                                    try {
+                                        Log.d(TAG, "Processing with smart ML-based cropping")
+
+                                        // Force CENTER_CROP scale type for smart fill mode
+                                        views.overlayView.scaleType = ImageView.ScaleType.CENTER_CROP
+                                        views.primaryView.scaleType = ImageView.ScaleType.CENTER_CROP
+
+                                        // Process the photo with our direct smart cropping method
+                                        val smartCroppedBitmap = smartPhotoLayoutManager.createSmartCroppedPhoto(
+                                            resource,
+                                            containerWidth,
+                                            containerHeight
+                                        )
+
+                                        // Create drawable from the smart cropped bitmap
+                                        val drawable = BitmapDrawable(context.resources, smartCroppedBitmap)
+
+                                        // Apply the transition effect with the smart cropped drawable
+                                        val success = createGlideListener(views, photoIndex, startTime, transitionEffect)
+                                            .onResourceReady(drawable, model, target as Target<Drawable>, dataSource, isFirstResource)
+
+                                        if (!success) {
+                                            // If the listener didn't handle it, set the drawable directly
+                                            views.overlayView.setImageDrawable(drawable)
+                                            isTransitioning = false
+                                        }
+
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error processing with ML Kit", e)
+                                        // Fall back to regular photo display with original bitmap
+                                        val regularDrawable = BitmapDrawable(context.resources, resource)
+                                        createGlideListener(views, photoIndex, startTime, transitionEffect)
+                                            .onResourceReady(regularDrawable, model, target as Target<Drawable>, dataSource, isFirstResource)
+                                    }
+                                }
+                                return true
+                            }
+                        })
+                        .submit()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error displaying smart cropped photo", e)
+                isTransitioning = false
+                showDefaultPhoto()
+            }
+        }
+    }
+
+    // New helper method for handling single photo mode (fill or fit)
+    private fun handleSinglePhotoMode(views: Views, currentScope: CoroutineScope) {
+        // Find a valid photo to display
+        currentScope.launch {
+            try {
+                val photoCount = photoManager.getPhotoCount()
+                var foundValidPhoto = false
+                var attemptsCount = 0
+                val maxAttempts = photoCount * 2 // Prevent infinite loops
+
+                // Start preloading for upcoming photos
+                photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
+
+                while (!foundValidPhoto && attemptsCount < maxAttempts) {
+                    attemptsCount++
+                    val nextIndex = getNextPhotoIndex(currentPhotoIndex, photoCount)
+                    val nextUrl = photoManager.getPhotoUrl(nextIndex) ?: continue
+
+                    // Check if this is a Google Photos URI
+                    val isGooglePhotosUri = nextUrl.contains("com.google.android.apps.photos") ||
+                            nextUrl.contains("googleusercontent.com")
+
+                    if (isGooglePhotosUri) {
+                        // For Google Photos URIs, only use if we have a cached version
+                        val cachedUri = photoManager.persistentPhotoCache?.getCachedPhotoUri(nextUrl)
+                        if (cachedUri != null) {
+                            // We have a cached version, use it
+                            displayPhoto(nextIndex, cachedUri, true)
+                            foundValidPhoto = true
                         } else {
-                            Log.e(TAG, "Container still has invalid dimensions after delay")
-                            showErrorMessage("Layout error - please restart the app")
+                            // No cached version, skip to next photo
+                            Log.d(TAG, "Skipping uncached Google Photos URI: $nextUrl")
+                            currentPhotoIndex = nextIndex
                         }
+                    } else {
+                        // Regular URI, display directly
+                        displayPhoto(nextIndex, nextUrl, false)
+                        foundValidPhoto = true
                     }
-                    return@launch
                 }
 
-                // Container dimensions are valid, proceed with template creation
-                createAndDisplayTemplate(views, containerWidth, containerHeight)
+                // If no valid photo was found after checking all photos
+                if (!foundValidPhoto) {
+                    Log.d(TAG, "No valid cached photos available, showing default photo")
+                    showNoPhotosMessage()
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error finding valid photo", e)
+                Log.e(TAG, "Error in single photo mode", e)
                 showDefaultPhoto()
             }
         }

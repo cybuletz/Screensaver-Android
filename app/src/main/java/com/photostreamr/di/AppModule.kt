@@ -121,7 +121,9 @@ object AppModule {
         photoResizeManager: PhotoResizeManager,
         photoPreloader: PhotoPreloader,
         enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager,
-        bitmapMemoryManager: BitmapMemoryManager
+        bitmapMemoryManager: BitmapMemoryManager,
+        smartTemplateHelper: SmartTemplateHelper,
+        smartPhotoLayoutManager: SmartPhotoLayoutManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
@@ -134,7 +136,9 @@ object AppModule {
             photoResizeManager = photoResizeManager,
             photoPreloader = photoPreloader,
             enhancedMultiPhotoLayoutManager = enhancedMultiPhotoLayoutManager,
-            bitmapMemoryManager = bitmapMemoryManager
+            bitmapMemoryManager = bitmapMemoryManager,
+            smartTemplateHelper = smartTemplateHelper,
+            smartPhotoLayoutManager = smartPhotoLayoutManager
         )
     }
 

@@ -135,15 +135,29 @@
 
     <!-- Photo Scale Options -->
     <string-array name="photo_scale_options">
-        <item>Fill Screen (may crop photos)</item>
-        <item>Fit Screen (may show letterbox)</item>
-        <item>Multi-Photo Template</item>
+        <item>Smart Fill</item>
+        <item>Fit with Letterboxing</item>
+        <item>Multi-Photo Templates</item>
     </string-array>
 
     <string-array name="photo_scale_values">
-        <item>fill</item>
+        <item>smart_fill</item>
         <item>fit</item>
         <item>multi_template</item>
+    </string-array>
+
+    <string-array name="letterbox_mode_entries">
+        <item>Simple Black</item>
+        <item>Blurred Edges</item>
+        <item>Ambient Lighting</item>
+        <item>Ambient Clouds</item>
+    </string-array>
+
+    <string-array name="letterbox_mode_values">
+        <item>black</item>
+        <item>blur</item>
+        <item>ambient</item>
+        <item>ambient_clouds</item>
     </string-array>
 
     <!-- Template Layout Types -->
@@ -169,21 +183,6 @@
         <item>collage</item>
         <item>masonry</item>
         <item>random</item>
-    </string-array>
-
-    <!-- Letterbox Mode Options -->
-    <string-array name="letterbox_mode_entries">
-        <item>Black Margins</item>
-        <item>Blurred Edges</item>
-        <item>Ambient Column</item>
-        <item>Ambient Clouds</item>
-    </string-array>
-
-    <string-array name="letterbox_mode_values">
-        <item>black</item>
-        <item>blur</item>
-        <item>ambient</item>
-        <item>ambient_clouds</item>
     </string-array>
 
     <!-- Days of Week -->

@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +16,7 @@ import com.photostreamr.ui.PhotoDisplayManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.photostreamr.R
+import com.photostreamr.ui.PhotoResizeManager
 import com.photostreamr.version.AppVersionManager
 import com.photostreamr.version.FeatureManager
 import com.photostreamr.version.ProVersionPromptDialog
@@ -32,6 +34,8 @@ class PhotoShowSettingsPreferenceFragment : PreferenceFragmentCompat() {
 
     private var initialPreferences: Bundle? = null
 
+    private val TAG = "PhotoShowSettings"
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.photoshow_settings_preferences, rootKey)
         initialPreferences = Bundle().apply {
@@ -40,6 +44,33 @@ class PhotoShowSettingsPreferenceFragment : PreferenceFragmentCompat() {
 
         setupPreferences()
         setupProFeatures()
+        updateVisiblePreferences()
+    }
+
+    private fun updateVisiblePreferences(newPhotoScale: String? = null) {
+        val photoScalePref = findPreference<ListPreference>("photo_scale")
+        val templateLayoutPref = findPreference<ListPreference>("template_layout_type")
+        val letterboxCategory = findPreference<PreferenceCategory>("letterbox_category")
+
+        // Use the new value if provided, otherwise get from preferences
+        val currentPhotoScale = newPhotoScale ?: PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .getString(PhotoResizeManager.PREF_KEY_PHOTO_SCALE, PhotoResizeManager.DEFAULT_DISPLAY_MODE)
+
+        Log.d(TAG, "Current photo scale: $currentPhotoScale")
+
+        // Show/hide template layout preference based on photo scale value
+        if (templateLayoutPref != null) {
+            val shouldShow = currentPhotoScale == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE
+            templateLayoutPref.isVisible = shouldShow
+            Log.d(TAG, "Template layout preference visibility: $shouldShow")
+        }
+
+        // Show/hide letterbox category based on photo scale value
+        if (letterboxCategory != null) {
+            val shouldShow = currentPhotoScale == PhotoResizeManager.DISPLAY_MODE_FIT
+            letterboxCategory.isVisible = shouldShow
+            Log.d(TAG, "Letterbox category visibility: $shouldShow")
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -59,7 +90,7 @@ class PhotoShowSettingsPreferenceFragment : PreferenceFragmentCompat() {
     private fun setupProFeatures() {
         val proFeatures = listOf(
             findPreference<ListPreference>("transition_effect"),
-          //  findPreference<SeekBarPreference>("transition_duration")
+            //  findPreference<SeekBarPreference>("transition_duration")
         )
 
         proFeatures.forEach { originalPref ->
@@ -159,7 +190,14 @@ class PhotoShowSettingsPreferenceFragment : PreferenceFragmentCompat() {
         }
 
         // Photo scale preference - store in SharedPreferences only
-        findPreference<ListPreference>("photo_scale")?.setOnPreferenceChangeListener { _, _ ->
+        findPreference<ListPreference>("photo_scale")?.setOnPreferenceChangeListener { _, newValue ->
+            val newScaleValue = newValue as String
+            Log.d(TAG, "Photo scale changed to: $newScaleValue")
+
+            // Update UI immediately with the new value
+            updateVisiblePreferences(newScaleValue)
+
+            // Apply changes
             photoDisplayManager.apply {
                 stopPhotoDisplay()
                 startPhotoDisplay()

@@ -39,10 +39,11 @@ class PhotoResizeManager @Inject constructor(
     companion object {
         private const val TAG = "PhotoResizeManager"
 
-        // Photo display modes
-        const val DISPLAY_MODE_FILL = "fill"  // Use centerCrop - fills screen but may crop
+        // Photo display modes - updated
+        const val DISPLAY_MODE_SMART_FILL = "smart_fill"  // NEW: Smart ML-based fill
+        const val DISPLAY_MODE_FILL = "fill"  // Legacy mode - preserved for backward compatibility
         const val DISPLAY_MODE_FIT = "fit"    // Use fitCenter - no crop but may have letterbox
-        const val DISPLAY_MODE_MULTI_TEMPLATE = "multi_template" // NEW: Use multiple photos in a template
+        const val DISPLAY_MODE_MULTI_TEMPLATE = "multi_template" // Use multiple photos in a template
 
         // Template layout types
         const val TEMPLATE_TYPE_KEY = "template_layout_type"
@@ -55,7 +56,7 @@ class PhotoResizeManager @Inject constructor(
         const val LETTERBOX_MODE_AMBIENT_CLOUDS = "ambient_clouds"
 
         // Default values
-        const val DEFAULT_DISPLAY_MODE = DISPLAY_MODE_FIT
+        const val DEFAULT_DISPLAY_MODE = DISPLAY_MODE_SMART_FILL  // Update default to use smart fill
         const val DEFAULT_LETTERBOX_MODE = LETTERBOX_MODE_AMBIENT_CLOUDS
 
         // Preference keys
@@ -63,7 +64,6 @@ class PhotoResizeManager @Inject constructor(
         const val PREF_KEY_LETTERBOX_MODE = "letterbox_mode"
         const val PREF_KEY_BLUR_INTENSITY = "letterbox_blur_intensity"
         const val PREF_RANDOM_TEMPLATE_TYPES = "random_template_types"
-
 
         // Constants for effects
         private const val DEFAULT_BLUR_RADIUS = 20f
@@ -231,22 +231,39 @@ class PhotoResizeManager @Inject constructor(
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val displayMode = prefs.getString(PREF_KEY_PHOTO_SCALE, DEFAULT_DISPLAY_MODE) ?: DEFAULT_DISPLAY_MODE
 
+        Log.d(TAG, "Applying display mode from preferences: $displayMode")
+
         // Apply the appropriate scale type based on display mode
         val scaleType = when (displayMode) {
             DISPLAY_MODE_FIT -> ImageView.ScaleType.FIT_CENTER
-            else -> ImageView.ScaleType.CENTER_CROP
+            DISPLAY_MODE_SMART_FILL -> {
+                Log.d(TAG, "Using CENTER_CROP for SMART_FILL mode")
+                ImageView.ScaleType.CENTER_CROP  // Explicit handling for smart_fill
+            }
+            DISPLAY_MODE_FILL, DISPLAY_MODE_MULTI_TEMPLATE -> ImageView.ScaleType.CENTER_CROP
+            else -> {
+                Log.w(TAG, "Unknown display mode: $displayMode, using CENTER_CROP as default")
+                ImageView.ScaleType.CENTER_CROP
+            }
         }
 
         primaryPhotoView?.scaleType = scaleType
         overlayPhotoView?.scaleType = scaleType
 
         // Log the change
-        Log.d(TAG, "Applied display mode: $displayMode, scale type: $scaleType")
+        Log.d(TAG, "Applied display mode: $displayMode with scale type: $scaleType")
     }
 
     fun processPhoto(drawable: Drawable, imageView: ImageView): Boolean {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val displayMode = prefs.getString(PREF_KEY_PHOTO_SCALE, DEFAULT_DISPLAY_MODE) ?: DEFAULT_DISPLAY_MODE
+
+        // For SMART_FILL mode, we don't apply letterboxing
+        if (displayMode == DISPLAY_MODE_SMART_FILL) {
+            Log.d(TAG, "Using SMART_FILL mode, no letterboxing applied")
+            hideAllLetterboxing()
+            return false
+        }
 
         // Only consider letterboxing if in FIT mode
         if (displayMode != DISPLAY_MODE_FIT) {
