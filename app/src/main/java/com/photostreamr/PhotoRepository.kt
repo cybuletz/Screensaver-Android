@@ -266,10 +266,10 @@ class PhotoRepository @Inject constructor(
             loadVirtualAlbums() // Force reload latest state
 
             val selectedAlbums = virtualAlbums.filter { it.isSelected }
-            Log.d(TAG, """Loading photos from virtual albums:
-            • Total albums: ${virtualAlbums.size}
-            • Selected albums: ${selectedAlbums.size}
-            • Selection states: ${virtualAlbums.map { "${it.id}: ${it.isSelected}" }}""".trimIndent())
+            //Log.d(TAG, """Loading photos from virtual albums:
+            //• Total albums: ${virtualAlbums.size}
+            //• Selected albums: ${selectedAlbums.size}
+            //• Selection states: ${virtualAlbums.map { "${it.id}: ${it.isSelected}" }}""".trimIndent())
 
             if (selectedAlbums.isEmpty()) {
                 Log.d(TAG, "No virtual albums selected, returning null")
@@ -295,7 +295,7 @@ class PhotoRepository @Inject constructor(
             }
 
             _loadingState.value = LoadingState.SUCCESS
-            Log.d(TAG, "Total photos loaded for display: ${displayPhotos.size}")
+            //Log.d(TAG, "Total photos loaded for display: ${displayPhotos.size}")
             displayPhotos.toList()
         } catch (e: Exception) {
             Log.e(TAG, "Error loading photos", e)
@@ -369,7 +369,7 @@ class PhotoRepository @Inject constructor(
     fun getPhotoCount(): Int {
         val selectedPhotos = loadPhotos() ?: emptyList()
         val count = selectedPhotos.size
-        Log.d(TAG, "Current display photo count: $count")
+        //Log.d(TAG, "Current display photo count: $count")
         return count
     }
 
@@ -377,7 +377,7 @@ class PhotoRepository @Inject constructor(
         val selectedPhotos = loadPhotos() ?: emptyList()
         return if (index in selectedPhotos.indices) {
             val url = selectedPhotos[index].baseUrl
-            Log.d(TAG, "Getting photo URL for index $index: $url")
+            //Log.d(TAG, "Getting photo URL for index $index: $url")
             url
         } else {
             Log.e(TAG, "Invalid photo index: $index")
@@ -538,17 +538,17 @@ class PhotoRepository @Inject constructor(
                     )
                     virtualAlbums.add(album)
 
-                    Log.d(TAG, """Loaded album:
-                    • Name: ${album.name}
-                    • Selection state: ${album.isSelected}
-                    • Photos: ${album.photoUris.size}""".trimIndent())
+                    //Log.d(TAG, """Loaded album:
+                    //• Name: ${album.name}
+                    //• Selection state: ${album.isSelected}
+                    //• Photos: ${album.photoUris.size}""".trimIndent())
                 }
 
                 val selectedCount = virtualAlbums.count { it.isSelected }
-                Log.d(TAG, """Successfully loaded virtual albums:
-                • Total albums: ${virtualAlbums.size}
-                • Selected albums: $selectedCount
-                • Total photos: ${virtualAlbums.sumOf { it.photoUris.size }}""".trimIndent())
+                //Log.d(TAG, """Successfully loaded virtual albums:
+                //• Total albums: ${virtualAlbums.size}
+                //• Selected albums: $selectedCount
+                //• Total photos: ${virtualAlbums.sumOf { it.photoUris.size }}""".trimIndent())
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading virtual albums", e)
