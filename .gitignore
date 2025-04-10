@@ -32,3 +32,5 @@ local.properties
 .gitignore
 app/release
 gradle
+app/photostreamr.jks
+/app/photostreamr.jks
