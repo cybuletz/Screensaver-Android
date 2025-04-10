@@ -444,12 +444,14 @@ class BillingRepository @Inject constructor(
     private fun broadcastPurchaseUpdate(isPro: Boolean) {
         val intent = Intent("com.photostreamr.ACTION_PRO_STATUS_CHANGED")
         intent.putExtra("is_pro_version", isPro)
+        intent.setPackage(context.packageName)
         context.sendBroadcast(intent)
     }
 
     private fun broadcastProductDetailsUpdate(success: Boolean) {
         val intent = Intent("com.photostreamr.ACTION_PRODUCT_DETAILS_UPDATE")
         intent.putExtra("success", success)
+        intent.setPackage(context.packageName)
         context.sendBroadcast(intent)
     }
 

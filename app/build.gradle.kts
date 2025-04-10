@@ -37,7 +37,7 @@ android {
 
     defaultConfig {
         applicationId = "com.photostreamr"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = autoVersionCode
         versionName = autoVersionName

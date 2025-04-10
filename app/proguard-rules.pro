@@ -199,3 +199,21 @@
 -keep class jcifs.** { *; }
 -keep interface jcifs.** { *; }
 -keep enum jcifs.** { *; }
+-keepclassmembers class jcifs.** { *; }
+
+# Ignore missing JCIFS dependencies
+-dontwarn javax.security.**
+-dontwarn javax.servlet.**
+-dontwarn org.ietf.jgss.**
+
+-keep class com.photostreamr.photos.network.** { *; }
+-keep class jcifs.** { *; }
+
+# Keep network-related classes
+-keep class com.photostreamr.photos.network.** { *; }
+-keepclassmembers class com.photostreamr.photos.network.** { *; }
+
+# Keep any class that might be using lateinit properties
+-keepclassmembers class * {
+    void initialize();
+}

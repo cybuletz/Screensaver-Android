@@ -76,17 +76,10 @@ class NetworkPhotoManager @Inject constructor(
     // Cache for server discovery
     private val discoveredServices = ConcurrentHashMap<String, NetworkServer>()
 
-    // JCIFS context for SMB operations
-    private lateinit var cifsContext: CIFSContext
-
-    sealed class DiscoveryState {
-        object Idle : DiscoveryState()
-        object Searching : DiscoveryState()
-        data class Error(val message: String) : DiscoveryState()
-    }
-
-    fun initialize() {
+    // JCIFS context for SMB operations - using lazy initialization
+    private val cifsContext: CIFSContext by lazy {
         try {
+            Timber.d("Initializing cifsContext lazily")
             // Create Properties object for SMB configuration
             val props = java.util.Properties()
 
@@ -107,18 +100,39 @@ class NetworkPhotoManager @Inject constructor(
             props.setProperty("jcifs.smb.client.sessionTimeout", "60000")  // 60 seconds
 
             // Match your existing buffer size for consistency
-            props.setProperty("jcifs.smb.client.bufferSize", "262144")     // 256KB
+            props.setProperty("jcifs.smb.client.bufferSize", "1048576")    // 1MB
 
             // Get the configuration and context correctly
             val config = jcifs.config.PropertyConfiguration(props)
-            val baseContext = jcifs.context.BaseContext(config)
-            cifsContext = baseContext
+            jcifs.context.BaseContext(config)
+        } catch (e: Exception) {
+            Timber.e(e, "Error initializing CIFS context")
+            _discoveryState.value = DiscoveryState.Error("Failed to initialize CIFS: ${e.message}")
 
+            // Create a default configuration and context as fallback
+            val defaultProps = java.util.Properties()
+            val defaultConfig = jcifs.config.PropertyConfiguration(defaultProps)
+            jcifs.context.BaseContext(defaultConfig)
+        }
+    }
+
+    sealed class DiscoveryState {
+        object Idle : DiscoveryState()
+        object Searching : DiscoveryState()
+        data class Error(val message: String) : DiscoveryState()
+    }
+
+    fun initialize() {
+        try {
             // Load saved manual connections
             loadManualConnections()
 
             // Initialize NSD manager
             nsdManager = context.getSystemService(Context.NSD_SERVICE) as? NsdManager
+
+            // Force initialization of cifsContext by accessing it
+            Timber.d("Triggering cifsContext initialization")
+            cifsContext // This triggers the lazy initialization
 
             // Log how many servers were loaded
             Timber.d("Loaded ${_manualConnections.value.size} manual server connections")
@@ -323,7 +337,7 @@ class NetworkPhotoManager @Inject constructor(
                     }
 
                     // Use much larger buffer size for faster transfers
-                    val bufferSize = 262144 // 256KB buffer (8x larger for better performance)
+                    val bufferSize = 1048576  // 1MB buffer (8x larger for better performance)
 
                     // Use buffered streams with fixed buffer size
                     val inputStream = BufferedInputStream(smbFile.inputStream, bufferSize)
@@ -341,9 +355,8 @@ class NetworkPhotoManager @Inject constructor(
                             totalBytesRead += bytesRead
 
                             // Log progress less frequently for better performance
-                            if (fileSize > 1_000_000 && totalBytesRead % (fileSize / 5) < bufferSize) {
-                                val percentComplete = (totalBytesRead.toFloat() / fileSize * 100).toInt()
-                                Log.d(TAG, "Download progress: $percentComplete% ($totalBytesRead/$fileSize bytes)")
+                            if (totalBytesRead >= fileSize / 2 && totalBytesRead - bytesRead < fileSize / 2) {
+                                Log.d(TAG, "Download progress: 50% ($totalBytesRead/$fileSize bytes)")
                             }
                         }
                         outputStream.flush()

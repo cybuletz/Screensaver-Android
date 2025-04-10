@@ -97,14 +97,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Preview Activity -->
-        <activity
-            android:name=".preview.PreviewActivity"
-            android:label="Preview"
-            android:theme="@style/Theme.AppCompat.NoActionBar"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"/>
-
         <!-- Settings Activity -->
         <activity
             android:name=".SettingsActivity"
