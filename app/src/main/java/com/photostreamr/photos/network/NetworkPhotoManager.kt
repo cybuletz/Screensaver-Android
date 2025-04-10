@@ -216,6 +216,7 @@ class NetworkPhotoManager @Inject constructor(
         return try {
             withContext(Dispatchers.IO) {
                 if (!resource.isImage) {
+                    Log.d(TAG, "Resource is not an image: ${resource.name}")
                     return@withContext null
                 }
 
@@ -223,18 +224,9 @@ class NetworkPhotoManager @Inject constructor(
                 val cacheDir = File(context.cacheDir, "network_photos")
                 cacheDir.mkdirs()
 
-                // Generate unique, safe filename
-                val safeName = resource.path
-                    .replace("/", "_")
-                    .replace(" ", "_")
-                    .replace("%", "pct")
-                    .replace(":", "")
-                    .replace("?", "")
-                    .replace("&", "and")
-                    .replace("=", "eq")
-                    .replace("[^a-zA-Z0-9._-]".toRegex(), "_") // Replace any remaining problematic chars
-
-                val fileName = "${resource.server.id}_${safeName}"
+                // Generate unique, safe filename - shorter to avoid path length issues
+                val safeName = resource.name.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+                val fileName = "${resource.server.id.substring(0, 8)}_${safeName}"
                 val cacheFile = File(cacheDir, fileName)
 
                 // Check if already cached with valid size
@@ -247,11 +239,18 @@ class NetworkPhotoManager @Inject constructor(
 
                         if (options.outWidth > 0 && options.outHeight > 0) {
                             Log.d(TAG, "Using valid cached image file for ${resource.name}: ${cacheFile.path}")
-                            return@withContext FileProvider.getUriForFile(
-                                context,
-                                "com.photostreamr.fileprovider",
-                                cacheFile
-                            )
+
+                            try {
+                                return@withContext FileProvider.getUriForFile(
+                                    context,
+                                    "com.photostreamr.fileprovider",
+                                    cacheFile
+                                )
+                            } catch (e: IllegalArgumentException) {
+                                Log.e(TAG, "FileProvider error for cached file: ${cacheFile.path}", e)
+                                // Try a different approach if FileProvider fails
+                                return@withContext Uri.fromFile(cacheFile)
+                            }
                         } else {
                             Log.d(TAG, "Cached file exists but is not a valid image, re-downloading")
                             cacheFile.delete()
@@ -298,8 +297,8 @@ class NetworkPhotoManager @Inject constructor(
                         tempFile.delete()
                     }
 
-                    // Use large buffer size for efficient network transfers
-                    val bufferSize = 32768 // 32KB buffer
+                    // Use much larger buffer size for faster transfers
+                    val bufferSize = 262144 // 256KB buffer (8x larger for better performance)
 
                     // Use buffered streams with fixed buffer size
                     val inputStream = BufferedInputStream(smbFile.inputStream, bufferSize)
@@ -309,19 +308,26 @@ class NetworkPhotoManager @Inject constructor(
                     val buffer = ByteArray(bufferSize)
                     var bytesRead: Int
                     var totalBytesRead = 0L
+                    val startTime = System.currentTimeMillis()
 
                     try {
                         while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                             outputStream.write(buffer, 0, bytesRead)
                             totalBytesRead += bytesRead
 
-                            // Log progress for large files
-                            if (fileSize > 1_000_000 && totalBytesRead % (fileSize / 10) < bufferSize) {
+                            // Log progress less frequently for better performance
+                            if (fileSize > 1_000_000 && totalBytesRead % (fileSize / 5) < bufferSize) {
                                 val percentComplete = (totalBytesRead.toFloat() / fileSize * 100).toInt()
                                 Log.d(TAG, "Download progress: $percentComplete% ($totalBytesRead/$fileSize bytes)")
                             }
                         }
                         outputStream.flush()
+
+                        val endTime = System.currentTimeMillis()
+                        val downloadSpeed = totalBytesRead / ((endTime - startTime) / 1000.0) // bytes per second
+                        val speedInMB = downloadSpeed / (1024 * 1024)
+                        Log.d(TAG, "Download complete in ${endTime - startTime}ms (${String.format("%.2f", speedInMB)} MB/s)")
+
                     } finally {
                         try { outputStream.close() } catch (e: Exception) { Log.e(TAG, "Error closing output stream", e) }
                         try { inputStream.close() } catch (e: Exception) { Log.e(TAG, "Error closing input stream", e) }
@@ -345,11 +351,17 @@ class NetworkPhotoManager @Inject constructor(
                             if (tempFile.renameTo(cacheFile)) {
                                 Log.d(TAG, "Successfully downloaded valid image ${resource.name} (${cacheFile.length()} bytes)")
 
-                                return@withContext FileProvider.getUriForFile(
-                                    context,
-                                    "com.photostreamr.fileprovider",
-                                    cacheFile
-                                )
+                                try {
+                                    return@withContext FileProvider.getUriForFile(
+                                        context,
+                                        "com.photostreamr.fileprovider",
+                                        cacheFile
+                                    )
+                                } catch (e: IllegalArgumentException) {
+                                    // If FileProvider fails, try direct file URI
+                                    Log.e(TAG, "FileProvider error, falling back to direct file URI", e)
+                                    return@withContext Uri.fromFile(cacheFile)
+                                }
                             } else {
                                 Log.e(TAG, "Failed to move temp file to final location")
                                 return@withContext null

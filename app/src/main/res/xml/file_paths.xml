@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <!-- Change this line to use the root cache directory -->
     <cache-path
         name="cached_photos"
-        path="network_photos/" />
+        path="/" />
     <cache-path
         name="shared_images"
         path="images/"/>
