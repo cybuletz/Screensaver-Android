@@ -7,31 +7,30 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ProgressBar
-import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.photostreamr.R
-import com.photostreamr.photos.PhotoManagerViewModel
 import com.photostreamr.PhotoRepository
+import com.photostreamr.R
 import com.photostreamr.models.MediaItem
-import com.photostreamr.photos.PhotoSourceType
 import com.photostreamr.photos.network.NetworkPhotoManager
 import com.photostreamr.photos.network.NetworkResource
+import com.photostreamr.photos.network.NetworkResourceAdapter
 import com.photostreamr.photos.network.NetworkServer
+import com.photostreamr.photos.network.NetworkServerAdapter
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.util.UUID
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -46,8 +45,6 @@ class NetworkPhotoSourceFragment : Fragment() {
 
     @Inject
     lateinit var photoRepository: PhotoRepository
-
-    private val photoManagerViewModel: PhotoManagerViewModel by viewModels()
 
     // UI components
     private lateinit var progressBar: ProgressBar
@@ -117,6 +114,10 @@ class NetworkPhotoSourceFragment : Fragment() {
         // Start network discovery
         networkPhotoManager.initialize()
         networkPhotoManager.startDiscovery()
+
+        // Initial UI state
+        updateSelectedPhotosCount()
+        browseBackButton.isEnabled = false
     }
 
     private fun collectFlows() {
@@ -158,6 +159,8 @@ class NetworkPhotoSourceFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             networkPhotoManager.currentBrowsingPath.collectLatest { path ->
                 selectedPathText.text = path ?: getString(R.string.no_folder_selected)
+                // Update back button state
+                browseBackButton.isEnabled = path != null && path.isNotEmpty()
             }
         }
 
@@ -220,35 +223,14 @@ class NetworkPhotoSourceFragment : Fragment() {
 
     private fun onResourceSelected(resource: NetworkResource) {
         if (resource.isDirectory) {
-            // Navigate into directory
-            progressBar.isVisible = true
-            currentPath = resource.path
-
-            viewLifecycleOwner.lifecycleScope.launch {
-                try {
-                    val result = networkPhotoManager.browseNetworkPath(resource.server, resource.path)
-                    progressBar.isVisible = false
-
-                    if (result.isFailure) {
-                        Toast.makeText(
-                            requireContext(),
-                            getString(R.string.error_browsing_folder, result.exceptionOrNull()?.message),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                } catch (e: Exception) {
-                    progressBar.isVisible = false
-                    Toast.makeText(
-                        requireContext(),
-                        getString(R.string.error_browsing_folder, e.message),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-        } else {
-            // Toggle selection for image files
-            val isSelected = !selectedResources.contains(resource)
-            onResourceSelectionChanged(resource, isSelected)
+            // Navigate to directory
+            browseTo(resource)
+        } else if (resource.isImage) {
+            // Toggle selection for images
+            val isCurrentlySelected = selectedResources.contains(resource)
+            onResourceSelectionChanged(resource, !isCurrentlySelected)
+            // Notify adapter about the change
+            resourceAdapter.notifyDataSetChanged()
         }
     }
 
@@ -259,66 +241,132 @@ class NetworkPhotoSourceFragment : Fragment() {
             selectedResources.remove(resource)
         }
 
-        // Update the adapter to reflect selection state
-        val position = resourceAdapter.resources.indexOf(resource)
-        if (position != -1) {
-            resourceAdapter.notifyItemChanged(position)
-        }
-
         // Update selected photos count
         updateSelectedPhotosCount()
     }
 
-    private fun updateSelectedPhotosCount() {
-        val selectedCount = selectedResources.size
-        addSelectedPhotosButton.text = getString(R.string.add_selected_photos, selectedCount)
-        addSelectedPhotosButton.isEnabled = selectedCount > 0
-    }
+    private fun browseTo(resource: NetworkResource) {
+        progressBar.isVisible = true
+        selectedResources.clear()
 
-    private fun navigateBack() {
-        currentServer?.let { server ->
-            // Extract parent path
-            val currentPath = networkPhotoManager.currentBrowsingPath.value ?: return
-            val parentPath = when (server.protocol) {
-                NetworkPhotoManager.PROTOCOL_SMB -> {
-                    val path = currentPath.substringAfter("smb://")
-                        .substringAfter("/", "")
-                    val parentDir = path.substringBeforeLast("/", "")
-                    parentDir
-                }
-                NetworkPhotoManager.PROTOCOL_WEBDAV -> {
-                    val path = currentPath.substringAfter("://")
-                        .substringAfter("/", "")
-                    val parentDir = path.substringBeforeLast("/", "")
-                    parentDir
-                }
-                else -> ""
-            }
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val result = networkPhotoManager.browseNetworkPath(resource.server, resource.path)
+                progressBar.isVisible = false
 
-            // Browse to parent directory
-            progressBar.isVisible = true
-            viewLifecycleOwner.lifecycleScope.launch {
-                try {
-                    val result = networkPhotoManager.browseNetworkPath(server, parentPath)
-                    progressBar.isVisible = false
-
-                    if (result.isFailure) {
-                        Toast.makeText(
-                            requireContext(),
-                            getString(R.string.error_browsing_folder, result.exceptionOrNull()?.message),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                } catch (e: Exception) {
-                    progressBar.isVisible = false
+                if (result.isFailure) {
                     Toast.makeText(
                         requireContext(),
-                        getString(R.string.error_browsing_folder, e.message),
+                        getString(R.string.error_browsing_network, result.exceptionOrNull()?.message),
                         Toast.LENGTH_SHORT
                     ).show()
                 }
+            } catch (e: Exception) {
+                progressBar.isVisible = false
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.error_browsing_network, e.message),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
+    }
+
+    private fun navigateBack() {
+        val server = currentServer ?: return
+        val currentPathValue = networkPhotoManager.currentBrowsingPath.value ?: return
+
+        // Get parent path
+        val parentPath = if (currentPathValue.contains("/")) {
+            currentPathValue.substringBeforeLast("/")
+        } else {
+            ""
+        }
+
+        progressBar.isVisible = true
+        selectedResources.clear()
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val result = networkPhotoManager.browseNetworkPath(server, parentPath)
+                progressBar.isVisible = false
+
+                if (result.isFailure) {
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.error_browsing_network, result.exceptionOrNull()?.message),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: Exception) {
+                progressBar.isVisible = false
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.error_browsing_network, e.message),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
+    private fun updateSelectedPhotosCount() {
+        addSelectedPhotosButton.text = if (selectedResources.size > 0) {
+            getString(R.string.add_selected_photos) + " (" + selectedResources.size + ")"
+        } else {
+            getString(R.string.add_selected_photos)
+        }
+        addSelectedPhotosButton.isEnabled = selectedResources.size > 0
+    }
+
+    private fun showAddServerDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_add_server, null)
+        val nameEditText = dialogView.findViewById<EditText>(R.id.server_name_edit)
+        val addressEditText = dialogView.findViewById<EditText>(R.id.server_address_edit)
+        val usernameEditText = dialogView.findViewById<EditText>(R.id.username_edit)
+        val passwordEditText = dialogView.findViewById<EditText>(R.id.password_edit)
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.add_server)
+            .setView(dialogView)
+            .setPositiveButton(R.string.add) { _, _ ->
+                val name = nameEditText.text.toString().trim()
+                val address = addressEditText.text.toString().trim()
+                val username = usernameEditText.text.toString().trim().let { if (it.isEmpty()) null else it }
+                val password = passwordEditText.text.toString().trim().let { if (it.isEmpty()) null else it }
+
+                if (address.isEmpty()) {
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.invalid_address,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setPositiveButton
+                }
+
+                val server = NetworkServer(
+                    id = UUID.randomUUID().toString(),
+                    name = if (name.isEmpty()) address else name,
+                    address = address,
+                    username = username,
+                    password = password,
+                    isManual = true
+                )
+
+                networkPhotoManager.addManualServer(server)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun confirmRemoveServer(server: NetworkServer) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Remove Server")
+            .setMessage("Remove server ${server.name}?")
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                networkPhotoManager.removeManualServer(server)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun addSelectedPhotosToRepository() {
@@ -359,11 +407,11 @@ class NetworkPhotoSourceFragment : Fragment() {
                 // Add to PhotoRepository
                 photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
 
-                // Update app data
+                // Update UI
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         requireContext(),
-                        getString(R.string.network_photos_added, mediaItems.size),
+                        getString(R.string.added_network_photos, mediaItems.size),
                         Toast.LENGTH_SHORT
                     ).show()
 
@@ -397,197 +445,8 @@ class NetworkPhotoSourceFragment : Fragment() {
         }
     }
 
-    private fun showAddServerDialog() {
-        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_add_network_server, null)
-
-        val nameEditText = dialogView.findViewById<EditText>(R.id.server_name_input)
-        val hostEditText = dialogView.findViewById<EditText>(R.id.server_host_input)
-        val portEditText = dialogView.findViewById<EditText>(R.id.server_port_input)
-        val protocolGroup = dialogView.findViewById<RadioGroup>(R.id.protocol_radio_group)
-        val usernameEditText = dialogView.findViewById<EditText>(R.id.username_input)
-        val passwordEditText = dialogView.findViewById<EditText>(R.id.password_input)
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.add_network_server)
-            .setView(dialogView)
-            .setPositiveButton(R.string.add) { _, _ ->
-                val name = nameEditText.text.toString().trim()
-                val host = hostEditText.text.toString().trim()
-                val portStr = portEditText.text.toString().trim()
-                val protocol = when (protocolGroup.checkedRadioButtonId) {
-                    R.id.radio_smb -> NetworkPhotoManager.PROTOCOL_SMB
-                    R.id.radio_webdav -> NetworkPhotoManager.PROTOCOL_WEBDAV
-                    else -> NetworkPhotoManager.PROTOCOL_SMB
-                }
-                val username = usernameEditText.text.toString().trim().ifEmpty { null }
-                val password = passwordEditText.text.toString().trim().ifEmpty { null }
-
-                if (name.isEmpty() || host.isEmpty() || portStr.isEmpty()) {
-                    Toast.makeText(
-                        requireContext(),
-                        R.string.please_fill_all_fields,
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setPositiveButton
-                }
-
-                try {
-                    val port = portStr.toInt()
-                    if (port <= 0 || port > 65535) {
-                        throw NumberFormatException("Port must be between 1 and 65535")
-                    }
-
-                    // Add the server
-                    val server = networkPhotoManager.addManualServer(
-                        name = name,
-                        host = host,
-                        port = port,
-                        protocol = protocol,
-                        username = username,
-                        password = password
-                    )
-
-                    // Select the newly added server
-                    onServerSelected(server)
-
-                } catch (e: NumberFormatException) {
-                    Toast.makeText(
-                        requireContext(),
-                        getString(R.string.invalid_port_number),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun confirmRemoveServer(server: NetworkServer) {
-        // Only show confirmation for manual servers
-        if (server.type == NetworkServer.Type.MANUAL) {
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.remove_server)
-                .setMessage(getString(R.string.confirm_remove_server, server.name))
-                .setPositiveButton(R.string.remove) { _, _ ->
-                    networkPhotoManager.removeManualServer(server.id)
-
-                    // If this was the current server, clear the view
-                    if (currentServer?.id == server.id) {
-                        currentServer = null
-                        resourceAdapter.submitList(emptyList())
-                        selectedPathText.text = getString(R.string.no_folder_selected)
-                    }
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
-        }
-    }
-
     override fun onDestroyView() {
         super.onDestroyView()
         networkPhotoManager.stopDiscovery()
-    }
-}
-
-// Adapters for the RecyclerViews
-class NetworkServerAdapter(
-    private val onServerClick: (NetworkServer) -> Unit,
-    private val onRemoveClick: (NetworkServer) -> Unit
-) : RecyclerView.Adapter<NetworkServerAdapter.ServerViewHolder>() {
-
-    private var servers = listOf<NetworkServer>()
-
-    fun submitList(newList: List<NetworkServer>) {
-        servers = newList
-        notifyDataSetChanged()
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ServerViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_network_server, parent, false)
-        return ServerViewHolder(view)
-    }
-
-    override fun onBindViewHolder(holder: ServerViewHolder, position: Int) {
-        holder.bind(servers[position])
-    }
-
-    override fun getItemCount(): Int = servers.size
-
-    inner class ServerViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val nameText: TextView = itemView.findViewById(R.id.server_name)
-        private val typeText: TextView = itemView.findViewById(R.id.server_type)
-        private val removeButton: Button = itemView.findViewById(R.id.remove_server_button)
-
-        fun bind(server: NetworkServer) {
-            nameText.text = server.name
-            typeText.text = server.displayName
-
-            // Only show remove button for manual servers
-            removeButton.isVisible = server.type == NetworkServer.Type.MANUAL
-
-            itemView.setOnClickListener { onServerClick(server) }
-            removeButton.setOnClickListener { onRemoveClick(server) }
-        }
-    }
-}
-
-class NetworkResourceAdapter(
-    private val onResourceClick: (NetworkResource) -> Unit,
-    private val onResourceSelect: (NetworkResource, Boolean) -> Unit
-) : RecyclerView.Adapter<NetworkResourceAdapter.ResourceViewHolder>() {
-
-    private var resources = listOf<NetworkResource>()
-    private val selectedResources = mutableSetOf<String>() // Store selected resource IDs
-
-    fun submitList(newList: List<NetworkResource>) {
-        resources = newList
-        notifyDataSetChanged()
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ResourceViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_network_resource, parent, false)
-        return ResourceViewHolder(view)
-    }
-
-    override fun onBindViewHolder(holder: ResourceViewHolder, position: Int) {
-        holder.bind(resources[position])
-    }
-
-    override fun getItemCount(): Int = resources.size
-
-    inner class ResourceViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val nameText: TextView = itemView.findViewById(R.id.resource_name)
-        private val typeIcon: View = itemView.findViewById(R.id.resource_type_icon)
-        private val selectCheckbox: View = itemView.findViewById(R.id.resource_checkbox)
-
-        fun bind(resource: NetworkResource) {
-            nameText.text = resource.name
-
-            // Set icon based on resource type
-            typeIcon.setBackgroundResource(
-                if (resource.isDirectory) R.drawable.ic_folder
-                else R.drawable.ic_photo
-            )
-
-            // Only show checkbox for images, not directories
-            selectCheckbox.isVisible = !resource.isDirectory
-
-            // Set checkbox state
-            selectCheckbox.isSelected = selectedResources.contains(resource.id)
-
-            itemView.setOnClickListener { onResourceClick(resource) }
-            selectCheckbox.setOnClickListener {
-                val newState = !selectedResources.contains(resource.id)
-                if (newState) {
-                    selectedResources.add(resource.id)
-                } else {
-                    selectedResources.remove(resource.id)
-                }
-                selectCheckbox.isSelected = newState
-                onResourceSelect(resource, newState)
-            }
-        }
     }
 }

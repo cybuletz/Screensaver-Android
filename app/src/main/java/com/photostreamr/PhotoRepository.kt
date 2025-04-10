@@ -135,18 +135,8 @@ class PhotoRepository @Inject constructor(
         return albums
     }
 
-    fun getPhotoCountBySource(sourceType: PhotoSourceType): Int {
-        return allPhotos.filter { mediaItem ->
-            when (sourceType) {
-                PhotoSourceType.LOCAL -> mediaItem.id.startsWith("content://media")
-                PhotoSourceType.GOOGLE_PHOTOS ->
-                    mediaItem.id.contains("com.google.android.apps.photos") ||
-                            mediaItem.id.contains("googleusercontent.com")
-                PhotoSourceType.NETWORK -> mediaItem.id.startsWith("file:///data/data") &&
-                        mediaItem.albumId.startsWith("network_")
-                PhotoSourceType.VIRTUAL -> mediaItem.albumId.startsWith("virtual_")
-            }
-        }.size
+    fun getPhotoCountBySource(sourceId: String): Int {
+        return mediaItems.count { it.albumId == sourceId }
     }
 
     private fun getPhotoCountForAlbum(bucketId: String): Int {

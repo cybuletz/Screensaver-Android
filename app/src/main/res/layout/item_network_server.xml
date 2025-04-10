@@ -9,46 +9,47 @@
 
     <ImageView
         android:id="@+id/server_icon"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:src="@drawable/ic_network"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:contentDescription="@string/server_icon"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:srcCompat="@drawable/ic_server" />
 
     <TextView
         android:id="@+id/server_name"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="8dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
         android:textAppearance="?attr/textAppearanceBody1"
-        android:textStyle="bold"
         app:layout_constraintEnd_toStartOf="@+id/remove_server_button"
         app:layout_constraintStart_toEndOf="@+id/server_icon"
         app:layout_constraintTop_toTopOf="parent"
-        tools:text="My NAS" />
+        tools:text="Media Server" />
 
     <TextView
-        android:id="@+id/server_type"
+        android:id="@+id/server_address"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="8dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
         android:textAppearance="?attr/textAppearanceBody2"
         app:layout_constraintEnd_toStartOf="@+id/remove_server_button"
         app:layout_constraintStart_toEndOf="@+id/server_icon"
         app:layout_constraintTop_toBottomOf="@+id/server_name"
-        tools:text="smb://192.168.1.100:445" />
+        tools:text="192.168.1.100" />
 
-    <Button
+    <ImageButton
         android:id="@+id/remove_server_button"
-        style="?attr/materialButtonOutlinedStyle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/remove"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/remove_server"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:srcCompat="@drawable/ic_delete" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

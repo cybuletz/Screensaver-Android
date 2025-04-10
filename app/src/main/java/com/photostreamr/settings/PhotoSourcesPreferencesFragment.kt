@@ -350,8 +350,10 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     }
 
     private fun updateNetworkPhotosSummary() {
-        // Get the count of network photos from the repository
-        val networkPhotoCount = photoManager.getPhotoCountBySource(PhotoSourceType.NETWORK)
+        // Get the count of network photos using the photoManager
+        val networkPhotoCount = photoManager.getAllPhotos().count { photo ->
+            photo.albumId.startsWith("network_")
+        }
 
         findPreference<Preference>("select_network_photos")?.summary =
             if (networkPhotoCount > 0) {

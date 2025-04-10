@@ -5,36 +5,41 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="?attr/selectableItemBackground"
-    android:padding="12dp">
+    android:padding="8dp">
 
     <ImageView
         android:id="@+id/resource_type_icon"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:src="@drawable/ic_folder"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:contentDescription="@string/resource_icon"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:srcCompat="@drawable/ic_folder" />
 
     <TextView
         android:id="@+id/resource_name"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="8dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:ellipsize="middle"
+        android:singleLine="true"
         android:textAppearance="?attr/textAppearanceBody1"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toStartOf="@+id/resource_checkbox"
+        app:layout_constraintEnd_toStartOf="@+id/resource_select_checkbox"
         app:layout_constraintStart_toEndOf="@+id/resource_type_icon"
         app:layout_constraintTop_toTopOf="parent"
-        tools:text="my_photo.jpg" />
+        tools:text="filename.jpg" />
 
     <CheckBox
-        android:id="@+id/resource_checkbox"
+        android:id="@+id/resource_select_checkbox"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        tools:visibility="visible" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
