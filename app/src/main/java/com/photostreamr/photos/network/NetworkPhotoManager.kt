@@ -31,6 +31,10 @@ import org.json.JSONObject
 import java.io.IOException
 import java.nio.charset.Charset
 import java.util.concurrent.TimeUnit
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import java.io.FileOutputStream
+import android.graphics.BitmapFactory
 
 @Singleton
 class NetworkPhotoManager @Inject constructor(
@@ -219,88 +223,154 @@ class NetworkPhotoManager @Inject constructor(
                 val cacheDir = File(context.cacheDir, "network_photos")
                 cacheDir.mkdirs()
 
-                // Generate unique filename - avoid special characters that might cause issues
+                // Generate unique, safe filename
                 val safeName = resource.path
                     .replace("/", "_")
-                    .replace("%", "_pct_")
-                    .replace(":", "_")
-                    .replace("?", "_")
-                    .replace("&", "_")
-                    .replace("=", "_")
+                    .replace(" ", "_")
+                    .replace("%", "pct")
+                    .replace(":", "")
+                    .replace("?", "")
+                    .replace("&", "and")
+                    .replace("=", "eq")
+                    .replace("[^a-zA-Z0-9._-]".toRegex(), "_") // Replace any remaining problematic chars
 
                 val fileName = "${resource.server.id}_${safeName}"
                 val cacheFile = File(cacheDir, fileName)
 
-                // Check if already cached
-                if (cacheFile.exists()) {
-                    // Check if file is valid
-                    if (cacheFile.length() > 0) {
-                        Timber.d("Using cached file for ${resource.name}: ${cacheFile.path}")
-                        return@withContext Uri.fromFile(cacheFile)
-                    } else {
-                        // Invalid cached file, delete it
+                // Check if already cached with valid size
+                if (cacheFile.exists() && cacheFile.length() > 0) {
+                    try {
+                        // Verify file is a valid image
+                        val options = BitmapFactory.Options()
+                        options.inJustDecodeBounds = true
+                        BitmapFactory.decodeFile(cacheFile.absolutePath, options)
+
+                        if (options.outWidth > 0 && options.outHeight > 0) {
+                            Log.d(TAG, "Using valid cached image file for ${resource.name}: ${cacheFile.path}")
+                            return@withContext FileProvider.getUriForFile(
+                                context,
+                                "com.photostreamr.fileprovider",
+                                cacheFile
+                            )
+                        } else {
+                            Log.d(TAG, "Cached file exists but is not a valid image, re-downloading")
+                            cacheFile.delete()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking cached file validity", e)
                         cacheFile.delete()
                     }
                 }
 
                 // Download file
-                Timber.d("Downloading image ${resource.name} to ${cacheFile.path}")
-
-                // Build SMB URL
-                val smbUrl = buildSmbUrl(resource.server) + "/" + resource.path
-                val smbContext = if (resource.server.username != null && resource.server.password != null) {
-                    cifsContext.withCredentials(
-                        jcifs.smb.NtlmPasswordAuthenticator(null, resource.server.username, resource.server.password)
-                    )
-                } else {
-                    cifsContext
-                }
+                Log.d(TAG, "Downloading image ${resource.name} to ${cacheFile.path}")
 
                 try {
+                    // Build SMB URL
+                    val smbUrl = buildSmbUrl(resource.server) + "/" + resource.path
+                    Log.d(TAG, "Connecting to SMB: $smbUrl")
+
+                    val smbContext = if (resource.server.username != null && resource.server.password != null) {
+                        cifsContext.withCredentials(
+                            jcifs.smb.NtlmPasswordAuthenticator(null, resource.server.username, resource.server.password)
+                        )
+                    } else {
+                        cifsContext
+                    }
+
                     // Get file via SMB
                     val smbFile = SmbFile(smbUrl, smbContext)
 
                     if (!smbFile.exists()) {
-                        Timber.e("SMB file does not exist: $smbUrl")
+                        Log.e(TAG, "SMB file does not exist: $smbUrl")
                         return@withContext null
                     }
 
-                    val inputStream = smbFile.inputStream
-                    val outputStream = cacheFile.outputStream()
-
-                    inputStream.use { input ->
-                        outputStream.use { output ->
-                            input.copyTo(output)
-                        }
+                    val fileSize = smbFile.length()
+                    if (fileSize <= 0) {
+                        Log.e(TAG, "SMB file has zero or negative size: $smbUrl")
+                        return@withContext null
                     }
 
-                    // Verify the file was downloaded correctly
-                    if (cacheFile.length() > 0) {
-                        Timber.d("Successfully downloaded ${resource.name} (${cacheFile.length()} bytes)")
+                    // Create temporary file first to ensure complete download
+                    val tempFile = File(cacheDir, "temp_${fileName}")
+                    if (tempFile.exists()) {
+                        tempFile.delete()
+                    }
 
-                        // Use ContentResolver to get proper content URI
-                        val contentUri = FileProvider.getUriForFile(
-                            context,
-                            "com.photostreamr.fileprovider",
-                            cacheFile
-                        )
+                    // Use large buffer size for efficient network transfers
+                    val bufferSize = 32768 // 32KB buffer
 
-                        return@withContext contentUri
+                    // Use buffered streams with fixed buffer size
+                    val inputStream = BufferedInputStream(smbFile.inputStream, bufferSize)
+                    val outputStream = BufferedOutputStream(FileOutputStream(tempFile), bufferSize)
+
+                    // Copy with a progress counter
+                    val buffer = ByteArray(bufferSize)
+                    var bytesRead: Int
+                    var totalBytesRead = 0L
+
+                    try {
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
+                            totalBytesRead += bytesRead
+
+                            // Log progress for large files
+                            if (fileSize > 1_000_000 && totalBytesRead % (fileSize / 10) < bufferSize) {
+                                val percentComplete = (totalBytesRead.toFloat() / fileSize * 100).toInt()
+                                Log.d(TAG, "Download progress: $percentComplete% ($totalBytesRead/$fileSize bytes)")
+                            }
+                        }
+                        outputStream.flush()
+                    } finally {
+                        try { outputStream.close() } catch (e: Exception) { Log.e(TAG, "Error closing output stream", e) }
+                        try { inputStream.close() } catch (e: Exception) { Log.e(TAG, "Error closing input stream", e) }
+                    }
+
+                    // Verify download is complete
+                    val downloadSuccess = tempFile.exists() && tempFile.length() > 0
+
+                    if (downloadSuccess && tempFile.length() >= fileSize * 0.99) {
+                        // Verify file is actually a valid image
+                        val options = BitmapFactory.Options()
+                        options.inJustDecodeBounds = true
+                        BitmapFactory.decodeFile(tempFile.absolutePath, options)
+
+                        if (options.outWidth > 0 && options.outHeight > 0) {
+                            // It's a valid image, move to final location
+                            if (cacheFile.exists()) {
+                                cacheFile.delete()
+                            }
+
+                            if (tempFile.renameTo(cacheFile)) {
+                                Log.d(TAG, "Successfully downloaded valid image ${resource.name} (${cacheFile.length()} bytes)")
+
+                                return@withContext FileProvider.getUriForFile(
+                                    context,
+                                    "com.photostreamr.fileprovider",
+                                    cacheFile
+                                )
+                            } else {
+                                Log.e(TAG, "Failed to move temp file to final location")
+                                return@withContext null
+                            }
+                        } else {
+                            Log.e(TAG, "Downloaded file is not a valid image")
+                            tempFile.delete()
+                            return@withContext null
+                        }
                     } else {
-                        Timber.e("Downloaded file is empty: ${cacheFile.path}")
-                        cacheFile.delete()
+                        Log.e(TAG, "Incomplete download: ${tempFile.length()} of $fileSize bytes for ${resource.name}")
+                        tempFile.delete()
                         return@withContext null
                     }
                 } catch (e: Exception) {
-                    Timber.e(e, "Failed to download SMB file: $smbUrl")
-                    if (cacheFile.exists()) {
-                        cacheFile.delete()
-                    }
+                    Log.e(TAG, "Failed to download SMB file for ${resource.name}", e)
                     return@withContext null
                 }
             }
         } catch (e: Exception) {
-            Timber.e(e, "Error downloading network photo")
+            Log.e(TAG, "Error in getCachedPhotoUri for ${resource.name}", e)
             null
         }
     }

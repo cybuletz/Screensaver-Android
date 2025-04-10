@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path
+        name="cached_photos"
+        path="network_photos/" />
+    <cache-path
         name="shared_images"
         path="images/"/>
     <files-path
@@ -14,6 +17,9 @@
         path="images/"/>
     <external-path
         name="external"
+        path="." />
+    <files-path
+        name="files"
         path="." />
     <external-files-path
         name="external_files"

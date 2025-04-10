@@ -835,17 +835,23 @@
     <string name="resource_icon">Resource icon</string>
     <string name="error_browsing_network">Error browsing network: %1$s</string>
     <string name="error_connecting_to_server">Error connecting to server: %1$s</string>
-    <string name="adding_network_photos">Adding network photos…</string>
-    <string name="added_network_photos">Added %1$d photos from network</string>
-    <string name="network_photos_added">%1$d network photos added</string>
-    <string name="error_adding_photos">Error adding photos</string>
-    <string name="error_adding_photos_detail">Error adding photos: %1$s</string>
     <string name="server_name">Server name</string>
     <string name="server_address">Server address (SMB URL or IP)</string>
     <string name="username">Username (optional)</string>
     <string name="password">Password (optional)</string>
     <string name="add">Add</string>
     <string name="invalid_address">Please enter a valid server address</string>
+
+    <string name="adding_network_photos">Adding selected network photos…</string>
+    <string name="added_network_photos">Added %1$d network photos</string>
+    <string name="network_photos_added">Successfully added %1$d network photos</string>
+    <string name="error_adding_photos">Error adding photos</string>
+    <string name="error_adding_photos_detail">Failed to add photos: %1$s</string>
+    <string name="adding_photos">Adding Photos</string>
+    <string name="downloading_photos">Downloading photos from server…</string>
+    <string name="processing_photo">Processing photo %1$d of %2$d…</string>
+    <string name="no_photos_added">No photos were added</string>
+    <string name="failed_to_add_photos">Failed to add photos. Check logs for details.</string>
 
 
 </resources>

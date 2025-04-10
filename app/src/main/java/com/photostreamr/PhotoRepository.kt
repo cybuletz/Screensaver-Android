@@ -2,6 +2,7 @@ package com.photostreamr
 
 import android.content.ContentUris
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
@@ -26,6 +27,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlinx.coroutines.*
+import timber.log.Timber
 
 @Singleton
 class PhotoRepository @Inject constructor(
@@ -75,6 +77,12 @@ class PhotoRepository @Inject constructor(
         loadVirtualAlbums()
         val hasPhotos = preferences.getBoolean(KEY_HAS_PHOTOS, false)
         Log.d(TAG, "Initializing with previous photo state: $hasPhotos")
+
+        // Schedule validation of network photos
+        CoroutineScope(Dispatchers.IO).launch {
+            delay(2000) // Delay slightly to avoid slowing startup
+            validateNetworkPhotos()
+        }
     }
 
     fun getLocalAlbums(): List<AlbumInfo> {
@@ -631,6 +639,74 @@ class PhotoRepository @Inject constructor(
         // Save changes if any photos were added
         saveItems()
         Log.d(TAG, "Final photo count: ${mediaItems.size}")
+
+        // If we added network photos, validate them
+        if (photos.any { it.albumId.startsWith("network_") }) {
+            validateNetworkPhotos()
+        }
+    }
+
+    /**
+     * Validates network photos and removes any corrupt or missing files
+     */
+    fun validateNetworkPhotos() {
+        val invalidItems = mutableListOf<MediaItem>()
+
+        Log.d(TAG, "Validating ${mediaItems.count { it.albumId.startsWith("network_") }} network photos")
+
+        // Check each media item with a "network_" prefix
+        mediaItems.filter { it.albumId.startsWith("network_") }.forEach { item ->
+            val uri = item.baseUrl
+            try {
+                // Check if the file exists
+                if (uri.startsWith("file:///")) {
+                    val file = File(Uri.parse(uri).path ?: "")
+                    if (!file.exists() || file.length() <= 0L) {
+                        // File doesn't exist or is empty
+                        Log.d(TAG, "Network photo doesn't exist or is empty: $uri")
+                        invalidItems.add(item)
+                        return@forEach
+                    }
+
+                    // Verify it's a valid image
+                    val options = BitmapFactory.Options()
+                    options.inJustDecodeBounds = true
+                    BitmapFactory.decodeFile(file.absolutePath, options)
+
+                    if (options.outWidth <= 0 || options.outHeight <= 0) {
+                        Log.d(TAG, "Network photo isn't a valid image: $uri")
+                        invalidItems.add(item)
+                        file.delete() // Delete the invalid file
+                    }
+                } else if (uri.startsWith("content://")) {
+                    try {
+                        // Try to open the content URI
+                        context.contentResolver.openInputStream(Uri.parse(uri))?.use { stream ->
+                            // Just checking if we can open it
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Content URI is invalid: $uri", e)
+                        invalidItems.add(item)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error validating network photo: $uri", e)
+                invalidItems.add(item)
+            }
+        }
+
+        // Remove invalid items
+        if (invalidItems.isNotEmpty()) {
+            Log.d(TAG, "Removing ${invalidItems.size} invalid network photos")
+            mediaItems.removeAll(invalidItems)
+
+            // Save changes using your existing method
+            saveItems()
+
+            Log.d(TAG, "After validation: ${mediaItems.size} total photos remaining")
+        } else {
+            Log.d(TAG, "Network photo validation complete - all photos are valid")
+        }
     }
 
     fun hasPhoto(uri: String): Boolean {

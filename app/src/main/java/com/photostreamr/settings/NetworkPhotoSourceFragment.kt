@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -366,15 +367,6 @@ class NetworkPhotoSourceFragment : Fragment() {
         }
     }
 
-    private fun updateSelectedPhotosCount() {
-        addSelectedPhotosButton.text = if (selectedResources.size > 0) {
-            getString(R.string.add_selected_photos) + " (" + selectedResources.size + ")"
-        } else {
-            getString(R.string.add_selected_photos)
-        }
-        addSelectedPhotosButton.isEnabled = selectedResources.size > 0
-    }
-
     private fun showAddServerDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_add_server, null)
         val nameEditText = dialogView.findViewById<EditText>(R.id.server_name_edit)
@@ -474,28 +466,50 @@ class NetworkPhotoSourceFragment : Fragment() {
 
     private fun addSelectedPhotosToRepository() {
         if (selectedResources.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.no_photos_selected, Toast.LENGTH_SHORT).show()
             return
         }
 
+        // Show progress indicator
         progressBar.isVisible = true
         statusText.text = getString(R.string.adding_network_photos)
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        // Show progress dialog
+        val progressDialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.adding_photos)
+            .setView(layoutInflater.inflate(R.layout.dialog_progress, null))
+            .setCancelable(false)
+            .show()
+
+        // Start background work
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val mediaItems = mutableListOf<MediaItem>()
+                var processedCount = 0
 
-                // Download and cache selected photos
+                // Process each selected resource
                 for (resource in selectedResources) {
+                    processedCount++
+
+                    // Update progress on main thread
+                    withContext(Dispatchers.Main) {
+                        val progressView = progressDialog.findViewById<TextView>(R.id.statusText)
+                        progressView?.text = getString(R.string.processing_photo, processedCount, selectedResources.size)
+                    }
+
+                    Log.d(TAG, "Processing network photo: ${resource.name}")
+
+                    // Download and cache photo
                     val uri = networkPhotoManager.getCachedPhotoUri(resource)
                     if (uri != null) {
                         val uriString = uri.toString()
 
-                        // Create media item
+                        // Create media item with unique ID
                         val mediaItem = MediaItem(
-                            id = uriString,
+                            id = "${resource.server.id}_${resource.path.hashCode()}",
                             albumId = "network_" + resource.server.id,
                             baseUrl = uriString,
-                            mimeType = "image/jpeg", // Specify a default mime type
+                            mimeType = getMimeType(resource.name),
                             width = 0,
                             height = 0,
                             description = resource.name,
@@ -504,15 +518,38 @@ class NetworkPhotoSourceFragment : Fragment() {
                         )
 
                         mediaItems.add(mediaItem)
-                        Timber.d("Created MediaItem for network photo: $uriString")
+                        Log.d(TAG, "Created MediaItem for network photo: $uriString")
+                    } else {
+                        Log.e(TAG, "Failed to get URI for: ${resource.name}")
                     }
                 }
 
-                // Add to PhotoRepository
-                photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.APPEND)
-
-                // Update UI
+                // Switch to main thread to update UI
                 withContext(Dispatchers.Main) {
+                    try {
+                        progressDialog.dismiss()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error dismissing dialog", e)
+                    }
+
+                    if (mediaItems.isEmpty()) {
+                        progressBar.isVisible = false
+                        statusText.text = getString(R.string.no_photos_added)
+                        Toast.makeText(
+                            requireContext(),
+                            R.string.failed_to_add_photos,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@withContext
+                    }
+
+                    // Add to PhotoRepository using the correct mode from your implementation
+                    photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.MERGE)
+
+                    // Update UI
+                    progressBar.isVisible = false
+                    statusText.text = getString(R.string.network_photos_added, mediaItems.size)
+
                     Toast.makeText(
                         requireContext(),
                         getString(R.string.added_network_photos, mediaItems.size),
@@ -525,20 +562,24 @@ class NetworkPhotoSourceFragment : Fragment() {
                         parentFragment.onNetworkPhotosAdded(mediaItems.size)
                     }
 
-                    progressBar.isVisible = false
-                    statusText.text = getString(R.string.network_photos_added, mediaItems.size)
-
                     // Clear selection
                     selectedResources.clear()
-                    resourceAdapter.notifyDataSetChanged()
+                    resourceAdapter.submitList(networkPhotoManager.folderContents.value)
                     updateSelectedPhotosCount()
                 }
-
             } catch (e: Exception) {
-                Timber.e(e, "Error adding network photos")
+                Log.e(TAG, "Error adding network photos", e)
+
                 withContext(Dispatchers.Main) {
+                    try {
+                        progressDialog.dismiss()
+                    } catch (ex: Exception) {
+                        Log.e(TAG, "Error dismissing dialog", ex)
+                    }
+
                     progressBar.isVisible = false
                     statusText.text = getString(R.string.error_adding_photos)
+
                     Toast.makeText(
                         requireContext(),
                         getString(R.string.error_adding_photos_detail, e.message),
@@ -546,6 +587,31 @@ class NetworkPhotoSourceFragment : Fragment() {
                     ).show()
                 }
             }
+        }
+    }
+
+    private fun getMimeType(fileName: String): String {
+        return when {
+            fileName.endsWith(".jpg", ignoreCase = true) ||
+                    fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+            fileName.endsWith(".png", ignoreCase = true) -> "image/png"
+            fileName.endsWith(".gif", ignoreCase = true) -> "image/gif"
+            fileName.endsWith(".bmp", ignoreCase = true) -> "image/bmp"
+            fileName.endsWith(".webp", ignoreCase = true) -> "image/webp"
+            else -> "image/jpeg" // Default to JPEG
+        }
+    }
+
+    private fun updateSelectedPhotosCount() {
+        val count = selectedResources.size
+        addSelectedPhotosButton.apply {
+            text = if (count > 0) {
+                getString(R.string.add_selected_photos) + " ($count)"
+            } else {
+                getString(R.string.add_selected_photos)
+            }
+            isEnabled = count > 0
+            alpha = if (count > 0) 1.0f else 0.5f
         }
     }
 
