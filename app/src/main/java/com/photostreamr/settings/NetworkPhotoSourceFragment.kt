@@ -122,10 +122,23 @@ class NetworkPhotoSourceFragment : Fragment() {
         updateSelectedPhotosCount()
         browseBackButton.isEnabled = false
 
+        // Add debug button
         val debugButton = view.findViewById<Button>(R.id.debug_button)
         debugButton?.setOnClickListener {
             showDebugInfo()
         }
+
+        // Log servers on start
+        val totalServers = networkPhotoManager.manualConnections.value.size +
+                networkPhotoManager.discoveredServers.value.size
+        Timber.d("Total servers available: $totalServers (${networkPhotoManager.manualConnections.value.size} manual, ${networkPhotoManager.discoveredServers.value.size} discovered)")
+
+        // Show a toast with the server count
+        Toast.makeText(
+            requireContext(),
+            "$totalServers servers available (${networkPhotoManager.manualConnections.value.size} saved)",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun showDebugInfo() {
@@ -482,7 +495,7 @@ class NetworkPhotoSourceFragment : Fragment() {
                             id = uriString,
                             albumId = "network_" + resource.server.id,
                             baseUrl = uriString,
-                            mimeType = "image/*",
+                            mimeType = "image/jpeg", // Specify a default mime type
                             width = 0,
                             height = 0,
                             description = resource.name,
@@ -491,6 +504,7 @@ class NetworkPhotoSourceFragment : Fragment() {
                         )
 
                         mediaItems.add(mediaItem)
+                        Timber.d("Created MediaItem for network photo: $uriString")
                     }
                 }
 

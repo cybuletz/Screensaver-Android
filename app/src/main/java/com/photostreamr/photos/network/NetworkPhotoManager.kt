@@ -5,6 +5,7 @@ import android.net.Uri
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
+import androidx.core.content.FileProvider
 import com.photostreamr.PhotoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -90,6 +91,9 @@ class NetworkPhotoManager @Inject constructor(
 
             // Initialize NSD manager
             nsdManager = context.getSystemService(Context.NSD_SERVICE) as? NsdManager
+
+            // Log how many servers were loaded
+            Timber.d("Loaded ${_manualConnections.value.size} manual server connections")
         } catch (e: Exception) {
             Timber.e(e, "Error initializing NetworkPhotoManager")
             _discoveryState.value = DiscoveryState.Error("Failed to initialize: ${e.message}")
@@ -215,16 +219,34 @@ class NetworkPhotoManager @Inject constructor(
                 val cacheDir = File(context.cacheDir, "network_photos")
                 cacheDir.mkdirs()
 
-                // Generate unique filename
-                val fileName = "${resource.server.id}_${resource.path.replace("/", "_")}"
+                // Generate unique filename - avoid special characters that might cause issues
+                val safeName = resource.path
+                    .replace("/", "_")
+                    .replace("%", "_pct_")
+                    .replace(":", "_")
+                    .replace("?", "_")
+                    .replace("&", "_")
+                    .replace("=", "_")
+
+                val fileName = "${resource.server.id}_${safeName}"
                 val cacheFile = File(cacheDir, fileName)
 
                 // Check if already cached
                 if (cacheFile.exists()) {
-                    return@withContext Uri.fromFile(cacheFile)
+                    // Check if file is valid
+                    if (cacheFile.length() > 0) {
+                        Timber.d("Using cached file for ${resource.name}: ${cacheFile.path}")
+                        return@withContext Uri.fromFile(cacheFile)
+                    } else {
+                        // Invalid cached file, delete it
+                        cacheFile.delete()
+                    }
                 }
 
                 // Download file
+                Timber.d("Downloading image ${resource.name} to ${cacheFile.path}")
+
+                // Build SMB URL
                 val smbUrl = buildSmbUrl(resource.server) + "/" + resource.path
                 val smbContext = if (resource.server.username != null && resource.server.password != null) {
                     cifsContext.withCredentials(
@@ -234,18 +256,48 @@ class NetworkPhotoManager @Inject constructor(
                     cifsContext
                 }
 
-                // Get file via SMB
-                val smbFile = SmbFile(smbUrl, smbContext)
-                val inputStream = smbFile.inputStream
-                val outputStream = cacheFile.outputStream()
+                try {
+                    // Get file via SMB
+                    val smbFile = SmbFile(smbUrl, smbContext)
 
-                inputStream.use { input ->
-                    outputStream.use { output ->
-                        input.copyTo(output)
+                    if (!smbFile.exists()) {
+                        Timber.e("SMB file does not exist: $smbUrl")
+                        return@withContext null
                     }
-                }
 
-                Uri.fromFile(cacheFile)
+                    val inputStream = smbFile.inputStream
+                    val outputStream = cacheFile.outputStream()
+
+                    inputStream.use { input ->
+                        outputStream.use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+
+                    // Verify the file was downloaded correctly
+                    if (cacheFile.length() > 0) {
+                        Timber.d("Successfully downloaded ${resource.name} (${cacheFile.length()} bytes)")
+
+                        // Use ContentResolver to get proper content URI
+                        val contentUri = FileProvider.getUriForFile(
+                            context,
+                            "com.photostreamr.fileprovider",
+                            cacheFile
+                        )
+
+                        return@withContext contentUri
+                    } else {
+                        Timber.e("Downloaded file is empty: ${cacheFile.path}")
+                        cacheFile.delete()
+                        return@withContext null
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to download SMB file: $smbUrl")
+                    if (cacheFile.exists()) {
+                        cacheFile.delete()
+                    }
+                    return@withContext null
+                }
             }
         } catch (e: Exception) {
             Timber.e(e, "Error downloading network photo")
