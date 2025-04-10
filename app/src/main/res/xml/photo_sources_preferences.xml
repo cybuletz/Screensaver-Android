@@ -52,4 +52,10 @@
             style="@style/DialogPreference" />
     </PreferenceCategory>
 
+    <Preference
+        android:key="select_network_photos"
+        android:title="@string/network_photos"
+        android:summary="@string/select_network_photos"
+        android:icon="@drawable/ic_network" />
+
 </PreferenceScreen>

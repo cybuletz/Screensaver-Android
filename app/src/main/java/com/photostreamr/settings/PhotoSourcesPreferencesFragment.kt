@@ -2,6 +2,7 @@ package com.photostreamr.settings
 
 import android.Manifest
 import android.app.Activity
+import android.app.Dialog
 import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -48,6 +49,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.DialogFragment
 import com.photostreamr.photos.PersistentPhotoCache
+import com.photostreamr.photos.PhotoSourceType
 import java.io.File
 
 @AndroidEntryPoint
@@ -80,12 +82,16 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
     private var isSourceSelectionComplete = false
 
     companion object {
-        private const val TAG = "PhotoSourcesPrefFragment"
+        private const val TAG = "PhotoSourcesPrefs"
         private const val REQUEST_SELECT_PHOTOS = 1001
         private const val GOOGLE_PHOTOS_REQUEST_CODE = 1002
         private const val PERMISSION_REQUEST_CODE = 100
-        private const val SOURCE_LOCAL_PHOTOS = "local"
-        private const val SOURCE_GOOGLE_PHOTOS = "google_photos"
+        private const val REQUEST_NETWORK_PHOTOS = 102
+
+        // Source identifiers
+        const val SOURCE_LOCAL_PHOTOS = "local_photos"
+        const val SOURCE_GOOGLE_PHOTOS = "google_photos"
+        const val SOURCE_NETWORK_PHOTOS = "network_photos"
     }
 
     private val pickMultipleMedia = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
@@ -283,6 +289,76 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
             }
             isEnabled = isGooglePhotosEnabled()
         }
+
+        // Network photos preference
+        findPreference<Preference>("select_network_photos")?.setOnPreferenceClickListener {
+            showNetworkPhotosFragment()
+            true
+        }
+
+        // Update the network photos summary if needed
+        updateNetworkPhotosSummary()
+    }
+
+    private fun showNetworkPhotosFragment() {
+        // Create a network photo source fragment
+        val fragment = NetworkPhotoSourceFragment()
+
+        // Show as a dialog
+        val dialogFragment = DialogFragment().apply {
+            arguments = Bundle().apply {
+                putString("fragment_tag", "network_photos_fragment")
+            }
+            setStyle(DialogFragment.STYLE_NORMAL, R.style.FullScreenDialogStyle)
+        }
+
+        // Set the fragment as child of dialog
+        childFragmentManager.beginTransaction()
+            .add(fragment, "network_photos_fragment")
+            .commitNow()
+
+        // Set content view of dialog to the fragment
+        val dialog = Dialog(requireContext(), R.style.FullScreenDialogStyle)
+        dialog.setContentView(fragment.requireView())
+        dialog.show()
+    }
+
+    // Method to be called when network photos are added
+    fun onNetworkPhotosAdded(count: Int) {
+        // Update sources in pending changes
+        val currentSources = getCurrentPhotoSources().toMutableSet()
+        currentSources.add(SOURCE_NETWORK_PHOTOS)
+        pendingChanges["photo_sources"] = currentSources
+
+        // Update UI
+        updateNetworkPhotosSummary()
+
+        // Apply changes
+        applyChanges()
+        notifyPhotosAdded()
+
+        // Show toast message
+        Toast.makeText(
+            requireContext(),
+            resources.getQuantityString(
+                R.plurals.network_photos_added_success,
+                count,
+                count
+            ),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun updateNetworkPhotosSummary() {
+        // Get the count of network photos from the repository
+        val networkPhotoCount = photoManager.getPhotoCountBySource(PhotoSourceType.NETWORK)
+
+        findPreference<Preference>("select_network_photos")?.summary =
+            if (networkPhotoCount > 0) {
+                getString(R.string.photos_selected, networkPhotoCount)
+            } else {
+                getString(R.string.no_photos_selected)
+            }
     }
 
     private fun handleLocalPhotosStateChange(enabled: Boolean) {

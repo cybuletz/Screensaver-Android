@@ -10,6 +10,7 @@ import com.photostreamr.auth.GoogleAuthManager
 import com.photostreamr.models.MediaItem
 import com.photostreamr.models.AlbumInfo
 import com.photostreamr.photos.PersistentPhotoCache
+import com.photostreamr.photos.PhotoSourceType
 import com.photostreamr.photos.VirtualAlbum
 import com.photostreamr.photos.PhotoUriManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -132,6 +133,20 @@ class PhotoRepository @Inject constructor(
         }
 
         return albums
+    }
+
+    fun getPhotoCountBySource(sourceType: PhotoSourceType): Int {
+        return allPhotos.filter { mediaItem ->
+            when (sourceType) {
+                PhotoSourceType.LOCAL -> mediaItem.id.startsWith("content://media")
+                PhotoSourceType.GOOGLE_PHOTOS ->
+                    mediaItem.id.contains("com.google.android.apps.photos") ||
+                            mediaItem.id.contains("googleusercontent.com")
+                PhotoSourceType.NETWORK -> mediaItem.id.startsWith("file:///data/data") &&
+                        mediaItem.albumId.startsWith("network_")
+                PhotoSourceType.VIRTUAL -> mediaItem.albumId.startsWith("virtual_")
+            }
+        }.size
     }
 
     private fun getPhotoCountForAlbum(bucketId: String): Int {

@@ -30,6 +30,7 @@ import com.photostreamr.music.SpotifyManager
 import com.photostreamr.music.SpotifyPreferences
 import com.photostreamr.photos.PersistentPhotoCache
 import com.photostreamr.photos.PhotoUriManager
+import com.photostreamr.photos.network.NetworkPhotoManager
 import com.photostreamr.security.AppAuthManager
 import com.photostreamr.security.BiometricHelper
 import com.photostreamr.security.SecurityPreferences

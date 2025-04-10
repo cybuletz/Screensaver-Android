@@ -160,6 +160,9 @@ dependencies {
 
     implementation("com.google.mlkit:face-detection:16.1.6")
 
+    // SMB library for network file access
+    implementation("eu.agno3.jcifs:jcifs-ng:2.1.9")
+
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
