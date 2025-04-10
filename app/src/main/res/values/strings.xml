@@ -1,7 +1,4 @@
 <resources>
-
-
-
     <string name="error_dialog_title">Error Details</string>
     <string name="sign_in_message">Sign in to access your Google Photos albums</string>
 
