@@ -410,20 +410,32 @@ class MusicPreferenceFragment : PreferenceFragmentCompat() {
         // Hide EVERYTHING first except music source
         hideAllPreferencesExceptSource()
 
-        // Set initial music source to Spotify
-        currentMusicSource = MUSIC_SOURCE_SPOTIFY
+        // Set initial music source to Local instead of Spotify
+        currentMusicSource = MUSIC_SOURCE_LOCAL  // Change from MUSIC_SOURCE_SPOTIFY to MUSIC_SOURCE_LOCAL
 
         // Get the music source from preferences if it exists
-        preferenceManager.sharedPreferences?.getString("music_source", MUSIC_SOURCE_SPOTIFY)?.let { savedSource ->
-            currentMusicSource = savedSource
+        preferenceManager.sharedPreferences?.getString("music_source", MUSIC_SOURCE_LOCAL)?.let { savedSource ->
+            // Skip Spotify if it's the saved value
+            if (savedSource != MUSIC_SOURCE_SPOTIFY) {
+                currentMusicSource = savedSource
+            }
         }
 
         // Force initial visibility update based on current source
         updateVisiblePreferences(currentMusicSource)
 
         findPreference<ListPreference>("music_source")?.apply {
+            // ****************************************************Remove Spotify from options
+            val entries = entries.filterNot { it.toString().contains("Spotify", ignoreCase = true) }.toTypedArray()
+            val entryValues = entryValues.filterNot { it.toString() == MUSIC_SOURCE_SPOTIFY }.toTypedArray()
+
+            setEntries(entries)
+            setEntryValues(entryValues)
+            // *****************************************************Remove Spotify from options
+
             value = currentMusicSource  // Set the current selection
 
+            // Rest of the method remains unchanged
             setOnPreferenceChangeListener { _, newValue ->
                 val newSource = newValue.toString()
                 Timber.d("Switching music source from $currentMusicSource to $newSource")
