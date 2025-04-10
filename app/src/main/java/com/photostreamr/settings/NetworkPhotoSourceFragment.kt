@@ -1,5 +1,8 @@
 package com.photostreamr.settings
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -118,6 +121,47 @@ class NetworkPhotoSourceFragment : Fragment() {
         // Initial UI state
         updateSelectedPhotosCount()
         browseBackButton.isEnabled = false
+
+        val debugButton = view.findViewById<Button>(R.id.debug_button)
+        debugButton?.setOnClickListener {
+            showDebugInfo()
+        }
+    }
+
+    private fun showDebugInfo() {
+        val debugInfo = StringBuilder()
+        debugInfo.append("Network Discovery State: ${networkPhotoManager.discoveryState.value}\n")
+        debugInfo.append("Discovered Servers: ${networkPhotoManager.discoveredServers.value.size}\n")
+        debugInfo.append("Manual Servers: ${networkPhotoManager.manualConnections.value.size}\n")
+        debugInfo.append("Current Path: ${networkPhotoManager.currentBrowsingPath.value}\n")
+        debugInfo.append("Folder Contents: ${networkPhotoManager.folderContents.value.size}\n")
+
+        // Network Info
+        val connectivityManager = context?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val wifiManager = context?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+
+        if (connectivityManager != null) {
+            val activeNetwork = connectivityManager.activeNetworkInfo
+            debugInfo.append("Network Connected: ${activeNetwork?.isConnected}\n")
+            debugInfo.append("Network Type: ${activeNetwork?.typeName}\n")
+        }
+
+        if (wifiManager != null) {
+            val wifiInfo = wifiManager.connectionInfo
+            debugInfo.append("WiFi SSID: ${wifiInfo.ssid}\n")
+            debugInfo.append("WiFi IP: ${android.text.format.Formatter.formatIpAddress(wifiInfo.ipAddress)}\n")
+            debugInfo.append("WiFi Link Speed: ${wifiInfo.linkSpeed} Mbps\n")
+
+            // Just note that multicast functionality is being used
+            debugInfo.append("WiFi Multicast: Used for network discovery\n")
+        }
+
+        // Use default alert dialog style
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Network Debug Info")
+            .setMessage(debugInfo.toString())
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun collectFlows() {
@@ -325,6 +369,9 @@ class NetworkPhotoSourceFragment : Fragment() {
         val usernameEditText = dialogView.findViewById<EditText>(R.id.username_edit)
         val passwordEditText = dialogView.findViewById<EditText>(R.id.password_edit)
 
+        // Add helper text to show examples
+        addressEditText.hint = "192.168.1.100 or server.local"
+
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.add_server)
             .setView(dialogView)
@@ -343,6 +390,7 @@ class NetworkPhotoSourceFragment : Fragment() {
                     return@setPositiveButton
                 }
 
+                // Create the server object
                 val server = NetworkServer(
                     id = UUID.randomUUID().toString(),
                     name = if (name.isEmpty()) address else name,
@@ -352,7 +400,49 @@ class NetworkPhotoSourceFragment : Fragment() {
                     isManual = true
                 )
 
+                // Add server and try to connect
                 networkPhotoManager.addManualServer(server)
+                Timber.d("Added manual server: ${server.name}, address: ${server.address}")
+
+                // Log that server was added
+                Toast.makeText(requireContext(), "Added server: ${server.name}", Toast.LENGTH_SHORT).show()
+
+                // Immediately try to connect to the server
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        progressBar.isVisible = true
+                        statusText.text = "Connecting to ${server.name}..."
+
+                        val result = networkPhotoManager.browseNetworkPath(server)
+                        progressBar.isVisible = false
+
+                        if (result.isFailure) {
+                            statusText.text = "Failed to connect to ${server.name}"
+                            Toast.makeText(
+                                requireContext(),
+                                getString(R.string.error_connecting_to_server, result.exceptionOrNull()?.message),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            Timber.e("Failed to connect: ${result.exceptionOrNull()?.message}")
+                        } else {
+                            statusText.text = "Connected to ${server.name}"
+                            Toast.makeText(
+                                requireContext(),
+                                "Connected to ${server.name}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    } catch (e: Exception) {
+                        progressBar.isVisible = false
+                        statusText.text = "Failed to connect to ${server.name}"
+                        Toast.makeText(
+                            requireContext(),
+                            getString(R.string.error_connecting_to_server, e.message),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        Timber.e(e, "Error connecting to server")
+                    }
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

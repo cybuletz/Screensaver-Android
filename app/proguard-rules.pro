@@ -194,3 +194,8 @@
 
 # Additional rules to suppress annotation processing warnings
 -dontwarn com.spotify.protocol.annotations.**
+
+# Keep JCIFS classes
+-keep class jcifs.** { *; }
+-keep interface jcifs.** { *; }
+-keep enum jcifs.** { *; }

@@ -25,7 +25,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Credentials
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.IOException
+import java.nio.charset.Charset
 import java.util.concurrent.TimeUnit
 
 @Singleton
@@ -95,6 +98,7 @@ class NetworkPhotoManager @Inject constructor(
 
     fun startDiscovery() {
         if (nsdManager == null) {
+            Timber.e("NSD Manager is null, cannot start discovery")
             _discoveryState.value = DiscoveryState.Error("Network discovery not available")
             return
         }
@@ -109,8 +113,10 @@ class NetworkPhotoManager @Inject constructor(
             discoveryListener = listener
 
             // Start discovery
+            Timber.i("Starting network service discovery")
             _discoveryState.value = DiscoveryState.Searching
             nsdManager?.discoverServices(NSD_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
+            Timber.d("Discovery started for service type: $NSD_SERVICE_TYPE")
         } catch (e: Exception) {
             Timber.e(e, "Error starting network discovery")
             _discoveryState.value = DiscoveryState.Error("Failed to start discovery: ${e.message}")
@@ -266,11 +272,59 @@ class NetworkPhotoManager @Inject constructor(
     }
 
     private fun saveManualConnections() {
-        // Implement preference storage for manual connections
+        try {
+            val sharedPrefs = context.getSharedPreferences("network_photo_manager", Context.MODE_PRIVATE)
+            val servers = _manualConnections.value
+
+            // Convert servers to JSON
+            val jsonArray = JSONArray()
+            servers.forEach { server ->
+                val serverJson = JSONObject().apply {
+                    put("id", server.id)
+                    put("name", server.name)
+                    put("address", server.address)
+                    put("username", server.username ?: "")
+                    put("password", server.password ?: "") // Note: Consider encryption for passwords
+                    put("isManual", server.isManual)
+                }
+                jsonArray.put(serverJson)
+            }
+
+            // Save to SharedPreferences
+            sharedPrefs.edit().putString("manual_servers", jsonArray.toString()).apply()
+
+            Timber.d("Saved ${servers.size} manual connections")
+        } catch (e: Exception) {
+            Timber.e(e, "Error saving manual connections")
+        }
     }
 
     private fun loadManualConnections() {
-        // Implement loading manual connections from preferences
+        try {
+            val sharedPrefs = context.getSharedPreferences("network_photo_manager", Context.MODE_PRIVATE)
+            val serversJson = sharedPrefs.getString("manual_servers", "[]")
+
+            val servers = mutableListOf<NetworkServer>()
+            val jsonArray = JSONArray(serversJson)
+
+            for (i in 0 until jsonArray.length()) {
+                val serverJson = jsonArray.getJSONObject(i)
+                val server = NetworkServer(
+                    id = serverJson.getString("id"),
+                    name = serverJson.getString("name"),
+                    address = serverJson.getString("address"),
+                    username = serverJson.getString("username").let { if (it.isEmpty()) null else it },
+                    password = serverJson.getString("password").let { if (it.isEmpty()) null else it },
+                    isManual = serverJson.getBoolean("isManual")
+                )
+                servers.add(server)
+            }
+
+            _manualConnections.value = servers
+            Timber.d("Loaded ${servers.size} manual connections")
+        } catch (e: Exception) {
+            Timber.e(e, "Error loading manual connections")
+        }
     }
 
     private fun buildSmbUrl(server: NetworkServer): String {
@@ -284,13 +338,20 @@ class NetworkPhotoManager @Inject constructor(
     private fun createDiscoveryListener(): NsdManager.DiscoveryListener {
         return object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {
-                Timber.d("Service discovery started")
+                Timber.d("Service discovery started for $serviceType")
                 _discoveryState.value = DiscoveryState.Searching
             }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                Timber.d("Service found: ${serviceInfo.serviceName}")
-                resolveService(serviceInfo)
+                Timber.d("Service found: ${serviceInfo.serviceName} type=${serviceInfo.serviceType}")
+
+                // Log all service found, not just SMB services
+                if (serviceInfo.serviceType == NSD_SERVICE_TYPE) {
+                    Timber.i("SMB Service found: ${serviceInfo.serviceName}")
+                    resolveService(serviceInfo)
+                } else {
+                    Timber.d("Non-SMB service found: ${serviceInfo.serviceName} (type=${serviceInfo.serviceType})")
+                }
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo) {
@@ -305,22 +366,33 @@ class NetworkPhotoManager @Inject constructor(
             }
 
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                Timber.e("Discovery start failed: $errorCode")
+                Timber.e("Discovery start failed: $errorCode for $serviceType")
                 _discoveryState.value = DiscoveryState.Error("Failed to start discovery: error $errorCode")
             }
 
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                Timber.e("Discovery stop failed: $errorCode")
+                Timber.e("Discovery stop failed: $errorCode for $serviceType")
             }
         }
     }
 
     private fun resolveService(serviceInfo: NsdServiceInfo) {
         try {
+            Timber.d("Resolving service: ${serviceInfo.serviceName}")
+
             // Create resolve listener
             val listener = object : NsdManager.ResolveListener {
                 override fun onServiceResolved(resolvedService: NsdServiceInfo) {
                     Timber.d("Service resolved: ${resolvedService.serviceName}, host=${resolvedService.host}, port=${resolvedService.port}")
+
+                    // Log all service attributes
+                    val attributeNames = resolvedService.attributes?.keys
+                    if (attributeNames != null) {
+                        for (name in attributeNames) {
+                            val value = resolvedService.attributes[name]
+                            Timber.d("Attribute: $name = ${value?.toString(Charset.defaultCharset())}")
+                        }
+                    }
 
                     // Create server object
                     val address = "${resolvedService.host.hostAddress}"
