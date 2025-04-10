@@ -91,6 +91,9 @@ class NetworkPhotoSourceFragment : Fragment() {
         serversRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         serversRecyclerView.addItemDecoration(DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL))
 
+        // Explicitly ensure server RecyclerView is visible
+        serversRecyclerView.visibility = View.VISIBLE
+
         browseRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         browseRecyclerView.addItemDecoration(DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL))
 
@@ -140,6 +143,18 @@ class NetworkPhotoSourceFragment : Fragment() {
             "$totalServers servers available (${networkPhotoManager.manualConnections.value.size} saved)",
             Toast.LENGTH_SHORT
         ).show()
+
+        // Force layout measurement to debug RecyclerView size
+        serversRecyclerView.post {
+            Log.d(TAG, "RecyclerView posted layout - height: ${serversRecyclerView.height}, width: ${serversRecyclerView.width}")
+            // If RecyclerView has zero height, try to force minimum height
+            if (serversRecyclerView.height <= 0) {
+                val params = serversRecyclerView.layoutParams
+                params.height = 300 // Force minimum height in pixels
+                serversRecyclerView.layoutParams = params
+                serversRecyclerView.requestLayout()
+            }
+        }
     }
 
     private fun showDebugInfo() {
@@ -181,7 +196,8 @@ class NetworkPhotoSourceFragment : Fragment() {
     private fun collectFlows() {
         viewLifecycleOwner.lifecycleScope.launch {
             // Collect discovery state
-            networkPhotoManager.discoveryState.collectLatest { state ->
+            networkPhotoManager.discoveryState.collect { state ->
+                Log.d(TAG, "Discovery state changed: $state")
                 when (state) {
                     is NetworkPhotoManager.DiscoveryState.Searching -> {
                         progressBar.isVisible = true
@@ -193,29 +209,34 @@ class NetworkPhotoSourceFragment : Fragment() {
                     }
                     else -> {
                         progressBar.isVisible = false
-                        statusText.text = ""
+                        statusText.text = if (serverAdapter.itemCount == 0) {
+                            getString(R.string.no_servers_found)
+                        } else {
+                            getString(R.string.select_server_to_browse)
+                        }
                     }
                 }
             }
         }
 
-        // Collect discovered servers
+        // Use separate collectors for discovered and manual servers
         viewLifecycleOwner.lifecycleScope.launch {
-            networkPhotoManager.discoveredServers.collectLatest { servers ->
+            networkPhotoManager.discoveredServers.collect { servers ->
+                Log.d(TAG, "Discovered servers changed: ${servers.size} servers")
                 updateServerList()
             }
         }
 
-        // Collect manual servers
         viewLifecycleOwner.lifecycleScope.launch {
-            networkPhotoManager.manualConnections.collectLatest { servers ->
+            networkPhotoManager.manualConnections.collect { servers ->
+                Log.d(TAG, "Manual servers changed: ${servers.size} servers")
                 updateServerList()
             }
         }
 
         // Collect current browsing path
         viewLifecycleOwner.lifecycleScope.launch {
-            networkPhotoManager.currentBrowsingPath.collectLatest { path ->
+            networkPhotoManager.currentBrowsingPath.collect { path ->
                 selectedPathText.text = path ?: getString(R.string.no_folder_selected)
                 // Update back button state
                 browseBackButton.isEnabled = path != null && path.isNotEmpty()
@@ -224,7 +245,8 @@ class NetworkPhotoSourceFragment : Fragment() {
 
         // Collect folder contents
         viewLifecycleOwner.lifecycleScope.launch {
-            networkPhotoManager.folderContents.collectLatest { resources ->
+            networkPhotoManager.folderContents.collect { resources ->
+                Log.d(TAG, "Folder contents changed: ${resources.size} items")
                 resourceAdapter.submitList(resources)
 
                 // Update selected photos count in button text
@@ -234,10 +256,32 @@ class NetworkPhotoSourceFragment : Fragment() {
     }
 
     private fun updateServerList() {
-        val allServers = mutableListOf<NetworkServer>().apply {
-            addAll(networkPhotoManager.discoveredServers.value)
-            addAll(networkPhotoManager.manualConnections.value)
+        // Create a defensive copy of both lists
+        val discoveredServers = networkPhotoManager.discoveredServers.value.toList()
+        val manualServers = networkPhotoManager.manualConnections.value.toList()
+
+        // Combine into a new list
+        val allServers = ArrayList<NetworkServer>(discoveredServers.size + manualServers.size)
+        allServers.addAll(discoveredServers)
+        allServers.addAll(manualServers)
+
+        Log.d(TAG, "Updating server list: ${allServers.size} total servers")
+        Log.d(TAG, "  - ${discoveredServers.size} discovered servers")
+        Log.d(TAG, "  - ${manualServers.size} manual servers")
+
+        // Log each server for debugging
+        allServers.forEachIndexed { index, server ->
+            Log.d(TAG, "  Server $index: ${server.name} (${server.address})")
         }
+
+        // Before updating adapter, check RecyclerView state
+        Log.d(TAG, "RecyclerView current state: height=${serversRecyclerView.height}, " +
+                "width=${serversRecyclerView.width}, visibility=${serversRecyclerView.visibility}")
+
+        // Use a null list first to force a complete refresh
+        serverAdapter.submitList(null)
+
+        // Then submit the actual list
         serverAdapter.submitList(allServers)
 
         // Update status text if no servers
@@ -245,6 +289,12 @@ class NetworkPhotoSourceFragment : Fragment() {
             statusText.text = getString(R.string.no_servers_found)
         } else if (networkPhotoManager.discoveryState.value !is NetworkPhotoManager.DiscoveryState.Searching) {
             statusText.text = getString(R.string.select_server_to_browse)
+        }
+
+        // Force a layout pass and notify about item count
+        serversRecyclerView.post {
+            Log.d(TAG, "After update: adapter has ${serverAdapter.itemCount} items")
+            serversRecyclerView.invalidate()
         }
     }
 
@@ -331,6 +381,12 @@ class NetworkPhotoSourceFragment : Fragment() {
     }
 
     private fun navigateBack() {
+        // First check if view is still valid before accessing viewLifecycleOwner
+        if (view == null || !isAdded) {
+            Log.w(TAG, "navigateBack called when Fragment view is null or Fragment is detached")
+            return
+        }
+
         val server = currentServer ?: return
         val currentPathValue = networkPhotoManager.currentBrowsingPath.value ?: return
 

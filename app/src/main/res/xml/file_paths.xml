@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- Change this line to use the root cache directory -->
+    <!-- Changed to expose root cache directory for network photos -->
     <cache-path
         name="cached_photos"
         path="/" />

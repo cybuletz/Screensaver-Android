@@ -162,6 +162,7 @@ dependencies {
 
     // SMB library for network file access
     implementation("eu.agno3.jcifs:jcifs-ng:2.1.9")
+    implementation("org.bouncycastle:bcprov-jdk15on:1.70")
 
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.12.0")
