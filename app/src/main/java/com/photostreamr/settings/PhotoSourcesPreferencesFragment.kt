@@ -335,6 +335,8 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
 
         // Apply changes
         applyChanges()
+
+        // Notify photos added
         notifyPhotosAdded()
 
         // Show toast message
@@ -348,6 +350,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
             Toast.LENGTH_SHORT
         ).show()
     }
+
 
     private fun updateNetworkPhotosSummary() {
         // Get the count of network photos using the photoManager

@@ -87,8 +87,32 @@ class NetworkPhotoManager @Inject constructor(
 
     fun initialize() {
         try {
-            // Initialize CIFS context
-            cifsContext = SingletonContext.getInstance()
+            // Create Properties object for SMB configuration
+            val props = java.util.Properties()
+
+            // Enable both SMB1 and SMB2/3
+            props.setProperty("jcifs.smb.client.enableSMB1", "true")
+
+            // Set protocol versions - support SMB1 through SMB3.1.1
+            props.setProperty("jcifs.smb.client.minVersion", "SMB1")
+            props.setProperty("jcifs.smb.client.maxVersion", "SMB311")
+
+            // Use SMB2 in initial protocol negotiation when possible
+            props.setProperty("jcifs.smb.client.useSmb2Negotiation", "true")
+
+            // Tune performance settings
+            props.setProperty("jcifs.smb.client.responseTimeout", "30000") // 30 seconds
+            props.setProperty("jcifs.smb.client.soTimeout", "35000")       // 35 seconds
+            props.setProperty("jcifs.smb.client.connTimeout", "10000")     // 10 seconds
+            props.setProperty("jcifs.smb.client.sessionTimeout", "60000")  // 60 seconds
+
+            // Match your existing buffer size for consistency
+            props.setProperty("jcifs.smb.client.bufferSize", "262144")     // 256KB
+
+            // Get the configuration and context correctly
+            val config = jcifs.config.PropertyConfiguration(props)
+            val baseContext = jcifs.context.BaseContext(config)
+            cifsContext = baseContext
 
             // Load saved manual connections
             loadManualConnections()
@@ -98,6 +122,7 @@ class NetworkPhotoManager @Inject constructor(
 
             // Log how many servers were loaded
             Timber.d("Loaded ${_manualConnections.value.size} manual server connections")
+            Timber.i("SMB configured with SMB1-SMB3 support (preference for SMB2+)")
         } catch (e: Exception) {
             Timber.e(e, "Error initializing NetworkPhotoManager")
             _discoveryState.value = DiscoveryState.Error("Failed to initialize: ${e.message}")

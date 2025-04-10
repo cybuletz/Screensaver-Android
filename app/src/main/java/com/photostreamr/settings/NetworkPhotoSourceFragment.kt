@@ -126,11 +126,6 @@ class NetworkPhotoSourceFragment : Fragment() {
         updateSelectedPhotosCount()
         browseBackButton.isEnabled = false
 
-        // Add debug button
-        val debugButton = view.findViewById<Button>(R.id.debug_button)
-        debugButton?.setOnClickListener {
-            showDebugInfo()
-        }
 
         // Log servers on start
         val totalServers = networkPhotoManager.manualConnections.value.size +
@@ -155,42 +150,6 @@ class NetworkPhotoSourceFragment : Fragment() {
                 serversRecyclerView.requestLayout()
             }
         }
-    }
-
-    private fun showDebugInfo() {
-        val debugInfo = StringBuilder()
-        debugInfo.append("Network Discovery State: ${networkPhotoManager.discoveryState.value}\n")
-        debugInfo.append("Discovered Servers: ${networkPhotoManager.discoveredServers.value.size}\n")
-        debugInfo.append("Manual Servers: ${networkPhotoManager.manualConnections.value.size}\n")
-        debugInfo.append("Current Path: ${networkPhotoManager.currentBrowsingPath.value}\n")
-        debugInfo.append("Folder Contents: ${networkPhotoManager.folderContents.value.size}\n")
-
-        // Network Info
-        val connectivityManager = context?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val wifiManager = context?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-
-        if (connectivityManager != null) {
-            val activeNetwork = connectivityManager.activeNetworkInfo
-            debugInfo.append("Network Connected: ${activeNetwork?.isConnected}\n")
-            debugInfo.append("Network Type: ${activeNetwork?.typeName}\n")
-        }
-
-        if (wifiManager != null) {
-            val wifiInfo = wifiManager.connectionInfo
-            debugInfo.append("WiFi SSID: ${wifiInfo.ssid}\n")
-            debugInfo.append("WiFi IP: ${android.text.format.Formatter.formatIpAddress(wifiInfo.ipAddress)}\n")
-            debugInfo.append("WiFi Link Speed: ${wifiInfo.linkSpeed} Mbps\n")
-
-            // Just note that multicast functionality is being used
-            debugInfo.append("WiFi Multicast: Used for network discovery\n")
-        }
-
-        // Use default alert dialog style
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Network Debug Info")
-            .setMessage(debugInfo.toString())
-            .setPositiveButton("OK", null)
-            .show()
     }
 
     private fun collectFlows() {
