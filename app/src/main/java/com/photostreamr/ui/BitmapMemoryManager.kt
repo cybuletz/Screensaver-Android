@@ -418,28 +418,6 @@ class BitmapMemoryManager @Inject constructor(
     }
 
     /**
-     * Remove any NULL or recycled bitmap references from our tracking
-     */
-    private fun cleanupTrackingMap() {
-        val iterator = activeBitmaps.entries.iterator()
-        var removedCount = 0
-
-        while (iterator.hasNext()) {
-            val entry = iterator.next()
-            val bitmap = entry.value.get()
-
-            if (bitmap == null || bitmap.isRecycled) {
-                iterator.remove()
-                removedCount++
-            }
-        }
-
-        if (removedCount > 0) {
-            Log.d(TAG, "🧹 Removed $removedCount stale entries from bitmap tracking")
-        }
-    }
-
-    /**
      * Calculate total memory used by tracked bitmaps
      */
     private fun calculateTotalTrackedBitmapMemory(): Long {
@@ -490,7 +468,7 @@ class BitmapMemoryManager @Inject constructor(
     /**
      * Get current memory info
      */
-    private fun getMemoryInfo(): MemoryInfo {
+    fun getMemoryInfo(): MemoryInfo {
         val runtime = Runtime.getRuntime()
         val maxMemory = runtime.maxMemory()
         val totalMemory = runtime.totalMemory()
@@ -507,6 +485,122 @@ class BitmapMemoryManager @Inject constructor(
             usedPercent = usedPercent,
             trackedBitmaps = activeBitmaps.size
         )
+    }
+
+
+    /**
+     * Clear all bitmap caches (memory and disk) for aggressive cleanup
+     * This includes both memory caches and disk caches
+     */
+    fun clearAllBitmapCaches() {
+        managerScope.launch {
+            try {
+                val memoryBefore = getMemoryInfo()
+                val bitmapsBefore = activeBitmaps.size
+                val bitmapMemBefore = calculateTotalTrackedBitmapMemory()
+
+                Log.d(TAG, "🧹 Starting comprehensive bitmap cache clearing")
+
+                // Clean up our tracking map
+                val removedBitmaps = cleanupTrackingMap()
+
+                // First clear memory cache on main thread
+                withContext(Dispatchers.Main) {
+                    try {
+                        Log.d(TAG, "🧹 Clearing Glide memory cache")
+                        Glide.get(context).clearMemory()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error clearing Glide memory cache", e)
+                    }
+                }
+
+                // Then clear disk cache on IO thread
+                withContext(Dispatchers.IO) {
+                    try {
+                        Log.d(TAG, "💾 Clearing Glide disk cache")
+                        Glide.get(context).clearDiskCache()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error clearing Glide disk cache", e)
+                    }
+                }
+
+                // Request garbage collection
+                Log.d(TAG, "🗑️ Requesting garbage collection")
+                System.gc()
+
+                // Give some time for GC to complete
+                delay(300)
+
+                // Log results
+                val memoryAfter = getMemoryInfo()
+                val bitmapsAfter = activeBitmaps.size
+                val bitmapMemAfter = calculateTotalTrackedBitmapMemory()
+
+                // Calculate freed memory
+                val memoryFreed = memoryBefore.usedMemory - memoryAfter.usedMemory
+                val bitmapsFreed = bitmapsBefore - bitmapsAfter
+                val bitmapMemFreed = bitmapMemBefore - bitmapMemAfter
+
+                Log.d(TAG, """
+                🧹 Bitmap cache clearing completed:
+                • Memory before: ${formatBytes(memoryBefore.usedMemory)} (${decimalFormat.format(memoryBefore.usedPercent)}%)
+                • Memory after:  ${formatBytes(memoryAfter.usedMemory)} (${decimalFormat.format(memoryAfter.usedPercent)}%)
+                • Memory freed:  ${formatBytes(memoryFreed.coerceAtLeast(0))}
+                
+                • Tracked bitmaps before: $bitmapsBefore (${formatBytes(bitmapMemBefore)})
+                • Tracked bitmaps after:  $bitmapsAfter (${formatBytes(bitmapMemAfter)})
+                • Removed from tracking:  $removedBitmaps
+                • Bitmap memory freed:    ${formatBytes(bitmapMemFreed.coerceAtLeast(0))}
+            """.trimIndent())
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in clearAllBitmapCaches", e)
+            }
+        }
+    }
+
+    /**
+     * Clean up the tracking map by removing entries for recycled or null bitmaps
+     * Returns the number of entries removed
+     */
+    private fun cleanupTrackingMap(): Int {
+        var removedCount = 0
+        val toRemove = mutableListOf<String>()
+
+        // Identify keys to remove
+        activeBitmaps.forEach { (key, weakRef) ->
+            val bitmap = weakRef.get()
+            if (bitmap == null || bitmap.isRecycled) {
+                toRemove.add(key)
+            }
+        }
+
+        // Remove identified keys
+        if (toRemove.isNotEmpty()) {
+            toRemove.forEach { key ->
+                activeBitmaps.remove(key)
+                removedCount++
+            }
+            Log.d(TAG, "🧹 Removed $removedCount recycled/null bitmaps from tracking map")
+        }
+
+        return removedCount
+    }
+
+    /**
+     * Log memory metrics for Smart Fill operations specifically
+     */
+    fun logSmartFillMemoryMetrics(photoCount: Int, templateType: String) {
+        val memInfo = getMemoryInfo()
+        val trackedBitmaps = activeBitmaps.size
+        val trackedBitmapMem = calculateTotalTrackedBitmapMemory()
+
+        Log.i(TAG, """
+        🖼️ SMART FILL MEMORY REPORT ($templateType - $photoCount photo${if(photoCount>1)"s" else ""}):
+        • Java heap: ${formatBytes(memInfo.usedMemory)} / ${formatBytes(memInfo.maxMemory)} (${decimalFormat.format(memInfo.usedPercent)}%)
+        • Memory pressure: $memoryPressureLevel
+        • Tracked bitmaps: $trackedBitmaps
+        • Estimated bitmap memory: ${formatBytes(trackedBitmapMem)}
+    """.trimIndent())
     }
 
     data class MemoryInfo(

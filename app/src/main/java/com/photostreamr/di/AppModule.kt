@@ -163,9 +163,9 @@ object AppModule {
     fun provideSmartTemplateHelper(
         context: Context,
         smartPhotoLayoutManager: SmartPhotoLayoutManager,
-        photoResizeManager: PhotoResizeManager
+        bitmapMemoryManager: BitmapMemoryManager
     ): SmartTemplateHelper {
-        return SmartTemplateHelper(context, smartPhotoLayoutManager, photoResizeManager)
+        return SmartTemplateHelper(context, smartPhotoLayoutManager, bitmapMemoryManager)
     }
 
     @Provides

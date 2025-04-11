@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
@@ -22,7 +23,7 @@ import javax.inject.Singleton
 class SmartTemplateHelper @Inject constructor(
     private val context: Context,
     private val smartPhotoLayoutManager: SmartPhotoLayoutManager,
-    private val photoResizeManager: PhotoResizeManager
+    private val bitmapMemoryManager: BitmapMemoryManager
 ) {
     companion object {
         private const val TAG = "SmartTemplateHelper"
@@ -79,9 +80,6 @@ class SmartTemplateHelper @Inject constructor(
         }
     }
 
-    /**
-     * Create a smart template drawable based on the provided photos
-     */
     suspend fun createSmartTemplate(
         photos: List<Bitmap>,
         containerWidth: Int,
@@ -94,9 +92,24 @@ class SmartTemplateHelper @Inject constructor(
         }
 
         try {
+            // Log start of operation with memory tracking
+            val startTime = System.currentTimeMillis()
+            val memoryBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
+
+            Log.d(TAG, "📊 SMART FILL starting with ${photos.size} photo(s), template type: $templateType")
+
             // Single photo case - delegate to photo resize manager
             if (photos.size == 1 || templateType == -1) {
-                return@withContext createSinglePhotoTemplate(photos[0], containerWidth, containerHeight)
+                val result = createSinglePhotoTemplate(photos[0], containerWidth, containerHeight)
+
+                // Log memory change
+                val memoryAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
+                val memoryDelta = (memoryAfter - memoryBefore) / 1024 / 1024  // MB
+                val processingTime = System.currentTimeMillis() - startTime
+
+                Log.d(TAG, "📊 SMART FILL with single photo complete: memory change: +${memoryDelta}MB, time: ${processingTime}ms")
+
+                return@withContext result
             }
 
             // Analyze all photos
@@ -121,6 +134,16 @@ class SmartTemplateHelper @Inject constructor(
                 containerHeight
             )
 
+            // Register the template bitmap with memory manager
+            bitmapMemoryManager.registerActiveBitmap("smartTemplate:${templateType}:${System.currentTimeMillis()}", templateBitmap)
+
+            // Log memory and performance metrics
+            val memoryAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
+            val memoryDelta = (memoryAfter - memoryBefore) / 1024 / 1024  // MB
+            val processingTime = System.currentTimeMillis() - startTime
+
+            Log.d(TAG, "📊 SMART FILL with ${photos.size}-photo template complete: memory change: +${memoryDelta}MB, time: ${processingTime}ms")
+
             return@withContext BitmapDrawable(context.resources, templateBitmap)
         } catch (e: Exception) {
             Log.e(TAG, "Error creating smart template", e)
@@ -139,24 +162,33 @@ class SmartTemplateHelper @Inject constructor(
     }
 
     /**
-     * Create a single photo template with ambient effects
+     * Create a single photo template with ambient effects - memory optimized
      */
     private suspend fun createSinglePhotoTemplate(
         photo: Bitmap,
         containerWidth: Int,
         containerHeight: Int
     ): Drawable = withContext(Dispatchers.Default) {
+        val startTime = System.currentTimeMillis()
+
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val letterboxMode = prefs.getString(
             PhotoResizeManager.PREF_KEY_LETTERBOX_MODE,
             PhotoResizeManager.DEFAULT_LETTERBOX_MODE
         ) ?: PhotoResizeManager.DEFAULT_LETTERBOX_MODE
 
-        // Create a bitmap with the container dimensions
+        // Log input dimensions
+        Log.d(TAG, "📊 SMART FILL creating single photo template: ${containerWidth}x${containerHeight}")
+        Log.d(TAG, "📊 Input photo: ${photo.width}x${photo.height}, format: ${photo.config}")
+
+        // Calculate if this is a large bitmap that should use RGB_565
+        val isLargeBitmap = containerWidth * containerHeight > 1_000_000
+
+        // Create a bitmap with the container dimensions - use RGB_565 for large bitmaps
         val resultBitmap = Bitmap.createBitmap(
             containerWidth,
             containerHeight,
-            Bitmap.Config.ARGB_8888
+            if (isLargeBitmap) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
         )
 
         val canvas = Canvas(resultBitmap)
@@ -174,12 +206,19 @@ class SmartTemplateHelper @Inject constructor(
             containerHeight
         )
 
-        // Draw the photo
+        // Create a paint with filtering for better quality scaling
+        val paint = Paint().apply {
+            isFilterBitmap = true  // Use bilinear filtering
+            isAntiAlias = true     // Smooth edges
+            isDither = true        // Improve color rendering for RGB_565
+        }
+
+        // Draw the photo with quality settings
         canvas.drawBitmap(
             photo,
             null,
             rect,
-            null
+            paint
         )
 
         // For the ambient areas, detect if letterboxing is horizontal or vertical
@@ -228,6 +267,17 @@ class SmartTemplateHelper @Inject constructor(
                 }
             }
         }
+
+        // Log memory usage and performance
+        val memoryUsed = resultBitmap.byteCount / 1024.0 / 1024.0  // MB
+        val elapsedTime = System.currentTimeMillis() - startTime
+
+        Log.d(TAG, "📊 SMART FILL single photo complete: ${resultBitmap.width}x${resultBitmap.height}, " +
+                "format: ${resultBitmap.config}, memory: ${String.format("%.2f MB", memoryUsed)}, " +
+                "time: ${elapsedTime}ms")
+
+        // Register with memory manager for tracking
+        bitmapMemoryManager.registerActiveBitmap("smartFill:single:${System.currentTimeMillis()}", resultBitmap)
 
         return@withContext BitmapDrawable(context.resources, resultBitmap)
     }

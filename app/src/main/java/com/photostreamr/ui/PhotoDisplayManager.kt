@@ -139,6 +139,8 @@ class PhotoDisplayManager @Inject constructor(
     init {
         // Preload immediately on initialization
         preloadDefaultPhoto()
+        scheduleBitmapCacheClearing()
+
         // Add cache status observation
         managerScope.launch {
             photoCache.cacheStatus.collect { status ->
@@ -153,6 +155,54 @@ class PhotoDisplayManager @Inject constructor(
                     }
                     else -> {
                         _cacheStatusMessage.value = status.message
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Schedule regular bitmap cache clearing to prevent memory buildup
+     * - Uses existing BitmapMemoryManager
+     * - Invisible to the user
+     * - Helps prevent OOM errors during long slideshow sessions
+     */
+    private fun scheduleBitmapCacheClearing() {
+        lifecycleScope?.launch {
+            while (isActive) {
+                try {
+                    // Wait for a significant number of photos to be displayed
+                    val photoInterval = getIntervalMillis()
+                    val photosBeforeCleanup = 20 // Clean after every 20 photos
+
+                    // Calculate maximum cleanup interval to prevent waiting too long
+                    val maxWaitTimeMs = 30 * 60 * 1000L // 30 minutes max
+                    val waitTimePerPhoto = photoInterval.coerceAtMost(10_000) // Max 10s per photo
+                    val totalWaitTime = waitTimePerPhoto * photosBeforeCleanup
+                    val actualWaitTime = totalWaitTime.coerceAtMost(maxWaitTimeMs)
+
+                    // Wait before cleaning
+                    Log.d(TAG, "Scheduling bitmap cache cleanup in ${actualWaitTime/1000}s")
+                    delay(actualWaitTime)
+
+                    // Check if memory pressure indicates we need cleanup
+                    val memoryInfo = bitmapMemoryManager.getMemoryInfo()
+
+                    if (memoryInfo.usedPercent > 60f) {
+                        Log.d(TAG, "Memory pressure detected (${memoryInfo.usedPercent.toInt()}%), performing bitmap cache cleanup")
+                        bitmapMemoryManager.clearAllBitmapCaches()
+                    } else {
+                        Log.d(TAG, "Memory pressure normal (${memoryInfo.usedPercent.toInt()}%), skipping bitmap cache cleanup")
+                        // Still clear memory caches but leave disk cache alone
+                        bitmapMemoryManager.clearMemoryCaches()
+                    }
+
+                    // Don't clean too frequently
+                    delay(60_000) // Minimum 1 minute between cleanups
+
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Log.e(TAG, "Error in scheduled bitmap cache cleanup", e)
                     }
                 }
             }
