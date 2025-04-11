@@ -71,7 +71,8 @@ class PhotoDisplayManager @Inject constructor(
     private val enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager,
     private val bitmapMemoryManager: BitmapMemoryManager,
     private val smartTemplateHelper: SmartTemplateHelper,
-    private val smartPhotoLayoutManager: SmartPhotoLayoutManager
+    private val smartPhotoLayoutManager: SmartPhotoLayoutManager,
+    private val diskCacheManager: DiskCacheManager
 ) : PhotoTransitionEffects.TransitionCompletionCallback,
     EnhancedMultiPhotoLayoutManager.TemplateReadyCallback {
 
@@ -169,40 +170,66 @@ class PhotoDisplayManager @Inject constructor(
      */
     private fun scheduleBitmapCacheClearing() {
         lifecycleScope?.launch {
+            Log.i(TAG, "💾 DISKCACHE: Starting scheduled bitmap and disk cache cleanup cycle")
+
             while (isActive) {
                 try {
                     // Wait for a significant number of photos to be displayed
                     val photoInterval = getIntervalMillis()
-                    val photosBeforeCleanup = 20 // Clean after every 20 photos
+                    val photosBeforeCleanup = 20
 
-                    // Calculate maximum cleanup interval to prevent waiting too long
-                    val maxWaitTimeMs = 30 * 60 * 1000L // 30 minutes max
-                    val waitTimePerPhoto = photoInterval.coerceAtMost(10_000) // Max 10s per photo
+                    // Calculate maximum cleanup interval with shorter maximum time
+                    val maxWaitTimeMs = 1 * 60 * 1000L // 5 minutes
+                    val waitTimePerPhoto = photoInterval.coerceAtMost(10_000) // 10s
                     val totalWaitTime = waitTimePerPhoto * photosBeforeCleanup
                     val actualWaitTime = totalWaitTime.coerceAtMost(maxWaitTimeMs)
 
                     // Wait before cleaning
-                    Log.d(TAG, "Scheduling bitmap cache cleanup in ${actualWaitTime/1000}s")
+                    Log.i(TAG, "💾 DISKCACHE: Scheduling cache cleanup in ${actualWaitTime/1000}s (after ~$photosBeforeCleanup photos)")
                     delay(actualWaitTime)
 
                     // Check if memory pressure indicates we need cleanup
                     val memoryInfo = bitmapMemoryManager.getMemoryInfo()
 
                     if (memoryInfo.usedPercent > 60f) {
-                        Log.d(TAG, "Memory pressure detected (${memoryInfo.usedPercent.toInt()}%), performing bitmap cache cleanup")
+                        Log.i(TAG, "💾 DISKCACHE: Memory pressure detected (${memoryInfo.usedPercent.toInt()}%), triggering bitmap AND disk cache cleanup")
                         bitmapMemoryManager.clearAllBitmapCaches()
+
+                        // Add disk cleanup when memory pressure is high
+                        diskCacheManager.cleanupDiskCache()
                     } else {
-                        Log.d(TAG, "Memory pressure normal (${memoryInfo.usedPercent.toInt()}%), skipping bitmap cache cleanup")
-                        // Still clear memory caches but leave disk cache alone
+                        Log.i(TAG, "💾 DISKCACHE: Memory pressure normal (${memoryInfo.usedPercent.toInt()}%), performing selective memory cleanup")
+
+                        // Clear memory caches
                         bitmapMemoryManager.clearMemoryCaches()
+
+                        // Check disk cache size
+                        val diskCacheSizeMB = diskCacheManager.getCurrentCacheSizeMB()
+                        Log.i(TAG, "💾 DISKCACHE: Checking disk cache size: $diskCacheSizeMB MB")
+
+                        if (diskCacheSizeMB > 5) {
+                            Log.i(TAG, "💾 DISKCACHE: Disk cache size ($diskCacheSizeMB MB) exceeds threshold, requesting disk cleanup")
+
+                            if (diskCacheManager.canPerformCleanup()) {
+                                Log.i(TAG, "💾 DISKCACHE: Performing disk cache cleanup now")
+                                diskCacheManager.cleanupDiskCache()
+                            } else {
+                                Log.i(TAG, "💾 DISKCACHE: Disk cleanup skipped - too soon since last cleanup")
+                            }
+                        } else {
+                            Log.i(TAG, "💾 DISKCACHE: Disk cache size ($diskCacheSizeMB MB) below threshold, no cleanup needed")
+                        }
                     }
 
+                    Log.i(TAG, "💾 DISKCACHE: Cleanup cycle complete, waiting 60s before next check")
                     // Don't clean too frequently
                     delay(60_000) // Minimum 1 minute between cleanups
 
                 } catch (e: Exception) {
                     if (e !is CancellationException) {
-                        Log.e(TAG, "Error in scheduled bitmap cache cleanup", e)
+                        Log.e(TAG, "💾 DISKCACHE: Error in scheduled bitmap cache cleanup", e)
+                    } else {
+                        Log.i(TAG, "💾 DISKCACHE: Cleanup cycle cancelled (normal during app lifecycle changes)")
                     }
                 }
             }
@@ -469,20 +496,23 @@ class PhotoDisplayManager @Inject constructor(
                     PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
                 PhotoResizeManager.DEFAULT_DISPLAY_MODE
 
-                Log.d(TAG, "Current display mode: $displayMode")
+                // If we should show a single photo due to memory pressure or visual variety,
+                // override the display mode to use single photo display
+                if (shouldShowSinglePhoto && displayMode == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
+                    Log.d(TAG, "Memory manager requested single photo display - overriding template mode")
+                    handleSinglePhotoMode(views, currentScope)
+                    return@launch
+                }
 
                 // Handle based on display mode
                 when (displayMode) {
                     PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE -> {
-                        // [Keep existing multi-template code]
                         handleMultiTemplateMode(views, currentScope)
                     }
                     PhotoResizeManager.DISPLAY_MODE_SMART_FILL -> {
-                        // Smart fill uses ML-based cropping for single photo display
                         handleSmartFillMode(views, currentScope)
                     }
                     else -> {
-                        // Standard single photo display (fill or fit)
                         handleSinglePhotoMode(views, currentScope)
                     }
                 }
@@ -1445,11 +1475,10 @@ class PhotoDisplayManager @Inject constructor(
 
     fun cleanup() {
         displayJob?.cancel()
-        managerJob.cancel()
-
-        // Clean up resources
         photoPreloader.cleanup()
-        lastPhotoUrl = null
+        bitmapMemoryManager.cleanup()
+        diskCacheManager.cleanup()
+        managerJob.cancel()
     }
 
     fun updatePhotoSources(virtualAlbumPhotos: List<Uri> = emptyList()) {

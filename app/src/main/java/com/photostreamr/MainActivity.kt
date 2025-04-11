@@ -62,6 +62,8 @@ import com.photostreamr.version.AppVersionManager
 import com.photostreamr.version.FeatureManager
 import com.photostreamr.music.LocalMusicManager
 import com.photostreamr.music.LocalMusicPreferences
+import com.photostreamr.ui.BitmapMemoryManager
+import com.photostreamr.ui.DiskCacheManager
 import com.photostreamr.version.ProVersionPromptManager
 
 
@@ -138,6 +140,12 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var proVersionPromptManager: ProVersionPromptManager
 
+    @Inject
+    lateinit var bitmapMemoryManager: BitmapMemoryManager
+
+    @Inject
+    lateinit var diskCacheManager: DiskCacheManager
+
     private var isDestroyed = false
 
     private var isAuthenticating = false
@@ -209,6 +217,9 @@ class MainActivity : AppCompatActivity() {
 
         _binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Initialize disk cache manager tracking
+        diskCacheManager.resumeTracking()
 
         // Check if this is a cold start (savedInstanceState is null) and security is enabled
         if (savedInstanceState == null && securityPreferences.isSecurityEnabled) {
@@ -328,6 +339,21 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
+        }
+
+        // Register a navigation listener to handle memory and disk cache tracking
+        navController.addOnDestinationChangedListener { _, destination, _ ->
+            if (destination.id == R.id.mainFragment) {
+                // Coming back to main screen, restart monitoring
+                Log.d(TAG, "Navigated to main fragment, resuming monitoring")
+                diskCacheManager.resumeTracking()
+                bitmapMemoryManager.startMonitoring()
+            } else if (destination.id == R.id.settingsFragment) {
+                // Going to settings, pause tracking to avoid errors
+                Log.d(TAG, "Navigated to settings fragment, pausing monitoring")
+                diskCacheManager.cleanup()
+                bitmapMemoryManager.cleanup()
+            }
         }
     }
 
@@ -1396,6 +1422,9 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         // Always reset auth state when stopping the activity
         authManager.resetAuthenticationState()
+
+        bitmapMemoryManager.cleanup()
+        diskCacheManager.cleanup()
     }
 
     override fun onResume() {
@@ -1410,6 +1439,9 @@ class MainActivity : AppCompatActivity() {
         setupFullScreen()
         updateKeepScreenOn()
         initializeMusicSources()
+
+        bitmapMemoryManager.cleanup()
+        diskCacheManager.resumeTracking()
 
         // Make sure ads are properly resumed
 
@@ -1533,6 +1565,8 @@ class MainActivity : AppCompatActivity() {
             _navController = null
             widgetManager.cleanup()
             currentActivity = null
+
+            diskCacheManager.cleanup()
 
             super.onDestroy()
         } catch (e: Exception) {

@@ -35,6 +35,7 @@ import com.photostreamr.security.AppAuthManager
 import com.photostreamr.security.BiometricHelper
 import com.photostreamr.security.SecurityPreferences
 import com.photostreamr.ui.BitmapMemoryManager
+import com.photostreamr.ui.DiskCacheManager
 import com.photostreamr.ui.EnhancedMultiPhotoLayoutManager
 import com.photostreamr.ui.MultiPhotoLayoutManager
 import com.photostreamr.ui.PhotoPreloader
@@ -124,7 +125,8 @@ object AppModule {
         enhancedMultiPhotoLayoutManager: EnhancedMultiPhotoLayoutManager,
         bitmapMemoryManager: BitmapMemoryManager,
         smartTemplateHelper: SmartTemplateHelper,
-        smartPhotoLayoutManager: SmartPhotoLayoutManager
+        smartPhotoLayoutManager: SmartPhotoLayoutManager,
+        diskCacheManager: DiskCacheManager
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
@@ -139,7 +141,8 @@ object AppModule {
             enhancedMultiPhotoLayoutManager = enhancedMultiPhotoLayoutManager,
             bitmapMemoryManager = bitmapMemoryManager,
             smartTemplateHelper = smartTemplateHelper,
-            smartPhotoLayoutManager = smartPhotoLayoutManager
+            smartPhotoLayoutManager = smartPhotoLayoutManager,
+            diskCacheManager = diskCacheManager
         )
     }
 
@@ -295,5 +298,11 @@ object AppModule {
         photoUriManager: PhotoUriManager
     ): PhotoRepository {
         return PhotoRepository(context, googleAuthManager, photoUriManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDiskCacheManager(@ApplicationContext context: Context): DiskCacheManager {
+        return DiskCacheManager(context)
     }
 }

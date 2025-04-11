@@ -32,11 +32,11 @@ class BitmapMemoryManager @Inject constructor(
         private const val TAG = "BitmapMemoryManager"
 
         // Memory thresholds
-        private const val MEMORY_PRESSURE_THRESHOLD_PERCENT = 70.0f
-        private const val SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT = 85.0f
+        private const val MEMORY_PRESSURE_THRESHOLD_PERCENT = 50.0f
+        private const val SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT = 60.0f
 
         // Cleanup cycles configuration
-        private const val MIN_PHOTOS_BETWEEN_CLEANUPS = 8
+        private const val MIN_PHOTOS_BETWEEN_CLEANUPS = 10
         private const val DEFAULT_CLEANUP_CYCLE_LENGTH = 3
         private const val SEVERE_CLEANUP_CYCLE_LENGTH = 5
 
@@ -74,6 +74,8 @@ class BitmapMemoryManager @Inject constructor(
     private val memoryHistory = LinkedList<MemorySnapshot>()
     private val maxHistorySize = 10
 
+    private var isMonitoringActive = false
+
     enum class MemoryPressureLevel {
         NORMAL,
         ELEVATED,
@@ -95,6 +97,21 @@ class BitmapMemoryManager @Inject constructor(
     init {
         startMemoryMonitoring()
         startDetailedMemoryLogging()
+    }
+
+    /**
+     * Resume memory monitoring if it was stopped
+     * Call this when returning to the main screen
+     */
+    fun startMonitoring() {
+        if (!isMonitoringActive) {
+            Log.i(TAG, "📊 Resuming memory monitoring")
+            isMonitoringActive = true
+            startMemoryMonitoring()
+            startDetailedMemoryLogging()
+        } else {
+            Log.d(TAG, "📊 Memory monitoring already active")
+        }
     }
 
     /**
@@ -238,15 +255,15 @@ class BitmapMemoryManager @Inject constructor(
                 val bitmapMemFreed = beforeBitmapMem - afterBitmapMem
 
                 Log.d(TAG, """
-                    🧹 Memory cleanup complete:
-                    • Memory before: ${formatBytes(beforeInfo.usedMemory)} (${decimalFormat.format(beforeInfo.usedPercent)}%)
-                    • Memory after:  ${formatBytes(afterInfo.usedMemory)} (${decimalFormat.format(afterInfo.usedPercent)}%)
-                    • Memory freed:  ${formatBytes(memoryFreed.coerceAtLeast(0))}
-                    
-                    • Bitmaps before: $beforeCount (${formatBytes(beforeBitmapMem)})
-                    • Bitmaps after:  $afterCount (${formatBytes(afterBitmapMem)})
-                    • Bitmaps freed:  $removedBitmaps (${formatBytes(bitmapMemFreed.coerceAtLeast(0))})
-                """.trimIndent())
+                🧹 Memory cleanup complete:
+                • Memory before: ${formatBytes(beforeInfo.usedMemory)} (${decimalFormat.format(beforeInfo.usedPercent)}%)
+                • Memory after:  ${formatBytes(afterInfo.usedMemory)} (${decimalFormat.format(afterInfo.usedPercent)}%)
+                • Memory freed:  ${formatBytes(memoryFreed.coerceAtLeast(0))}
+                
+                • Bitmaps before: $beforeCount (${formatBytes(beforeBitmapMem)})
+                • Bitmaps after:  $afterCount (${formatBytes(afterBitmapMem)})
+                • Bitmaps freed:  $removedBitmaps (${formatBytes(bitmapMemFreed.coerceAtLeast(0))})
+            """.trimIndent())
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error in clearMemoryCaches", e)
@@ -259,15 +276,24 @@ class BitmapMemoryManager @Inject constructor(
      */
     private fun startDetailedMemoryLogging() {
         managerScope.launch {
-            while (isActive) {
-                try {
-                    logMemoryMetrics("📊 Periodic memory report")
-                } catch (e: Exception) {
-                    if (e !is CancellationException) {
-                        Log.e(TAG, "Error logging memory metrics", e)
+            try {
+                while (isActive) {
+                    try {
+                        logMemoryMetrics("📊 Periodic memory report")
+                    } catch (e: Exception) {
+                        if (e !is CancellationException) {
+                            Log.e(TAG, "Error logging memory metrics", e)
+                        }
                     }
+                    delay(LOG_MEMORY_INTERVAL_MS)
                 }
-                delay(LOG_MEMORY_INTERVAL_MS)
+            } catch (e: CancellationException) {
+                // Expected during cancellation
+                Log.d(TAG, "Memory logging cancelled")
+            } catch (e: Exception) {
+                Log.e(TAG, "Fatal error in memory logging", e)
+            } finally {
+                isMonitoringActive = false
             }
         }
     }
@@ -369,50 +395,68 @@ class BitmapMemoryManager @Inject constructor(
         }
     }
 
+
     /**
      * Periodically monitor memory usage to adjust our strategy
      */
     private fun startMemoryMonitoring() {
         managerScope.launch {
-            while (isActive) {
-                try {
-                    val memoryInfo = getMemoryInfo()
-                    val usedPercent = memoryInfo.usedPercent
+            try {
+                while (isActive) {
+                    try {
+                        val memoryInfo = getMemoryInfo()
+                        val usedPercent = memoryInfo.usedPercent
 
-                    // Update memory pressure level
-                    val previousLevel = memoryPressureLevel
-                    memoryPressureLevel = when {
-                        usedPercent >= SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT -> {
-                            if (previousLevel != MemoryPressureLevel.SEVERE) {
-                                Log.w(TAG, "⚠️ SEVERE memory pressure detected: $usedPercent%")
-                                logMemoryMetrics("⚠️ SEVERE memory pressure detected")
-                                clearMemoryCaches()
+                        // Update memory pressure level
+                        val previousLevel = memoryPressureLevel
+                        memoryPressureLevel = when {
+                            usedPercent >= SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT -> {
+                                if (previousLevel != MemoryPressureLevel.SEVERE) {
+                                    Log.w(TAG, "⚠️ SEVERE memory pressure detected: $usedPercent%")
+                                    logMemoryMetrics("⚠️ SEVERE memory pressure detected")
+                                    clearMemoryCaches()
+                                }
+                                MemoryPressureLevel.SEVERE
                             }
-                            MemoryPressureLevel.SEVERE
-                        }
-                        usedPercent >= MEMORY_PRESSURE_THRESHOLD_PERCENT -> {
-                            if (previousLevel != MemoryPressureLevel.ELEVATED) {
-                                Log.w(TAG, "⚠️ ELEVATED memory pressure detected: $usedPercent%")
-                                logMemoryMetrics("⚠️ ELEVATED memory pressure detected")
+                            usedPercent >= MEMORY_PRESSURE_THRESHOLD_PERCENT -> {
+                                if (previousLevel != MemoryPressureLevel.ELEVATED) {
+                                    Log.w(TAG, "⚠️ ELEVATED memory pressure detected: $usedPercent%")
+                                    logMemoryMetrics("⚠️ ELEVATED memory pressure detected")
+                                }
+                                MemoryPressureLevel.ELEVATED
                             }
-                            MemoryPressureLevel.ELEVATED
+                            activeBitmaps.size >= 12 -> { // Add this case to trigger on bitmap count
+                                if (previousLevel != MemoryPressureLevel.ELEVATED) {
+                                    Log.w(TAG, "⚠️ ELEVATED memory pressure due to bitmap count: ${activeBitmaps.size}")
+                                    logMemoryMetrics("⚠️ ELEVATED memory pressure due to bitmap count")
+                                }
+                                MemoryPressureLevel.ELEVATED
+                            }
+                            else -> MemoryPressureLevel.NORMAL
                         }
-                        else -> MemoryPressureLevel.NORMAL
-                    }
 
-                    // Periodically clean tracking map
-                    cleanupTrackingMap()
+                        // Periodically clean tracking map
+                        cleanupTrackingMap()
 
-                    // Log memory state every 30 seconds
-                    Log.d(TAG, "📊 Memory: ${formatBytes(memoryInfo.usedMemory)} / ${formatBytes(memoryInfo.maxMemory)} (${decimalFormat.format(usedPercent)}%), ${activeBitmaps.size} tracked bitmaps, level: $memoryPressureLevel")
+                        // Log memory state every 30 seconds
+                        Log.d(TAG, "📊 Memory: ${formatBytes(memoryInfo.usedMemory)} / ${formatBytes(memoryInfo.maxMemory)} (${decimalFormat.format(usedPercent)}%), ${activeBitmaps.size} tracked bitmaps, level: $memoryPressureLevel")
 
-                } catch (e: Exception) {
-                    if (e !is CancellationException) {
+                    } catch (e: CancellationException) {
+                        // Expected during cancellation, exit loop
+                        break
+                    } catch (e: Exception) {
                         Log.e(TAG, "Error in memory monitoring", e)
                     }
-                }
 
-                delay(5000) // Check every 5 seconds
+                    delay(5000) // Check every 5 seconds
+                }
+            } catch (e: CancellationException) {
+                // Expected during cancellation
+                Log.d(TAG, "Memory monitoring cancelled")
+            } catch (e: Exception) {
+                Log.e(TAG, "Fatal error in memory monitoring", e)
+            } finally {
+                isMonitoringActive = false
             }
         }
     }
@@ -559,28 +603,37 @@ class BitmapMemoryManager @Inject constructor(
     }
 
     /**
-     * Clean up the tracking map by removing entries for recycled or null bitmaps
+     * Clean up the tracking map by removing ALL bitmaps except current display and 2 preloaded
      * Returns the number of entries removed
      */
     private fun cleanupTrackingMap(): Int {
-        var removedCount = 0
-        val toRemove = mutableListOf<String>()
+        // Step 1: Find the current display photo and up to 2 preloaded photos to keep
+        val keysToKeep = mutableListOf<String>()
 
-        // Identify keys to remove
-        activeBitmaps.forEach { (key, weakRef) ->
-            val bitmap = weakRef.get()
-            if (bitmap == null || bitmap.isRecycled) {
-                toRemove.add(key)
-            }
+        // Find current display photo (we must keep this)
+        activeBitmaps.keys.find { it.startsWith("display:") }?.let {
+            keysToKeep.add(it)
         }
 
-        // Remove identified keys
-        if (toRemove.isNotEmpty()) {
-            toRemove.forEach { key ->
-                activeBitmaps.remove(key)
-                removedCount++
-            }
-            Log.d(TAG, "🧹 Removed $removedCount recycled/null bitmaps from tracking map")
+        // Find up to 2 preloaded photos to keep
+        activeBitmaps.keys
+            .filter { it.startsWith("preload:") }
+            .take(5)
+            .forEach { keysToKeep.add(it) }
+
+        // Step 2: Remove ALL other bitmaps
+        val beforeCount = activeBitmaps.size
+        val keysToRemove = activeBitmaps.keys.filter { !keysToKeep.contains(it) }
+
+        // Remove all non-essential bitmaps
+        keysToRemove.forEach { key ->
+            activeBitmaps.remove(key)
+        }
+
+        val removedCount = beforeCount - activeBitmaps.size
+
+        if (removedCount > 0) {
+            Log.d(TAG, "🧹 Cleaned up $removedCount bitmaps, kept ${activeBitmaps.size} essential bitmaps")
         }
 
         return removedCount
@@ -613,6 +666,12 @@ class BitmapMemoryManager @Inject constructor(
     )
 
     fun cleanup() {
-        managerJob.cancel()
+        try {
+            Log.i(TAG, "📊 BitmapMemoryManager: Cleanup called - cancelling monitoring tasks")
+            isMonitoringActive = false
+            managerJob.cancel()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during BitmapMemoryManager cleanup", e)
+        }
     }
 }
