@@ -854,4 +854,12 @@
     <string name="processing_folder">Processing folder: %1$s</string>
     <string name="processing_photo">Processing photo %1$d of %2$d</string>
 
+    <string name="download_folder">Download Folder</string>
+    <string name="download_folder_confirm">Download all photos from %1$s? They will be added to your slideshow as they download.</string>
+    <string name="download">Download</string>
+    <string name="browse">Browse</string>
+    <string name="download_started">Started downloading %1$s</string>
+    <string name="download_progress">Downloading %1$d of %2$d photos</string>
+    <string name="download_completed">Downloaded %1$d of %2$d photos</string>
+
 </resources>

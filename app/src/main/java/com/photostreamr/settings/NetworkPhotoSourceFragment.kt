@@ -28,6 +28,7 @@ import com.photostreamr.photos.network.NetworkResource
 import com.photostreamr.photos.network.NetworkResourceAdapter
 import com.photostreamr.photos.network.NetworkServer
 import com.photostreamr.photos.network.NetworkServerAdapter
+import com.photostreamr.photos.network.PhotoDownloadManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
@@ -49,6 +50,8 @@ class NetworkPhotoSourceFragment : Fragment() {
 
     @Inject
     lateinit var photoRepository: PhotoRepository
+
+    @Inject lateinit var photoDownloadManager: PhotoDownloadManager
 
     // UI components
     private lateinit var progressBar: ProgressBar
@@ -122,6 +125,9 @@ class NetworkPhotoSourceFragment : Fragment() {
         networkPhotoManager.initialize()
         networkPhotoManager.startDiscovery()
 
+        // Observe download progress
+        observeDownloadProgress()
+
         // Initial UI state
         updateSelectedPhotosCount()
         browseBackButton.isEnabled = false
@@ -148,6 +154,34 @@ class NetworkPhotoSourceFragment : Fragment() {
                 params.height = 300 // Force minimum height in pixels
                 serversRecyclerView.layoutParams = params
                 serversRecyclerView.requestLayout()
+            }
+        }
+    }
+
+    private fun observeDownloadProgress() {
+        photoDownloadManager.downloadProgress.observe(viewLifecycleOwner) { progress ->
+            if (progress.isActive) {
+                progressBar.isVisible = true
+                statusText.text = getString(
+                    R.string.download_progress,
+                    progress.completed,
+                    progress.total
+                )
+            } else {
+                progressBar.isVisible = false
+                if (progress.total > 0) {
+                    statusText.text = getString(
+                        R.string.download_completed,
+                        progress.completed,
+                        progress.total
+                    )
+
+                    // Notify parent about added photos
+                    val parentFragment = parentFragment
+                    if (parentFragment is PhotoSourcesPreferencesFragment) {
+                        parentFragment.onNetworkPhotosAdded(progress.completed)
+                    }
+                }
             }
         }
     }
@@ -290,19 +324,32 @@ class NetworkPhotoSourceFragment : Fragment() {
 
     private fun onResourceSelected(resource: NetworkResource) {
         if (resource.isDirectory) {
-            // For directories, we only want to navigate when the user clicks
-            // on the item itself, not when they click the checkbox.
-            // To handle this case, we check if the click wasn't on the checkbox
-            val isCheckboxClicked = selectedResources.contains(resource)
-            if (!isCheckboxClicked) {
-                // Navigate to directory if the click wasn't on the checkbox
-                browseTo(resource)
-            }
+            // Instead of browsing, start background download of folder contents
+            val dialogBuilder = MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.download_folder)
+                .setMessage(getString(R.string.download_folder_confirm, resource.name))
+                .setPositiveButton(R.string.download) { _, _ ->
+                    // Start background download
+                    photoDownloadManager.downloadFolderContents(resource)
+
+                    // Show toast
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.download_started, resource.name),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                .setNegativeButton(R.string.browse) { _, _ ->
+                    // Still allow browsing if user prefers
+                    browseTo(resource)
+                }
+                .setNeutralButton(android.R.string.cancel, null)
+
+            dialogBuilder.show()
         } else if (resource.isImage) {
             // Toggle selection for images (existing behavior)
             val isCurrentlySelected = selectedResources.contains(resource)
             onResourceSelectionChanged(resource, !isCurrentlySelected)
-            // Notify adapter about the change
             resourceAdapter.notifyDataSetChanged()
         }
     }

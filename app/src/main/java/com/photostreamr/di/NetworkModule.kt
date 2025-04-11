@@ -3,6 +3,7 @@ package com.photostreamr.di
 import android.content.Context
 import com.photostreamr.PhotoRepository
 import com.photostreamr.photos.network.NetworkPhotoManager
+import com.photostreamr.photos.network.PhotoDownloadManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,5 +22,15 @@ object NetworkModule {
         photoRepository: PhotoRepository
     ): NetworkPhotoManager {
         return NetworkPhotoManager(context, photoRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun providePhotoDownloadManager(
+        @ApplicationContext context: Context,
+        networkPhotoManager: NetworkPhotoManager,
+        photoRepository: PhotoRepository
+    ): PhotoDownloadManager {
+        return PhotoDownloadManager(context, networkPhotoManager, photoRepository)
     }
 }
