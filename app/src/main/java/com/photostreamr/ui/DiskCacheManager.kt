@@ -24,8 +24,8 @@ class DiskCacheManager @Inject constructor(
     private val TAG = "DiskCacheManager"
 
     // Coroutine management - match BitmapMemoryManager structure
-    private val managerJob = SupervisorJob()
-    private val managerScope = CoroutineScope(Dispatchers.IO + managerJob)
+    private var managerJob = SupervisorJob()
+    private var managerScope = CoroutineScope(Dispatchers.IO + managerJob)
 
     // Cache metrics tracking
     private var lastCleanupTimestamp = 0L
@@ -398,12 +398,34 @@ class DiskCacheManager @Inject constructor(
      * Resume disk cache tracking after it has been stopped
      * Call this when returning from settings or when app resumes
      */
-    fun resumeTracking() {
-        if (!isTrackingActive) {
-            Log.i(TAG, "💾 Resuming disk cache tracking")
-            startDiskCacheTracking()
-        } else {
-            Log.d(TAG, "💾 Disk cache tracking already active")
+    fun resumeTracking(forceCleanupNow: Boolean = true) {
+        if (isTrackingActive) {
+            Log.i(TAG, "💾 DiskCacheManager already active, performing quick cleanup instead of full restart")
+
+            // Just force a cleanup instead of full restart if already tracking
+            if (forceCleanupNow) {
+                Log.i(TAG, "💾 Forcing immediate disk cache cleanup on resume")
+                lastCleanupTimestamp = 0 // Reset timestamp to ensure we can clean
+                cleanupDiskCache()
+            }
+            return
+        }
+
+        // Full restart needed
+        Log.i(TAG, "💾 Resuming disk cache tracking with new coroutine scope")
+
+        // CHANGE: Create fresh job and scope
+        managerJob = SupervisorJob()
+        managerScope = CoroutineScope(Dispatchers.IO + managerJob)
+
+        isTrackingActive = true
+        startDiskCacheTracking()
+
+        // Force immediate cleanup when resuming
+        if (forceCleanupNow) {
+            Log.i(TAG, "💾 Forcing immediate disk cache cleanup on resume")
+            lastCleanupTimestamp = 0 // Reset timestamp to ensure we can clean
+            cleanupDiskCache()
         }
     }
 
@@ -413,7 +435,9 @@ class DiskCacheManager @Inject constructor(
     fun cleanup() {
         try {
             Log.i(TAG, "💾 DiskCacheManager: Cleanup called - cancelling background tasks")
-            managerJob.cancel() // Use managerJob.cancel() instead of managerScope.cancel()
+            isTrackingActive = false
+            managerJob.cancel()
+            // Don't recreate job/scope here - we'll do that in resumeTracking
         } catch (e: Exception) {
             Log.e(TAG, "💾 Error during DiskCacheManager cleanup", e)
         }

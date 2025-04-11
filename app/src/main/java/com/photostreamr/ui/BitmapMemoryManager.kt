@@ -56,8 +56,9 @@ class BitmapMemoryManager @Inject constructor(
     private val activeBitmaps = ConcurrentHashMap<String, WeakReference<Bitmap>>()
 
     // Coroutine management
-    private val managerJob = SupervisorJob()
-    private val managerScope = CoroutineScope(Dispatchers.IO + managerJob)
+    private var managerJob = SupervisorJob()
+    private var managerScope = CoroutineScope(Dispatchers.IO + managerJob)
+
 
     // Track memory state
     private var memoryPressureLevel = MemoryPressureLevel.NORMAL
@@ -103,14 +104,33 @@ class BitmapMemoryManager @Inject constructor(
      * Resume memory monitoring if it was stopped
      * Call this when returning to the main screen
      */
-    fun startMonitoring() {
-        if (!isMonitoringActive) {
-            Log.i(TAG, "📊 Resuming memory monitoring")
-            isMonitoringActive = true
-            startMemoryMonitoring()
-            startDetailedMemoryLogging()
-        } else {
-            Log.d(TAG, "📊 Memory monitoring already active")
+    fun startMonitoring(forceCleanupNow: Boolean = true) {
+        if (isMonitoringActive) {
+            Log.d(TAG, "📊 Memory monitoring already active, performing quick cleanup instead of full restart")
+
+            // Just force a cleanup instead of full restart if already monitoring
+            if (forceCleanupNow) {
+                Log.i(TAG, "📊 Forcing immediate memory cleanup on resume")
+                clearMemoryCaches()
+            }
+            return
+        }
+
+        // Full restart needed
+        Log.i(TAG, "📊 Starting memory monitoring with new coroutine scope")
+
+        // CHANGE: Create fresh job and scope
+        managerJob = SupervisorJob()
+        managerScope = CoroutineScope(Dispatchers.IO + managerJob)
+
+        isMonitoringActive = true
+        startMemoryMonitoring()
+        startDetailedMemoryLogging()
+
+        // Force immediate cleanup when starting
+        if (forceCleanupNow) {
+            Log.i(TAG, "📊 Forcing immediate memory cleanup on start")
+            clearMemoryCaches()
         }
     }
 
@@ -670,6 +690,7 @@ class BitmapMemoryManager @Inject constructor(
             Log.i(TAG, "📊 BitmapMemoryManager: Cleanup called - cancelling monitoring tasks")
             isMonitoringActive = false
             managerJob.cancel()
+            // Don't recreate job/scope here - we'll do that in startMonitoring
         } catch (e: Exception) {
             Log.e(TAG, "Error during BitmapMemoryManager cleanup", e)
         }

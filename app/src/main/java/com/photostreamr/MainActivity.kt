@@ -344,10 +344,10 @@ class MainActivity : AppCompatActivity() {
         // Register a navigation listener to handle memory and disk cache tracking
         navController.addOnDestinationChangedListener { _, destination, _ ->
             if (destination.id == R.id.mainFragment) {
-                // Coming back to main screen, restart monitoring
-                Log.d(TAG, "Navigated to main fragment, resuming monitoring")
-                diskCacheManager.resumeTracking()
-                bitmapMemoryManager.startMonitoring()
+                // Coming back to main screen, restart monitoring with forced cleanup
+                Log.d(TAG, "Navigated to main fragment, resuming monitoring with forced cleanup")
+                diskCacheManager.resumeTracking(forceCleanupNow = true)
+                bitmapMemoryManager.startMonitoring(forceCleanupNow = true)
             } else if (destination.id == R.id.settingsFragment) {
                 // Going to settings, pause tracking to avoid errors
                 Log.d(TAG, "Navigated to settings fragment, pausing monitoring")
@@ -1423,8 +1423,8 @@ class MainActivity : AppCompatActivity() {
         // Always reset auth state when stopping the activity
         authManager.resetAuthenticationState()
 
-        bitmapMemoryManager.cleanup()
-        diskCacheManager.cleanup()
+        diskCacheManager.resumeTracking(forceCleanupNow = true)
+        bitmapMemoryManager.startMonitoring(forceCleanupNow = true)
     }
 
     override fun onResume() {
@@ -1440,8 +1440,8 @@ class MainActivity : AppCompatActivity() {
         updateKeepScreenOn()
         initializeMusicSources()
 
-        bitmapMemoryManager.cleanup()
-        diskCacheManager.resumeTracking()
+        diskCacheManager.resumeTracking(forceCleanupNow = true)
+        bitmapMemoryManager.startMonitoring(forceCleanupNow = true)
 
         // Make sure ads are properly resumed
 
@@ -1566,7 +1566,8 @@ class MainActivity : AppCompatActivity() {
             widgetManager.cleanup()
             currentActivity = null
 
-            diskCacheManager.cleanup()
+            diskCacheManager.resumeTracking(forceCleanupNow = true)
+            bitmapMemoryManager.startMonitoring(forceCleanupNow = true)
 
             super.onDestroy()
         } catch (e: Exception) {
