@@ -116,7 +116,7 @@ class PhotoDownloadManager @Inject constructor(
         }
     }
 
-    private fun downloadPhoto(resource: NetworkResource, albumId: String) {
+    private suspend fun downloadPhoto(resource: NetworkResource, albumId: String) {
         val photoId = "${resource.server.id}_${resource.path.hashCode()}"
 
         // Skip if already downloading
@@ -126,16 +126,14 @@ class PhotoDownloadManager @Inject constructor(
 
         val job = downloadScope.launch {
             try {
-                // Get cached URI (will download if not cached)
-                val uri = networkPhotoManager.getCachedPhotoUri(resource)
+                // Use the new method to download and cache the photo
+                val uri = networkPhotoManager.downloadAndCachePhoto(resource)
                 if (uri != null) {
-                    val uriString = uri.toString()
-
-                    // Create media item
+                    // Create media item with the cached URI
                     val mediaItem = MediaItem(
                         id = photoId,
                         albumId = albumId,
-                        baseUrl = uriString,
+                        baseUrl = uri,
                         mimeType = getMimeType(resource.name),
                         width = 0,
                         height = 0,
@@ -146,19 +144,15 @@ class PhotoDownloadManager @Inject constructor(
 
                     // Add to repository immediately
                     withContext(Dispatchers.Main) {
-                        // Add to repository with merge mode
                         photoRepository.addPhotos(listOf(mediaItem), PhotoRepository.PhotoAddMode.MERGE)
 
-                        // Also update the virtual album
+                        // Update the virtual album
                         photoRepository.getAllAlbums().find { it.id == albumId }?.let { album ->
-                            // Create updated album with new URI
                             val updatedUris = album.photoUris.toMutableList()
-                            updatedUris.add(uriString)
+                            updatedUris.add(uri)
 
-                            // Create updated album
                             val updatedAlbum = album.copy(photoUris = updatedUris)
 
-                            // Save updated albums list
                             val allAlbums = photoRepository.getAllAlbums().toMutableList()
                             val index = allAlbums.indexOfFirst { it.id == albumId }
                             if (index >= 0) {
@@ -170,11 +164,11 @@ class PhotoDownloadManager @Inject constructor(
 
                     // Update counts
                     completedDownloads.incrementAndGet()
-                    Log.d(TAG, "Added photo to album: ${resource.name}")
+                    Log.d(TAG, "Added optimized photo to album: ${resource.name}")
                 } else {
                     // Failed
                     failedDownloads.incrementAndGet()
-                    Log.e(TAG, "Failed to download photo: ${resource.name}")
+                    Log.e(TAG, "Failed to download/cache photo: ${resource.name}")
                 }
 
                 // Update progress

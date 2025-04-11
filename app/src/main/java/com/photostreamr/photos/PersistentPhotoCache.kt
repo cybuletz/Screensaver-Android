@@ -9,8 +9,10 @@ import androidx.core.content.FileProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.text.DecimalFormat
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -83,6 +85,115 @@ class PersistentPhotoCache @Inject constructor(
         scope.launch {
             loadUriMappings()
             calculateTotalCacheSize()
+        }
+    }
+
+    /**
+     * Cache a photo directly from an InputStream
+     */
+    suspend fun cacheNetworkPhoto(inputStream: InputStream, photoId: String): CacheResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                val fileName = "network_${kotlin.math.abs(photoId.hashCode())}.jpg"
+                val cachedFile = File(cacheDir, fileName)
+
+                // Get screen dimensions
+                val displayMetrics = context.resources.displayMetrics
+                val screenWidth = displayMetrics.widthPixels
+                val screenHeight = displayMetrics.heightPixels
+
+                // Use a temporary file for the initial download
+                val tempFile = File(context.cacheDir, "temp_$fileName")
+                FileOutputStream(tempFile).use { output ->
+                    inputStream.copyTo(output)
+                }
+
+                try {
+                    // Get image dimensions
+                    val opts = BitmapFactory.Options().apply {
+                        inJustDecodeBounds = true
+                    }
+                    BitmapFactory.decodeFile(tempFile.absolutePath, opts)
+                    val originalWidth = opts.outWidth
+                    val originalHeight = opts.outHeight
+
+                    if (originalWidth <= 0 || originalHeight <= 0) {
+                        throw Exception("Could not determine image dimensions")
+                    }
+
+                    // Calculate target dimensions
+                    val targetDimensions = calculateTargetDimensions(
+                        originalWidth = originalWidth,
+                        originalHeight = originalHeight,
+                        screenWidth = screenWidth,
+                        screenHeight = screenHeight,
+                        resizeFactor = QUALITY_RESIZE_FACTOR
+                    )
+                    val targetWidth = targetDimensions.first
+                    val targetHeight = targetDimensions.second
+
+                    // Calculate sampling rate
+                    val sampleSize = calculateInSampleSize(originalWidth, originalHeight, targetWidth, targetHeight)
+
+                    // Decode with sampling
+                    val decodingOpts = BitmapFactory.Options().apply {
+                        inJustDecodeBounds = false
+                        inSampleSize = sampleSize
+                        inPreferredConfig = Bitmap.Config.ARGB_8888
+                    }
+
+                    val originalBitmap = BitmapFactory.decodeFile(tempFile.absolutePath, decodingOpts)
+                    if (originalBitmap == null) {
+                        throw Exception("Failed to decode image")
+                    }
+
+                    var resizedBitmap: Bitmap? = null
+                    try {
+                        // Resize if necessary
+                        if (originalBitmap.width != targetWidth || originalBitmap.height != targetHeight) {
+                            try {
+                                resizedBitmap = Bitmap.createScaledBitmap(originalBitmap, targetWidth, targetHeight, true)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Error during resize, using sampled bitmap: ${e.message}")
+                                resizedBitmap = originalBitmap
+                            }
+                        } else {
+                            resizedBitmap = originalBitmap
+                        }
+
+                        // Save to file - use !! to ensure compile-time null check
+                        FileOutputStream(cachedFile).use { out ->
+                            resizedBitmap!!.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+                            out.flush()
+                        }
+
+                    } finally {
+                        // Clean up
+                        if (resizedBitmap != null && resizedBitmap != originalBitmap) {
+                            resizedBitmap.recycle()
+                        }
+                        originalBitmap.recycle()
+                    }
+
+                    tempFile.delete()
+
+                    // Return success
+                    if (cachedFile.exists() && cachedFile.length() > 0) {
+                        val cachedUri = getFileProviderUri(cachedFile)
+                        updateFileSize(cachedUri)
+                        return@withContext CacheResult.Success(cachedUri)
+                    } else {
+                        throw Exception("Failed to write compressed image")
+                    }
+                } catch (e: Exception) {
+                    // Make sure to clean up the temp file
+                    tempFile.delete()
+                    throw e
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error caching network photo", e)
+                return@withContext CacheResult.Error(e.message ?: "Unknown error")
+            }
         }
     }
 

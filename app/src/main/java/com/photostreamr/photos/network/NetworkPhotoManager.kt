@@ -1,6 +1,7 @@
 package com.photostreamr.photos.network
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
@@ -35,6 +36,10 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.FileOutputStream
 import android.graphics.BitmapFactory
+import com.photostreamr.photos.PersistentPhotoCache
+import java.io.Closeable
+import java.io.InputStream
+import java.net.HttpURLConnection
 
 @Singleton
 class NetworkPhotoManager @Inject constructor(
@@ -66,6 +71,9 @@ class NetworkPhotoManager @Inject constructor(
 
     private val _folderContents = MutableStateFlow<List<NetworkResource>>(emptyList())
     val folderContents = _folderContents.asStateFlow()
+
+    private val persistentPhotoCache: PersistentPhotoCache
+        get() = photoRepository.persistentPhotoCache
 
     // HTTP client for network operations
     private val httpClient = OkHttpClient.Builder()
@@ -184,6 +192,85 @@ class NetworkPhotoManager @Inject constructor(
             _discoveryState.value = DiscoveryState.Idle
         } catch (e: Exception) {
             Timber.e(e, "Error stopping discovery")
+        }
+    }
+
+    /**
+     * Download and cache a network resource
+     */
+    suspend fun downloadAndCachePhoto(resource: NetworkResource): String? {
+        return withContext(Dispatchers.IO) {
+            var inputStream: InputStream? = null
+
+            try {
+                if (!resource.isImage) {
+                    Log.e(TAG, "Resource is not an image: ${resource.name}")
+                    return@withContext null
+                }
+
+                // Create a unique ID for this photo
+                val photoId = "${resource.server.id}_${resource.path}"
+
+                Log.d(TAG, "Starting download for ${resource.name} from ${resource.server.address}")
+
+                try {
+                    // Build SMB URL
+                    val smbBase = buildSmbUrl(resource.server)
+                    val smbUrl = "${smbBase}/${resource.path}"
+
+                    Log.d(TAG, "Connecting to SMB: $smbUrl")
+
+                    // Create SMB context with credentials if provided
+                    val smbContext = if (resource.server.username != null && resource.server.password != null) {
+                        cifsContext.withCredentials(
+                            jcifs.smb.NtlmPasswordAuthenticator(null, resource.server.username, resource.server.password)
+                        )
+                    } else {
+                        cifsContext
+                    }
+
+                    // Access SMB file
+                    val smbFile = SmbFile(smbUrl, smbContext)
+
+                    if (!smbFile.exists()) {
+                        Log.e(TAG, "SMB file does not exist: $smbUrl")
+                        return@withContext null
+                    }
+
+                    // Use large buffer for better performance
+                    val bufferSize = 1048576  // 1MB buffer
+
+                    // Get input stream with buffering - create it here, don't assign to inputStream yet
+                    val bufferedStream = BufferedInputStream(smbFile.inputStream, bufferSize)
+                    inputStream = bufferedStream  // Now assign so it gets closed in finally block
+
+                    // Use PersistentPhotoCache to process the image directly from the stream
+                    val cacheResult = photoRepository.persistentPhotoCache.cacheNetworkPhoto(bufferedStream, photoId)
+
+                    return@withContext when (cacheResult) {
+                        is PersistentPhotoCache.CacheResult.Success -> {
+                            Log.d(TAG, "Successfully cached photo: ${resource.name}")
+                            cacheResult.cachedUri
+                        }
+                        is PersistentPhotoCache.CacheResult.Error -> {
+                            Log.e(TAG, "Failed to cache photo: ${resource.name} - ${cacheResult.message}")
+                            null
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error downloading and caching photo", e)
+                    return@withContext null
+                } finally {
+                    try {
+                        inputStream?.close()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error closing input stream", e)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in downloadAndCachePhoto", e)
+                return@withContext null
+            }
         }
     }
 
