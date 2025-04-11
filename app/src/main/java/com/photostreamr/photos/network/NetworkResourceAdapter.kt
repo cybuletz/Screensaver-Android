@@ -50,8 +50,8 @@ class NetworkResourceAdapter(
             }
             typeImageView.setImageResource(iconResId)
 
-            // Show checkbox only for image files
-            selectCheckbox.visibility = if (resource.isImage) View.VISIBLE else View.GONE
+            // Show checkbox for both image files AND folders
+            selectCheckbox.visibility = if (resource.isImage || resource.isDirectory) View.VISIBLE else View.GONE
 
             // Set checkbox state
             selectCheckbox.isChecked = selectedResources.contains(resource)

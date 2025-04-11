@@ -290,10 +290,16 @@ class NetworkPhotoSourceFragment : Fragment() {
 
     private fun onResourceSelected(resource: NetworkResource) {
         if (resource.isDirectory) {
-            // Navigate to directory
-            browseTo(resource)
+            // For directories, we only want to navigate when the user clicks
+            // on the item itself, not when they click the checkbox.
+            // To handle this case, we check if the click wasn't on the checkbox
+            val isCheckboxClicked = selectedResources.contains(resource)
+            if (!isCheckboxClicked) {
+                // Navigate to directory if the click wasn't on the checkbox
+                browseTo(resource)
+            }
         } else if (resource.isImage) {
-            // Toggle selection for images
+            // Toggle selection for images (existing behavior)
             val isCurrentlySelected = selectedResources.contains(resource)
             onResourceSelectionChanged(resource, !isCurrentlySelected)
             // Notify adapter about the change
@@ -310,6 +316,91 @@ class NetworkPhotoSourceFragment : Fragment() {
 
         // Update selected photos count
         updateSelectedPhotosCount()
+    }
+
+    /**
+     * Recursively processes a folder to find all images within it and its subfolders
+     */
+    private suspend fun processFolder(
+        server: NetworkServer,
+        path: String,
+        processedCount: Int,
+        progressDialog: androidx.appcompat.app.AlertDialog
+    ): Pair<List<MediaItem>, Int> {
+
+        // Update progress dialog on main thread
+        withContext(Dispatchers.Main) {
+            val progressView = progressDialog.findViewById<TextView>(R.id.statusText)
+            progressView?.text = getString(R.string.processing_folder, path)
+        }
+
+        val mediaItems = mutableListOf<MediaItem>()
+        var currentProcessedCount = processedCount
+
+        try {
+            val result = networkPhotoManager.browseNetworkPath(server, path)
+            if (result.isFailure) {
+                Log.e(TAG, "Failed to browse folder: $path", result.exceptionOrNull())
+                return Pair(emptyList(), currentProcessedCount)
+            }
+
+            val resources = result.getOrDefault(emptyList())
+            val imageResources = resources.filter { it.isImage }
+            val subfolders = resources.filter { it.isDirectory }
+
+            // Process all images in the current folder
+            for (resource in imageResources) {
+                currentProcessedCount++
+
+                // Update progress on main thread periodically (every 5 items)
+                if (currentProcessedCount % 5 == 0) {
+                    withContext(Dispatchers.Main) {
+                        val progressView = progressDialog.findViewById<TextView>(R.id.statusText)
+                        progressView?.text = getString(R.string.processing_photo, currentProcessedCount, imageResources.size) +
+                                " (folder: $path)"
+                    }
+                }
+
+                // Download and cache photo
+                val uri = networkPhotoManager.getCachedPhotoUri(resource)
+                if (uri != null) {
+                    val uriString = uri.toString()
+
+                    // Create media item with unique ID
+                    val mediaItem = MediaItem(
+                        id = "${resource.server.id}_${resource.path.hashCode()}",
+                        albumId = "network_" + resource.server.id,
+                        baseUrl = uriString,
+                        mimeType = getMimeType(resource.name),
+                        width = 0,
+                        height = 0,
+                        description = resource.name,
+                        createdAt = System.currentTimeMillis(),
+                        loadState = MediaItem.LoadState.IDLE
+                    )
+
+                    mediaItems.add(mediaItem)
+                    Log.d(TAG, "Created MediaItem for network photo in folder $path: ${resource.name}")
+                }
+            }
+
+            // Process all subfolders recursively
+            for (folder in subfolders) {
+                val (folderItems, newProcessedCount) = processFolder(
+                    server = folder.server,
+                    path = folder.path,
+                    processedCount = currentProcessedCount,
+                    progressDialog = progressDialog
+                )
+                mediaItems.addAll(folderItems)
+                currentProcessedCount = newProcessedCount
+            }
+
+            return Pair(mediaItems, currentProcessedCount)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing folder: $path", e)
+            return Pair(mediaItems, currentProcessedCount)
+        }
     }
 
     private fun browseTo(resource: NetworkResource) {
@@ -504,38 +595,62 @@ class NetworkPhotoSourceFragment : Fragment() {
 
                 // Process each selected resource
                 for (resource in selectedResources) {
-                    processedCount++
+                    if (resource.isDirectory) {
+                        // Process folder recursively
+                        Log.d(TAG, "Processing directory: ${resource.path}")
 
-                    // Update progress on main thread
-                    withContext(Dispatchers.Main) {
-                        val progressView = progressDialog.findViewById<TextView>(R.id.statusText)
-                        progressView?.text = getString(R.string.processing_photo, processedCount, selectedResources.size)
-                    }
+                        // Update progress dialog for folder processing
+                        withContext(Dispatchers.Main) {
+                            val progressView = progressDialog.findViewById<TextView>(R.id.statusText)
+                            progressView?.text = getString(R.string.processing_folder, resource.path)
+                        }
 
-                    Log.d(TAG, "Processing network photo: ${resource.name}")
-
-                    // Download and cache photo
-                    val uri = networkPhotoManager.getCachedPhotoUri(resource)
-                    if (uri != null) {
-                        val uriString = uri.toString()
-
-                        // Create media item with unique ID
-                        val mediaItem = MediaItem(
-                            id = "${resource.server.id}_${resource.path.hashCode()}",
-                            albumId = "network_" + resource.server.id,
-                            baseUrl = uriString,
-                            mimeType = getMimeType(resource.name),
-                            width = 0,
-                            height = 0,
-                            description = resource.name,
-                            createdAt = System.currentTimeMillis(),
-                            loadState = MediaItem.LoadState.IDLE
+                        val (folderItems, newProcessedCount) = processFolder(
+                            server = resource.server,
+                            path = resource.path,
+                            processedCount = processedCount,
+                            progressDialog = progressDialog
                         )
 
-                        mediaItems.add(mediaItem)
-                        Log.d(TAG, "Created MediaItem for network photo: $uriString")
-                    } else {
-                        Log.e(TAG, "Failed to get URI for: ${resource.name}")
+                        mediaItems.addAll(folderItems)
+                        processedCount = newProcessedCount
+
+                        Log.d(TAG, "Added ${folderItems.size} photos from folder ${resource.path}")
+                    } else if (resource.isImage) {
+                        // Process individual image (existing code)
+                        processedCount++
+
+                        // Update progress on main thread
+                        withContext(Dispatchers.Main) {
+                            val progressView = progressDialog.findViewById<TextView>(R.id.statusText)
+                            progressView?.text = getString(R.string.processing_photo, processedCount, selectedResources.size)
+                        }
+
+                        Log.d(TAG, "Processing network photo: ${resource.name}")
+
+                        // Download and cache photo
+                        val uri = networkPhotoManager.getCachedPhotoUri(resource)
+                        if (uri != null) {
+                            val uriString = uri.toString()
+
+                            // Create media item with unique ID
+                            val mediaItem = MediaItem(
+                                id = "${resource.server.id}_${resource.path.hashCode()}",
+                                albumId = "network_" + resource.server.id,
+                                baseUrl = uriString,
+                                mimeType = getMimeType(resource.name),
+                                width = 0,
+                                height = 0,
+                                description = resource.name,
+                                createdAt = System.currentTimeMillis(),
+                                loadState = MediaItem.LoadState.IDLE
+                            )
+
+                            mediaItems.add(mediaItem)
+                            Log.d(TAG, "Created MediaItem for network photo: $uriString")
+                        } else {
+                            Log.e(TAG, "Failed to get URI for: ${resource.name}")
+                        }
                     }
                 }
 

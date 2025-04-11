@@ -849,9 +849,9 @@
     <string name="error_adding_photos_detail">Failed to add photos: %1$s</string>
     <string name="adding_photos">Adding Photos</string>
     <string name="downloading_photos">Downloading photos from server…</string>
-    <string name="processing_photo">Processing photo %1$d of %2$d…</string>
     <string name="no_photos_added">No photos were added</string>
     <string name="failed_to_add_photos">Failed to add photos. Check logs for details.</string>
-
+    <string name="processing_folder">Processing folder: %1$s</string>
+    <string name="processing_photo">Processing photo %1$d of %2$d</string>
 
 </resources>
