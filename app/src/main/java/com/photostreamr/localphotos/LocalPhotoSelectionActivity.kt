@@ -23,12 +23,29 @@ import android.content.ContentUris
 import android.content.Intent
 import android.os.Build
 import android.widget.Toast
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.isVisible
 
 @AndroidEntryPoint
 class LocalPhotoSelectionActivity : AppCompatActivity() {
     private lateinit var binding: ActivityLocalPhotoSelectionBinding
     private lateinit var adapter: LocalPhotoAdapter
+
+    private val pickMultipleMedia = registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
+        if (uris.isNotEmpty()) {
+            // Process the selected URIs directly
+            val photos = uris.mapIndexed { index, uri ->
+                LocalPhoto(index.toLong(), uri, uri.lastPathSegment ?: "Photo ${index + 1}")
+            }
+            adapter.submitList(photos)
+            binding.recyclerView.isVisible = true
+            updateSelectionCount(adapter.getSelectedPhotos().size)
+        } else {
+            // Handle case where no photos were selected
+            showNoPhotosMessage()
+        }
+    }
 
     companion object {
         private const val TAG = "LocalPhotoSelection"
@@ -83,21 +100,21 @@ class LocalPhotoSelectionActivity : AppCompatActivity() {
     }
 
     private fun checkPermissions() {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_IMAGES
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ - Use PhotoPicker directly without permissions
+            pickMultipleMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        }
-
-        when {
-            ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED -> {
-                loadPhotos()
-            }
-            shouldShowRequestPermissionRationale(permission) -> {
-                showPermissionRationale(permission)
-            }
-            else -> {
-                requestPermissions(arrayOf(permission), REQUEST_PERMISSIONS)
+            // For older versions, check READ_EXTERNAL_STORAGE permission
+            when {
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED -> {
+                    loadPhotos()
+                }
+                shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE) -> {
+                    showPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE)
+                }
+                else -> {
+                    requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), REQUEST_PERMISSIONS)
+                }
             }
         }
     }

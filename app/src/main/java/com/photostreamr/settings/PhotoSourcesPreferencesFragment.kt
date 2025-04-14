@@ -136,10 +136,8 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         when {
-            permissions.getOrDefault(Manifest.permission.READ_EXTERNAL_STORAGE, false) -> {
-                launchLocalPhotoSelection()
-            }
-            permissions.getOrDefault(Manifest.permission.READ_MEDIA_IMAGES, false) -> {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ||
+                    permissions.getOrDefault(Manifest.permission.READ_EXTERNAL_STORAGE, false) -> {
                 launchLocalPhotoSelection()
             }
             else -> {
@@ -203,17 +201,13 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         findPreference<SwitchPreferenceCompat>("local_photos_enabled")?.apply {
             setOnPreferenceChangeListener { _, newValue ->
                 if (newValue as Boolean) {
-                    // Only check permissions when enabling local photos
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
-                            requestPermissions(arrayOf(Manifest.permission.READ_MEDIA_IMAGES), PERMISSION_REQUEST_CODE)
-                            return@setOnPreferenceChangeListener false
-                        }
-                    } else {
-                        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                            requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), PERMISSION_REQUEST_CODE)
-                            return@setOnPreferenceChangeListener false
-                        }
+                    // Only check permissions when enabling local photos and on Android 12 or lower
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(requireContext(),
+                            Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+
+                        requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), PERMISSION_REQUEST_CODE)
+                        return@setOnPreferenceChangeListener false
                     }
                 }
                 true

@@ -346,12 +346,9 @@ class NetworkPhotoSourceFragment : Fragment() {
                 .setNeutralButton(android.R.string.cancel, null)
 
             dialogBuilder.show()
-        } else if (resource.isImage) {
-            // Toggle selection for images (existing behavior)
-            val isCurrentlySelected = selectedResources.contains(resource)
-            onResourceSelectionChanged(resource, !isCurrentlySelected)
-            resourceAdapter.notifyDataSetChanged()
         }
+        // Remove the else block that handles image selection on click
+        // Image selection now only happens via the checkbox
     }
 
     private fun onResourceSelectionChanged(resource: NetworkResource, isSelected: Boolean) {

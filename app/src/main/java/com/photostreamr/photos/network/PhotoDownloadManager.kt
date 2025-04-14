@@ -160,19 +160,19 @@ class PhotoDownloadManager @Inject constructor(
                                 photoRepository.syncVirtualAlbums(allAlbums)
                             }
                         }
-                    }
 
-                    // Update counts
-                    completedDownloads.incrementAndGet()
-                    Log.d(TAG, "Added optimized photo to album: ${resource.name}")
+                        // Update completed count and post progress AFTER the repository operations
+                        // Moving this inside the Main thread context ensures proper synchronization
+                        completedDownloads.incrementAndGet()
+                        updateProgress(true)
+                        Log.d(TAG, "Added optimized photo to album: ${resource.name}, completed: ${completedDownloads.get()}")
+                    }
                 } else {
                     // Failed
                     failedDownloads.incrementAndGet()
+                    updateProgress(true)
                     Log.e(TAG, "Failed to download/cache photo: ${resource.name}")
                 }
-
-                // Update progress
-                updateProgress(true)
             } catch (e: Exception) {
                 Log.e(TAG, "Error downloading photo: ${resource.name}", e)
                 failedDownloads.incrementAndGet()

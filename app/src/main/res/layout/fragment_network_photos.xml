@@ -100,8 +100,8 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -110,16 +110,10 @@
                 android:textAppearance="?attr/textAppearanceHeadline6"
                 android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/selected_path_text"
+            <View
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:ellipsize="middle"
-                android:singleLine="true"
-                android:text="@string/no_folder_selected"
-                android:textAppearance="?attr/textAppearanceBody1" />
+                android:layout_height="0dp"
+                android:layout_weight="1" />
 
             <Button
                 android:id="@+id/browse_back_button"
@@ -128,6 +122,17 @@
                 android:layout_height="wrap_content"
                 android:text="@string/go_back" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/selected_path_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:text="@string/no_folder_selected"
+            android:textAppearance="?attr/textAppearanceBody1" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/browse_recycler_view"

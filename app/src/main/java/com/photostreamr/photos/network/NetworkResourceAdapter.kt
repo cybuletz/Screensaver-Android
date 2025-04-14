@@ -58,7 +58,11 @@ class NetworkResourceAdapter(
 
             // Set click listeners
             itemView.setOnClickListener {
-                onResourceClick(resource)
+                // Only call onResourceClick for directories, not for images
+                if (!resource.isImage) {
+                    onResourceClick(resource)
+                }
+                // For images, do nothing on item click - only checkbox interaction allowed
             }
 
             selectCheckbox.setOnCheckedChangeListener { _, isChecked ->
