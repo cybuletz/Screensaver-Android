@@ -25,6 +25,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import com.photostreamr.PhotoRepository
 import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.tabs.TabLayout
 import com.photostreamr.utils.AppPreferences
 import com.photostreamr.settings.PhotoSourcesPreferencesFragment
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +63,8 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
     private var isShowingDialog = false
     private var hasSkippedThisSession = false
     private var isSelectingPhoto = false
+    private var tabChangeLocked = false
+
 
 
     companion object {
@@ -148,8 +151,6 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         val selectedCount = viewModel.selectedCount.value
         if (selectedCount == 0) return
 
-        val currentTabPosition = binding.tabLayout.selectedTabPosition
-
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.confirm_delete)
             .setMessage(resources.getQuantityString(
@@ -158,13 +159,8 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
                 selectedCount
             ))
             .setPositiveButton(R.string.delete) { _, _ ->
-                isSelectingPhoto = true
-                viewModel.removeSelectedPhotos()
-
-                // Ensure we stay on the current tab after deletion
-                binding.tabLayout.post {
-                    binding.tabLayout.getTabAt(currentTabPosition)?.select()
-                    isSelectingPhoto = false
+                withLockedTabs {
+                    viewModel.removeSelectedPhotos()
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -434,9 +430,41 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         // Handle tab changes
         binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
+                // Skip all tab change logic if tabs are locked
+                if (tabChangeLocked) {
+                    return
+                }
+
                 updateButtonsVisibility(position)
                 // Only restrict navigation on Sources tab
                 binding.viewPager.isUserInputEnabled = position != 0 || viewModel.photos.value.isNotEmpty()
+            }
+        })
+
+        // Also add a tab selection listener to prevent unwanted tab changes
+        binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) {
+                // If tabs are locked, revert to the stored position
+                if (tabChangeLocked) {
+                    val currentTabPosition = binding.viewPager.currentItem
+                    binding.tabLayout.post {
+                        binding.tabLayout.getTabAt(currentTabPosition)?.select()
+                    }
+                    return
+                }
+
+                // Otherwise, let the normal selection happen
+                if (binding.viewPager.currentItem != tab.position) {
+                    binding.viewPager.setCurrentItem(tab.position, false)
+                }
+            }
+
+            override fun onTabUnselected(tab: TabLayout.Tab) {
+                // No special handling needed
+            }
+
+            override fun onTabReselected(tab: TabLayout.Tab) {
+                // No special handling needed
             }
         })
 
@@ -444,16 +472,30 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         updateTabsVisibility(hasPhotos)
     }
 
-    fun togglePhotoSelectionSafely(photoId: String) {
-        isSelectingPhoto = true
+    private fun withLockedTabs(action: () -> Unit) {
+        tabChangeLocked = true
         val currentTabPosition = binding.tabLayout.selectedTabPosition
 
-        viewModel.togglePhotoSelection(photoId)
+        try {
+            action()
+        } finally {
+            // Make sure we restore the tab and unlock in a delayed action
+            // to catch any pending UI updates
+            binding.tabLayout.post {
+                binding.tabLayout.getTabAt(currentTabPosition)?.select()
+                binding.viewPager.setCurrentItem(currentTabPosition, false)
 
-        // Ensure we stay on the current tab
-        binding.tabLayout.post {
-            binding.tabLayout.getTabAt(currentTabPosition)?.select()
-            isSelectingPhoto = false
+                // Add a small delay before unlocking to ensure all UI updates are complete
+                binding.tabLayout.postDelayed({
+                    tabChangeLocked = false
+                }, 200) // 200ms delay should be enough to catch most UI updates
+            }
+        }
+    }
+
+    fun togglePhotoSelectionSafely(photoId: String) {
+        withLockedTabs {
+            viewModel.togglePhotoSelection(photoId)
         }
     }
 
