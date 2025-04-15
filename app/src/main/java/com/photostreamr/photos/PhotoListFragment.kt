@@ -34,7 +34,10 @@ class PhotoListFragment : Fragment() {
         PhotoGridAdapter(
             glide = glide,
             photoUriManager = photoUriManager,
-            onPhotoClick = { photo -> viewModel.togglePhotoSelection(photo.id) },
+            onPhotoClick = { photo ->
+                // Use our safe method
+                (activity as? PhotoManagerActivity)?.togglePhotoSelectionSafely(photo.id)
+            },
             onPhotoLoadError = { photo, error ->
                 // Handle load errors (optional)
                 viewModel.markPhotoLoadError(photo.id, error)
@@ -80,8 +83,11 @@ class PhotoListFragment : Fragment() {
                 override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
                     val position = viewHolder.bindingAdapterPosition
                     val photo = photoAdapter.currentList[position]
-                    viewModel.togglePhotoSelection(photo.id)
-                    (activity as? PhotoManagerActivity)?.showDeleteConfirmationDialog()
+
+                    (activity as? PhotoManagerActivity)?.run {
+                        togglePhotoSelectionSafely(photo.id)
+                        showDeleteConfirmationDialogSafely()
+                    }
                 }
             }
         )

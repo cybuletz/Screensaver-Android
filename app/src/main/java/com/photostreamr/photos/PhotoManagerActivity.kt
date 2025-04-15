@@ -61,6 +61,8 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
     private var isFirstTimeSetup = true
     private var isShowingDialog = false
     private var hasSkippedThisSession = false
+    private var isSelectingPhoto = false
+
 
     companion object {
         private const val TAG = "PhotoManagerActivity"
@@ -140,6 +142,33 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
                 lastPhotoCount = currentCount
             }
         }
+    }
+
+    fun showDeleteConfirmationDialogSafely() {
+        val selectedCount = viewModel.selectedCount.value
+        if (selectedCount == 0) return
+
+        val currentTabPosition = binding.tabLayout.selectedTabPosition
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.confirm_delete)
+            .setMessage(resources.getQuantityString(
+                R.plurals.confirm_delete_photos,
+                selectedCount,
+                selectedCount
+            ))
+            .setPositiveButton(R.string.delete) { _, _ ->
+                isSelectingPhoto = true
+                viewModel.removeSelectedPhotos()
+
+                // Ensure we stay on the current tab after deletion
+                binding.tabLayout.post {
+                    binding.tabLayout.getTabAt(currentTabPosition)?.select()
+                    isSelectingPhoto = false
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun createDefaultAlbum() {
@@ -415,6 +444,19 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
         updateTabsVisibility(hasPhotos)
     }
 
+    fun togglePhotoSelectionSafely(photoId: String) {
+        isSelectingPhoto = true
+        val currentTabPosition = binding.tabLayout.selectedTabPosition
+
+        viewModel.togglePhotoSelection(photoId)
+
+        // Ensure we stay on the current tab
+        binding.tabLayout.post {
+            binding.tabLayout.getTabAt(currentTabPosition)?.select()
+            isSelectingPhoto = false
+        }
+    }
+
     private fun updateTabsVisibility(enable: Boolean) {
         for (i in 0..2) {
             binding.tabLayout.getTabAt(i)?.apply {
@@ -583,20 +625,6 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
     }
 
     fun showDeleteConfirmationDialog() {
-        val selectedCount = viewModel.selectedCount.value
-        if (selectedCount == 0) return
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.confirm_delete)
-            .setMessage(resources.getQuantityString(
-                R.plurals.confirm_delete_photos,
-                selectedCount,
-                selectedCount
-            ))
-            .setPositiveButton(R.string.delete) { _, _ ->
-                viewModel.removeSelectedPhotos()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        showDeleteConfirmationDialogSafely()
     }
 }
