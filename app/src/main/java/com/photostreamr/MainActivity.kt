@@ -346,8 +346,8 @@ class MainActivity : AppCompatActivity() {
             if (destination.id == R.id.mainFragment) {
                 // Coming back to main screen, restart monitoring with forced cleanup
                 Log.d(TAG, "Navigated to main fragment, resuming monitoring with forced cleanup")
-                diskCacheManager.resumeTracking(forceCleanupNow = true)
-                bitmapMemoryManager.startMonitoring(forceCleanupNow = true)
+                diskCacheManager.resumeTracking(forceCleanupNow = false)
+                bitmapMemoryManager.startMonitoring(forceCleanupNow = false)
             } else if (destination.id == R.id.settingsFragment) {
                 // Going to settings, pause tracking to avoid errors
                 Log.d(TAG, "Navigated to settings fragment, pausing monitoring")
