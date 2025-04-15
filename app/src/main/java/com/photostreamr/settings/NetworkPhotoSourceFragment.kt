@@ -524,8 +524,6 @@ class NetworkPhotoSourceFragment : Fragment() {
         val usernameEditText = dialogView.findViewById<EditText>(R.id.username_edit)
         val passwordEditText = dialogView.findViewById<EditText>(R.id.password_edit)
 
-        // Add helper text to show examples
-        addressEditText.hint = "192.168.1.100 or server.local"
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.add_server)

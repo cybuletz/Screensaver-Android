@@ -401,12 +401,12 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     requireContext(),
-                    Manifest.permission.READ_MEDIA_IMAGES
+                    Manifest.permission.READ_EXTERNAL_STORAGE
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                launchLocalPhotoSelection()
+                launchSystemPhotoContentPicker()
             } else {
-                storagePermissionLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES))
+                storagePermissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE))
             }
         } else {
             if (ContextCompat.checkSelfPermission(
@@ -414,20 +414,39 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
                     Manifest.permission.READ_EXTERNAL_STORAGE
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                launchLocalPhotoSelection()
+                launchSystemPhotoContentPicker()
             } else {
                 storagePermissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE))
             }
         }
     }
 
-    private fun launchLocalPhotoSelection() {
-        val intent = Intent(requireContext(), LocalPhotoSelectionActivity::class.java).apply {
-            val selectedPhotos = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                .getStringSet("selected_local_photos", emptySet())
-            putExtra("selected_photos", ArrayList(selectedPhotos ?: emptySet()))
+    private fun launchSystemPhotoContentPicker() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addCategory(Intent.CATEGORY_OPENABLE)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
-        startActivityForResult(intent, REQUEST_SELECT_PHOTOS)
+
+        try {
+            startActivityForResult(intent, REQUEST_SELECT_PHOTOS)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching photo picker, trying with chooser", e)
+            try {
+                // Fallback to chooser if direct intent fails (helps on some devices)
+                val chooserIntent = Intent.createChooser(intent, getString(R.string.select_pictures))
+                startActivityForResult(chooserIntent, REQUEST_SELECT_PHOTOS)
+            } catch (e: Exception) {
+                Log.e(TAG, "Chooser also failed", e)
+                showError(getString(R.string.error_launching_picker))
+            }
+        }
+    }
+
+    private fun launchLocalPhotoSelection() {
+        // This redirects to system picker instead of launching LocalPhotoSelectionActivity
+        launchSystemPhotoContentPicker()
     }
 
     private fun setupGoogleSignIn() {
@@ -761,103 +780,128 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         Log.d(TAG, "Fragment created with tag: $fragmentTag")
     }
 
+    private fun processSelectedPhotos(data: Intent) {
+        lifecycleScope.launch {
+            try {
+                val selectedUris = mutableListOf<Uri>()
+
+                // Extract URIs from the intent data
+                when {
+                    data.clipData != null -> {
+                        val clipData = data.clipData!!
+                        for (i in 0 until clipData.itemCount) {
+                            clipData.getItemAt(i).uri?.let { uri ->
+                                selectedUris.add(uri)
+                            }
+                        }
+                    }
+                    data.data != null -> {
+                        selectedUris.add(data.data!!)
+                    }
+                }
+
+                if (selectedUris.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        showError(getString(R.string.no_photos_selected))
+                    }
+                    return@launch
+                }
+
+                withContext(Dispatchers.Main) {
+                    showLoadingIndicator(true, getString(R.string.processing_local_photos))
+                }
+
+                // Take persistable permissions where possible
+                selectedUris.forEach { uri ->
+                    try {
+                        requireContext().contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "Could not take persistable permission for $uri", e)
+                        // Continue without persistable permission
+                    }
+                }
+
+                // Convert to string URIs and save them
+                val selectedUriStrings = selectedUris.map { it.toString() }
+
+                // Save to preferences
+                appPreferences.updateLocalSelectedPhotos(selectedUriStrings.toSet())
+                appPreferences.addPickedUris(selectedUriStrings)
+
+                // Save to AppDataManager
+                appDataManager.updateState { currentState ->
+                    currentState.copy(
+                        photoSources = currentState.photoSources + SOURCE_LOCAL_PHOTOS,
+                        selectedLocalPhotos = selectedUriStrings.toSet()
+                    )
+                }
+
+                // Create MediaItems
+                val mediaItems = selectedUriStrings.map { uri ->
+                    MediaItem(
+                        id = uri,
+                        albumId = "local_picked",
+                        baseUrl = uri,
+                        mimeType = "image/*",
+                        width = 0,
+                        height = 0,
+                        description = null,
+                        createdAt = System.currentTimeMillis(),
+                        loadState = MediaItem.LoadState.IDLE
+                    )
+                }
+
+                photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
+
+                withContext(Dispatchers.Main) {
+                    // Update UI
+                    findPreference<Preference>("select_local_photos")?.summary =
+                        getString(R.string.photos_selected, selectedUriStrings.size)
+
+                    // Update pending changes
+                    val currentSources = getCurrentPhotoSources().toMutableSet()
+                    currentSources.add(SOURCE_LOCAL_PHOTOS)
+                    pendingChanges["photo_sources"] = currentSources
+
+                    // Apply changes
+                    applyChanges()
+                    showLoadingIndicator(false)
+                    notifyPhotosAdded()
+
+                    // Show success message
+                    Toast.makeText(
+                        requireContext(),
+                        resources.getQuantityString(
+                            R.plurals.local_photos_added_success,
+                            selectedUriStrings.size,
+                            selectedUriStrings.size
+                        ),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing selected photos", e)
+                withContext(Dispatchers.Main) {
+                    showLoadingIndicator(false)
+                    showError(getString(R.string.photo_processing_error))
+                }
+            }
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
         when (requestCode) {
             REQUEST_SELECT_PHOTOS -> {
-                if (resultCode == Activity.RESULT_OK) {
-                    Log.d(TAG, "Local photos selection result received")
-                    lifecycleScope.launch {
-                        try {
-                            val selectedPhotos = data?.getStringArrayListExtra("selected_photos")
-                            if (selectedPhotos != null) {
-                                withContext(Dispatchers.Main) {
-                                    showLoadingIndicator(true, getString(R.string.processing_local_photos))
-                                }
-
-                                // Process local photos
-                                val processedUris = selectedPhotos.mapNotNull { uriString ->
-                                    try {
-                                        val uri = Uri.parse(uriString)
-                                        requireContext().contentResolver.takePersistableUriPermission(
-                                            uri,
-                                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                        )
-                                        uriString
-                                    } catch (e: SecurityException) {
-                                        Log.e(TAG, "Failed to take permission for URI: $uriString", e)
-                                        uriString // Still include the URI even if permission failed
-                                    }
-                                }
-
-                                // Save to preferences using appPreferences
-                                appPreferences.updateLocalSelectedPhotos(processedUris.toSet())
-                                appPreferences.addPickedUris(processedUris)
-
-                                // Save to AppDataManager
-                                appDataManager.updateState { currentState ->
-                                    currentState.copy(
-                                        photoSources = currentState.photoSources + SOURCE_LOCAL_PHOTOS,
-                                        selectedLocalPhotos = processedUris.toSet()
-                                    )
-                                }
-
-                                // Create MediaItems
-                                val mediaItems = processedUris.map { uri ->
-                                    MediaItem(
-                                        id = uri,
-                                        albumId = "local_picked",
-                                        baseUrl = uri,
-                                        mimeType = "image/*",
-                                        width = 0,
-                                        height = 0,
-                                        description = null,
-                                        createdAt = System.currentTimeMillis(),
-                                        loadState = MediaItem.LoadState.IDLE
-                                    )
-                                }
-
-                                photoManager.addPhotos(mediaItems, PhotoAddMode.APPEND)
-
-                                withContext(Dispatchers.Main) {
-                                    findPreference<Preference>("select_local_photos")?.summary =
-                                        getString(R.string.photos_selected, processedUris.size)
-
-                                    val currentSources = getCurrentPhotoSources().toMutableSet()
-                                    currentSources.add(SOURCE_LOCAL_PHOTOS)
-                                    pendingChanges["photo_sources"] = currentSources
-
-                                    applyChanges()
-                                    showLoadingIndicator(false)
-                                    notifyPhotosAdded()
-
-                                    Toast.makeText(
-                                        requireContext(),
-                                        resources.getQuantityString(
-                                            R.plurals.local_photos_added_success,
-                                            processedUris.size,
-                                            processedUris.size
-                                        ),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            } else {
-                                Log.w(TAG, "No selected_photos in result")
-                                withContext(Dispatchers.Main) {
-                                    showError(getString(R.string.no_photos_selected))
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error processing local photos", e)
-                            withContext(Dispatchers.Main) {
-                                showLoadingIndicator(false)
-                                showError(getString(R.string.photo_processing_error))
-                            }
-                        }
-                    }
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    processSelectedPhotos(data)
                 }
             }
+            // Keep the rest of the onActivityResult method as is
             GOOGLE_PHOTOS_REQUEST_CODE -> {
                 if (resultCode == Activity.RESULT_OK) {
                     lifecycleScope.launch {
