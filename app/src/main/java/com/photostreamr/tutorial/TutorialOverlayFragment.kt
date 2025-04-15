@@ -66,6 +66,9 @@
             doNotShowCheckBox = view.findViewById(R.id.do_not_show_checkbox)
             hintContainer = view.findViewById(R.id.hint_container)
 
+            // Set checkbox to be checked by default
+            doNotShowCheckBox.isChecked = true
+
             val tutorialType = arguments?.getSerializable(ARG_TUTORIAL_TYPE) as TutorialType
             tutorialSteps = tutorialManager.getTutorialSteps(tutorialType)
 
@@ -76,9 +79,6 @@
 
             nextButton.setOnClickListener { moveToNextStep() }
             closeButton.setOnClickListener { closeTutorial() }
-
-            // Remove the initial test cutout section
-            // We don't need to set a temporary rectangle in the middle of the screen
 
             // Start with the first step with a delay to ensure the UI is fully prepared
             view.postDelayed({

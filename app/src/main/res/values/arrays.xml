@@ -87,7 +87,6 @@
         <item>@string/transition_circle</item>
         <item>@string/transition_cross_fade_grayscale</item>
         <item>@string/transition_flash</item>
-        <item>@string/transition_blur</item>
         <item>@string/transition_mosaic</item>
     </string-array>
 
@@ -129,7 +128,6 @@
         <item>circle</item>
         <item>crossFadeGrayscale</item>
         <item>flash</item>
-        <item>blur</item>
         <item>mosaic</item>
     </string-array>
 

@@ -141,14 +141,6 @@ class PhotoTransitionEffects(
                 callback
             )
 
-            "blur" -> performBlurTransition(
-                views,
-                resource,
-                nextIndex,
-                transitionDuration,
-                callback
-            )
-
             "mosaic" -> performMosaicTransition(
                 views,
                 resource,
@@ -656,75 +648,6 @@ class PhotoTransitionEffects(
         }
 
         // Start the animation
-        animatorSet.start()
-    }
-
-    private fun performBlurTransition(
-        views: TransitionViews,
-        resource: Drawable,
-        nextIndex: Int,
-        transitionDuration: Long,
-        callback: TransitionCompletionCallback
-    ) {
-        // Create a temporary bitmap from the primary view (current image)
-        val originalBitmap = (views.primaryView.drawable as? BitmapDrawable)?.bitmap
-        if (originalBitmap == null) {
-            // Fall back to fade transition if we can't get the bitmap
-            performFadeTransition(views, resource, nextIndex, transitionDuration, callback)
-            return
-        }
-
-        // Set the overlay view to the new image
-        views.overlayView.setImageDrawable(resource)
-        views.overlayView.alpha = 0f
-        views.overlayView.visibility = View.VISIBLE
-
-        // Create an AnimatorSet for the transition
-        val animatorSet = AnimatorSet()
-
-        // Create a ValueAnimator for the blur effect
-        val blurAnimator = ValueAnimator.ofFloat(0f, 25f).apply {
-            duration = transitionDuration
-            addUpdateListener { animator ->
-                val blurRadius = animator.animatedValue as Float
-                try {
-                    // Apply blur to the primary view as the animation progresses
-                    val blurredBitmap = originalBitmap.let {
-                        val rs = RenderScript.create(context)
-                        val blurScript = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
-                        val alloc = Allocation.createFromBitmap(rs, it)
-                        val blurredBitmap = Bitmap.createBitmap(it.width, it.height, it.config)
-                        val outAlloc = Allocation.createFromBitmap(rs, blurredBitmap)
-
-                        blurScript.setRadius(blurRadius)
-                        blurScript.setInput(alloc)
-                        blurScript.forEach(outAlloc)
-                        outAlloc.copyTo(blurredBitmap)
-
-                        rs.destroy()
-                        blurredBitmap
-                    }
-                    views.primaryView.setImageBitmap(blurredBitmap)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error applying blur effect", e)
-                }
-            }
-        }
-
-        // Create the alpha animation for the new image
-        val fadeInAnimator = ObjectAnimator.ofFloat(views.overlayView, View.ALPHA, 0f, 1f).apply {
-            duration = transitionDuration
-        }
-
-        // Play both animations together
-        animatorSet.playTogether(blurAnimator, fadeInAnimator)
-        animatorSet.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                callback.onTransitionCompleted(resource, nextIndex)
-            }
-        })
-
-        // Start the animations
         animatorSet.start()
     }
 

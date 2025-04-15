@@ -1,5 +1,6 @@
 package com.photostreamr.photos
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -13,6 +14,7 @@ import com.bumptech.glide.RequestManager
 import com.photostreamr.R
 import com.photostreamr.databinding.FragmentAlbumListBinding
 import com.google.android.material.snackbar.Snackbar
+import com.photostreamr.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.flow.collectLatest
@@ -67,6 +69,19 @@ class AlbumListFragment : Fragment() {
                     getString(R.string.albums_selection_saved),
                     Snackbar.LENGTH_SHORT
                 ).show()
+
+                // After saving virtual albums, navigate to MainActivity directly
+                val mainIntent = Intent(requireActivity(), MainActivity::class.java).apply {
+                    // The following flags are critical to clear the back stack and start MainActivity fresh
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP
+
+                    // Add this extra flag to indicate we're coming from album selection
+                    putExtra("from_album_selection", true)
+                }
+                startActivity(mainIntent)
+                requireActivity().finish() // Important - finish the current activity
             }
         }
     }

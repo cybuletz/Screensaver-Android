@@ -109,14 +109,9 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
     }
 
     private fun updateFabVisibility(selectedCount: Int, currentTab: Int) {
-        if (currentTab != 0) { // Not on Sources tab
-            binding.createAlbumFab.apply {
-                if (selectedCount > 0) {
-                    show()
-                } else {
-                    hide()
-                }
-            }
+        // Only show FAB in Photos tab (tab index 1) when photos are selected
+        if (currentTab == 1 && selectedCount > 0) {
+            binding.createAlbumFab.show()
         } else {
             binding.createAlbumFab.hide()
         }
@@ -630,13 +625,23 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
 
     private fun updateButtonsVisibility(position: Int) {
         val hasPhotos = viewModel.photos.value.isNotEmpty()
+        val selectedCount = viewModel.selectedCount.value
+
         when (position) {
             0 -> { // Sources tab
                 binding.createAlbumFab.hide()
             }
-            else -> { // Photos and Albums tabs
-                // Update FAB based on current selection count
-                updateFabVisibility(viewModel.selectedCount.value, position)
+            1 -> { // Photos tab
+                // Show FAB on Photos tab if photos are selected
+                if (selectedCount > 0) {
+                    binding.createAlbumFab.show()
+                } else {
+                    binding.createAlbumFab.hide()
+                }
+            }
+            2 -> { // Virtual Albums tab
+                // Always hide FAB in Virtual Albums tab, regardless of selection
+                binding.createAlbumFab.hide()
             }
         }
     }
