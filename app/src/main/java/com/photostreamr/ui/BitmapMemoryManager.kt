@@ -26,7 +26,8 @@ import kotlin.random.Random
  */
 @Singleton
 class BitmapMemoryManager @Inject constructor(
-    private val context: Context
+    private val context: Context,
+    private val diskCacheManager: DiskCacheManager
 ) {
     companion object {
         private const val TAG = "BitmapMemoryManager"
@@ -104,15 +105,9 @@ class BitmapMemoryManager @Inject constructor(
      * Resume memory monitoring if it was stopped
      * Call this when returning to the main screen
      */
-    fun startMonitoring(forceCleanupNow: Boolean = true) {
+    fun startMonitoring(forceCleanupNow: Boolean = false) {
         if (isMonitoringActive) {
-            Log.d(TAG, "📊 Memory monitoring already active, performing quick cleanup instead of full restart")
-
-            // Just force a cleanup instead of full restart if already monitoring
-            if (forceCleanupNow) {
-                Log.i(TAG, "📊 Forcing immediate memory cleanup on resume")
-                clearMemoryCaches()
-            }
+            Log.d(TAG, "📊 Memory monitoring already active, no action needed")
             return
         }
 
@@ -127,10 +122,77 @@ class BitmapMemoryManager @Inject constructor(
         startMemoryMonitoring()
         startDetailedMemoryLogging()
 
-        // Force immediate cleanup when starting
+        // Only start scheduler if it's not already running
+        if (schedulerJob == null || schedulerJob?.isActive != true) {
+            Log.i(TAG, "📊 Starting scheduled cleanup as part of monitoring start")
+            startScheduledCleanup()
+        } else {
+            Log.i(TAG, "📊 Scheduler already running, not restarting it")
+        }
+
+        // Only perform cleanup if explicitly requested
         if (forceCleanupNow) {
-            Log.i(TAG, "📊 Forcing immediate memory cleanup on start")
+            Log.i(TAG, "📊 Forcing immediate memory cleanup on start (explicitly requested)")
             clearMemoryCaches()
+        } else {
+            Log.d(TAG, "📊 Starting monitoring without cleanup")
+        }
+    }
+
+    private var schedulerJob: Job? = null
+
+    fun ensureSchedulerRunning() {
+        if (schedulerJob == null || schedulerJob?.isActive != true) {
+            Log.i(TAG, "📊 Ensuring scheduler is running")
+            startScheduledCleanup()
+        }
+    }
+
+    private fun startScheduledCleanup() {
+        // Cancel existing job if any
+        schedulerJob?.cancel()
+
+        // Create new job
+        schedulerJob = managerScope.launch {
+            // Delay initial cleanup
+            delay(10_000)
+
+            while (isActive) {
+                try {
+                    // Calculate cleanup interval
+                    val cleanupIntervalMs = 5 * 60 * 1000L // 5 minutes default
+
+                    Log.i(TAG, "💾 Scheduling next cache cleanup in ${cleanupIntervalMs/1000}s")
+                    delay(cleanupIntervalMs)
+
+                    // Check memory pressure and perform appropriate cleanup
+                    val memoryInfo = getMemoryInfo()
+                    if (memoryInfo.usedPercent > 60f) {
+                        Log.i(TAG, "💾 Memory pressure detected (${memoryInfo.usedPercent.toInt()}%), triggering bitmap AND disk cache cleanup")
+                        clearMemoryCaches()
+
+                        // Add disk cleanup when memory pressure is high
+                        diskCacheManager.cleanupDiskCache()
+                    } else {
+                        Log.i(TAG, "💾 Selective memory cleanup based on schedule")
+                        clearMemoryCaches()
+
+                        // Check disk cache size
+                        val diskCacheSizeMB = diskCacheManager.getCurrentCacheSizeMB()
+                        Log.i(TAG, "💾 Checking disk cache size: $diskCacheSizeMB MB")
+
+                        if (diskCacheSizeMB > 5 && diskCacheManager.canPerformCleanup()) {
+                            Log.i(TAG, "💾 Disk cache size ($diskCacheSizeMB MB) exceeds threshold, performing disk cleanup")
+                            diskCacheManager.cleanupDiskCache()
+                        }
+                    }
+
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Log.e(TAG, "Error in scheduled cleanup", e)
+                    }
+                }
+            }
         }
     }
 
@@ -687,10 +749,10 @@ class BitmapMemoryManager @Inject constructor(
 
     fun cleanup() {
         try {
-            Log.i(TAG, "📊 BitmapMemoryManager: Cleanup called - cancelling monitoring tasks")
+            Log.i(TAG, "📊 BitmapMemoryManager: Cleanup called - cancelling monitoring tasks only")
             isMonitoringActive = false
+            // Don't cancel schedulerJob here
             managerJob.cancel()
-            // Don't recreate job/scope here - we'll do that in startMonitoring
         } catch (e: Exception) {
             Log.e(TAG, "Error during BitmapMemoryManager cleanup", e)
         }

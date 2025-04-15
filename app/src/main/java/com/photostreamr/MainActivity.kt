@@ -218,9 +218,6 @@ class MainActivity : AppCompatActivity() {
         _binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Initialize disk cache manager tracking
-        diskCacheManager.resumeTracking()
-
         // Check if this is a cold start (savedInstanceState is null) and security is enabled
         if (savedInstanceState == null && securityPreferences.isSecurityEnabled) {
             Log.d(TAG, "Cold start detected - removing security settings")
@@ -339,21 +336,6 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
-        }
-
-        // Register a navigation listener to handle memory and disk cache tracking
-        navController.addOnDestinationChangedListener { _, destination, _ ->
-            if (destination.id == R.id.mainFragment) {
-                // Coming back to main screen, restart monitoring with forced cleanup
-                Log.d(TAG, "Navigated to main fragment, resuming monitoring with forced cleanup")
-                diskCacheManager.resumeTracking(forceCleanupNow = false)
-                bitmapMemoryManager.startMonitoring(forceCleanupNow = false)
-            } else if (destination.id == R.id.settingsFragment) {
-                // Going to settings, pause tracking to avoid errors
-                Log.d(TAG, "Navigated to settings fragment, pausing monitoring")
-                diskCacheManager.cleanup()
-                bitmapMemoryManager.cleanup()
-            }
         }
     }
 
@@ -1422,9 +1404,6 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         // Always reset auth state when stopping the activity
         authManager.resetAuthenticationState()
-
-        diskCacheManager.resumeTracking(forceCleanupNow = true)
-        bitmapMemoryManager.startMonitoring(forceCleanupNow = true)
     }
 
     override fun onResume() {
@@ -1439,12 +1418,6 @@ class MainActivity : AppCompatActivity() {
         setupFullScreen()
         updateKeepScreenOn()
         initializeMusicSources()
-
-        diskCacheManager.resumeTracking(forceCleanupNow = true)
-        bitmapMemoryManager.startMonitoring(forceCleanupNow = true)
-
-        // Make sure ads are properly resumed
-
 
         // Check for showing ads based on app state
         if (navController.currentDestination?.id == R.id.mainFragment) {
@@ -1565,9 +1538,6 @@ class MainActivity : AppCompatActivity() {
             _navController = null
             widgetManager.cleanup()
             currentActivity = null
-
-            diskCacheManager.resumeTracking(forceCleanupNow = true)
-            bitmapMemoryManager.startMonitoring(forceCleanupNow = true)
 
             super.onDestroy()
         } catch (e: Exception) {

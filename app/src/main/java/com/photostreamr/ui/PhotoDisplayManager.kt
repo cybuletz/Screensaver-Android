@@ -140,7 +140,6 @@ class PhotoDisplayManager @Inject constructor(
     init {
         // Preload immediately on initialization
         preloadDefaultPhoto()
-        scheduleBitmapCacheClearing()
 
         // Add cache status observation
         managerScope.launch {
@@ -156,80 +155,6 @@ class PhotoDisplayManager @Inject constructor(
                     }
                     else -> {
                         _cacheStatusMessage.value = status.message
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Schedule regular bitmap cache clearing to prevent memory buildup
-     * - Uses existing BitmapMemoryManager
-     * - Invisible to the user
-     * - Helps prevent OOM errors during long slideshow sessions
-     */
-    private fun scheduleBitmapCacheClearing() {
-        lifecycleScope?.launch {
-            Log.i(TAG, "💾 DISKCACHE: Starting scheduled bitmap and disk cache cleanup cycle")
-
-            while (isActive) {
-                try {
-                    // Wait for a significant number of photos to be displayed
-                    val photoInterval = getIntervalMillis()
-                    val photosBeforeCleanup = 20
-
-                    // Calculate maximum cleanup interval with shorter maximum time
-                    val maxWaitTimeMs = 1 * 60 * 1000L // 5 minutes
-                    val waitTimePerPhoto = photoInterval.coerceAtMost(10_000) // 10s
-                    val totalWaitTime = waitTimePerPhoto * photosBeforeCleanup
-                    val actualWaitTime = totalWaitTime.coerceAtMost(maxWaitTimeMs)
-
-                    // Wait before cleaning
-                    Log.i(TAG, "💾 DISKCACHE: Scheduling cache cleanup in ${actualWaitTime/1000}s (after ~$photosBeforeCleanup photos)")
-                    delay(actualWaitTime)
-
-                    // Check if memory pressure indicates we need cleanup
-                    val memoryInfo = bitmapMemoryManager.getMemoryInfo()
-
-                    if (memoryInfo.usedPercent > 60f) {
-                        Log.i(TAG, "💾 DISKCACHE: Memory pressure detected (${memoryInfo.usedPercent.toInt()}%), triggering bitmap AND disk cache cleanup")
-                        bitmapMemoryManager.clearAllBitmapCaches()
-
-                        // Add disk cleanup when memory pressure is high
-                        diskCacheManager.cleanupDiskCache()
-                    } else {
-                        Log.i(TAG, "💾 DISKCACHE: Memory pressure normal (${memoryInfo.usedPercent.toInt()}%), performing selective memory cleanup")
-
-                        // Clear memory caches
-                        bitmapMemoryManager.clearMemoryCaches()
-
-                        // Check disk cache size
-                        val diskCacheSizeMB = diskCacheManager.getCurrentCacheSizeMB()
-                        Log.i(TAG, "💾 DISKCACHE: Checking disk cache size: $diskCacheSizeMB MB")
-
-                        if (diskCacheSizeMB > 5) {
-                            Log.i(TAG, "💾 DISKCACHE: Disk cache size ($diskCacheSizeMB MB) exceeds threshold, requesting disk cleanup")
-
-                            if (diskCacheManager.canPerformCleanup()) {
-                                Log.i(TAG, "💾 DISKCACHE: Performing disk cache cleanup now")
-                                diskCacheManager.cleanupDiskCache()
-                            } else {
-                                Log.i(TAG, "💾 DISKCACHE: Disk cleanup skipped - too soon since last cleanup")
-                            }
-                        } else {
-                            Log.i(TAG, "💾 DISKCACHE: Disk cache size ($diskCacheSizeMB MB) below threshold, no cleanup needed")
-                        }
-                    }
-
-                    Log.i(TAG, "💾 DISKCACHE: Cleanup cycle complete, waiting 60s before next check")
-                    // Don't clean too frequently
-                    delay(60_000) // Minimum 1 minute between cleanups
-
-                } catch (e: Exception) {
-                    if (e !is CancellationException) {
-                        Log.e(TAG, "💾 DISKCACHE: Error in scheduled bitmap cache cleanup", e)
-                    } else {
-                        Log.i(TAG, "💾 DISKCACHE: Cleanup cycle cancelled (normal during app lifecycle changes)")
                     }
                 }
             }

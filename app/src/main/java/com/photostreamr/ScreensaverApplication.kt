@@ -27,6 +27,7 @@ import com.photostreamr.music.RadioManager
 import com.photostreamr.music.RadioPreferences
 import com.photostreamr.music.SpotifyManager
 import com.photostreamr.music.SpotifyPreferences
+import com.photostreamr.ui.BitmapMemoryManager
 import com.photostreamr.version.AppVersionManager
 import java.io.File
 import kotlinx.coroutines.NonCancellable
@@ -59,6 +60,9 @@ class ScreensaverApplication : Application() {
     @Inject
     lateinit var billingRepository: BillingRepository
 
+    @Inject
+    lateinit var bitmapMemoryManager: BitmapMemoryManager
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var firebaseAnalytics: FirebaseAnalytics
 
@@ -77,6 +81,8 @@ class ScreensaverApplication : Application() {
         checkFirstInstall()
         initializeApp()
         appVersionManager.refreshVersionState()
+        bitmapMemoryManager.ensureSchedulerRunning()
+
 
         // Pre-warm billing client
         applicationScope.launch {

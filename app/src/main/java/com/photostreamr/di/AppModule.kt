@@ -150,9 +150,10 @@ object AppModule {
     @Provides
     @Singleton
     fun provideBitmapMemoryManager(
-        @ApplicationContext context: Context
+        @ApplicationContext context: Context,
+        diskCacheManager: DiskCacheManager
     ): BitmapMemoryManager {
-        return BitmapMemoryManager(context)
+        return BitmapMemoryManager(context, diskCacheManager)
     }
 
     @Provides

@@ -397,8 +397,7 @@ class DiskCacheManager @Inject constructor(
      * Resume disk cache tracking after it has been stopped
      * Call this when returning from settings or when app resumes
      */
-    fun resumeTracking(forceCleanupNow: Boolean = true) {
-        // ALWAYS force a restart regardless of flag
+    fun resumeTracking(forceCleanupNow: Boolean = false) {  // Changed default to false
         Log.i(TAG, "💾 Resuming disk cache tracking")
 
         // Cancel any existing job
@@ -421,11 +420,13 @@ class DiskCacheManager @Inject constructor(
         // Start fresh tracking
         startDiskCacheTracking()
 
-        // Force immediate cleanup when resuming
+        // Only perform cleanup if explicitly requested
         if (forceCleanupNow) {
-            Log.i(TAG, "💾 Forcing immediate disk cache cleanup")
+            Log.i(TAG, "💾 Forcing immediate disk cache cleanup (explicitly requested)")
             lastCleanupTimestamp = 0
             cleanupDiskCache()
+        } else {
+            Log.d(TAG, "💾 Resuming tracking without cleanup")
         }
     }
 
