@@ -1285,6 +1285,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
     private fun setupNavigation() {
         try {
             ensureBinding()
@@ -1511,7 +1512,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onLowMemory() {
         super.onLowMemory()
-        photoDisplayManager.handleLowMemory()
+
+        // Access the SmartPhotoLayoutManager through the PhotoDisplayManager
+        if (::photoDisplayManager.isInitialized) {
+            // Call a new method we'll add to PhotoDisplayManager
+            photoDisplayManager.onLowMemory()
+        }
     }
 
     override fun onDestroy() {

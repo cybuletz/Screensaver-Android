@@ -1004,26 +1004,42 @@ class PhotoDisplayManager @Inject constructor(
     }
 
     /**
-     * Fixes the timing issues with photo intervals and template transitions
+     * Complete the transition between photos
      */
     private fun completeTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        if (!isMainThread()) {
-            views.container.post { completeTransition(views, resource, nextIndex) }
-            return
-        }
-
         try {
-            // Unregister the previous photo bitmap
-            if (lastPhotoUrl != null) {
-                bitmapMemoryManager.unregisterActiveBitmap("display:$lastPhotoUrl")
+            // Reset flag
+            isTransitioning = false
+
+            // Validate the resource is not corrupt
+            if (resource is BitmapDrawable) {
+                val bitmap = resource.bitmap
+                if (bitmap == null || bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
+                    Log.e(TAG, "Invalid bitmap resource detected in transition completion! Skipping to next photo.")
+
+                    // Safety fallback - clean up and move to next photo
+                    isTransitioning = false
+                    loadAndDisplayPhoto(false)
+                    return
+                }
             }
 
-            // Try to apply letterboxing if needed (only happens if in "fit" mode)
-            photoResizeManager.processPhoto(resource, views.primaryView)
+            // Get previous drawable that's now being replaced
+            val previousDrawable = views.primaryView.drawable
 
-            // Update primary view with the new drawable
+            // First set the primary view to display the new drawable
+            views.primaryView.setImageDrawable(resource)
+            views.primaryView.visibility = View.VISIBLE
+
+            // Update the current photo index
+            currentPhotoIndex = nextIndex
+
+            // Reset the overlay view
+            views.overlayView.setImageDrawable(null)
+            views.overlayView.visibility = View.INVISIBLE
+
+            // Reset animation properties
             views.primaryView.apply {
-                setImageDrawable(resource)
                 alpha = 1f
                 scaleX = 1f
                 scaleY = 1f
@@ -1032,96 +1048,60 @@ class PhotoDisplayManager @Inject constructor(
                 rotationX = 0f
                 rotationY = 0f
                 rotation = 0f
-                translationZ = 0f
-                visibility = View.VISIBLE
             }
 
-            // Reset overlay view properties
-            views.overlayView.apply {
-                alpha = 0f
-                scaleX = 1f
-                scaleY = 1f
-                translationX = 0f
-                translationY = 0f
-                rotationX = 0f
-                rotationY = 0f
-                rotation = 0f
-                translationZ = 0f
-                visibility = View.INVISIBLE
+            // IMPORTANT CHANGE: Release previous bitmap back to the pool instead of recycling it
+            if (previousDrawable is BitmapDrawable && previousDrawable.bitmap != null && !previousDrawable.bitmap.isRecycled) {
+                // Release the bitmap back to the pool
+                smartPhotoLayoutManager.releaseBitmap(previousDrawable.bitmap)
+                Log.d(TAG, "Released previous bitmap back to the pool")
             }
 
-            // Hide any remaining messages
-            hideAllMessages()
+            // Hide the letterbox views if they're visible
+            views.topLetterboxView?.visibility = View.GONE
+            views.bottomLetterboxView?.visibility = View.GONE
+            views.leftLetterboxView?.visibility = View.GONE
+            views.rightLetterboxView?.visibility = View.GONE
 
-            // CRITICAL - reset the transitioning flag to allow the next transition
-            isTransitioning = false
+            // Schedule the next photo after an interval
+            val interval = getIntervalMillis()
 
-            // Set the current photo index
-            currentPhotoIndex = nextIndex
-
-            // Get new URL and register the bitmap
-            val newPhotoUrl = photoManager.getPhotoUrl(nextIndex)
-            if (newPhotoUrl != null && resource is BitmapDrawable && !resource.bitmap.isRecycled) {
-                bitmapMemoryManager.registerActiveBitmap("display:$newPhotoUrl", resource.bitmap)
-                lastPhotoUrl = newPhotoUrl
-            }
-
-            // For multi-template mode, update the next photo index
-            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val displayMode = prefs.getString(PhotoResizeManager.PREF_KEY_PHOTO_SCALE,
-                PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
-            PhotoResizeManager.DEFAULT_DISPLAY_MODE
-
-            if (displayMode == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
-                // Launch a coroutine to safely call getNextPhotoIndex
-                lifecycleScope?.launch {
-                    try {
-                        // Get the next photo index for the next template
-                        val nextPhotoIndex = getNextPhotoIndex(currentPhotoIndex, photoManager.getPhotoCount())
-
-                        // Update the current index
-                        currentPhotoIndex = nextPhotoIndex
-                        Log.d(TAG, "Advanced to next photo index for templates: $currentPhotoIndex")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error advancing to next photo index", e)
-                    }
-                }
-            }
-
-            // Update preloader with new current index
-            photoPreloader.updateCurrentIndex(currentPhotoIndex)
-
-            // Notify AdManager of the photo count for ad frequency tracking
-            adManager.updatePhotoCount(currentPhotoIndex)
-            Log.d(TAG, "Transition completed to photo $nextIndex")
-
-            // IMPORTANT: Schedule the next photo display only once, regardless of display mode
+            // Cancel any existing display job
             displayJob?.cancel()
+
+            // Create a new job to show the next photo after the interval
             displayJob = lifecycleScope?.launch {
                 try {
-                    // Get the full interval from preferences
-                    val fullInterval = getIntervalMillis()
-                    Log.d(TAG, "Photo interval from preferences: ${fullInterval/1000} seconds ($fullInterval ms)")
-                    Log.d(TAG, "Scheduling next template display after interval: $fullInterval ms")
-
-                    // Wait for the FULL interval
-                    delay(fullInterval)
-
-                    // Then load the next photo/template
-                    if (!isTransitioning) {
-                        loadAndDisplayPhoto()
+                    delay(interval)
+                    if (isActive) {
+                        loadAndDisplayPhoto(false)
                     }
+                } catch (e: CancellationException) {
+                    // Expected during cancellation
+                    Log.d(TAG, "Photo transition job cancelled")
                 } catch (e: Exception) {
-                    if (e !is CancellationException) {
-                        Log.e(TAG, "Error scheduling next photo", e)
-                    }
+                    Log.e(TAG, "Error during photo transition", e)
                 }
             }
-
         } catch (e: Exception) {
-            Log.e(TAG, "Error in completeTransition", e)
-            isTransitioning = false // Always reset this flag even on error
+            Log.e(TAG, "Error completing transition", e)
+            // Safety fallback
+            isTransitioning = false
+            loadAndDisplayPhoto(false)
         }
+    }
+
+    /**
+     * Handle low memory condition
+     */
+    fun onLowMemory() {
+        Log.d(TAG, "PhotoDisplayManager: onLowMemory called")
+
+        // Clear the bitmap pool in SmartPhotoLayoutManager
+        smartPhotoLayoutManager.clearBitmapPool()
+
+        // Also trigger a memory cleanup in BitmapMemoryManager
+        bitmapMemoryManager.clearMemoryCaches()
     }
 
     /**

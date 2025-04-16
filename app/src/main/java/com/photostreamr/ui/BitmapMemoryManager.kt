@@ -1,6 +1,7 @@
 package com.photostreamr.ui
 
 import android.app.ActivityManager
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
@@ -295,6 +296,9 @@ class BitmapMemoryManager @Inject constructor(
     /**
      * Clear memory caches without directly recycling bitmaps
      */
+    /**
+     * Clear memory caches without directly recycling bitmaps
+     */
     fun clearMemoryCaches() {
         managerScope.launch {
             try {
@@ -337,14 +341,14 @@ class BitmapMemoryManager @Inject constructor(
                 val bitmapMemFreed = beforeBitmapMem - afterBitmapMem
 
                 Log.d(TAG, """
-                🧹 Memory cleanup complete:
-                • Memory before: ${formatBytes(beforeInfo.usedMemory)} (${decimalFormat.format(beforeInfo.usedPercent)}%)
-                • Memory after:  ${formatBytes(afterInfo.usedMemory)} (${decimalFormat.format(afterInfo.usedPercent)}%)
-                • Memory freed:  ${formatBytes(memoryFreed.coerceAtLeast(0))}
-                
-                • Bitmaps before: $beforeCount (${formatBytes(beforeBitmapMem)})
-                • Bitmaps after:  $afterCount (${formatBytes(afterBitmapMem)})
-                • Bitmaps freed:  $removedBitmaps (${formatBytes(bitmapMemFreed.coerceAtLeast(0))})
+            🧹 Memory cleanup complete:
+            • Memory before: ${formatBytes(beforeInfo.usedMemory)} (${decimalFormat.format(beforeInfo.usedPercent)}%)
+            • Memory after:  ${formatBytes(afterInfo.usedMemory)} (${decimalFormat.format(afterInfo.usedPercent)}%)
+            • Memory freed:  ${formatBytes(memoryFreed.coerceAtLeast(0))}
+            
+            • Bitmaps before: $beforeCount (${formatBytes(beforeBitmapMem)})
+            • Bitmaps after:  $afterCount (${formatBytes(afterBitmapMem)})
+            • Bitmaps freed:  $removedBitmaps (${formatBytes(bitmapMemFreed.coerceAtLeast(0))})
             """.trimIndent())
 
             } catch (e: Exception) {
@@ -680,6 +684,102 @@ class BitmapMemoryManager @Inject constructor(
             """.trimIndent())
             } catch (e: Exception) {
                 Log.e(TAG, "Error in clearAllBitmapCaches", e)
+            }
+        }
+    }
+
+    /**
+     * On low memory condition, clear all caches including the bitmap pool
+     */
+    fun onLowMemory(smartPhotoLayoutManager: SmartPhotoLayoutManager) {
+        managerScope.launch {
+            try {
+                Log.i(TAG, "🚨 Low memory condition detected!")
+
+                // Log memory state before cleanup
+                logMemoryMetrics("🚨 Before low memory cleanup")
+
+                // Clear memory caches first
+                clearMemoryCaches()
+
+                // Then clear the SmartPhotoLayoutManager bitmap pool
+                smartPhotoLayoutManager.clearBitmapPool()
+
+                // Log bitmap pool stats
+                Log.d(TAG, "Bitmap pool stats: ${smartPhotoLayoutManager.getBitmapPoolStats()}")
+
+                // Request garbage collection
+                System.gc()
+
+                // Allow some time for GC to complete
+                delay(300)
+
+                // Log final memory state
+                logMemoryMetrics("🚨 After low memory cleanup")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during low memory handling", e)
+            }
+        }
+    }
+
+    /**
+     * Check and handle bitmap pool when memory pressure is high
+     * Call this periodically or when memory pressure is detected
+     */
+    fun checkBitmapPool(smartPhotoLayoutManager: SmartPhotoLayoutManager) {
+        // Only check if we're under memory pressure
+        if (memoryPressureLevel != MemoryPressureLevel.NORMAL) {
+            managerScope.launch {
+                try {
+                    val memoryInfo = getMemoryInfo()
+
+                    // If memory usage is high
+                    if (memoryInfo.usedPercent >= MEMORY_PRESSURE_THRESHOLD_PERCENT) {
+                        Log.i(TAG, "Memory pressure (${memoryInfo.usedPercent.toInt()}%), clearing bitmap pool")
+
+                        // Clear the bitmap pool
+                        smartPhotoLayoutManager.clearBitmapPool()
+
+                        // Log bitmap pool stats after clearing
+                        Log.d(TAG, "Bitmap pool cleared, current stats: ${smartPhotoLayoutManager.getBitmapPoolStats()}")
+
+                        // Request garbage collection
+                        System.gc()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error checking bitmap pool", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Handle trim memory events from the app (needs to be called from your Activity or Application)
+     */
+    fun onTrimMemory(level: Int, smartPhotoLayoutManager: SmartPhotoLayoutManager) {
+        // Handle trim memory based on level
+        when (level) {
+            // Critical levels - clear everything
+            ComponentCallbacks2.TRIM_MEMORY_COMPLETE,
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
+                Log.i(TAG, "Critical trim memory level: $level, clearing all caches")
+                clearMemoryCaches()
+                smartPhotoLayoutManager.clearBitmapPool()
+                System.gc()
+            }
+
+            // Moderate levels - clear bitmap pool but not other caches
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
+            ComponentCallbacks2.TRIM_MEMORY_MODERATE -> {
+                Log.i(TAG, "Moderate trim memory level: $level, clearing bitmap pool")
+                smartPhotoLayoutManager.clearBitmapPool()
+            }
+
+            // Lower levels - just log but don't clear anything
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE,
+            ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN,
+            ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> {
+                Log.d(TAG, "Trim memory level: $level, no action needed")
             }
         }
     }
