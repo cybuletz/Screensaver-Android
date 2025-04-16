@@ -113,6 +113,7 @@ class SmartTemplateHelper @Inject constructor(
             }
 
             // Analyze all photos
+            Log.d(TAG, "Running face detection and photo analysis on photos")
             val photoAnalyses = smartPhotoLayoutManager.analyzePhotos(photos)
 
             // Create layout regions for the template
@@ -125,14 +126,77 @@ class SmartTemplateHelper @Inject constructor(
             // Assign photos to regions
             val assignments = smartPhotoLayoutManager.assignPhotosToRegions(photoAnalyses, regions)
 
-            // Create final template
-            val templateBitmap = smartPhotoLayoutManager.createFinalTemplate(
-                photoAnalyses,
-                regions,
-                assignments,
-                containerWidth,
-                containerHeight
-            )
+            // PATCH: Actually use face-aware cropping for each assigned region
+            val croppedBitmaps: MutableMap<Int, Bitmap> = mutableMapOf()
+            assignments.forEach { (regionIndex, photoIndex) ->
+                if (regionIndex >= regions.size || photoIndex >= photoAnalyses.size) return@forEach
+                val analysis = photoAnalyses[photoIndex]
+                val region = regions[regionIndex]
+                val regionW = region.rect.width().toInt()
+                val regionH = region.rect.height().toInt()
+                val faceCount = analysis.faceRegions.size
+
+                val cropped = if (faceCount > 0) {
+                    Log.i(TAG, "CROP_DEBUG: Using face-aware crop for region $regionIndex, photo $photoIndex with $faceCount faces.")
+                    smartPhotoLayoutManager.createCropWithFaceAwareness(
+                        analysis.bitmap,
+                        regionW,
+                        regionH,
+                        analysis.faceRegions.first()
+                    )
+                } else {
+                    Log.i(TAG, "CROP_DEBUG: No faces detected, using center crop for region $regionIndex, photo $photoIndex.")
+                    // fallback center crop
+                    val srcW = analysis.bitmap.width
+                    val srcH = analysis.bitmap.height
+                    val srcRatio = srcW.toFloat() / srcH
+                    val dstRatio = regionW.toFloat() / regionH.toFloat()
+                    val cropW: Int
+                    val cropH: Int
+                    var cropX = 0
+                    var cropY = 0
+                    if (srcRatio > dstRatio) {
+                        cropH = srcH
+                        cropW = (dstRatio * srcH).toInt()
+                        cropX = (srcW - cropW) / 2
+                    } else {
+                        cropW = srcW
+                        cropH = (srcW / dstRatio).toInt()
+                        cropY = (srcH - cropH) / 2
+                    }
+                    val croppedBmp = Bitmap.createBitmap(
+                        analysis.bitmap,
+                        cropX,
+                        cropY,
+                        cropW.coerceAtMost(srcW - cropX),
+                        cropH.coerceAtMost(srcH - cropY)
+                    )
+                    Bitmap.createScaledBitmap(croppedBmp, regionW, regionH, true)
+                }
+                croppedBitmaps[regionIndex] = cropped
+            }
+
+            // Compose the template bitmap
+            val templateBitmap = Bitmap.createBitmap(containerWidth, containerHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(templateBitmap)
+            canvas.drawColor(Color.BLACK)
+            val paint = Paint().apply {
+                isAntiAlias = true
+                isFilterBitmap = true
+                isDither = true
+            }
+            // Draw only regions that have a cropped bitmap
+            for ((regionIndex, bitmap) in croppedBitmaps) {
+                if (regionIndex < regions.size) {
+                    val region = regions[regionIndex]
+                    val left = region.rect.left
+                    val top = region.rect.top
+                    val width = region.rect.width()
+                    val height = region.rect.height()
+                    val destRect = RectF(left, top, left + width, top + height)
+                    canvas.drawBitmap(bitmap, null, destRect, paint)
+                }
+            }
 
             // Register the template bitmap with memory manager
             bitmapMemoryManager.registerActiveBitmap("smartTemplate:${templateType}:${System.currentTimeMillis()}", templateBitmap)
