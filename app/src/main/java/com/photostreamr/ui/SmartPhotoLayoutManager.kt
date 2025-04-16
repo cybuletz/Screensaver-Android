@@ -342,11 +342,12 @@ class SmartPhotoLayoutManager @Inject constructor(
 
     /**
      * Calculate a composite region encompassing all important faces or the largest face
+     * with more reliable face region detection
      */
     private fun calculateDominantFaceRegion(faceRegions: List<RectF>, imgWidth: Int, imgHeight: Int): RectF {
         if (faceRegions.isEmpty()) {
-            // If no faces, return center region
-            val centerSize = min(imgWidth, imgHeight) * 0.5f
+            // If no faces, return center region with generous size
+            val centerSize = min(imgWidth, imgHeight) * 0.7f
             return RectF(
                 (imgWidth - centerSize) / 2,
                 (imgHeight - centerSize) / 2,
@@ -355,12 +356,18 @@ class SmartPhotoLayoutManager @Inject constructor(
             )
         }
 
-        if (faceRegions.size == 1) {
-            // If only one face, return it with some padding
-            return padFaceRegion(faceRegions[0], imgWidth, imgHeight)
+        // Find the largest face
+        val largestFace = faceRegions.maxByOrNull { it.width() * it.height() }
+
+        // For single face or when largest face is dominant (significantly larger than others)
+        if (faceRegions.size == 1 || isLargestFaceDominant(faceRegions, largestFace)) {
+            // Return largest face with generous padding
+            return largestFace?.let {
+                padFaceRegion(it, imgWidth, imgHeight, paddingFactor = 0.7f)
+            } ?: RectF(0f, 0f, imgWidth.toFloat(), imgHeight.toFloat())
         }
 
-        // For multiple faces, create a region that encompasses all faces with padding
+        // For multiple significant faces, create a region that encompasses all faces
         var minX = Float.MAX_VALUE
         var minY = Float.MAX_VALUE
         var maxX = 0f
@@ -373,15 +380,56 @@ class SmartPhotoLayoutManager @Inject constructor(
             maxY = max(maxY, face.bottom)
         }
 
-        // Add padding (20% of the image size)
-        val paddingX = imgWidth * 0.1f
-        val paddingY = imgHeight * 0.1f
+        // Add generous padding (20% of the image size)
+        val paddingX = imgWidth * 0.2f
+        val paddingY = imgHeight * 0.2f
 
         return RectF(
             max(0f, minX - paddingX),
             max(0f, minY - paddingY),
             min(imgWidth.toFloat(), maxX + paddingX),
             min(imgHeight.toFloat(), maxY + paddingY)
+        )
+    }
+
+    /**
+     * Determines if the largest face is significantly larger than other faces
+     */
+    private fun isLargestFaceDominant(faces: List<RectF>, largestFace: RectF?): Boolean {
+        if (largestFace == null || faces.size <= 1) return false
+
+        val largestArea = largestFace.width() * largestFace.height()
+        var secondLargestArea = 0f
+
+        // Find second largest face
+        for (face in faces) {
+            val area = face.width() * face.height()
+            if (face != largestFace && area > secondLargestArea) {
+                secondLargestArea = area
+            }
+        }
+
+        // If largest face is at least 1.5x the size of second largest, consider it dominant
+        return largestArea > 0 && secondLargestArea > 0 && (largestArea / secondLargestArea) > 1.5f
+    }
+
+    /**
+     * Add padding around a face region with adjustable padding factor
+     */
+    private fun padFaceRegion(face: RectF, imgWidth: Int, imgHeight: Int, paddingFactor: Float = 0.5f): RectF {
+        // Calculate face dimensions
+        val faceWidth = face.width()
+        val faceHeight = face.height()
+
+        // Add generous padding (based on paddingFactor)
+        val paddingX = faceWidth * paddingFactor
+        val paddingY = faceHeight * paddingFactor
+
+        return RectF(
+            max(0f, face.left - paddingX),
+            max(0f, face.top - paddingY),
+            min(imgWidth.toFloat(), face.right + paddingX),
+            min(imgHeight.toFloat(), face.bottom + paddingY)
         )
     }
 
@@ -406,29 +454,69 @@ class SmartPhotoLayoutManager @Inject constructor(
     }
 
     /**
-     * Detect faces in a bitmap using ML Kit
+     * Detect faces in a bitmap using ML Kit with improved reliability
      */
     @WorkerThread
     private suspend fun detectFaces(bitmap: Bitmap): List<Face> = suspendCancellableCoroutine { continuation ->
         try {
-            val inputImage = InputImage.fromBitmap(bitmap, 0)
+            // Always resize larger images for better detection performance
+            val maxDimension = 1280
+            val processedBitmap = if (bitmap.width > maxDimension || bitmap.height > maxDimension) {
+                val scale = maxDimension.toFloat() / max(bitmap.width, bitmap.height)
+                val newWidth = (bitmap.width * scale).toInt()
+                val newHeight = (bitmap.height * scale).toInt()
+                Log.d(TAG, "Resizing image from ${bitmap.width}x${bitmap.height} to ${newWidth}x${newHeight} for face detection")
+                Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+            } else {
+                bitmap
+            }
+
+            val inputImage = InputImage.fromBitmap(processedBitmap, 0)
 
             faceDetector.process(inputImage)
                 .addOnSuccessListener { faces ->
-                    // Filter faces by detection confidence
-                    val highConfidenceFaces = faces.filter { it.trackingId != null || it.headEulerAngleY.absoluteValue < 15 }
-                        .sortedByDescending { it.boundingBox.width() * it.boundingBox.height() }
+                    // Accept almost all faces, with very permissive filtering
+                    val highConfidenceFaces = faces.filter {
+                        // Accept faces with wider angle tolerance
+                        it.headEulerAngleY.absoluteValue < 45
+                    }.sortedByDescending { it.boundingBox.width() * it.boundingBox.height() }
                         .take(MAX_FACES)
 
-                    continuation.resume(highConfidenceFaces)
+                    // If no faces detected with initial filter, try again with even more permissive criteria
+                    val finalFaces = if (highConfidenceFaces.isEmpty() && faces.isNotEmpty()) {
+                        Log.d(TAG, "No faces passed initial filter, using all detected faces")
+                        faces.sortedByDescending { it.boundingBox.width() * it.boundingBox.height() }
+                            .take(MAX_FACES)
+                    } else {
+                        highConfidenceFaces
+                    }
+
+                    // Debug logging
+                    Log.d(TAG, "Face detection results: ${faces.size} faces found, ${finalFaces.size} kept")
+
+                    // Clean up resized bitmap if we created one
+                    if (processedBitmap != bitmap) {
+                        processedBitmap.recycle()
+                    }
+
+                    continuation.resume(finalFaces)
                 }
                 .addOnFailureListener { e ->
                     Log.e(TAG, "Face detection failed", e)
+
+                    // Clean up resized bitmap if we created one
+                    if (processedBitmap != bitmap) {
+                        processedBitmap.recycle()
+                    }
+
                     continuation.resume(emptyList())
                 }
 
             continuation.invokeOnCancellation {
-                // Cleanup if needed
+                // Clean up resized bitmap if we created one
+                if (processedBitmap != bitmap) {
+                    processedBitmap.recycle()
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in face detection", e)
@@ -1078,7 +1166,7 @@ class SmartPhotoLayoutManager @Inject constructor(
 
     /**
      * Direct method to analyze and crop a photo to fill the container
-     * while maintaining important content (faces)
+     * while maintaining important content (faces) with maximum quality
      */
     suspend fun createSmartCroppedPhoto(
         bitmap: Bitmap,
@@ -1086,51 +1174,245 @@ class SmartPhotoLayoutManager @Inject constructor(
         containerHeight: Int
     ): Bitmap = withContext(Dispatchers.Default) {
         try {
-            // First analyze the photo to detect faces
-            val photoAnalysis = analyzePhotos(listOf(bitmap)).firstOrNull()
-                ?: return@withContext createCenterCroppedBitmap(bitmap, containerWidth, containerHeight)
+            val startTime = System.currentTimeMillis()
+
+            // First analyze the photo to detect faces - retry with different approaches if needed
+            var photoAnalysis = analyzePhotos(listOf(bitmap)).firstOrNull()
+
+            // If no faces detected and the bitmap is large, try with a resized version
+            if ((photoAnalysis == null || !photoAnalysis.faceDetectionSucceeded) &&
+                (bitmap.width > 2000 || bitmap.height > 2000)) {
+
+                Log.d(TAG, "No faces detected in large image, trying with resized version")
+
+                // Create a smaller version for detection
+                val resizedBitmap = Bitmap.createScaledBitmap(bitmap,
+                    bitmap.width / 2, bitmap.height / 2, true)
+
+                // Try detection on resized bitmap
+                photoAnalysis = analyzePhotos(listOf(resizedBitmap)).firstOrNull()
+
+                // Scale up the face regions if found
+                if (photoAnalysis != null && photoAnalysis.faceDetectionSucceeded) {
+                    // Adjust the face regions to match original bitmap size
+                    val scaledRegions = photoAnalysis.faceRegions.map { region ->
+                        RectF(
+                            region.left * 2,
+                            region.top * 2,
+                            region.right * 2,
+                            region.bottom * 2
+                        )
+                    }
+
+                    // Create new analysis with scaled regions
+                    photoAnalysis = PhotoAnalysis(
+                        bitmap = bitmap,
+                        aspectRatio = photoAnalysis.aspectRatio,
+                        faces = photoAnalysis.faces,
+                        faceRegions = scaledRegions,
+                        isPortrait = photoAnalysis.isPortrait,
+                        isLandscape = photoAnalysis.isLandscape,
+                        isSquare = photoAnalysis.isSquare,
+                        saliencyMap = null,
+                        faceDetectionSucceeded = true,
+                        dominantFaceRegion = photoAnalysis.dominantFaceRegion?.let { region ->
+                            RectF(
+                                region.left * 2,
+                                region.top * 2,
+                                region.right * 2,
+                                region.bottom * 2
+                            )
+                        }
+                    )
+                }
+
+                // Clean up
+                if (resizedBitmap != bitmap) {
+                    resizedBitmap.recycle()
+                }
+            }
 
             // If face detection succeeded, use it for smart cropping
-            if (photoAnalysis.faceDetectionSucceeded && photoAnalysis.dominantFaceRegion != null) {
-                Log.d(TAG, "Face detected, creating face-aware cropped photo")
+            if (photoAnalysis != null && photoAnalysis.faceDetectionSucceeded) {
+                // Store the face region in a local variable to avoid smart cast issues
+                val dominantFaceRegion = photoAnalysis.dominantFaceRegion
 
-                // Create a cropped bitmap using face information
-                return@withContext createCropWithFaceAwareness(
-                    bitmap,
-                    containerWidth,
-                    containerHeight,
-                    photoAnalysis.dominantFaceRegion
-                )
-            } else {
-                // Fall back to center crop
-                Log.d(TAG, "No faces detected, using center crop")
-                return@withContext createCenterCroppedBitmap(bitmap, containerWidth, containerHeight)
+                if (dominantFaceRegion != null) {
+                    Log.d(TAG, "Face detected, creating face-aware cropped photo. Processing time: ${System.currentTimeMillis() - startTime}ms")
+
+                    // Create a cropped bitmap using face information with high quality
+                    val croppedBitmap = createCropWithFaceAwareness(
+                        bitmap,
+                        containerWidth,
+                        containerHeight,
+                        dominantFaceRegion,
+                        true  // Always use high quality
+                    )
+
+                    Log.d(TAG, "Smart crop completed. Total time: ${System.currentTimeMillis() - startTime}ms")
+                    return@withContext croppedBitmap
+                }
             }
+
+            // Fall back to center crop with high quality if no faces were detected
+            Log.d(TAG, "No faces detected, using center crop with high quality")
+            return@withContext createCenterCroppedBitmap(
+                bitmap,
+                containerWidth,
+                containerHeight,
+                true  // Always use high quality
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Error creating smart cropped photo", e)
-            return@withContext createCenterCroppedBitmap(bitmap, containerWidth, containerHeight)
+            return@withContext createCenterCroppedBitmap(bitmap, containerWidth, containerHeight, true)
         }
     }
 
     /**
-     * Helper method to create memory-optimized bitmaps from pool
-     * - Uses RGB_565 for large bitmaps to save memory
-     * - Uses ARGB_8888 for smaller bitmaps for quality
+     * Create a cropped bitmap centered on detected faces with maximum quality
      */
-    private fun createOptimizedBitmap(width: Int, height: Int, forceHighQuality: Boolean = false): Bitmap {
-        // Determine if we should use RGB_565 to save memory (2 bytes/pixel vs 4)
-        val isLargeBitmap = width * height > 1_000_000
+    private fun createCropWithFaceAwareness(
+        bitmap: Bitmap,
+        targetWidth: Int,
+        targetHeight: Int,
+        faceRegion: RectF,
+        useHighQuality: Boolean = true
+    ): Bitmap {
+        // Calculate source and target aspect ratios
+        val sourceWidth = bitmap.width.toFloat()
+        val sourceHeight = bitmap.height.toFloat()
+        val sourceRatio = sourceWidth / sourceHeight
+        val targetRatio = targetWidth.toFloat() / targetHeight.toFloat()
 
-        // Select appropriate bitmap configuration
-        val config = if (isLargeBitmap && !forceHighQuality) {
-            Log.d(TAG, "Creating large bitmap ${width}x${height} with RGB_565 to optimize memory")
-            Bitmap.Config.RGB_565
+        // Determine scale factor to fill the target container
+        val scale: Float
+        var offsetX = 0f
+        var offsetY = 0f
+
+        if (sourceRatio > targetRatio) {
+            // Source is wider than target - scale to fit height
+            scale = targetHeight.toFloat() / sourceHeight
+
+            // Calculate width after scaling
+            val scaledWidth = sourceWidth * scale
+
+            // Calculate how much to crop from sides
+            val cropWidth = scaledWidth - targetWidth
+
+            // Calculate face region center
+            val faceRegionCenterX = faceRegion.centerX()
+
+            // Calculate ideal offset to center the face region
+            val idealOffset = (targetWidth / 2f) - (faceRegionCenterX * scale)
+
+            // Constrain offset to keep within image bounds
+            offsetX = idealOffset.coerceIn(-cropWidth, 0f)
         } else {
-            Bitmap.Config.ARGB_8888
+            // Source is taller than target - scale to fit width
+            scale = targetWidth.toFloat() / sourceWidth
+
+            // Calculate height after scaling
+            val scaledHeight = sourceHeight * scale
+
+            // Calculate how much to crop from top/bottom
+            val cropHeight = scaledHeight - targetHeight
+
+            // Calculate face region center
+            val faceRegionCenterY = faceRegion.centerY()
+
+            // Calculate ideal offset to center the face region
+            val idealOffset = (targetHeight / 2f) - (faceRegionCenterY * scale)
+
+            // Constrain offset to keep within image bounds
+            offsetY = idealOffset.coerceIn(-cropHeight, 0f)
         }
 
-        // Get bitmap from pool or create a new one
-        return bitmapPool.getBitmap(width, height, config)
+        // Always use ARGB_8888 for maximum quality
+        val config = Bitmap.Config.ARGB_8888
+
+        // Create target bitmap with high quality
+        val targetBitmap = Bitmap.createBitmap(targetWidth, targetHeight, config)
+        val canvas = Canvas(targetBitmap)
+
+        // Apply transformation
+        val matrix = Matrix()
+        matrix.setScale(scale, scale)
+        matrix.postTranslate(offsetX, offsetY)
+
+        // Draw the transformed bitmap with high quality settings
+        val paint = Paint().apply {
+            isFilterBitmap = true
+            isAntiAlias = true
+            isDither = true
+        }
+        canvas.drawBitmap(bitmap, matrix, paint)
+
+        return targetBitmap
+    }
+
+    /**
+     * Center crop a bitmap to the target dimensions with maximum quality
+     */
+    private fun createCenterCroppedBitmap(
+        bitmap: Bitmap,
+        targetWidth: Int,
+        targetHeight: Int,
+        useHighQuality: Boolean = true
+    ): Bitmap {
+        // Calculate source and target aspect ratios
+        val sourceWidth = bitmap.width.toFloat()
+        val sourceHeight = bitmap.height.toFloat()
+        val sourceRatio = sourceWidth / sourceHeight
+        val targetRatio = targetWidth.toFloat() / targetHeight.toFloat()
+
+        // Determine scale and crop parameters
+        val scale: Float
+        val dx: Float
+        val dy: Float
+
+        if (sourceRatio > targetRatio) {
+            // Source is wider - crop width
+            scale = targetHeight / sourceHeight
+            dx = (sourceWidth * scale - targetWidth) * 0.5f
+            dy = 0f
+        } else {
+            // Source is taller - crop height
+            scale = targetWidth / sourceWidth
+            dx = 0f
+            dy = (sourceHeight * scale - targetHeight) * 0.5f
+        }
+
+        // Always use ARGB_8888 for maximum quality
+        val config = Bitmap.Config.ARGB_8888
+
+        // Create target bitmap with high quality
+        val targetBitmap = Bitmap.createBitmap(targetWidth, targetHeight, config)
+        val canvas = Canvas(targetBitmap)
+
+        // Apply transformation
+        val matrix = Matrix()
+        matrix.setScale(scale, scale)
+        matrix.postTranslate(-dx, -dy)
+
+        // Draw the transformed bitmap with high quality settings
+        val paint = Paint().apply {
+            isFilterBitmap = true
+            isAntiAlias = true
+            isDither = true
+        }
+        canvas.drawBitmap(bitmap, matrix, paint)
+
+        return targetBitmap
+    }
+
+    /**
+     * Helper method to create bitmaps with high quality
+     * - Always uses ARGB_8888 for best quality
+     */
+    private fun createOptimizedBitmap(width: Int, height: Int): Bitmap {
+        // Always use ARGB_8888 for maximum quality
+        Log.d(TAG, "Creating bitmap ${width}x${height} with ARGB_8888 for best quality")
+        return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     }
 
     /**
