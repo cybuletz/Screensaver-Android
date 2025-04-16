@@ -1,12 +1,7 @@
 package com.photostreamr.ui
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Rect
-import android.graphics.RectF
+import android.graphics.*
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.Log
@@ -17,6 +12,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Helper class that acts as a bridge between SmartPhotoLayoutManager and other components
@@ -129,7 +125,7 @@ class SmartTemplateHelper @Inject constructor(
             // Assign photos to regions
             val assignments = smartPhotoLayoutManager.assignPhotosToRegions(photoAnalyses, regions)
 
-            // PATCH: Actually use face-aware cropping for each assigned region with maximum zoom-out
+            // Use enhanced face-aware, max-zoom-out, never-letterbox cropping for each region
             val croppedBitmaps: MutableMap<Int, Bitmap> = mutableMapOf()
             assignments.forEach { (regionIndex, photoIndex) ->
                 if (regionIndex >= regions.size || photoIndex >= photoAnalyses.size) return@forEach
@@ -137,22 +133,13 @@ class SmartTemplateHelper @Inject constructor(
                 val region = regions[regionIndex]
                 val regionW = region.rect.width().toInt()
                 val regionH = region.rect.height().toInt()
-                val faceRects = analysis.faceRegions
-
-                val cropped = if (faceRects.isNotEmpty()) {
-                    Log.i(TAG, "CROP_DEBUG: Using face-aware crop for region $regionIndex, photo $photoIndex with ${faceRects.size} faces.")
-                    smartFaceAwareCrop(
-                        analysis.bitmap,
-                        regionW,
-                        regionH,
-                        faceRects,
-                        FACE_PADDING_FRACTION
-                    )
-                } else {
-                    Log.i(TAG, "CROP_DEBUG: No faces detected, using center crop for region $regionIndex, photo $photoIndex.")
-                    // fallback center crop
-                    centerCrop(analysis.bitmap, regionW, regionH)
-                }
+                val cropped = smartFaceAwareCrop(
+                    analysis.bitmap,
+                    regionW,
+                    regionH,
+                    analysis.faceRegions,
+                    FACE_PADDING_FRACTION
+                )
                 croppedBitmaps[regionIndex] = cropped
             }
 
@@ -210,91 +197,99 @@ class SmartTemplateHelper @Inject constructor(
      * - Shows as much of the image as possible (maximum zoom out, no letterbox).
      * - If faces+padding fit in the maximum crop, use it.
      * - If not, only zoom in as much as needed for faces+padding.
+     * - If no faces, behaves as a classic center crop, always max zoom out.
      */
     private fun smartFaceAwareCrop(
         src: Bitmap,
         targetWidth: Int,
         targetHeight: Int,
-        faceRects: List<RectF>,
+        faceRects: List<RectF>?,
         paddingFraction: Float
     ): Bitmap {
         val srcW = src.width.toFloat()
         val srcH = src.height.toFloat()
         val targetRatio = targetWidth.toFloat() / targetHeight
 
-        // Step 1: Union all faces + padding
-        var minX = srcW
-        var minY = srcH
-        var maxX = 0f
-        var maxY = 0f
-        for (face in faceRects) {
-            val padW = face.width() * paddingFraction
-            val padH = face.height() * paddingFraction
-            minX = min(minX, face.left - padW)
-            minY = min(minY, face.top - padH)
-            maxX = max(maxX, face.right + padW)
-            maxY = max(maxY, face.bottom + padH)
-        }
-        minX = minX.coerceAtLeast(0f)
-        minY = minY.coerceAtLeast(0f)
-        maxX = maxX.coerceAtMost(srcW)
-        maxY = maxY.coerceAtMost(srcH)
-        val unionW = maxX - minX
-        val unionH = maxY - minY
-
-        // Step 2: Maximum zoom out crop (centered, at target aspect)
+        // 1. Max possible crop at target aspect ratio (max zoom out, never letterbox)
         val srcRatio = srcW / srcH
-        val cropW: Float
-        val cropH: Float
-        val cropLeft: Float
-        val cropTop: Float
+        val maxCropW: Float
+        val maxCropH: Float
+        val maxCropLeft: Float
+        val maxCropTop: Float
         if (srcRatio > targetRatio) {
-            // Image is wider than target aspect
-            cropH = srcH
-            cropW = cropH * targetRatio
-            cropLeft = (srcW - cropW) / 2f
-            cropTop = 0f
+            maxCropH = srcH
+            maxCropW = maxCropH * targetRatio
+            maxCropLeft = (srcW - maxCropW) / 2f
+            maxCropTop = 0f
         } else {
-            // Image is taller than target aspect
-            cropW = srcW
-            cropH = cropW / targetRatio
-            cropLeft = 0f
-            cropTop = (srcH - cropH) / 2f
+            maxCropW = srcW
+            maxCropH = maxCropW / targetRatio
+            maxCropLeft = 0f
+            maxCropTop = (srcH - maxCropH) / 2f
         }
 
-        // Step 3: If faces+padding fit in this crop, use it
-        if (
-            minX >= cropLeft &&
-            maxX <= cropLeft + cropW &&
-            minY >= cropTop &&
-            maxY <= cropTop + cropH
-        ) {
-            // Union fits, use maximum zoom out!
-            Log.i(TAG, "CROP_DEBUG: Union fits in max zoom-out crop, using cropLeft=$cropLeft, cropTop=$cropTop, cropW=$cropW, cropH=$cropH")
-            return Bitmap.createBitmap(src, cropLeft.toInt(), cropTop.toInt(), cropW.toInt(), cropH.toInt())
-                .let { Bitmap.createScaledBitmap(it, targetWidth, targetHeight, true) }
+        // 2. If faces, check if union+padding fits in max crop
+        if (!faceRects.isNullOrEmpty()) {
+            var minX = srcW
+            var minY = srcH
+            var maxX = 0f
+            var maxY = 0f
+            for (face in faceRects) {
+                val padW = face.width() * paddingFraction
+                val padH = face.height() * paddingFraction
+                minX = min(minX, face.left - padW)
+                minY = min(minY, face.top - padH)
+                maxX = max(maxX, face.right + padW)
+                maxY = max(maxY, face.bottom + padH)
+            }
+            minX = minX.coerceAtLeast(0f)
+            minY = minY.coerceAtLeast(0f)
+            maxX = maxX.coerceAtMost(srcW)
+            maxY = maxY.coerceAtMost(srcH)
+
+            if (
+                minX >= maxCropLeft &&
+                maxX <= maxCropLeft + maxCropW &&
+                minY >= maxCropTop &&
+                maxY <= maxCropTop + maxCropH
+            ) {
+                return Bitmap.createBitmap(
+                    src,
+                    maxCropLeft.toInt(),
+                    maxCropTop.toInt(),
+                    maxCropW.toInt(),
+                    maxCropH.toInt()
+                ).let { Bitmap.createScaledBitmap(it, targetWidth, targetHeight, true) }
+            }
+            // Else: zoom in just enough to fit faces+padding
+            var cropW = maxX - minX
+            var cropH = maxY - minY
+            if (cropW / cropH < targetRatio) {
+                cropW = cropH * targetRatio
+            } else {
+                cropH = cropW / targetRatio
+            }
+            var cropLeft = (minX + maxX) / 2f - cropW / 2f
+            var cropTop = (minY + maxY) / 2f - cropH / 2f
+            cropLeft = cropLeft.coerceIn(0f, srcW - cropW)
+            cropTop = cropTop.coerceIn(0f, srcH - cropH)
+            return Bitmap.createBitmap(
+                src,
+                cropLeft.toInt(),
+                cropTop.toInt(),
+                cropW.toInt(),
+                cropH.toInt()
+            ).let { Bitmap.createScaledBitmap(it, targetWidth, targetHeight, true) }
         }
 
-        // Step 4: Otherwise, zoom in only as much as needed
-        // Start with faces+padding union, expand to target aspect, pan to stay within image bounds
-        var finalW = unionW
-        var finalH = unionH
-        if (finalW / finalH < targetRatio) {
-            // Need to expand width
-            finalW = finalH * targetRatio
-        } else {
-            // Need to expand height
-            finalH = finalW / targetRatio
-        }
-        var finalLeft = (minX + maxX) / 2f - finalW / 2f
-        var finalTop = (minY + maxY) / 2f - finalH / 2f
-        // Clamp inside image
-        finalLeft = finalLeft.coerceIn(0f, srcW - finalW)
-        finalTop = finalTop.coerceIn(0f, srcH - finalH)
-
-        Log.i(TAG, "CROP_DEBUG: Union doesn't fit, using finalLeft=$finalLeft, finalTop=$finalTop, finalW=$finalW, finalH=$finalH")
-        return Bitmap.createBitmap(src, finalLeft.toInt(), finalTop.toInt(), finalW.toInt(), finalH.toInt())
-            .let { Bitmap.createScaledBitmap(it, targetWidth, targetHeight, true) }
+        // 3. No faces: always use max zoom out
+        return Bitmap.createBitmap(
+            src,
+            maxCropLeft.toInt(),
+            maxCropTop.toInt(),
+            maxCropW.toInt(),
+            maxCropH.toInt()
+        ).let { Bitmap.createScaledBitmap(it, targetWidth, targetHeight, true) }
     }
 
     /**
