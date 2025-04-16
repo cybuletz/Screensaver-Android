@@ -1102,9 +1102,6 @@ class SmartPhotoLayoutManager @Inject constructor(
         return assignments
     }
 
-    /**
-     * Extension function to set crop transformation based on salient region
-     */
     private fun Matrix.setCropToRegion(
         bitmap: Bitmap,
         targetWidth: Float,
@@ -1134,13 +1131,16 @@ class SmartPhotoLayoutManager @Inject constructor(
             // Calculate width after scaling
             val scaledWidth = sourceWidth * scale
 
-            // Calculate how much to crop from sides
+            // Calculate how much total width to crop
             val cropWidth = scaledWidth - targetWidth
 
-            // Calculate offset to center the salient region
-            val idealOffset = targetWidth / 2 - salientCenterX * scale
+            // This is the key fix: Calculate offset to properly center the salient region
+            // Map the salient center from source to target coordinates
+            val scaledSalientCenterX = salientCenterX * scale
+            // Calculate ideal offset to center the salient region
+            val idealOffset = (targetWidth / 2) - scaledSalientCenterX
 
-            // Constrain offset to keep within image bounds
+            // Constrain offset to avoid going out of bounds
             offsetX = idealOffset.coerceIn(-cropWidth, 0f)
         } else {
             // Source is taller than target - scale to fit width
@@ -1152,8 +1152,9 @@ class SmartPhotoLayoutManager @Inject constructor(
             // Calculate how much to crop from top/bottom
             val cropHeight = scaledHeight - targetHeight
 
-            // Calculate offset to center the salient region
-            val idealOffset = targetHeight / 2 - salientCenterY * scale
+            // Calculate offset to center the salient region (same logic as above)
+            val scaledSalientCenterY = salientCenterY * scale
+            val idealOffset = (targetHeight / 2) - scaledSalientCenterY
 
             // Constrain offset to keep within image bounds
             offsetY = idealOffset.coerceIn(-cropHeight, 0f)
@@ -1166,7 +1167,7 @@ class SmartPhotoLayoutManager @Inject constructor(
 
     /**
      * Direct method to analyze and crop a photo to fill the container
-     * while maintaining important content (faces) with maximum quality
+     * while maintaining important content (faces)
      */
     suspend fun createSmartCroppedPhoto(
         bitmap: Bitmap,
@@ -1174,235 +1175,108 @@ class SmartPhotoLayoutManager @Inject constructor(
         containerHeight: Int
     ): Bitmap = withContext(Dispatchers.Default) {
         try {
-            val startTime = System.currentTimeMillis()
-
-            // First analyze the photo to detect faces - retry with different approaches if needed
-            var photoAnalysis = analyzePhotos(listOf(bitmap)).firstOrNull()
-
-            // If no faces detected and the bitmap is large, try with a resized version
-            if ((photoAnalysis == null || !photoAnalysis.faceDetectionSucceeded) &&
-                (bitmap.width > 2000 || bitmap.height > 2000)) {
-
-                Log.d(TAG, "No faces detected in large image, trying with resized version")
-
-                // Create a smaller version for detection
-                val resizedBitmap = Bitmap.createScaledBitmap(bitmap,
-                    bitmap.width / 2, bitmap.height / 2, true)
-
-                // Try detection on resized bitmap
-                photoAnalysis = analyzePhotos(listOf(resizedBitmap)).firstOrNull()
-
-                // Scale up the face regions if found
-                if (photoAnalysis != null && photoAnalysis.faceDetectionSucceeded) {
-                    // Adjust the face regions to match original bitmap size
-                    val scaledRegions = photoAnalysis.faceRegions.map { region ->
-                        RectF(
-                            region.left * 2,
-                            region.top * 2,
-                            region.right * 2,
-                            region.bottom * 2
-                        )
-                    }
-
-                    // Create new analysis with scaled regions
-                    photoAnalysis = PhotoAnalysis(
-                        bitmap = bitmap,
-                        aspectRatio = photoAnalysis.aspectRatio,
-                        faces = photoAnalysis.faces,
-                        faceRegions = scaledRegions,
-                        isPortrait = photoAnalysis.isPortrait,
-                        isLandscape = photoAnalysis.isLandscape,
-                        isSquare = photoAnalysis.isSquare,
-                        saliencyMap = null,
-                        faceDetectionSucceeded = true,
-                        dominantFaceRegion = photoAnalysis.dominantFaceRegion?.let { region ->
-                            RectF(
-                                region.left * 2,
-                                region.top * 2,
-                                region.right * 2,
-                                region.bottom * 2
-                            )
-                        }
-                    )
-                }
-
-                // Clean up
-                if (resizedBitmap != bitmap) {
-                    resizedBitmap.recycle()
-                }
-            }
+            // First analyze the photo to detect faces
+            val photoAnalysis = analyzePhotos(listOf(bitmap)).firstOrNull()
+                ?: return@withContext createCenterCroppedBitmap(bitmap, containerWidth, containerHeight)
 
             // If face detection succeeded, use it for smart cropping
-            if (photoAnalysis != null && photoAnalysis.faceDetectionSucceeded) {
-                // Store the face region in a local variable to avoid smart cast issues
-                val dominantFaceRegion = photoAnalysis.dominantFaceRegion
+            if (photoAnalysis.faceDetectionSucceeded && photoAnalysis.dominantFaceRegion != null) {
+                Log.d(TAG, "Face detected, creating face-aware cropped photo")
 
-                if (dominantFaceRegion != null) {
-                    Log.d(TAG, "Face detected, creating face-aware cropped photo. Processing time: ${System.currentTimeMillis() - startTime}ms")
-
-                    // Create a cropped bitmap using face information with high quality
-                    val croppedBitmap = createCropWithFaceAwareness(
-                        bitmap,
-                        containerWidth,
-                        containerHeight,
-                        dominantFaceRegion,
-                        true  // Always use high quality
-                    )
-
-                    Log.d(TAG, "Smart crop completed. Total time: ${System.currentTimeMillis() - startTime}ms")
-                    return@withContext croppedBitmap
-                }
+                // Create a cropped bitmap using face information
+                return@withContext createCropWithFaceAwareness(
+                    bitmap,
+                    containerWidth,
+                    containerHeight,
+                    photoAnalysis.dominantFaceRegion
+                )
+            } else {
+                // Fall back to center crop
+                Log.d(TAG, "No faces detected, using center crop")
+                return@withContext createCenterCroppedBitmap(bitmap, containerWidth, containerHeight)
             }
-
-            // Fall back to center crop with high quality if no faces were detected
-            Log.d(TAG, "No faces detected, using center crop with high quality")
-            return@withContext createCenterCroppedBitmap(
-                bitmap,
-                containerWidth,
-                containerHeight,
-                true  // Always use high quality
-            )
         } catch (e: Exception) {
             Log.e(TAG, "Error creating smart cropped photo", e)
-            return@withContext createCenterCroppedBitmap(bitmap, containerWidth, containerHeight, true)
+            return@withContext createCenterCroppedBitmap(bitmap, containerWidth, containerHeight)
         }
     }
 
     /**
-     * Create a cropped bitmap centered on detected faces with maximum quality
+     * Create a cropped bitmap considering face positions
      */
-    private fun createCropWithFaceAwareness(
+    fun createCropWithFaceAwareness(
         bitmap: Bitmap,
         targetWidth: Int,
         targetHeight: Int,
-        faceRegion: RectF,
-        useHighQuality: Boolean = true
+        faceRegion: RectF
     ): Bitmap {
-        // Calculate source and target aspect ratios
-        val sourceWidth = bitmap.width.toFloat()
-        val sourceHeight = bitmap.height.toFloat()
-        val sourceRatio = sourceWidth / sourceHeight
-        val targetRatio = targetWidth.toFloat() / targetHeight.toFloat()
+        val sourceWidth = bitmap.width
+        val sourceHeight = bitmap.height
 
-        // Determine scale factor to fill the target container
-        val scale: Float
-        var offsetX = 0f
-        var offsetY = 0f
+        // Calculate the target aspect ratio
+        val targetRatio = targetWidth.toFloat() / targetHeight
 
-        if (sourceRatio > targetRatio) {
-            // Source is wider than target - scale to fit height
-            scale = targetHeight.toFloat() / sourceHeight
+        // Calculate source crop dimensions that maintain target aspect ratio
+        val sourceCropWidth: Int
+        val sourceCropHeight: Int
 
-            // Calculate width after scaling
-            val scaledWidth = sourceWidth * scale
-
-            // Calculate how much to crop from sides
-            val cropWidth = scaledWidth - targetWidth
-
-            // Calculate face region center
-            val faceRegionCenterX = faceRegion.centerX()
-
-            // Calculate ideal offset to center the face region
-            val idealOffset = (targetWidth / 2f) - (faceRegionCenterX * scale)
-
-            // Constrain offset to keep within image bounds
-            offsetX = idealOffset.coerceIn(-cropWidth, 0f)
+        if (targetRatio > sourceWidth.toFloat() / sourceHeight) {
+            // Target is wider than source - fit to width
+            sourceCropWidth = sourceWidth
+            sourceCropHeight = (sourceCropWidth / targetRatio).toInt()
         } else {
-            // Source is taller than target - scale to fit width
-            scale = targetWidth.toFloat() / sourceWidth
-
-            // Calculate height after scaling
-            val scaledHeight = sourceHeight * scale
-
-            // Calculate how much to crop from top/bottom
-            val cropHeight = scaledHeight - targetHeight
-
-            // Calculate face region center
-            val faceRegionCenterY = faceRegion.centerY()
-
-            // Calculate ideal offset to center the face region
-            val idealOffset = (targetHeight / 2f) - (faceRegionCenterY * scale)
-
-            // Constrain offset to keep within image bounds
-            offsetY = idealOffset.coerceIn(-cropHeight, 0f)
+            // Target is taller than source - fit to height
+            sourceCropHeight = sourceHeight
+            sourceCropWidth = (sourceCropHeight * targetRatio).toInt()
         }
 
-        // Always use ARGB_8888 for maximum quality
-        val config = Bitmap.Config.ARGB_8888
+        // Calculate crop origin to center on face region
+        val faceCenterX = faceRegion.centerX()
+        val faceCenterY = faceRegion.centerY()
 
-        // Create target bitmap with high quality
-        val targetBitmap = Bitmap.createBitmap(targetWidth, targetHeight, config)
-        val canvas = Canvas(targetBitmap)
+        // Calculate origin to center face in crop
+        var cropX = (faceCenterX - sourceCropWidth / 2).toInt()
+        var cropY = (faceCenterY - sourceCropHeight / 2).toInt()
 
-        // Apply transformation
-        val matrix = Matrix()
-        matrix.setScale(scale, scale)
-        matrix.postTranslate(offsetX, offsetY)
+        // Adjust if crop goes outside image bounds
+        if (cropX < 0) cropX = 0
+        if (cropY < 0) cropY = 0
+        if (cropX + sourceCropWidth > sourceWidth) cropX = sourceWidth - sourceCropWidth
+        if (cropY + sourceCropHeight > sourceHeight) cropY = sourceHeight - sourceCropHeight
 
-        // Draw the transformed bitmap with high quality settings
+        // Use bitmap pool to get a bitmap of the right size and configuration
+        val config = if (targetWidth * targetHeight > 800_000) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
+        val resultBitmap = bitmapPool.getBitmap(targetWidth, targetHeight, config)
+
+        // Create an intermediate cropped bitmap to apply the cropping
+        val croppedBitmap = Bitmap.createBitmap(
+            bitmap,
+            cropX,
+            cropY,
+            sourceCropWidth.coerceAtMost(sourceWidth - cropX),
+            sourceCropHeight.coerceAtMost(sourceHeight - cropY)
+        )
+
+        // Draw the scaled bitmap onto the pooled bitmap
+        val canvas = Canvas(resultBitmap)
         val paint = Paint().apply {
-            isFilterBitmap = true
             isAntiAlias = true
+            isFilterBitmap = true
             isDither = true
         }
-        canvas.drawBitmap(bitmap, matrix, paint)
 
-        return targetBitmap
-    }
+        val scaleX = targetWidth.toFloat() / croppedBitmap.width
+        val scaleY = targetHeight.toFloat() / croppedBitmap.height
 
-    /**
-     * Center crop a bitmap to the target dimensions with maximum quality
-     */
-    private fun createCenterCroppedBitmap(
-        bitmap: Bitmap,
-        targetWidth: Int,
-        targetHeight: Int,
-        useHighQuality: Boolean = true
-    ): Bitmap {
-        // Calculate source and target aspect ratios
-        val sourceWidth = bitmap.width.toFloat()
-        val sourceHeight = bitmap.height.toFloat()
-        val sourceRatio = sourceWidth / sourceHeight
-        val targetRatio = targetWidth.toFloat() / targetHeight.toFloat()
-
-        // Determine scale and crop parameters
-        val scale: Float
-        val dx: Float
-        val dy: Float
-
-        if (sourceRatio > targetRatio) {
-            // Source is wider - crop width
-            scale = targetHeight / sourceHeight
-            dx = (sourceWidth * scale - targetWidth) * 0.5f
-            dy = 0f
-        } else {
-            // Source is taller - crop height
-            scale = targetWidth / sourceWidth
-            dx = 0f
-            dy = (sourceHeight * scale - targetHeight) * 0.5f
-        }
-
-        // Always use ARGB_8888 for maximum quality
-        val config = Bitmap.Config.ARGB_8888
-
-        // Create target bitmap with high quality
-        val targetBitmap = Bitmap.createBitmap(targetWidth, targetHeight, config)
-        val canvas = Canvas(targetBitmap)
-
-        // Apply transformation
         val matrix = Matrix()
-        matrix.setScale(scale, scale)
-        matrix.postTranslate(-dx, -dy)
+        matrix.setScale(scaleX, scaleY)
 
-        // Draw the transformed bitmap with high quality settings
-        val paint = Paint().apply {
-            isFilterBitmap = true
-            isAntiAlias = true
-            isDither = true
-        }
-        canvas.drawBitmap(bitmap, matrix, paint)
+        canvas.drawBitmap(croppedBitmap, matrix, paint)
 
-        return targetBitmap
+        // Clean up the intermediate bitmap
+        croppedBitmap.recycle()
+
+        return resultBitmap
     }
 
     /**
@@ -1437,74 +1311,63 @@ class SmartPhotoLayoutManager @Inject constructor(
     }
 
     /**
-     * Create a center-cropped bitmap from a source bitmap
-     * Uses bitmap pooling for the result bitmap
+     * Create a simple center cropped bitmap as fallback
      */
-    private fun createCenterCroppedBitmap(
-        sourceBitmap: Bitmap,
-        targetWidth: Int,
-        targetHeight: Int
-    ): Bitmap {
-        // Get a bitmap from the pool
-        val resultBitmap = createOptimizedBitmap(targetWidth, targetHeight)
-        val canvas = Canvas(resultBitmap)
+    private fun createCenterCroppedBitmap(bitmap: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
+        val sourceWidth = bitmap.width
+        val sourceHeight = bitmap.height
 
-        // Calculate source and target aspect ratios
-        val sourceRatio = sourceBitmap.width.toFloat() / sourceBitmap.height.toFloat()
-        val targetRatio = targetWidth.toFloat() / targetHeight.toFloat()
+        val sourceRatio = sourceWidth.toFloat() / sourceHeight
+        val targetRatio = targetWidth.toFloat() / targetHeight
 
-        // Calculate scaling and positioning for center crop
-        val matrix = Matrix()
+        val sourceCropWidth: Int
+        val sourceCropHeight: Int
+        var cropX = 0
+        var cropY = 0
 
         if (sourceRatio > targetRatio) {
-            // Source is wider - scale to match height and crop sides
-            val scale = targetHeight.toFloat() / sourceBitmap.height.toFloat()
-            val scaledWidth = sourceBitmap.width * scale
-            val left = (targetWidth - scaledWidth) / 2f
-
-            matrix.setScale(scale, scale)
-            matrix.postTranslate(left, 0f)
+            // Source is wider than target - crop sides
+            sourceCropHeight = sourceHeight
+            sourceCropWidth = (targetRatio * sourceHeight).toInt()
+            cropX = (sourceWidth - sourceCropWidth) / 2
         } else {
-            // Source is taller - scale to match width and crop top/bottom
-            val scale = targetWidth.toFloat() / sourceBitmap.width.toFloat()
-            val scaledHeight = sourceBitmap.height * scale
-            val top = (targetHeight - scaledHeight) / 2f
-
-            matrix.setScale(scale, scale)
-            matrix.postTranslate(0f, top)
+            // Source is taller than target - crop top/bottom
+            sourceCropWidth = sourceWidth
+            sourceCropHeight = (sourceWidth / targetRatio).toInt()
+            cropY = (sourceHeight - sourceCropHeight) / 2
         }
 
-        // Draw the source bitmap onto the result bitmap with the calculated matrix
-        canvas.drawBitmap(sourceBitmap, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
+        // Use bitmap pool to get a bitmap
+        val config = if (targetWidth * targetHeight > 800_000) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
+        val resultBitmap = bitmapPool.getBitmap(targetWidth, targetHeight, config)
 
-        return resultBitmap
-    }
-
-    /**
-     * Create a cropped bitmap with awareness of face positions
-     * Uses bitmap pooling for the result bitmap
-     */
-    private fun createCropWithFaceAwareness(
-        sourceBitmap: Bitmap,
-        targetWidth: Int,
-        targetHeight: Int,
-        faceRegion: RectF
-    ): Bitmap {
-        // Get a bitmap from the pool
-        val resultBitmap = createOptimizedBitmap(targetWidth, targetHeight)
-        val canvas = Canvas(resultBitmap)
-
-        // Create a matrix that will center the face region
-        val matrix = Matrix()
-        matrix.setCropToRegion(
-            sourceBitmap,
-            targetWidth.toFloat(),
-            targetHeight.toFloat(),
-            faceRegion
+        // Create an intermediate cropped bitmap
+        val croppedBitmap = Bitmap.createBitmap(
+            bitmap,
+            cropX,
+            cropY,
+            sourceCropWidth.coerceAtMost(sourceWidth - cropX),
+            sourceCropHeight.coerceAtMost(sourceHeight - cropY)
         )
 
-        // Draw the source bitmap onto the result bitmap with the face-aware matrix
-        canvas.drawBitmap(sourceBitmap, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
+        // Draw the scaled bitmap onto the pooled bitmap
+        val canvas = Canvas(resultBitmap)
+        val paint = Paint().apply {
+            isAntiAlias = true
+            isFilterBitmap = true
+            isDither = true
+        }
+
+        val scaleX = targetWidth.toFloat() / croppedBitmap.width
+        val scaleY = targetHeight.toFloat() / croppedBitmap.height
+
+        val matrix = Matrix()
+        matrix.setScale(scaleX, scaleY)
+
+        canvas.drawBitmap(croppedBitmap, matrix, paint)
+
+        // Clean up the intermediate bitmap
+        croppedBitmap.recycle()
 
         return resultBitmap
     }
