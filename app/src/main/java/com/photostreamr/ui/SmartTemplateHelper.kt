@@ -193,11 +193,13 @@ class SmartTemplateHelper @Inject constructor(
     }
 
     /**
-     * Smart, maximum-zoom-out face-aware crop.
-     * - Shows as much of the image as possible (maximum zoom out, no letterbox).
-     * - If faces+padding fit in the maximum crop, use it.
-     * - If not, only zoom in as much as needed for faces+padding.
-     * - If no faces, behaves as a classic center crop, always max zoom out.
+     * Smart, maximum-zoom-out face-aware crop with better extreme aspect ratio handling.
+     * REQUIREMENTS:
+     * 1. Always fill the target region completely (no letterboxing)
+     * 2. Show as much of the photo as possible (maximum zoom-out)
+     * 3. Ensure all faces (with padding) are fully visible
+     * 4. If no faces detected, use maximal center crop
+     * 5. Handle extreme aspect ratio mismatches intelligently
      */
     private fun smartFaceAwareCrop(
         src: Bitmap,
@@ -209,121 +211,377 @@ class SmartTemplateHelper @Inject constructor(
         val srcW = src.width.toFloat()
         val srcH = src.height.toFloat()
         val targetRatio = targetWidth.toFloat() / targetHeight
-
-        // 1. Max possible crop at target aspect ratio (max zoom out, never letterbox)
         val srcRatio = srcW / srcH
+
+        // Extensive logging to debug container/ratio issues
+        Log.d(TAG, "📏 CROP INPUT: src=${srcW.toInt()}x${srcH.toInt()} ratio=${String.format("%.3f", srcRatio)}, " +
+                "target=${targetWidth}x${targetHeight} ratio=${String.format("%.3f", targetRatio)}")
+
+        if (faceRects != null) {
+            for (i in faceRects.indices) {
+                val face = faceRects[i]
+                Log.d(TAG, "👤 Face #${i+1}: left=${face.left.toInt()}, top=${face.top.toInt()}, " +
+                        "right=${face.right.toInt()}, bottom=${face.bottom.toInt()}, " +
+                        "size=${face.width().toInt()}x${face.height().toInt()}")
+            }
+        }
+
+        // Check for invalid target dimensions
+        if (targetWidth <= 0 || targetHeight <= 0) {
+            Log.e(TAG, "❌ INVALID TARGET DIMENSIONS: ${targetWidth}x${targetHeight}. Using source dimensions.")
+            return src
+        }
+
+        // Detect extreme aspect ratio mismatch
+        val isExtremeRatioMismatch = (targetRatio > 2.5f && srcRatio < 1.0f) ||
+                (targetRatio < 0.4f && srcRatio > 1.0f) ||
+                (targetRatio / srcRatio > 4.0f) ||
+                (srcRatio / targetRatio > 4.0f)
+
+        if (isExtremeRatioMismatch) {
+            Log.w(TAG, "⚠️ EXTREME RATIO MISMATCH: source ${String.format("%.2f", srcRatio)} vs target ${String.format("%.2f", targetRatio)}")
+        }
+
+        // STEP 1: Calculate the maximum possible crop that fills the target (no letterbox)
         val maxCropW: Float
         val maxCropH: Float
         val maxCropLeft: Float
         val maxCropTop: Float
+
         if (srcRatio > targetRatio) {
+            // Image is wider than target: crop sides
             maxCropH = srcH
             maxCropW = maxCropH * targetRatio
-            maxCropLeft = (srcW - maxCropW) / 2f
+            maxCropLeft = (srcW - maxCropW) / 2f // center by default
             maxCropTop = 0f
         } else {
+            // Image is taller than target: crop top/bottom
             maxCropW = srcW
             maxCropH = maxCropW / targetRatio
             maxCropLeft = 0f
-            maxCropTop = (srcH - maxCropH) / 2f
+            maxCropTop = (srcH - maxCropH) / 2f // center by default
         }
 
-        // 2. If faces, check if union+padding fits in max crop
-        if (!faceRects.isNullOrEmpty()) {
-            var minX = srcW
-            var minY = srcH
-            var maxX = 0f
-            var maxY = 0f
-            for (face in faceRects) {
-                val padW = face.width() * paddingFraction
-                val padH = face.height() * paddingFraction
-                minX = min(minX, face.left - padW)
-                minY = min(minY, face.top - padH)
-                maxX = max(maxX, face.right + padW)
-                maxY = max(maxY, face.bottom + padH)
-            }
-            minX = minX.coerceAtLeast(0f)
-            minY = minY.coerceAtLeast(0f)
-            maxX = maxX.coerceAtMost(srcW)
-            maxY = maxY.coerceAtMost(srcH)
+        Log.d(TAG, "🔍 MAX CROP: ${maxCropW.toInt()}x${maxCropH.toInt()} at (${maxCropLeft.toInt()},${maxCropTop.toInt()})")
 
-            if (
-                minX >= maxCropLeft &&
-                maxX <= maxCropLeft + maxCropW &&
-                minY >= maxCropTop &&
-                maxY <= maxCropTop + maxCropH
-            ) {
-                return Bitmap.createBitmap(
-                    src,
-                    maxCropLeft.toInt(),
-                    maxCropTop.toInt(),
-                    maxCropW.toInt(),
-                    maxCropH.toInt()
-                ).let { Bitmap.createScaledBitmap(it, targetWidth, targetHeight, true) }
-            }
-            // Else: zoom in just enough to fit faces+padding
-            var cropW = maxX - minX
-            var cropH = maxY - minY
-            if (cropW / cropH < targetRatio) {
-                cropW = cropH * targetRatio
-            } else {
+        // STEP 2: If no faces, use the maximum center crop (maximal zoom-out)
+        if (faceRects.isNullOrEmpty()) {
+            Log.d(TAG, "No faces detected, using maximum center crop")
+            return createCroppedBitmap(
+                src,
+                maxCropLeft.toInt(),
+                maxCropTop.toInt(),
+                maxCropW.toInt(),
+                maxCropH.toInt(),
+                targetWidth,
+                targetHeight
+            )
+        }
+
+        // STEP 3: Calculate bounding box containing all faces with padding
+        var minX = srcW
+        var minY = srcH
+        var maxX = 0f
+        var maxY = 0f
+
+        // Calculate face padding with minimums and maximums
+        val minPaddingPixels = min(srcW, srcH) * 0.05f // Minimum padding relative to image size
+        val maxPaddingPercentage = 0.15f // Maximum padding as percentage of image dimension
+
+        for (face in faceRects) {
+            // Calculate padding based on face size but with minimums and maximums
+            val padW = min(
+                max(face.width() * paddingFraction, minPaddingPixels),
+                srcW * maxPaddingPercentage
+            )
+            val padH = min(
+                max(face.height() * paddingFraction, minPaddingPixels),
+                srcH * maxPaddingPercentage
+            )
+
+            minX = min(minX, face.left - padW)
+            minY = min(minY, face.top - padH)
+            maxX = max(maxX, face.right + padW)
+            maxY = max(maxY, face.bottom + padH)
+        }
+
+        // Ensure face bounds stay within image dimensions
+        minX = minX.coerceAtLeast(0f)
+        minY = minY.coerceAtLeast(0f)
+        maxX = maxX.coerceAtMost(srcW)
+        maxY = maxY.coerceAtMost(srcH)
+
+        val faceWidth = maxX - minX
+        val faceHeight = maxY - minY
+        val faceCenterX = (minX + maxX) / 2f
+        val faceCenterY = (minY + maxY) / 2f
+
+        Log.d(TAG, "👥 FACE REGION: ${faceWidth.toInt()}x${faceHeight.toInt()} at (${minX.toInt()},${minY.toInt()}), center at (${faceCenterX.toInt()},${faceCenterY.toInt()})")
+
+        // SPECIAL HANDLING FOR EXTREME ASPECT RATIO MISMATCHES
+        if (isExtremeRatioMismatch) {
+            // For extreme ratios, prioritize showing the faces clearly
+            // Create a crop that's centered on faces but extends as much as possible
+
+            // Step 1: Start with a rectangle around the faces at the target aspect ratio
+            var cropW: Float
+            var cropH: Float
+
+            if (faceWidth / faceHeight > targetRatio) {
+                // Faces are wider than target - use face width and calculate height
+                cropW = faceWidth
                 cropH = cropW / targetRatio
+            } else {
+                // Faces are taller than target or same ratio - use face height and calculate width
+                cropH = faceHeight
+                cropW = cropH * targetRatio
             }
-            var cropLeft = (minX + maxX) / 2f - cropW / 2f
-            var cropTop = (minY + maxY) / 2f - cropH / 2f
-            cropLeft = cropLeft.coerceIn(0f, srcW - cropW)
-            cropTop = cropTop.coerceIn(0f, srcH - cropH)
-            return Bitmap.createBitmap(
+
+            // Step 2: Expand this rectangle as much as possible while maintaining aspect ratio
+            val canExpandHoriz = cropW < srcW
+            val canExpandVert = cropH < srcH
+
+            if (canExpandHoriz && canExpandVert) {
+                // Can expand in both directions
+                val horizExpansion = min(srcW / cropW, 3.0f) // Limit excessive expansion
+                val vertExpansion = min(srcH / cropH, 3.0f) // Limit excessive expansion
+                val expansion = min(horizExpansion, vertExpansion)
+
+                cropW *= expansion
+                cropH *= expansion
+
+                Log.d(TAG, "🔄 Expanding crop by factor: ${String.format("%.2f", expansion)}")
+            }
+
+            // Step 3: Center the expanded crop on the faces
+            var cropLeft = faceCenterX - cropW / 2f
+            var cropTop = faceCenterY - cropH / 2f
+
+            // Step 4: Adjust if crop exceeds image bounds
+            if (cropLeft < 0) cropLeft = 0f
+            if (cropTop < 0) cropTop = 0f
+            if (cropLeft + cropW > srcW) cropLeft = srcW - cropW
+            if (cropTop + cropH > srcH) cropTop = srcH - cropH
+
+            // Final safety check
+            cropW = min(cropW, srcW)
+            cropH = min(cropH, srcH)
+
+            Log.d(TAG, "📐 Extreme ratio crop: ${cropW.toInt()}x${cropH.toInt()} at (${cropLeft.toInt()},${cropTop.toInt()})")
+
+            return createCroppedBitmap(
                 src,
                 cropLeft.toInt(),
                 cropTop.toInt(),
                 cropW.toInt(),
-                cropH.toInt()
-            ).let { Bitmap.createScaledBitmap(it, targetWidth, targetHeight, true) }
+                cropH.toInt(),
+                targetWidth,
+                targetHeight
+            )
         }
 
-        // 3. No faces: always use max zoom out
-        return Bitmap.createBitmap(
+        // NORMAL HANDLING FOR NON-EXTREME RATIOS
+
+        // Check if all faces fit within the maximum crop
+        val facesInsideMaxCrop =
+            minX >= maxCropLeft &&
+                    maxX <= maxCropLeft + maxCropW &&
+                    minY >= maxCropTop &&
+                    maxY <= maxCropTop + maxCropH
+
+        // Determine how much of the faces region is inside the max crop
+        val faceAreaInsideCrop = calculateOverlapPercentage(
+            RectF(minX, minY, maxX, maxY),
+            RectF(maxCropLeft, maxCropTop, maxCropLeft + maxCropW, maxCropTop + maxCropH)
+        )
+
+        Log.d(TAG, "📊 Face region overlap with max crop: ${String.format("%.1f", faceAreaInsideCrop * 100)}%")
+
+        // If faces are nearly inside the max crop (>85%), consider them inside
+        val effectivelyInsideMaxCrop = facesInsideMaxCrop || faceAreaInsideCrop > 0.85f
+
+        if (effectivelyInsideMaxCrop) {
+            // Best case: all faces fit in max crop (or very close to it), use maximum zoom-out
+            Log.d(TAG, "👍 All faces effectively fit in maximum crop, using maximum zoom-out")
+            return createCroppedBitmap(
+                src,
+                maxCropLeft.toInt(),
+                maxCropTop.toInt(),
+                maxCropW.toInt(),
+                maxCropH.toInt(),
+                targetWidth,
+                targetHeight
+            )
+        }
+
+        // Try to adjust crop position while keeping max dimensions
+        var adjustedLeft = maxCropLeft
+        var adjustedTop = maxCropTop
+
+        // If faces are partially outside the crop, try shifting the crop window
+        if (faceAreaInsideCrop > 0.2f) { // At least some significant portion of faces is in the default crop
+            // Shift left/right as needed
+            if (minX < maxCropLeft) {
+                adjustedLeft = minX
+            } else if (maxX > maxCropLeft + maxCropW) {
+                adjustedLeft = maxX - maxCropW
+            }
+
+            // Shift up/down as needed
+            if (minY < maxCropTop) {
+                adjustedTop = minY
+            } else if (maxY > maxCropTop + maxCropH) {
+                adjustedTop = maxY - maxCropH
+            }
+
+            // Ensure crop stays within image bounds
+            adjustedLeft = adjustedLeft.coerceIn(0f, max(0f, srcW - maxCropW))
+            adjustedTop = adjustedTop.coerceIn(0f, max(0f, srcH - maxCropH))
+
+            // Check if shifted crop contains all faces
+            val shiftedCropContainsFaces =
+                minX >= adjustedLeft &&
+                        maxX <= adjustedLeft + maxCropW &&
+                        minY >= adjustedTop &&
+                        maxY <= adjustedTop + maxCropH
+
+            if (shiftedCropContainsFaces) {
+                Log.d(TAG, "👍 Shifted crop contains all faces, using adjusted position")
+                return createCroppedBitmap(
+                    src,
+                    adjustedLeft.toInt(),
+                    adjustedTop.toInt(),
+                    maxCropW.toInt(),
+                    maxCropH.toInt(),
+                    targetWidth,
+                    targetHeight
+                )
+            }
+        }
+
+        // If we need to zoom in to fit faces, try to be smart about it
+        // Calculate minimal crop dimensions needed for faces
+        var minCropW = faceWidth
+        var minCropH = faceHeight
+
+        // Adjust to target aspect ratio
+        if (minCropW / minCropH < targetRatio) {
+            // Faces are taller than target ratio, expand width
+            minCropW = minCropH * targetRatio
+        } else {
+            // Faces are wider than target ratio, expand height
+            minCropH = minCropW / targetRatio
+        }
+
+        // Center on faces
+        var minCropLeft = faceCenterX - (minCropW / 2f)
+        var minCropTop = faceCenterY - (minCropH / 2f)
+
+        // Keep crop within image bounds
+        minCropLeft = minCropLeft.coerceIn(0f, max(0f, srcW - minCropW))
+        minCropTop = minCropTop.coerceIn(0f, max(0f, srcH - minCropH))
+
+        // Try to expand this crop as much as possible while keeping faces visible
+        var expandedW = minCropW
+        var expandedH = minCropH
+        var expandedLeft = minCropLeft
+        var expandedTop = minCropTop
+
+        // Try expanding up to the edges of the image
+        val horizRoom = min(minCropLeft, srcW - (minCropLeft + minCropW))
+        val vertRoom = min(minCropTop, srcH - (minCropTop + minCropH))
+
+        if (horizRoom > 0 || vertRoom > 0) {
+            // Calculate how much we can expand while maintaining aspect ratio
+            val expandFactor = min(
+                if (horizRoom > 0) 1f + (2f * horizRoom / minCropW) else 1f,
+                if (vertRoom > 0) 1f + (2f * vertRoom / minCropH) else 1f
+            )
+
+            if (expandFactor > 1.05f) { // Only expand if significant (>5%)
+                expandedW = minCropW * expandFactor
+                expandedH = minCropH * expandFactor
+                expandedLeft = faceCenterX - (expandedW / 2f)
+                expandedTop = faceCenterY - (expandedH / 2f)
+
+                // Ensure expanded crop stays within image bounds
+                expandedLeft = expandedLeft.coerceIn(0f, max(0f, srcW - expandedW))
+                expandedTop = expandedTop.coerceIn(0f, max(0f, srcH - expandedH))
+
+                Log.d(TAG, "🔄 Expanded minimum crop by factor: ${String.format("%.2f", expandFactor)}")
+            }
+        }
+
+        // Final safety check
+        expandedW = min(expandedW, srcW)
+        expandedH = min(expandedH, srcH)
+
+        Log.d(TAG, "📐 Final crop: ${expandedW.toInt()}x${expandedH.toInt()} at (${expandedLeft.toInt()},${expandedTop.toInt()})")
+
+        return createCroppedBitmap(
             src,
-            maxCropLeft.toInt(),
-            maxCropTop.toInt(),
-            maxCropW.toInt(),
-            maxCropH.toInt()
-        ).let { Bitmap.createScaledBitmap(it, targetWidth, targetHeight, true) }
+            expandedLeft.toInt(),
+            expandedTop.toInt(),
+            expandedW.toInt(),
+            expandedH.toInt(),
+            targetWidth,
+            targetHeight
+        )
     }
 
     /**
-     * Center crop fallback.
+     * Calculate percentage of rectangle A that overlaps with rectangle B
      */
-    private fun centerCrop(
+    private fun calculateOverlapPercentage(rectA: RectF, rectB: RectF): Float {
+        // Calculate intersection
+        val left = max(rectA.left, rectB.left)
+        val top = max(rectA.top, rectB.top)
+        val right = min(rectA.right, rectB.right)
+        val bottom = min(rectA.bottom, rectB.bottom)
+
+        // Check if there is an intersection
+        if (left >= right || top >= bottom) {
+            return 0f // No overlap
+        }
+
+        // Calculate areas
+        val intersectionArea = (right - left) * (bottom - top)
+        val rectAArea = rectA.width() * rectA.height()
+
+        // Return percentage of rectA that overlaps with rectB
+        return if (rectAArea > 0) (intersectionArea / rectAArea) else 0f
+    }
+
+    /**
+     * Helper method to create and scale a cropped bitmap with safety checks
+     */
+    private fun createCroppedBitmap(
         src: Bitmap,
+        left: Int,
+        top: Int,
+        width: Int,
+        height: Int,
         targetWidth: Int,
         targetHeight: Int
     ): Bitmap {
-        val srcW = src.width
-        val srcH = src.height
-        val srcRatio = srcW.toFloat() / srcH
-        val dstRatio = targetWidth.toFloat() / targetHeight
-        val cropW: Int
-        val cropH: Int
-        var cropX = 0
-        var cropY = 0
-        if (srcRatio > dstRatio) {
-            cropH = srcH
-            cropW = (dstRatio * srcH).toInt()
-            cropX = (srcW - cropW) / 2
-        } else {
-            cropW = srcW
-            cropH = (srcW / dstRatio).toInt()
-            cropY = (srcH - cropH) / 2
+        // Safety checks for invalid dimensions
+        val safeLeft = left.coerceIn(0, src.width - 1)
+        val safeTop = top.coerceIn(0, src.height - 1)
+        val safeWidth = width.coerceIn(1, src.width - safeLeft)
+        val safeHeight = height.coerceIn(1, src.height - safeTop)
+
+        if (safeLeft != left || safeTop != top || safeWidth != width || safeHeight != height) {
+            Log.w(TAG, "⚠️ Crop dimensions adjusted for safety: ${width}x${height} at (${left},${top}) -> ${safeWidth}x${safeHeight} at (${safeLeft},${safeTop})")
         }
-        return Bitmap.createBitmap(
-            src,
-            cropX,
-            cropY,
-            cropW.coerceAtMost(srcW - cropX),
-            cropH.coerceAtMost(srcH - cropY)
-        ).let { Bitmap.createScaledBitmap(it, targetWidth, targetHeight, true) }
+
+        try {
+            val cropped = Bitmap.createBitmap(src, safeLeft, safeTop, safeWidth, safeHeight)
+            return Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error creating cropped bitmap", e)
+            // Fall back to original bitmap or a simple center crop
+            return Bitmap.createScaledBitmap(src, targetWidth, targetHeight, true)
+        }
     }
 
     /**
