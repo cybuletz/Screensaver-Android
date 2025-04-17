@@ -392,8 +392,10 @@ class WeatherWidget(
 
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
-            val response = connection.inputStream.bufferedReader().readText()
-            parseWeatherData(response)
+            connection.inputStream.use { inputStream ->
+                val response = inputStream.bufferedReader().readText()
+                parseWeatherData(response)
+            }
         } finally {
             connection.disconnect()
         }
@@ -410,15 +412,17 @@ class WeatherWidget(
                 connection.setRequestProperty("User-Agent", "ScreensaverApp")
 
                 try {
-                    val response = connection.inputStream.bufferedReader().readText()
-                    val jsonArray = JSONArray(response)
-                    if (jsonArray.length() > 0) {
-                        val result = jsonArray.getJSONObject(0)
-                        val lat = result.getDouble("lat")
-                        val lon = result.getDouble("lon")
-                        Pair(lat, lon)
-                    } else {
-                        null
+                    connection.inputStream.use { inputStream ->
+                        val response = inputStream.bufferedReader().readText()
+                        val jsonArray = JSONArray(response)
+                        if (jsonArray.length() > 0) {
+                            val result = jsonArray.getJSONObject(0)
+                            val lat = result.getDouble("lat")
+                            val lon = result.getDouble("lon")
+                            Pair(lat, lon)
+                        } else {
+                            null
+                        }
                     }
                 } finally {
                     connection.disconnect()

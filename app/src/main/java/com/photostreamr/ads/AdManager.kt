@@ -84,7 +84,7 @@ class AdManager @Inject constructor(
         private const val NATIVE_AD_CACHE_SIZE = 3
     }
     private var photoCount = 0
-    private var photosUntilNextAd = getRandomAdFrequency()
+    private var photosUntilNextAd = DEFAULT_NATIVE_AD_FREQUENCY
 
     private var isInitialized = false
     private var mainAdView: AdView? = null
@@ -115,7 +115,7 @@ class AdManager @Inject constructor(
     private var isLoadingNativeAd = false
     private val nativeAdLoadScope = CoroutineScope(Dispatchers.IO)
 
-    private val random = kotlin.random.Random.Default
+    private val random = kotlin.random.Random(System.currentTimeMillis().toInt())
 
     // The current listener for native ad loading
     private var nativeAdLoadListener: ((NativeAd?) -> Unit)? = null
@@ -143,7 +143,8 @@ class AdManager @Inject constructor(
 
     private fun getRandomAdFrequency(): Int {
         return try {
-            random.nextInt(MIN_NATIVE_AD_FREQUENCY, MAX_NATIVE_AD_FREQUENCY + 1)
+            // Create a new Random instance each time instead of using the class field
+            kotlin.random.Random(System.currentTimeMillis().toInt()).nextInt(MIN_NATIVE_AD_FREQUENCY, MAX_NATIVE_AD_FREQUENCY + 1)
         } catch (e: Exception) {
             Log.e(TAG, "Error generating random ad frequency", e)
             DEFAULT_NATIVE_AD_FREQUENCY

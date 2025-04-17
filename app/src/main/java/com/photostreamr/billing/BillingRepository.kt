@@ -93,8 +93,11 @@ class BillingRepository @Inject constructor(
 
     fun connectToPlayBilling() {
         Timber.d("Connecting to Play Billing service...")
-        _billingConnectionState.value = BillingConnectionState.Connecting
-        billingClient.startConnection(this)
+        // Use main thread for LiveData updates
+        Handler(Looper.getMainLooper()).post {
+            _billingConnectionState.value = BillingConnectionState.Connecting
+            billingClient.startConnection(this)
+        }
     }
 
     override fun onBillingSetupFinished(billingResult: BillingResult) {
