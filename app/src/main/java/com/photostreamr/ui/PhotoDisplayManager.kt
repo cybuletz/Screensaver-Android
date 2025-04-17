@@ -701,6 +701,14 @@ class PhotoDisplayManager @Inject constructor(
             "collage" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
             "masonry" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
             "random" -> -1  // Special value for random
+            "2_smart" -> {  // Smart 2-photo template that adapts to orientation
+                // Choose based on orientation
+                if (containerWidth > containerHeight) {
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
+                } else {
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
+                }
+            }
             else -> templateTypeStr?.toIntOrNull() ?: PhotoResizeManager.TEMPLATE_TYPE_DEFAULT
         }
 
