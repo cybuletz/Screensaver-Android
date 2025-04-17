@@ -707,15 +707,28 @@ class PhotoDisplayManager @Inject constructor(
         // Handle random template type selection
         val finalTemplateType = if (templateType == -1) {
             // User selected random templates, pick one at random
-            val availableTemplateTypes = listOf(
-                MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
-                MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
-                MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
-                MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
-                MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-                MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
-                MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
-            )
+            val isLandscape = containerWidth > containerHeight
+
+            // Filter templates based on orientation to avoid inappropriate layouts
+            val availableTemplateTypes = if (isLandscape) {
+                // In landscape mode, exclude vertical layout (stacked photos)
+                listOf(
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
+                )
+            } else {
+                // In portrait mode, exclude horizontal layout (side by side photos)
+                listOf(
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+                )
+            }
             availableTemplateTypes[Random.Default.nextInt(availableTemplateTypes.size)]
         } else {
             templateType

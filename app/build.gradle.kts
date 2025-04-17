@@ -233,6 +233,7 @@ dependencies {
     implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
     implementation("com.google.api:gax:2.19.5")
     implementation("com.google.android.gms:play-services-location:21.1.0")
+    implementation("com.google.android.recaptcha:recaptcha:18.4.0")
 
     implementation("com.google.android.play:app-update:2.1.0")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
