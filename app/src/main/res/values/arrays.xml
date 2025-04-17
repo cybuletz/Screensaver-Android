@@ -161,8 +161,7 @@
     <!-- Template Layout Types -->
     <string-array name="template_type_entries">
         <item>2 Photos (Screen Orientation-Adaptive)</item>
-        <item>3 Photos (Main Left)</item>
-        <item>3 Photos (Main Right)</item>
+        <item>Smart 3 (Main + 2, orientation adaptive)</item>
         <item>4 Photos (Grid)</item>
         <item>Dynamic (Google Home Style)</item>
         <item>Dynamic Collage</item>
@@ -172,8 +171,7 @@
 
     <string-array name="template_type_values">
         <item>2_smart</item>
-        <item>2</item>
-        <item>3</item>
+        <item>8</item>
         <item>4</item>
         <item>dynamic</item>
         <item>collage</item>

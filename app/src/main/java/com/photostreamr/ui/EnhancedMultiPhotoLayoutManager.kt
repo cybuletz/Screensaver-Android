@@ -40,6 +40,7 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
         const val LAYOUT_TYPE_DYNAMIC = MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
         const val LAYOUT_TYPE_DYNAMIC_COLLAGE = MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
         const val LAYOUT_TYPE_DYNAMIC_MASONRY = MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+        const val LAYOUT_TYPE_3_SMART = MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
 
         // Minimum number of photos for templates
         const val MIN_PHOTOS_FOR_TEMPLATE = 2
@@ -244,7 +245,7 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
     private fun getRequiredPhotoCount(layoutType: Int): Int {
         return when (layoutType) {
             LAYOUT_TYPE_2_VERTICAL, LAYOUT_TYPE_2_HORIZONTAL -> 2
-            LAYOUT_TYPE_3_MAIN_LEFT, LAYOUT_TYPE_3_MAIN_RIGHT -> 3
+            LAYOUT_TYPE_3_MAIN_LEFT, LAYOUT_TYPE_3_MAIN_RIGHT, LAYOUT_TYPE_3_SMART -> 3
             LAYOUT_TYPE_4_GRID -> 4
             LAYOUT_TYPE_DYNAMIC, LAYOUT_TYPE_DYNAMIC_COLLAGE, LAYOUT_TYPE_DYNAMIC_MASONRY -> 3
             else -> 2

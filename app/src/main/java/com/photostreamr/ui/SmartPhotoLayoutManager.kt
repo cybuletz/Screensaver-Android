@@ -766,6 +766,161 @@ class SmartPhotoLayoutManager @Inject constructor(
                 regions.add(rightRegion)
             }
 
+            // In createLayoutRegions()
+
+            MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART -> {
+                val isLandscape = containerWidth > containerHeight
+                // Use a truly random decision every time this code runs:
+                val randomBool = java.util.Random().nextBoolean()
+                // Alternatively: val randomBool = (System.nanoTime() % 2L == 0L)
+
+                if (isLandscape) {
+                    if (randomBool) {
+                        // Main LEFT variant
+                        val leftSectionWidth = (containerWidth * 0.6f).toInt()
+                        val rightSectionWidth = containerWidth - leftSectionWidth
+
+                        val mainRegion = LayoutRegion(
+                            rect = RectF(
+                                0f,
+                                0f,
+                                leftSectionWidth - halfBorderWidth,
+                                containerHeight.toFloat()
+                            ),
+                            aspectRatio = (leftSectionWidth - halfBorderWidth) / containerHeight.toFloat()
+                        )
+                        val topRightRegion = LayoutRegion(
+                            rect = RectF(
+                                leftSectionWidth + halfBorderWidth,
+                                0f,
+                                containerWidth.toFloat(),
+                                (containerHeight / 2f) - halfBorderWidth
+                            ),
+                            aspectRatio = rightSectionWidth.toFloat() / ((containerHeight / 2f) - halfBorderWidth)
+                        )
+                        val bottomRightRegion = LayoutRegion(
+                            rect = RectF(
+                                leftSectionWidth + halfBorderWidth,
+                                (containerHeight / 2f) + halfBorderWidth,
+                                containerWidth.toFloat(),
+                                containerHeight.toFloat()
+                            ),
+                            aspectRatio = rightSectionWidth.toFloat() / ((containerHeight / 2f) - halfBorderWidth)
+                        )
+                        regions.add(mainRegion)
+                        regions.add(topRightRegion)
+                        regions.add(bottomRightRegion)
+                    } else {
+                        // Main RIGHT variant
+                        val rightSectionWidth = (containerWidth * 0.6f).toInt()
+                        val leftSectionWidth = containerWidth - rightSectionWidth
+
+                        val mainRegion = LayoutRegion(
+                            rect = RectF(
+                                leftSectionWidth + halfBorderWidth,
+                                0f,
+                                containerWidth.toFloat(),
+                                containerHeight.toFloat()
+                            ),
+                            aspectRatio = (rightSectionWidth - halfBorderWidth) / containerHeight.toFloat()
+                        )
+                        val topLeftRegion = LayoutRegion(
+                            rect = RectF(
+                                0f,
+                                0f,
+                                leftSectionWidth - halfBorderWidth,
+                                (containerHeight / 2f) - halfBorderWidth
+                            ),
+                            aspectRatio = (leftSectionWidth - halfBorderWidth) / ((containerHeight / 2f) - halfBorderWidth)
+                        )
+                        val bottomLeftRegion = LayoutRegion(
+                            rect = RectF(
+                                0f,
+                                (containerHeight / 2f) + halfBorderWidth,
+                                leftSectionWidth - halfBorderWidth,
+                                containerHeight.toFloat()
+                            ),
+                            aspectRatio = (leftSectionWidth - halfBorderWidth) / ((containerHeight / 2f) - halfBorderWidth)
+                        )
+                        regions.add(mainRegion)
+                        regions.add(topLeftRegion)
+                        regions.add(bottomLeftRegion)
+                    }
+                } else {
+                    if (randomBool) {
+                        // Main TOP variant
+                        val mainHeight = (containerHeight * 0.6f)
+                        val bottomHeight = containerHeight - mainHeight
+
+                        val mainRegion = LayoutRegion(
+                            rect = RectF(
+                                0f,
+                                0f,
+                                containerWidth.toFloat(),
+                                mainHeight - halfBorderWidth
+                            ),
+                            aspectRatio = containerWidth.toFloat() / (mainHeight - halfBorderWidth)
+                        )
+                        val bottomLeftRegion = LayoutRegion(
+                            rect = RectF(
+                                0f,
+                                mainHeight + halfBorderWidth,
+                                (containerWidth / 2f) - halfBorderWidth,
+                                containerHeight.toFloat()
+                            ),
+                            aspectRatio = ((containerWidth / 2f) - halfBorderWidth) / (containerHeight - mainHeight - halfBorderWidth)
+                        )
+                        val bottomRightRegion = LayoutRegion(
+                            rect = RectF(
+                                (containerWidth / 2f) + halfBorderWidth,
+                                mainHeight + halfBorderWidth,
+                                containerWidth.toFloat(),
+                                containerHeight.toFloat()
+                            ),
+                            aspectRatio = ((containerWidth / 2f) - halfBorderWidth) / (containerHeight - mainHeight - halfBorderWidth)
+                        )
+                        regions.add(mainRegion)
+                        regions.add(bottomLeftRegion)
+                        regions.add(bottomRightRegion)
+                    } else {
+                        // Main BOTTOM variant
+                        val mainHeight = (containerHeight * 0.6f)
+                        val topHeight = containerHeight - mainHeight
+
+                        val mainRegion = LayoutRegion(
+                            rect = RectF(
+                                0f,
+                                containerHeight - mainHeight + halfBorderWidth,
+                                containerWidth.toFloat(),
+                                containerHeight.toFloat()
+                            ),
+                            aspectRatio = containerWidth.toFloat() / (mainHeight - halfBorderWidth)
+                        )
+                        val topLeftRegion = LayoutRegion(
+                            rect = RectF(
+                                0f,
+                                0f,
+                                (containerWidth / 2f) - halfBorderWidth,
+                                topHeight - halfBorderWidth
+                            ),
+                            aspectRatio = ((containerWidth / 2f) - halfBorderWidth) / (topHeight - halfBorderWidth)
+                        )
+                        val topRightRegion = LayoutRegion(
+                            rect = RectF(
+                                (containerWidth / 2f) + halfBorderWidth,
+                                0f,
+                                containerWidth.toFloat(),
+                                topHeight - halfBorderWidth
+                            ),
+                            aspectRatio = ((containerWidth / 2f) - halfBorderWidth) / (topHeight - halfBorderWidth)
+                        )
+                        regions.add(mainRegion)
+                        regions.add(topLeftRegion)
+                        regions.add(topRightRegion)
+                    }
+                }
+            }
+
             MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT -> {
                 // Large photo on left, two smaller on right
                 val leftSectionWidth = (containerWidth * 0.6f).toInt()

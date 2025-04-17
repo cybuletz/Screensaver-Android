@@ -691,18 +691,19 @@ class PhotoDisplayManager @Inject constructor(
 
         // Map string values to template types
         val templateType = when (templateTypeStr) {
-            // Map specific values
             "0" -> MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
             "1" -> MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
-            "2" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT
-            "3" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT
+            // REMOVE the old main left and right options:
+            // "2" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT
+            // "3" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT
+            // ADD new adaptive Smart 3 option:
+            "8", "3_smart" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
             "4" -> MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
             "dynamic" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
             "collage" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
             "masonry" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
             "random" -> -1  // Special value for random
             "2_smart" -> {  // Smart 2-photo template that adapts to orientation
-                // Choose based on orientation
                 if (containerWidth > containerHeight) {
                     MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
                 } else {
@@ -722,8 +723,7 @@ class PhotoDisplayManager @Inject constructor(
                 // In landscape mode, exclude vertical layout (stacked photos)
                 listOf(
                     MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
                     MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
                     MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
                 )
@@ -731,8 +731,7 @@ class PhotoDisplayManager @Inject constructor(
                 // In portrait mode, exclude horizontal layout (side by side photos)
                 listOf(
                     MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
                     MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
                     MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
                 )
@@ -754,8 +753,7 @@ class PhotoDisplayManager @Inject constructor(
                 val minPhotosNeeded = when (finalTemplateType) {
                     MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
                     MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> 2
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> 3
+                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART -> 3
                     MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> 4
                     MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
                     MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,

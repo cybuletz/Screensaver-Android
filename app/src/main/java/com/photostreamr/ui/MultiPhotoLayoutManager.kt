@@ -43,11 +43,10 @@ class MultiPhotoLayoutManager @Inject constructor(
         const val LAYOUT_TYPE_3_MAIN_LEFT = 2
         const val LAYOUT_TYPE_3_MAIN_RIGHT = 3
         const val LAYOUT_TYPE_4_GRID = 4
-
-        // Add new dynamic layout types
         const val LAYOUT_TYPE_DYNAMIC = 5
         const val LAYOUT_TYPE_DYNAMIC_COLLAGE = 6
         const val LAYOUT_TYPE_DYNAMIC_MASONRY = 7
+        const val LAYOUT_TYPE_3_SMART = 8
 
         // Minimum number of photos for dynamic layouts
         const val MIN_PHOTOS_DYNAMIC = 3
@@ -173,6 +172,9 @@ class MultiPhotoLayoutManager @Inject constructor(
                     LAYOUT_TYPE_3_MAIN_RIGHT -> createThreePhotoMainRightTemplate(
                         width, height, photoBitmaps
                     )
+                    LAYOUT_TYPE_3_SMART -> createThreePhotoSmartTemplate(
+                        width, height, photoBitmaps
+                    )
                     LAYOUT_TYPE_4_GRID -> createFourPhotoGridTemplate(
                         width, height, photoBitmaps
                     )
@@ -208,7 +210,7 @@ class MultiPhotoLayoutManager @Inject constructor(
     private fun getRequiredPhotoCount(layoutType: Int): Int {
         return when (layoutType) {
             LAYOUT_TYPE_2_VERTICAL, LAYOUT_TYPE_2_HORIZONTAL -> 2
-            LAYOUT_TYPE_3_MAIN_LEFT, LAYOUT_TYPE_3_MAIN_RIGHT -> 3
+            LAYOUT_TYPE_3_MAIN_LEFT, LAYOUT_TYPE_3_MAIN_RIGHT, LAYOUT_TYPE_3_SMART -> 3
             LAYOUT_TYPE_4_GRID -> 4
             LAYOUT_TYPE_DYNAMIC -> MIN_PHOTOS_DYNAMIC
             LAYOUT_TYPE_DYNAMIC_COLLAGE -> MIN_PHOTOS_DYNAMIC
@@ -495,6 +497,130 @@ class MultiPhotoLayoutManager @Inject constructor(
             height.toFloat(),
             paint
         )
+
+        return resultBitmap
+    }
+
+    private fun createThreePhotoSmartTemplate(
+        width: Int,
+        height: Int,
+        photos: List<Bitmap>
+    ): Bitmap {
+        val isLandscape = width > height
+        return if (isLandscape) {
+            // RANDOMIZE main left or right
+            if (kotlin.random.Random.nextBoolean()) {
+                createThreePhotoMainLeftTemplate(width, height, photos)
+            } else {
+                createThreePhotoMainRightTemplate(width, height, photos)
+            }
+        } else {
+            // RANDOMIZE main top or bottom
+            if (kotlin.random.Random.nextBoolean()) {
+                createThreePhotoMainTopTemplate(width, height, photos)
+            } else {
+                createThreePhotoMainBottomTemplate(width, height, photos)
+            }
+        }
+    }
+
+    // Add the new method for main-on-top (portrait orientation)
+    private fun createThreePhotoMainTopTemplate(
+        width: Int,
+        height: Int,
+        photos: List<Bitmap>
+    ): Bitmap {
+        val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(resultBitmap)
+
+        // Fill with black background
+        canvas.drawColor(Color.BLACK)
+
+        val paint = Paint().apply {
+            isAntiAlias = true
+            color = BORDER_COLOR
+            style = Paint.Style.STROKE
+            strokeWidth = BORDER_WIDTH
+        }
+
+        // Top 60%: main photo
+        val mainHeight = (height * 0.6).toInt()
+        val bottomHeight = height - mainHeight
+
+        val topRect = Rect(
+            0,
+            0,
+            width,
+            mainHeight - (BORDER_WIDTH / 2).toInt()
+        )
+
+        val bottomLeftRect = Rect(
+            0,
+            mainHeight + (BORDER_WIDTH / 2).toInt(),
+            width / 2 - (BORDER_WIDTH / 2).toInt(),
+            height
+        )
+
+        val bottomRightRect = Rect(
+            width / 2 + (BORDER_WIDTH / 2).toInt(),
+            mainHeight + (BORDER_WIDTH / 2).toInt(),
+            width,
+            height
+        )
+
+        drawPhotoInRect(canvas, photos[0], topRect)
+        drawPhotoInRect(canvas, photos[1], bottomLeftRect)
+        drawPhotoInRect(canvas, photos[2], bottomRightRect)
+
+        // Borders
+        canvas.drawLine(0f, mainHeight.toFloat(), width.toFloat(), mainHeight.toFloat(), paint)
+        canvas.drawLine(width / 2f, mainHeight.toFloat(), width / 2f, height.toFloat(), paint)
+
+        return resultBitmap
+    }
+
+    private fun createThreePhotoMainBottomTemplate(
+        width: Int,
+        height: Int,
+        photos: List<Bitmap>
+    ): Bitmap {
+        val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(resultBitmap)
+        canvas.drawColor(Color.BLACK)
+        val paint = Paint().apply {
+            isAntiAlias = true
+            color = BORDER_COLOR
+            style = Paint.Style.STROKE
+            strokeWidth = BORDER_WIDTH
+        }
+        val mainHeight = (height * 0.6).toInt()
+        val topHeight = height - mainHeight
+
+        val bottomRect = Rect(
+            0,
+            height - mainHeight,
+            width,
+            height
+        )
+        val topLeftRect = Rect(
+            0,
+            0,
+            width / 2 - (BORDER_WIDTH / 2).toInt(),
+            topHeight
+        )
+        val topRightRect = Rect(
+            width / 2 + (BORDER_WIDTH / 2).toInt(),
+            0,
+            width,
+            topHeight
+        )
+
+        drawPhotoInRect(canvas, photos[0], bottomRect)
+        drawPhotoInRect(canvas, photos[1], topLeftRect)
+        drawPhotoInRect(canvas, photos[2], topRightRect)
+
+        canvas.drawLine(0f, topHeight.toFloat(), width.toFloat(), topHeight.toFloat(), paint)
+        canvas.drawLine(width / 2f, 0f, width / 2f, topHeight.toFloat(), paint)
 
         return resultBitmap
     }
