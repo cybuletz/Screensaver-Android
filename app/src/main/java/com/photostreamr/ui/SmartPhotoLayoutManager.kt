@@ -62,19 +62,19 @@ class SmartPhotoLayoutManager @Inject constructor(
 
         // Layout compatibility with orientations
         private val PORTRAIT_COMPATIBLE_LAYOUTS = setOf(
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
         )
 
         private val LANDSCAPE_COMPATIBLE_LAYOUTS = setOf(
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
         )
 
         // Bitmap pool settings
@@ -619,14 +619,14 @@ class SmartPhotoLayoutManager @Inject constructor(
 
         // Determine required photo count for each layout
         val layoutPhotoCountMap = mapOf(
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL to 2,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL to 2,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT to 3,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT to 3,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID to 4,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC to 3,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE to 3,
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY to 3
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL to 2,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL to 2,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT to 3,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT to 3,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID to 4,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC to 3,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE to 3,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY to 3
         )
 
         // Filter layouts based on available photo count
@@ -646,22 +646,22 @@ class SmartPhotoLayoutManager @Inject constructor(
 
             // Analyze layout-specific factors
             when (layoutType) {
-                MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL -> {
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL -> {
                     // Prefer 2_VERTICAL if we have tall photos
                     score += photoAnalyses.count { it.isPortrait } * 0.5f
                     // Extra points if there are faces in both photos
                     if (photosWithFaces >= 2) score += 1.0f
                 }
 
-                MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> {
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> {
                     // Prefer 2_HORIZONTAL if we have wide photos
                     score += photoAnalyses.count { it.isLandscape } * 0.5f
                     // Extra points if there are faces in both photos
                     if (photosWithFaces >= 2) score += 1.0f
                 }
 
-                MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
-                MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> {
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> {
                     // Main photo should have faces, smaller photos can be scenery
                     val mainPhotoHasFaces = photoAnalyses.any { it.faces.isNotEmpty() }
                     if (mainPhotoHasFaces) score += 2.0f
@@ -669,15 +669,15 @@ class SmartPhotoLayoutManager @Inject constructor(
                     score += min(photosWithFaces, 3) * 0.3f
                 }
 
-                MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> {
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> {
                     // Grid works well with square photos and multiple faces
                     score += photoAnalyses.count { it.isSquare } * 0.25f
                     score += min(photosWithFaces, 4) * 0.25f
                 }
 
-                MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
-                MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
-                MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> {
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> {
                     // Dynamic layouts benefit from diverse photo shapes
                     val hasPortrait = photoAnalyses.any { it.isPortrait }
                     val hasLandscape = photoAnalyses.any { it.isLandscape }
@@ -714,7 +714,7 @@ class SmartPhotoLayoutManager @Inject constructor(
         val halfBorderWidth = borderWidth / 2
 
         when (templateType) {
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL -> {
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL -> {
                 // Two stacked photos
                 val topRegion = LayoutRegion(
                     rect = RectF(
@@ -740,7 +740,7 @@ class SmartPhotoLayoutManager @Inject constructor(
                 regions.add(bottomRegion)
             }
 
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> {
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> {
                 // Two side-by-side photos
                 val leftRegion = LayoutRegion(
                     rect = RectF(
@@ -768,7 +768,7 @@ class SmartPhotoLayoutManager @Inject constructor(
 
             // In createLayoutRegions()
 
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART -> {
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART -> {
                 val isLandscape = containerWidth > containerHeight
                 // Use a truly random decision every time this code runs:
                 val randomBool = java.util.Random().nextBoolean()
@@ -921,7 +921,7 @@ class SmartPhotoLayoutManager @Inject constructor(
                 }
             }
 
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT -> {
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT -> {
                 // Large photo on left, two smaller on right
                 val leftSectionWidth = (containerWidth * 0.6f).toInt()
                 val rightSectionWidth = containerWidth - leftSectionWidth
@@ -961,7 +961,7 @@ class SmartPhotoLayoutManager @Inject constructor(
                 regions.add(bottomRightRegion)
             }
 
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> {
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> {
                 // Large photo on right, two smaller on left
                 val rightSectionWidth = (containerWidth * 0.6f).toInt()
                 val leftSectionWidth = containerWidth - rightSectionWidth
@@ -1001,7 +1001,7 @@ class SmartPhotoLayoutManager @Inject constructor(
                 regions.add(bottomLeftRegion)
             }
 
-            MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> {
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> {
                 // Four photos in a grid
                 regions.add(
                     LayoutRegion(
@@ -1052,7 +1052,7 @@ class SmartPhotoLayoutManager @Inject constructor(
                 )
             }
 
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> {
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> {
                 // Variable height columns
                 val numColumns = if (containerWidth > containerHeight) 3 else 2
                 val colWidth = (containerWidth - ((numColumns + 1) * borderWidth)) / numColumns
@@ -1101,7 +1101,7 @@ class SmartPhotoLayoutManager @Inject constructor(
                 }
             }
 
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> {
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> {
                 // Collage with a large center photo and others around it
                 val centerSize = min(containerWidth, containerHeight) * 0.5f
                 val centerX = containerWidth / 2f

@@ -691,23 +691,23 @@ class PhotoDisplayManager @Inject constructor(
 
         // Map string values to template types
         val templateType = when (templateTypeStr) {
-            "0" -> MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
-            "1" -> MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
+            "0" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
+            "1" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
             // REMOVE the old main left and right options:
-            // "2" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT
-            // "3" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT
+            // "2" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT
+            // "3" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT
             // ADD new adaptive Smart 3 option:
-            "8", "3_smart" -> MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
-            "4" -> MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
-            "dynamic" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
-            "collage" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
-            "masonry" -> MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+            "8", "3_smart" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
+            "4" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
+            "dynamic" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
+            "collage" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
+            "masonry" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
             "random" -> -1  // Special value for random
             "2_smart" -> {  // Smart 2-photo template that adapts to orientation
                 if (containerWidth > containerHeight) {
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
                 } else {
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
                 }
             }
             else -> templateTypeStr?.toIntOrNull() ?: PhotoResizeManager.TEMPLATE_TYPE_DEFAULT
@@ -722,18 +722,18 @@ class PhotoDisplayManager @Inject constructor(
             val availableTemplateTypes = if (isLandscape) {
                 // In landscape mode, exclude vertical layout (stacked photos)
                 listOf(
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
                 )
             } else {
                 // In portrait mode, exclude horizontal layout (side by side photos)
                 listOf(
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
                 )
             }
             availableTemplateTypes[Random.Default.nextInt(availableTemplateTypes.size)]
@@ -751,14 +751,14 @@ class PhotoDisplayManager @Inject constructor(
             try {
                 val photoCount = photoManager.getPhotoCount()
                 val minPhotosNeeded = when (finalTemplateType) {
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> 2
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART -> 3
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> 4
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
-                    MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY ->
-                        MultiPhotoLayoutManager.MIN_PHOTOS_DYNAMIC
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> 2
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART -> 3
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> 4
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY ->
+                        EnhancedMultiPhotoLayoutManager.MIN_PHOTOS_DYNAMIC
                     else -> 2
                 }
 

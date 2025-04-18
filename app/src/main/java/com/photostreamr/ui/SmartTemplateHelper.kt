@@ -36,7 +36,7 @@ class SmartTemplateHelper @Inject constructor(
         photos: List<Bitmap>,
         containerWidth: Int,
         containerHeight: Int,
-        requestedTemplateType: Int = MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
+        requestedTemplateType: Int = EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
     ) = withContext(Dispatchers.Default) {
         if (photos.size < 2) {
             return@withContext -1 // Use single photo display
@@ -44,7 +44,7 @@ class SmartTemplateHelper @Inject constructor(
 
         try {
             // If a specific template type was requested (not DYNAMIC), honor it
-            if (requestedTemplateType != MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC) {
+            if (requestedTemplateType != EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC) {
                 // Check if template is compatible with current orientation
                 val isCompatible = isTemplateCompatibleWithOrientation(
                     requestedTemplateType,
@@ -75,7 +75,7 @@ class SmartTemplateHelper @Inject constructor(
             return@withContext bestLayout
         } catch (e: Exception) {
             Log.e(TAG, "Error determining best template", e)
-            return@withContext MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC // Fallback to dynamic
+            return@withContext EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC // Fallback to dynamic
         }
     }
 
@@ -771,14 +771,14 @@ class SmartTemplateHelper @Inject constructor(
         val isLandscape = containerWidth > containerHeight
 
         return when (templateType) {
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL -> true // Works in both
-            MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> true // Works in both
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT -> true // Works in both
-            MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> true // Works in both
-            MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> true // Works in both
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC -> true // Works in both
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> isLandscape
-            MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> !isLandscape
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL -> true // Works in both
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> true // Works in both
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT -> true // Works in both
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> true // Works in both
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> true // Works in both
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC -> true // Works in both
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> isLandscape
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> !isLandscape
             else -> true
         }
     }

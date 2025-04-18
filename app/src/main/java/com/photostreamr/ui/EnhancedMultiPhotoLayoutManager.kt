@@ -31,19 +31,20 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
     companion object {
         private const val TAG = "EnhancedMultiPhotoLayoutManager"
 
-        // Layout types from original MultiPhotoLayoutManager
-        const val LAYOUT_TYPE_2_VERTICAL = MultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
-        const val LAYOUT_TYPE_2_HORIZONTAL = MultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
-        const val LAYOUT_TYPE_3_MAIN_LEFT = MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT
-        const val LAYOUT_TYPE_3_MAIN_RIGHT = MultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT
-        const val LAYOUT_TYPE_4_GRID = MultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
-        const val LAYOUT_TYPE_DYNAMIC = MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
-        const val LAYOUT_TYPE_DYNAMIC_COLLAGE = MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
-        const val LAYOUT_TYPE_DYNAMIC_MASONRY = MultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
-        const val LAYOUT_TYPE_3_SMART = MultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
+        // Layout types - directly defined here instead of referencing MultiPhotoLayoutManager
+        const val LAYOUT_TYPE_2_VERTICAL = 0
+        const val LAYOUT_TYPE_2_HORIZONTAL = 1
+        const val LAYOUT_TYPE_3_MAIN_LEFT = 2
+        const val LAYOUT_TYPE_3_MAIN_RIGHT = 3
+        const val LAYOUT_TYPE_4_GRID = 4
+        const val LAYOUT_TYPE_DYNAMIC = 5
+        const val LAYOUT_TYPE_DYNAMIC_COLLAGE = 6
+        const val LAYOUT_TYPE_DYNAMIC_MASONRY = 7
+        const val LAYOUT_TYPE_3_SMART = 8
 
         // Minimum number of photos for templates
         const val MIN_PHOTOS_FOR_TEMPLATE = 2
+        const val MIN_PHOTOS_DYNAMIC = 3
 
         // Border settings
         private const val BORDER_WIDTH = 8f

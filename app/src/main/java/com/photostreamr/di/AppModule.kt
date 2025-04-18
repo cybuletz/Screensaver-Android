@@ -37,7 +37,6 @@ import com.photostreamr.security.SecurityPreferences
 import com.photostreamr.ui.BitmapMemoryManager
 import com.photostreamr.ui.DiskCacheManager
 import com.photostreamr.ui.EnhancedMultiPhotoLayoutManager
-import com.photostreamr.ui.MultiPhotoLayoutManager
 import com.photostreamr.ui.PhotoPreloader
 import com.photostreamr.ui.PhotoResizeManager
 import com.photostreamr.ui.SmartPhotoLayoutManager
@@ -198,16 +197,6 @@ object AppModule {
         bitmapMemoryManager: BitmapMemoryManager
     ): PhotoPreloader {
         return PhotoPreloader(context, photoRepository, bitmapMemoryManager)
-    }
-
-    @Provides
-    @Singleton
-    fun provideMultiPhotoLayoutManager(
-        @ApplicationContext context: Context,
-        photoRepository: PhotoRepository,
-        photoPreloader: PhotoPreloader
-    ): MultiPhotoLayoutManager {
-        return MultiPhotoLayoutManager(context, photoRepository, photoPreloader)
     }
 
     @Provides
