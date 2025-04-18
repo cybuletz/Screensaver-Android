@@ -25,11 +25,7 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
-import kotlin.math.abs
-import kotlin.math.absoluteValue
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.sqrt
+import kotlin.math.*
 import java.util.concurrent.ConcurrentHashMap
 import android.os.Build
 
@@ -1171,8 +1167,11 @@ class SmartPhotoLayoutManager @Inject constructor(
         val gridCols = (containerWidth / gridCellSize) + 1
         val usedCells = mutableSetOf<Pair<Int, Int>>()
 
+        // Check if we're in landscape mode
+        val isLandscape = containerWidth > containerHeight
+
         // Initialize important points that must be covered to ensure full screen usage
-        val screenCoverage = listOf(
+        val screenCoverage = mutableListOf(
             Pair(containerWidth * 0.05f, containerHeight * 0.05f), // Top-left
             Pair(containerWidth * 0.95f, containerHeight * 0.05f), // Top-right
             Pair(containerWidth * 0.05f, containerHeight * 0.95f), // Bottom-left
@@ -1182,25 +1181,50 @@ class SmartPhotoLayoutManager @Inject constructor(
             Pair(containerWidth * 0.05f, containerHeight * 0.5f),  // Left-center
             Pair(containerWidth * 0.95f, containerHeight * 0.5f),  // Right-center
             Pair(containerWidth * 0.5f, containerHeight * 0.5f),   // Center
-            // Added more points for better distribution in mid areas
             Pair(containerWidth * 0.25f, containerHeight * 0.25f), // Top-left quadrant
             Pair(containerWidth * 0.75f, containerHeight * 0.25f), // Top-right quadrant
             Pair(containerWidth * 0.25f, containerHeight * 0.75f), // Bottom-left quadrant
             Pair(containerWidth * 0.75f, containerHeight * 0.75f)  // Bottom-right quadrant
         )
 
+        // Force at least one large photo directly in the right-bottom area in landscape mode
+        // Precisely positioned to cover the commonly empty area
+        if (isLandscape) {
+            // Remove any existing right-bottom point
+            screenCoverage.removeAll { it.first > containerWidth * 0.6f && it.second > containerHeight * 0.6f }
+
+            // Add a targeted point for the right-bottom empty area
+            screenCoverage.add(0, Pair(containerWidth * 0.8f, containerHeight * 0.75f))
+        }
+
         // Track placed regions for better distribution
         val placedCenters = mutableListOf<PointF>()
 
         // Place photos at strategic points first for better coverage
         val strategicPoints = screenCoverage.take(min(screenCoverage.size, effectiveCount))
-        for (position in strategicPoints) {
-            // Size variation (85-140% of optimal size) - more variation but larger average
-            val sizeVariation = 0.85f + (random.nextFloat() * 0.55f)
+        for (i in 0 until strategicPoints.size) {
+            val position = strategicPoints[i]
+
+            // Extra large photo in right-bottom for landscape mode (first position from our priority list)
+            val isRightBottomLandscape = isLandscape && i == 0 &&
+                    position.first > containerWidth * 0.6f &&
+                    position.second > containerHeight * 0.6f
+
+            // Size variation - give right-bottom area a much larger photo in landscape
+            val sizeVariation = if (isRightBottomLandscape) {
+                1.3f + (random.nextFloat() * 0.3f) // 130-160% size for right-bottom
+            } else {
+                0.85f + (random.nextFloat() * 0.55f) // 85-140% normal size variation
+            }
+
             val photoSize = optimalSize * sizeVariation
 
-            // Random aspect ratio with more variation (0.65 to 1.7)
-            val aspectRatio = 0.65f + (random.nextFloat() * 1.05f)
+            // Random aspect ratio - make right-bottom photo wider in landscape to cover more area
+            val aspectRatio = if (isRightBottomLandscape) {
+                1.1f + (random.nextFloat() * 0.3f) // 1.1-1.4 (wider) for right-bottom
+            } else {
+                0.65f + (random.nextFloat() * 1.05f) // 0.65-1.7 normal variation
+            }
 
             // Calculate width and height based on aspect ratio
             val photoWidth: Float
@@ -1214,12 +1238,17 @@ class SmartPhotoLayoutManager @Inject constructor(
                 photoHeight = photoWidth / aspectRatio
             }
 
-            // Random rotation angle between -35 and 35 degrees (wider range)
-            val rotation = -35f + (random.nextFloat() * 70f)
+            // Random rotation angle - less rotation for right-bottom in landscape
+            val rotation = if (isRightBottomLandscape) {
+                -15f + (random.nextFloat() * 30f) // Less rotation (-15 to +15) for right-bottom
+            } else {
+                -35f + (random.nextFloat() * 70f) // Normal rotation (-35 to +35)
+            }
 
-            // Use the strategic position with slight random variation
-            val centerX = position.first + (random.nextFloat() * gridCellSize * 0.2f - gridCellSize * 0.1f)
-            val centerY = position.second + (random.nextFloat() * gridCellSize * 0.2f - gridCellSize * 0.1f)
+            // Less position variation for right-bottom area to ensure proper placement
+            val posVariation = if (isRightBottomLandscape) 0.05f else 0.2f
+            val centerX = position.first + (random.nextFloat() * gridCellSize * posVariation - gridCellSize * posVariation/2)
+            val centerY = position.second + (random.nextFloat() * gridCellSize * posVariation - gridCellSize * posVariation/2)
 
             // Calculate corners of rectangle
             val rect = RectF(
@@ -1269,9 +1298,49 @@ class SmartPhotoLayoutManager @Inject constructor(
             // Random rotation angle between -35 and 35 degrees
             val rotation = -35f + (random.nextFloat() * 70f)
 
-            // Find an area with low coverage
-            val position = findLowCoveragePosition(coverageMap, containerWidth, containerHeight,
-                photoWidth, photoHeight, placedCenters, gridCellSize)
+            // Special handling for landscape mode - prioritize right half bottom positions
+            val position: Pair<Float, Float> = if (isLandscape && i % 3 == 0) {
+                // Specifically target right-bottom quadrant with some variation
+                val rightX = containerWidth * (0.7f + random.nextFloat() * 0.25f)
+                val bottomY = containerHeight * (0.6f + random.nextFloat() * 0.35f)
+
+                // Skip if very close to other photos
+                var tooClose = false
+                for (center in placedCenters) {
+                    val distance = sqrt((rightX - center.x) * (rightX - center.x) +
+                            (bottomY - center.y) * (bottomY - center.y))
+                    if (distance < photoWidth * 0.5f) {
+                        tooClose = true
+                        break
+                    }
+                }
+
+                if (tooClose) {
+                    findLowCoveragePosition(
+                        coverageMap,
+                        containerWidth,
+                        containerHeight,
+                        photoWidth,
+                        photoHeight,
+                        placedCenters,
+                        gridCellSize,
+                        isLandscape
+                    )
+                } else {
+                    Pair(rightX, bottomY)
+                }
+            } else {
+                findLowCoveragePosition(
+                    coverageMap,
+                    containerWidth,
+                    containerHeight,
+                    photoWidth,
+                    photoHeight,
+                    placedCenters,
+                    gridCellSize,
+                    isLandscape
+                )
+            }
 
             val centerX = position.first
             val centerY = position.second
@@ -1305,32 +1374,61 @@ class SmartPhotoLayoutManager @Inject constructor(
             regions.add(layoutRegion)
         }
 
-        Log.d(TAG, "Created enhanced scattered collage layout with ${regions.size} larger photos")
-        return regions
-    }
+        // Add one extra larger photo specifically targeting right-bottom in landscape mode
+        // This is a last-resort addition if we still have empty space
+        if (isLandscape) {
+            // Create a large photo specifically for the right-bottom area
+            val extraSizeVariation = 1.2f + (random.nextFloat() * 0.3f) // 120-150% size
+            val extraPhotoSize = optimalSize * extraSizeVariation
 
-    /**
-     * Update coverage map to track where photos have been placed
-     */
-    private fun updateCoverageMap(
-        coverageMap: Array<FloatArray>,
-        centerX: Float,
-        centerY: Float,
-        width: Float,
-        height: Float,
-        containerWidth: Int,
-        containerHeight: Int
-    ) {
-        val left = max(0, (centerX - width / 2).toInt())
-        val top = max(0, (centerY - height / 2).toInt())
-        val right = min(containerWidth - 1, (centerX + width / 2).toInt())
-        val bottom = min(containerHeight - 1, (centerY + height / 2).toInt())
+            // Make it wider for better coverage
+            val extraAspectRatio = 1.1f + (random.nextFloat() * 0.4f)
 
-        for (x in left..right) {
-            for (y in top..bottom) {
-                coverageMap[x][y] += 1.0f
+            val extraPhotoWidth = extraPhotoSize
+            val extraPhotoHeight = extraPhotoWidth / extraAspectRatio
+
+            // Limited rotation for better coverage
+            val extraRotation = -10f + (random.nextFloat() * 20f)
+
+            // Precisely position in the right-bottom area
+            val extraCenterX = containerWidth * 0.78f
+            val extraCenterY = containerHeight * 0.76f
+
+            // Check if this would overlap too much with existing photos
+            var tooClose = false
+            for (center in placedCenters) {
+                val distance = sqrt(
+                    (extraCenterX - center.x) * (extraCenterX - center.x) +
+                            (extraCenterY - center.y) * (extraCenterY - center.y)
+                )
+                // Only add if not too crowded
+                if (distance < extraPhotoWidth * 0.4f) {
+                    tooClose = true
+                    break
+                }
+            }
+
+            // If not too close, add the extra photo
+            if (!tooClose) {
+                val rect = RectF(
+                    extraCenterX - extraPhotoWidth / 2,
+                    extraCenterY - extraPhotoHeight / 2,
+                    extraCenterX + extraPhotoWidth / 2,
+                    extraCenterY + extraPhotoHeight / 2
+                )
+
+                val layoutRegion = LayoutRegion(
+                    rect = rect,
+                    aspectRatio = extraAspectRatio
+                )
+
+                layoutRegion.photoSuitabilityScores[-1] = extraRotation
+                regions.add(layoutRegion)
             }
         }
+
+        Log.d(TAG, "Created enhanced scattered collage layout with ${regions.size} photos")
+        return regions
     }
 
     /**
@@ -1343,7 +1441,8 @@ class SmartPhotoLayoutManager @Inject constructor(
         photoWidth: Float,
         photoHeight: Float,
         placedCenters: List<PointF>,
-        gridCellSize: Int
+        gridCellSize: Int,
+        isLandscape: Boolean
     ): Pair<Float, Float> {
         val random = java.util.Random()
         var bestScore = Float.MAX_VALUE
@@ -1403,6 +1502,11 @@ class SmartPhotoLayoutManager @Inject constructor(
             // Adjust score with distance bonus (less penalty for edge positions)
             score -= (distanceFromCenter / maxDistance) * 1.5f
 
+            // In landscape mode, give a STRONG bonus to right-bottom quadrant
+            if (isLandscape && x > containerWidth * 0.65f && y > containerHeight * 0.55f) {
+                score -= 4.0f // Much stronger preference
+            }
+
             // If this position has better score, use it
             if (score < bestScore) {
                 bestScore = score
@@ -1412,6 +1516,30 @@ class SmartPhotoLayoutManager @Inject constructor(
         }
 
         return Pair(bestX, bestY)
+    }
+
+    /**
+     * Update coverage map to track where photos have been placed
+     */
+    private fun updateCoverageMap(
+        coverageMap: Array<FloatArray>,
+        centerX: Float,
+        centerY: Float,
+        width: Float,
+        height: Float,
+        containerWidth: Int,
+        containerHeight: Int
+    ) {
+        val left = max(0, (centerX - width / 2).toInt())
+        val top = max(0, (centerY - height / 2).toInt())
+        val right = min(containerWidth - 1, (centerX + width / 2).toInt())
+        val bottom = min(containerHeight - 1, (centerY + height / 2).toInt())
+
+        for (x in left..right) {
+            for (y in top..bottom) {
+                coverageMap[x][y] += 1.0f
+            }
+        }
     }
 
     /**
@@ -1461,16 +1589,6 @@ class SmartPhotoLayoutManager @Inject constructor(
 
         // Restore canvas state
         canvas.restore()
-    }
-
-    /**
-     * Calculate a saliency score from the saliency map
-     */
-    private fun calculateSaliencyScore(saliencyMap: FloatArray): Float {
-        // For now, just average the saliency values
-        // In a more sophisticated implementation, you might want to
-        // analyze the distribution of saliency
-        return saliencyMap.average().toFloat().coerceIn(0f, 1f)
     }
 
     /**
