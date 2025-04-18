@@ -104,7 +104,7 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
                 }
 
                 // Determine indices of photos to include
-                val requiredCount = getRequiredPhotoCount(layoutType)
+                val requiredCount = getOrientationAdjustedPhotoCount(layoutType, containerWidth, containerHeight)
                 val photoIndices = getPhotoIndices(currentPhotoIndex, photoCount, requiredCount)
 
                 // Load all photos
@@ -251,9 +251,21 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
             LAYOUT_TYPE_4_GRID -> 4
             LAYOUT_TYPE_DYNAMIC -> 3
             LAYOUT_TYPE_DYNAMIC_COLLAGE -> 12  // Minimum 12 photos for collage
-            LAYOUT_TYPE_DYNAMIC_MASONRY -> 3
+            LAYOUT_TYPE_DYNAMIC_MASONRY -> 6   // Changed from 3 to 4
             else -> 2
         }
+    }
+
+    fun getOrientationAdjustedPhotoCount(layoutType: Int, containerWidth: Int, containerHeight: Int): Int {
+        val isLandscape = containerWidth > containerHeight
+
+        // For masonry template, use different counts based on orientation
+        if (layoutType == LAYOUT_TYPE_DYNAMIC_MASONRY) {
+            return if (isLandscape) 6 else 5
+        }
+
+        // For other templates, use standard count
+        return getRequiredPhotoCount(layoutType)
     }
 
     /**

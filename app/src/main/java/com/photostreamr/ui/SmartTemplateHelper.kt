@@ -790,7 +790,7 @@ class SmartTemplateHelper @Inject constructor(
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> true // Works in both
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC -> true // Works in both
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> true // Works in all orientations now
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> !isLandscape
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> true
             else -> true
         }
     }

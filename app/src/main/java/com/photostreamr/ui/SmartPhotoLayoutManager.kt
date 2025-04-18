@@ -1049,51 +1049,170 @@ class SmartPhotoLayoutManager @Inject constructor(
             }
 
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> {
-                // Variable height columns
-                val numColumns = if (containerWidth > containerHeight) 3 else 2
-                val colWidth = (containerWidth - ((numColumns + 1) * borderWidth)) / numColumns
+                val isLandscape = containerWidth > containerHeight
 
-                // Create initial grid with dynamic heights
-                val initialHeight = containerHeight * 0.4f
-                var yOffset = 0f
+                if (isLandscape) {
+                    // LANDSCAPE ORIENTATION - 6 photos truly irregular masonry
 
-                // First row
-                for (i in 0 until numColumns) {
-                    val left = borderWidth + (i * (colWidth + borderWidth))
-                    val height = if (i == 0) initialHeight * 1.5f else initialHeight
+                    // Define irregular grid structure with distinctly different sized regions
 
-                    regions.add(
-                        LayoutRegion(
-                            rect = RectF(
-                                left,
-                                yOffset,
-                                left + colWidth,
-                                yOffset + height
-                            ),
-                            aspectRatio = colWidth / height
-                        )
+                    // Left section: 35% of width with two unequal photos (top 40%, bottom 60%)
+                    val leftSectionWidth = containerWidth * 0.35f
+                    val leftSectionSplit = containerHeight * 0.4f
+
+                    // Middle section: 30% of width with three unequal photos
+                    val middleSectionWidth = containerWidth * 0.3f
+                    val middleSection1Height = containerHeight * 0.25f
+                    val middleSection2Height = containerHeight * 0.45f
+                    // Middle section 3 takes the remaining height
+
+                    // Right section: 35% of width with a single large photo
+
+                    // Photo 1: Top-left (medium)
+                    val region1 = LayoutRegion(
+                        rect = RectF(
+                            0f,
+                            0f,
+                            leftSectionWidth - halfBorderWidth,
+                            leftSectionSplit - halfBorderWidth
+                        ),
+                        aspectRatio = (leftSectionWidth - halfBorderWidth) / (leftSectionSplit - halfBorderWidth)
                     )
-                }
 
-                // Second row (split differently)
-                yOffset = initialHeight + borderWidth
-                for (i in 0 until numColumns) {
-                    if (i == 0 && regions.size > 0) continue // Skip first cell (already filled by taller cell)
-
-                    val left = borderWidth + (i * (colWidth + borderWidth))
-                    val height = containerHeight - yOffset - borderWidth
-
-                    regions.add(
-                        LayoutRegion(
-                            rect = RectF(
-                                left,
-                                yOffset,
-                                left + colWidth,
-                                yOffset + height
-                            ),
-                            aspectRatio = colWidth / height
-                        )
+                    // Photo 2: Bottom-left (slightly larger)
+                    val region2 = LayoutRegion(
+                        rect = RectF(
+                            0f,
+                            leftSectionSplit + halfBorderWidth,
+                            leftSectionWidth - halfBorderWidth,
+                            containerHeight.toFloat()
+                        ),
+                        aspectRatio = (leftSectionWidth - halfBorderWidth) / (containerHeight - leftSectionSplit - halfBorderWidth)
                     )
+
+                    // Photo 3: Top-middle (small)
+                    val region3 = LayoutRegion(
+                        rect = RectF(
+                            leftSectionWidth + halfBorderWidth,
+                            0f,
+                            leftSectionWidth + middleSectionWidth - halfBorderWidth,
+                            middleSection1Height - halfBorderWidth
+                        ),
+                        aspectRatio = (middleSectionWidth - borderWidth) / (middleSection1Height - halfBorderWidth)
+                    )
+
+                    // Photo 4: Middle-middle (medium)
+                    val region4 = LayoutRegion(
+                        rect = RectF(
+                            leftSectionWidth + halfBorderWidth,
+                            middleSection1Height + halfBorderWidth,
+                            leftSectionWidth + middleSectionWidth - halfBorderWidth,
+                            middleSection1Height + middleSection2Height - halfBorderWidth
+                        ),
+                        aspectRatio = (middleSectionWidth - borderWidth) / (middleSection2Height - borderWidth)
+                    )
+
+                    // Photo 5: Bottom-middle (small)
+                    val region5 = LayoutRegion(
+                        rect = RectF(
+                            leftSectionWidth + halfBorderWidth,
+                            middleSection1Height + middleSection2Height + halfBorderWidth,
+                            leftSectionWidth + middleSectionWidth - halfBorderWidth,
+                            containerHeight.toFloat()
+                        ),
+                        aspectRatio = (middleSectionWidth - borderWidth) / (containerHeight - middleSection1Height - middleSection2Height - halfBorderWidth)
+                    )
+
+                    // Photo 6: Right (largest, full height)
+                    val region6 = LayoutRegion(
+                        rect = RectF(
+                            leftSectionWidth + middleSectionWidth + halfBorderWidth,
+                            0f,
+                            containerWidth.toFloat(),
+                            containerHeight.toFloat()
+                        ),
+                        aspectRatio = (containerWidth - leftSectionWidth - middleSectionWidth - halfBorderWidth) / containerHeight.toFloat()
+                    )
+
+                    regions.add(region1)
+                    regions.add(region2)
+                    regions.add(region3)
+                    regions.add(region4)
+                    regions.add(region5)
+                    regions.add(region6)
+                } else {
+                    // PORTRAIT ORIENTATION - 5 photos truly irregular masonry
+
+                    // Top section: 35% of height with two unequal photos (left 40%, right 60%)
+                    val topSectionHeight = containerHeight * 0.38f
+                    val topSectionSplit = containerWidth * 0.42f
+
+                    // Middle section: 30% of height with two unequal photos (left 55%, right 45%)
+                    val middleSectionHeight = containerHeight * 0.32f
+                    val middleSectionSplit = containerWidth * 0.55f
+
+                    // Bottom section: 30% of height with a single large photo
+
+                    // Photo 1: Top-left (small)
+                    val region1 = LayoutRegion(
+                        rect = RectF(
+                            0f,
+                            0f,
+                            topSectionSplit - halfBorderWidth,
+                            topSectionHeight - halfBorderWidth
+                        ),
+                        aspectRatio = (topSectionSplit - halfBorderWidth) / (topSectionHeight - halfBorderWidth)
+                    )
+
+                    // Photo 2: Top-right (medium)
+                    val region2 = LayoutRegion(
+                        rect = RectF(
+                            topSectionSplit + halfBorderWidth,
+                            0f,
+                            containerWidth.toFloat(),
+                            topSectionHeight - halfBorderWidth
+                        ),
+                        aspectRatio = (containerWidth - topSectionSplit - halfBorderWidth) / (topSectionHeight - halfBorderWidth)
+                    )
+
+                    // Photo 3: Middle-left (wide)
+                    val region3 = LayoutRegion(
+                        rect = RectF(
+                            0f,
+                            topSectionHeight + halfBorderWidth,
+                            middleSectionSplit - halfBorderWidth,
+                            topSectionHeight + middleSectionHeight - halfBorderWidth
+                        ),
+                        aspectRatio = (middleSectionSplit - halfBorderWidth) / (middleSectionHeight - borderWidth)
+                    )
+
+                    // Photo 4: Middle-right (narrow)
+                    val region4 = LayoutRegion(
+                        rect = RectF(
+                            middleSectionSplit + halfBorderWidth,
+                            topSectionHeight + halfBorderWidth,
+                            containerWidth.toFloat(),
+                            topSectionHeight + middleSectionHeight - halfBorderWidth
+                        ),
+                        aspectRatio = (containerWidth - middleSectionSplit - halfBorderWidth) / (middleSectionHeight - borderWidth)
+                    )
+
+                    // Photo 5: Bottom (largest, full width)
+                    val region5 = LayoutRegion(
+                        rect = RectF(
+                            0f,
+                            topSectionHeight + middleSectionHeight + halfBorderWidth,
+                            containerWidth.toFloat(),
+                            containerHeight.toFloat()
+                        ),
+                        aspectRatio = containerWidth.toFloat() / (containerHeight - topSectionHeight - middleSectionHeight - halfBorderWidth)
+                    )
+
+                    regions.add(region1)
+                    regions.add(region2)
+                    regions.add(region3)
+                    regions.add(region4)
+                    regions.add(region5)
                 }
             }
 
