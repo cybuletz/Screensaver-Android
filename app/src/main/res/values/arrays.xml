@@ -164,7 +164,6 @@
         <item>Smart 3 (Main + 2, orientation adaptive)</item>
         <item>4 Photos (Grid)</item>
         <item>Dynamic (Google Home Style)</item>
-        <item>Dynamic Collage</item>
         <item>Dynamic Masonry (Pinterest Style)</item>
         <item>Random - All Types</item>
     </string-array>
@@ -173,7 +172,6 @@
         <item>2_smart</item>
         <item>8</item>
         <item>4</item>
-        <item>dynamic</item>
         <item>collage</item>
         <item>masonry</item>
         <item>random</item>
