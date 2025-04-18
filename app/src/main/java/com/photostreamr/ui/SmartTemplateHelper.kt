@@ -152,16 +152,28 @@ class SmartTemplateHelper @Inject constructor(
                 isFilterBitmap = true
                 isDither = true
             }
+
+            // Check if this is a dynamic collage with rotated photos
+            val isRotatedCollage = templateType == EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE &&
+                    regions.isNotEmpty() && regions[0].photoSuitabilityScores.containsKey(-1)
+
             // Draw only regions that have a cropped bitmap
             for ((regionIndex, bitmap) in croppedBitmaps) {
                 if (regionIndex < regions.size) {
                     val region = regions[regionIndex]
-                    val left = region.rect.left
-                    val top = region.rect.top
-                    val width = region.rect.width()
-                    val height = region.rect.height()
-                    val destRect = RectF(left, top, left + width, top + height)
-                    canvas.drawBitmap(bitmap, null, destRect, paint)
+
+                    if (isRotatedCollage) {
+                        // Apply rotation for scattered collage
+                        smartPhotoLayoutManager.applyPhotoRotation(canvas, bitmap, region, paint)
+                    } else {
+                        // Regular drawing for other templates
+                        val left = region.rect.left
+                        val top = region.rect.top
+                        val width = region.rect.width()
+                        val height = region.rect.height()
+                        val destRect = RectF(left, top, left + width, top + height)
+                        canvas.drawBitmap(bitmap, null, destRect, paint)
+                    }
                 }
             }
 
@@ -777,7 +789,7 @@ class SmartTemplateHelper @Inject constructor(
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> true // Works in both
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> true // Works in both
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC -> true // Works in both
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> isLandscape
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> true // Works in all orientations now
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> !isLandscape
             else -> true
         }

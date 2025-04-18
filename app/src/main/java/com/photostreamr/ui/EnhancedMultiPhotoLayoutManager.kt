@@ -14,6 +14,7 @@ import com.photostreamr.PhotoRepository
 import kotlinx.coroutines.*
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.*
 import kotlin.random.Random
 
 /**
@@ -248,7 +249,9 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
             LAYOUT_TYPE_2_VERTICAL, LAYOUT_TYPE_2_HORIZONTAL -> 2
             LAYOUT_TYPE_3_MAIN_LEFT, LAYOUT_TYPE_3_MAIN_RIGHT, LAYOUT_TYPE_3_SMART -> 3
             LAYOUT_TYPE_4_GRID -> 4
-            LAYOUT_TYPE_DYNAMIC, LAYOUT_TYPE_DYNAMIC_COLLAGE, LAYOUT_TYPE_DYNAMIC_MASONRY -> 3
+            LAYOUT_TYPE_DYNAMIC -> 3
+            LAYOUT_TYPE_DYNAMIC_COLLAGE -> 12  // Minimum 12 photos for collage
+            LAYOUT_TYPE_DYNAMIC_MASONRY -> 3
             else -> 2
         }
     }

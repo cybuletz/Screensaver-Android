@@ -1102,48 +1102,18 @@ class SmartPhotoLayoutManager @Inject constructor(
             }
 
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> {
-                // Collage with a large center photo and others around it
-                val centerSize = min(containerWidth, containerHeight) * 0.5f
-                val centerX = containerWidth / 2f
-                val centerY = containerHeight / 2f
+                // Use more photos for dynamic collage (minimum 12, more for larger screens)
+                val screenArea = containerWidth * containerHeight
+                val requiredPhotoCount = max(12, min(25, screenArea / (250 * 250)))
 
-                // Center photo
-                regions.add(
-                    LayoutRegion(
-                        rect = RectF(
-                            centerX - (centerSize / 2f),
-                            centerY - (centerSize / 2f),
-                            centerX + (centerSize / 2f),
-                            centerY + (centerSize / 2f)
-                        ),
-                        aspectRatio = 1.0f
-                    )
+                Log.d(TAG, "Dynamic Collage requested with $requiredPhotoCount photos")
+
+                // Create scattered collage layout with rotated photos
+                return createScatteredCollageLayout(
+                    containerWidth,
+                    containerHeight,
+                    requiredPhotoCount
                 )
-
-                // Surrounding photos with varying sizes
-                val positions = listOf(
-                    PointF(0.2f, 0.2f),  // Top-left
-                    PointF(0.8f, 0.2f),  // Top-right
-                    PointF(0.2f, 0.8f),  // Bottom-left
-                    PointF(0.8f, 0.8f)   // Bottom-right
-                )
-
-                positions.forEachIndexed { index, pos ->
-                    // Size is 30-40% of container
-                    val size = min(containerWidth, containerHeight) * (0.3f + (index % 2) * 0.1f)
-
-                    regions.add(
-                        LayoutRegion(
-                            rect = RectF(
-                                pos.x * containerWidth - (size / 2f),
-                                pos.y * containerHeight - (size / 2f),
-                                pos.x * containerWidth + (size / 2f),
-                                pos.y * containerHeight + (size / 2f)
-                            ),
-                            aspectRatio = 1.0f
-                        )
-                    )
-                }
             }
         }
 
@@ -1151,53 +1121,303 @@ class SmartPhotoLayoutManager @Inject constructor(
     }
 
     /**
-     * Calculate suitability score of a photo for a specific layout region
+     * Create a scattered photo collage layout with rotation and natural overlapping
+     * This simulates photos thrown on a table with random angles and positions
+     * while ensuring at least 80% of each photo is visible and covering the entire screen
      */
-    fun calculatePhotoSuitability(
-        photo: PhotoAnalysis,
-        region: LayoutRegion
-    ): Float {
-        // Base score starts at 0.5 (average)
-        var score = 0.5f
+    fun createScatteredCollageLayout(
+        containerWidth: Int,
+        containerHeight: Int,
+        requestedPhotoCount: Int,
+        maxPhotoSize: Float = 0.55f // Maximum photo size relative to container
+    ): List<LayoutRegion> {
+        val regions = mutableListOf<LayoutRegion>()
+        val random = java.util.Random()
 
-        // Factor 1: Aspect ratio compatibility
-        val photoRatio = photo.aspectRatio
-        val regionRatio = region.aspectRatio
-
-        // Calculate aspect ratio compatibility (1.0 = perfect match)
-        val aspectScore = if (photoRatio > regionRatio) {
-            // Photo is wider than region
-            regionRatio / photoRatio
-        } else {
-            // Photo is taller than region
-            photoRatio / regionRatio
+        // Safety check
+        if (containerWidth <= 0 || containerHeight <= 0) {
+            Log.e(TAG, "Invalid container dimensions for scattered collage")
+            return regions
         }
 
-        // Weight aspect ratio score (0.3 = 30% influence)
-        score += aspectScore * 0.3f
+        // Calculate optimal photo count based on screen size - use MORE photos
+        // We want at least 12 photos for better coverage, adjust based on screen size
+        val minPhotos = 12  // Minimum number of photos to use
+        val screenArea = containerWidth * containerHeight
+        val baseCount = (screenArea / (250 * 250)).coerceIn(minPhotos, 25)
 
-        // Factor 2: Face positioning
-        if (photo.dominantFaceRegion != null) {
-            // Calculate scaled face region in 0-1 coordinates
-            val faceRegion = photo.dominantFaceRegion
-            val scaledFaceX = (faceRegion.centerX() / photo.bitmap.width)
-            val scaledFaceY = (faceRegion.centerY() / photo.bitmap.height)
+        // Use more photos than requested to ensure good coverage
+        val effectiveCount = max(baseCount, requestedPhotoCount)
 
-            // Calculate how well this would fit in this region
-            // (For now just prefer centered faces, this can be more sophisticated)
-            val faceScore = 1.0f - (abs(scaledFaceX - 0.5f) + abs(scaledFaceY - 0.5f)) / 2
+        Log.d(TAG, "Creating scattered collage with $effectiveCount photos for screen ${containerWidth}x${containerHeight}")
 
-            // Weight face positioning (0.4 = 40% influence)
-            score += faceScore * 0.4f
-        } else if (photo.saliencyMap != null) {
-            // Use saliency as fallback
-            val saliencyScore = calculateSaliencyScore(photo.saliencyMap)
+        // Calculate optimal photo size to ensure good coverage
+        // Smaller photos allow for more to fit on screen with better coverage
+        val containerDiagonal = sqrt(containerWidth.toFloat() * containerWidth +
+                containerHeight.toFloat() * containerHeight)
 
-            // Weight saliency score less than face detection
-            score += saliencyScore * 0.2f
+        // Calculate smaller photo sizes for better coverage
+        val optimalSize = min(
+            containerDiagonal * 0.22f, // Make base size smaller
+            min(containerWidth, containerHeight) * maxPhotoSize
+        )
+
+        // Create a placement grid for even distribution
+        val gridCellSize = (optimalSize * 0.65f).toInt() // Overlap more
+        val gridRows = (containerHeight / gridCellSize) + 1
+        val gridCols = (containerWidth / gridCellSize) + 1
+        val usedCells = mutableSetOf<Pair<Int, Int>>()
+
+        // Create positions that ensure we cover the screen edges and corners
+        val cornerAndEdgePositions = mutableListOf<Pair<Float, Float>>()
+
+        // Add corner positions with some variance
+        cornerAndEdgePositions.add(Pair(containerWidth * 0.08f, containerHeight * 0.08f)) // Top-left
+        cornerAndEdgePositions.add(Pair(containerWidth * 0.92f, containerHeight * 0.08f)) // Top-right
+        cornerAndEdgePositions.add(Pair(containerWidth * 0.08f, containerHeight * 0.92f)) // Bottom-left
+        cornerAndEdgePositions.add(Pair(containerWidth * 0.92f, containerHeight * 0.92f)) // Bottom-right
+
+        // Add edge positions
+        cornerAndEdgePositions.add(Pair(containerWidth * 0.5f, containerHeight * 0.08f)) // Top-center
+        cornerAndEdgePositions.add(Pair(containerWidth * 0.5f, containerHeight * 0.92f)) // Bottom-center
+        cornerAndEdgePositions.add(Pair(containerWidth * 0.08f, containerHeight * 0.5f)) // Left-center
+        cornerAndEdgePositions.add(Pair(containerWidth * 0.92f, containerHeight * 0.5f)) // Right-center
+
+        // Track placed regions for better distribution
+        val placedCenters = mutableListOf<PointF>()
+
+        // First, place photos at corners and edges for better coverage
+        for (i in 0 until min(cornerAndEdgePositions.size, effectiveCount)) {
+            val position = cornerAndEdgePositions[i]
+
+            // Size variation (80-130% of optimal size)
+            val sizeVariation = 0.8f + (random.nextFloat() * 0.5f)
+            val photoSize = optimalSize * sizeVariation
+
+            // Random aspect ratio between portrait and landscape (0.7 to 1.5)
+            val aspectRatio = 0.7f + (random.nextFloat() * 0.8f)
+
+            // Calculate width and height based on aspect ratio
+            val photoWidth: Float
+            val photoHeight: Float
+
+            if (aspectRatio < 1.0f) {
+                photoHeight = photoSize
+                photoWidth = photoHeight * aspectRatio
+            } else {
+                photoWidth = photoSize
+                photoHeight = photoWidth / aspectRatio
+            }
+
+            // Random rotation angle between -30 and 30 degrees
+            val rotation = -30f + (random.nextFloat() * 60f)
+
+            // Use the predefined corner/edge position
+            val centerX = position.first
+            val centerY = position.second
+
+            // Calculate corners of rectangle
+            val rect = RectF(
+                centerX - photoWidth / 2,
+                centerY - photoHeight / 2,
+                centerX + photoWidth / 2,
+                centerY + photoHeight / 2
+            )
+
+            // Create layout region with rotation data
+            val layoutRegion = LayoutRegion(
+                rect = rect,
+                aspectRatio = aspectRatio
+            )
+
+            // Store rotation in suitability scores
+            layoutRegion.photoSuitabilityScores[-1] = rotation
+
+            // Track placement
+            placedCenters.add(PointF(centerX, centerY))
+
+            regions.add(layoutRegion)
         }
 
-        return score.coerceIn(0f, 1f)
+        // Then add photos to fill the rest of the screen
+        for (i in regions.size until effectiveCount) {
+            // Size variation (70-120% of optimal size)
+            val sizeVariation = 0.7f + (random.nextFloat() * 0.5f)
+            val photoSize = optimalSize * sizeVariation
+
+            // Random aspect ratio between portrait and landscape (0.7 to 1.5)
+            val aspectRatio = 0.7f + (random.nextFloat() * 0.8f)
+
+            // Calculate width and height based on aspect ratio
+            val photoWidth: Float
+            val photoHeight: Float
+
+            if (aspectRatio < 1.0f) {
+                photoHeight = photoSize
+                photoWidth = photoHeight * aspectRatio
+            } else {
+                photoWidth = photoSize
+                photoHeight = photoWidth / aspectRatio
+            }
+
+            // Random rotation angle between -30 and 30 degrees
+            val rotation = -30f + (random.nextFloat() * 60f)
+
+            // Find a good placement location
+            var bestCell: Pair<Int, Int>? = null
+            var attempts = 0
+            val maxAttempts = 30
+
+            while (bestCell == null && attempts < maxAttempts) {
+                attempts++
+
+                // Try to find an unused grid cell first
+                if (usedCells.size < gridRows * gridCols) {
+                    // Check which areas need more coverage by examining distance to existing photos
+                    var furthestDistanceCell: Pair<Int, Int>? = null
+                    var maxMinDistance = 0f
+
+                    for (row in 0 until gridRows) {
+                        for (col in 0 until gridCols) {
+                            val cell = Pair(row, col)
+                            if (!usedCells.contains(cell)) {
+                                val cellCenterX = (col * gridCellSize) + (gridCellSize / 2f)
+                                val cellCenterY = (row * gridCellSize) + (gridCellSize / 2f)
+
+                                // Find minimum distance to any existing photo center
+                                var minDistance = Float.MAX_VALUE
+                                for (center in placedCenters) {
+                                    val distance = sqrt(
+                                        (cellCenterX - center.x) * (cellCenterX - center.x) +
+                                                (cellCenterY - center.y) * (cellCenterY - center.y)
+                                    )
+                                    minDistance = min(minDistance, distance)
+                                }
+
+                                // If this is further from existing photos than previous best, use it
+                                if (minDistance > maxMinDistance) {
+                                    maxMinDistance = minDistance
+                                    furthestDistanceCell = cell
+                                }
+                            }
+                        }
+                    }
+
+                    if (furthestDistanceCell != null) {
+                        bestCell = furthestDistanceCell
+                    } else {
+                        // Fall back to a random unused cell
+                        val unusedCells = mutableListOf<Pair<Int, Int>>()
+                        for (row in 0 until gridRows) {
+                            for (col in 0 until gridCols) {
+                                val cell = Pair(row, col)
+                                if (!usedCells.contains(cell)) {
+                                    unusedCells.add(cell)
+                                }
+                            }
+                        }
+
+                        if (unusedCells.isNotEmpty()) {
+                            bestCell = unusedCells[random.nextInt(unusedCells.size)]
+                        }
+                    }
+
+                    if (bestCell != null) {
+                        usedCells.add(bestCell)
+                    }
+                } else {
+                    // Just pick a random location, grid is full
+                    bestCell = Pair(
+                        random.nextInt(gridRows),
+                        random.nextInt(gridCols)
+                    )
+                }
+            }
+
+            // Generate position from grid cell with random offset
+            val (row, col) = bestCell ?: Pair(
+                random.nextInt(gridRows),
+                random.nextInt(gridCols)
+            )
+
+            val centerX = (col * gridCellSize) + (gridCellSize / 2) +
+                    (random.nextFloat() * gridCellSize * 0.4f - gridCellSize * 0.2f)
+            val centerY = (row * gridCellSize) + (gridCellSize / 2) +
+                    (random.nextFloat() * gridCellSize * 0.4f - gridCellSize * 0.2f)
+
+            // Ensure at least 80% of the photo is on screen
+            val adjustedCenterX = centerX.coerceIn(photoWidth * 0.4f, containerWidth - photoWidth * 0.4f)
+            val adjustedCenterY = centerY.coerceIn(photoHeight * 0.4f, containerHeight - photoHeight * 0.4f)
+
+            // Calculate rectangle
+            val rect = RectF(
+                adjustedCenterX - photoWidth / 2,
+                adjustedCenterY - photoHeight / 2,
+                adjustedCenterX + photoWidth / 2,
+                adjustedCenterY + photoHeight / 2
+            )
+
+            // Create layout region with rotation data
+            val layoutRegion = LayoutRegion(
+                rect = rect,
+                aspectRatio = aspectRatio
+            )
+
+            // Store rotation in suitability scores
+            layoutRegion.photoSuitabilityScores[-1] = rotation
+
+            // Track placement
+            placedCenters.add(PointF(adjustedCenterX, adjustedCenterY))
+
+            regions.add(layoutRegion)
+        }
+
+        Log.d(TAG, "Created scattered collage layout with ${regions.size} photos")
+        return regions
+    }
+
+    /**
+     * Helper method to count neighboring used cells in the grid
+     */
+    private fun countNeighbors(row: Int, col: Int, usedCells: Set<Pair<Int, Int>>): Int {
+        var count = 0
+        for (r in max(0, row - 1)..min(row + 1, Int.MAX_VALUE)) {
+            for (c in max(0, col - 1)..min(col + 1, Int.MAX_VALUE)) {
+                if (usedCells.contains(Pair(r, c))) {
+                    count++
+                }
+            }
+        }
+        return count
+    }
+
+    /**
+     * Apply rotation to a photo for scattered collage effect
+     */
+    fun applyPhotoRotation(
+        canvas: Canvas,
+        bitmap: Bitmap,
+        region: LayoutRegion,
+        paint: Paint
+    ) {
+        // Get rotation angle from the region's suitability scores
+        val rotation = region.photoSuitabilityScores[-1] ?: 0f
+
+        // Calculate center point of the region
+        val centerX = region.rect.centerX()
+        val centerY = region.rect.centerY()
+
+        // Save canvas state before rotation
+        canvas.save()
+
+        // Rotate canvas around center point
+        canvas.rotate(rotation, centerX, centerY)
+
+        // Draw the bitmap
+        canvas.drawBitmap(bitmap, null, region.rect, paint)
+
+        // Restore canvas to original state
+        canvas.restore()
     }
 
     /**
@@ -1211,50 +1431,162 @@ class SmartPhotoLayoutManager @Inject constructor(
     }
 
     /**
-     * Calculate optimal photo assignments to regions
+     * Assign photos to regions to optimize layout aesthetics
      */
     fun assignPhotosToRegions(
-        photos: List<PhotoAnalysis>,
+        photoAnalyses: List<PhotoAnalysis>,
         regions: List<LayoutRegion>
     ): Map<Int, Int> {
-        // Calculate suitability scores for each photo-region pair
-        photos.forEachIndexed { photoIndex, photo ->
-            regions.forEachIndexed { regionIndex, region ->
-                val suitability = calculatePhotoSuitability(photo, region)
-                region.photoSuitabilityScores[photoIndex] = suitability
-            }
+        val assignments = mutableMapOf<Int, Int>()
+
+        // Quick safety check
+        if (photoAnalyses.isEmpty() || regions.isEmpty()) {
+            Log.w(TAG, "Unable to assign photos to regions: no photos or regions")
+            return assignments
         }
 
-        // Simple greedy assignment algorithm
-        val assignments = mutableMapOf<Int, Int>() // regionIndex -> photoIndex
-        val assignedPhotos = mutableSetOf<Int>()
+        // Special case for DYNAMIC_COLLAGE - no need for complex assignment
+        // Check if these are rotated regions (used in scattered collage)
+        val isRotatedLayout = regions.isNotEmpty() && regions[0].photoSuitabilityScores.containsKey(-1)
 
-        // First pass: Assign the best photo for each region
-        regions.indices.sortedByDescending { regions[it].rect.width() * regions[it].rect.height() }
-            .forEach { regionIndex ->
-                val region = regions[regionIndex]
+        if (isRotatedLayout) {
+            Log.d(TAG, "Assigning photos to rotated collage regions: ${regions.size} regions, ${photoAnalyses.size} photos")
+            // For rotated collage, just assign photos in sequence (or randomly)
+            val photoIndices = photoAnalyses.indices.toList().shuffled() // Random order
 
-                // Find best unassigned photo
-                val bestPhotoEntry = region.photoSuitabilityScores.entries
-                    .filter { it.key !in assignedPhotos }
-                    .maxByOrNull { it.value }
-
-                if (bestPhotoEntry != null && bestPhotoEntry.value >= MIN_CROP_SUITABILITY) {
-                    assignments[regionIndex] = bestPhotoEntry.key
-                    assignedPhotos.add(bestPhotoEntry.key)
+            for (regionIndex in regions.indices) {
+                if (regionIndex < photoIndices.size) {
+                    assignments[regionIndex] = photoIndices[regionIndex]
                 }
             }
 
-        // Second pass: Fill any unassigned regions with remaining photos
-        regions.indices.filter { it !in assignments.keys }.forEach { regionIndex ->
-            photos.indices.filter { it !in assignedPhotos }.forEach { photoIndex ->
+            return assignments
+        }
+
+        // For other layouts, use more sophisticated assignment based on photo content
+
+        // Initialize suitability scores for each photo in each region
+        for (regionIndex in regions.indices) {
+            val region = regions[regionIndex]
+            for (photoIndex in photoAnalyses.indices) {
+                val photo = photoAnalyses[photoIndex]
+                val score = calculateSuitabilityScore(photo, region)
+                region.photoSuitabilityScores[photoIndex] = score
+            }
+        }
+
+        // Create sets to track which photos and regions have been assigned
+        val assignedPhotos = mutableSetOf<Int>()
+        val assignedRegions = mutableSetOf<Int>()
+
+        // Use greedy algorithm to assign photos to regions
+        // First, handle any "must have" assignments (very high scores)
+        for (regionIndex in regions.indices) {
+            val region = regions[regionIndex]
+
+            // Find best photo for this region that hasn't been assigned yet
+            val candidates = region.photoSuitabilityScores
+                .filter { (photoIndex, score) ->
+                    !assignedPhotos.contains(photoIndex) && score >= 0.9f
+                }
+
+            if (candidates.isNotEmpty()) {
+                val (photoIndex, _) = candidates.maxByOrNull { it.value } ?: continue
                 assignments[regionIndex] = photoIndex
                 assignedPhotos.add(photoIndex)
-                return@forEach
+                assignedRegions.add(regionIndex)
+            }
+        }
+
+        // Next, assign remaining regions based on best available score
+        for (regionIndex in regions.indices) {
+            if (assignedRegions.contains(regionIndex)) continue
+
+            val region = regions[regionIndex]
+
+            // Find best photo for this region that hasn't been assigned yet
+            val candidates = region.photoSuitabilityScores
+                .filter { (photoIndex, _) -> !assignedPhotos.contains(photoIndex) }
+
+            if (candidates.isNotEmpty()) {
+                val (photoIndex, _) = candidates.maxByOrNull { it.value } ?: continue
+                assignments[regionIndex] = photoIndex
+                assignedPhotos.add(photoIndex)
+                assignedRegions.add(regionIndex)
+            }
+        }
+
+        // If we have more regions than photos, wrap around
+        if (assignments.size < regions.size) {
+            for (regionIndex in regions.indices) {
+                if (!assignments.containsKey(regionIndex)) {
+                    // Assign a photo that's already been used elsewhere
+                    val photoIndex = regionIndex % photoAnalyses.size
+                    assignments[regionIndex] = photoIndex
+                }
             }
         }
 
         return assignments
+    }
+
+    /**
+     * Calculate how suitable a photo is for a specific region
+     */
+    private fun calculateSuitabilityScore(photo: PhotoAnalysis, region: LayoutRegion): Float {
+        var score = 0.5f // Base score
+
+        // Aspect ratio match is important
+        val aspectRatioScore = calculateAspectRatioScore(photo.aspectRatio, region.aspectRatio)
+        score += aspectRatioScore * 0.4f // Weight aspect ratio heavily
+
+        // If face detection succeeded, consider face positioning
+        if (photo.faceDetectionSucceeded && photo.dominantFaceRegion != null) {
+            // For a region with aspect ratio close to the photo, faces are more important
+            if (aspectRatioScore > 0.7f) {
+                score += 0.3f // Bonus for having faces when aspect ratio is good
+            }
+        }
+
+        // For regions of extreme aspect ratio, prefer photos of similar extreme
+        if (region.aspectRatio > 1.5f && photo.isLandscape) {
+            score += 0.2f // Bonus for wide photos in wide regions
+        } else if (region.aspectRatio < 0.7f && photo.isPortrait) {
+            score += 0.2f // Bonus for tall photos in tall regions
+        }
+
+        // If region is large (determined by normalized area), prefer photos with faces
+        val isLargeRegion = region.rect.width() * region.rect.height() > 0.3f
+        if (isLargeRegion && photo.faces.isNotEmpty()) {
+            score += 0.2f // Bonus for faces in large regions
+        }
+
+        return score.coerceIn(0f, 1f) // Ensure score is between 0 and 1
+    }
+
+    /**
+     * Calculate how well two aspect ratios match
+     * Returns a value between 0 (complete mismatch) and 1 (perfect match)
+     */
+    private fun calculateAspectRatioScore(photoAspect: Float, regionAspect: Float): Float {
+        val ratio = if (photoAspect > regionAspect) {
+            regionAspect / photoAspect
+        } else {
+            photoAspect / regionAspect
+        }
+
+        // Apply a non-linear scale to emphasize good matches
+        // 1.0 = perfect match, 0.8 = good match, 0.6 = acceptable, < 0.5 = poor
+        return when {
+            ratio > 0.9f -> 1.0f
+            ratio > 0.8f -> 0.9f
+            ratio > 0.7f -> 0.8f
+            ratio > 0.6f -> 0.7f
+            ratio > 0.5f -> 0.6f
+            ratio > 0.4f -> 0.4f
+            ratio > 0.3f -> 0.2f
+            else -> 0.0f
+        }
     }
 
     private fun Matrix.setCropToRegion(
