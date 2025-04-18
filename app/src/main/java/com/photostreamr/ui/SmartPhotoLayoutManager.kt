@@ -1123,13 +1123,13 @@ class SmartPhotoLayoutManager @Inject constructor(
     /**
      * Create a scattered photo collage layout with rotation and natural overlapping
      * This simulates photos thrown on a table with random angles and positions
-     * while ensuring at least 80% of each photo is visible and covering the entire screen
+     * while ensuring better coverage with larger photos
      */
     fun createScatteredCollageLayout(
         containerWidth: Int,
         containerHeight: Int,
         requestedPhotoCount: Int,
-        maxPhotoSize: Float = 0.55f // Maximum photo size relative to container
+        maxPhotoSize: Float = 0.65f // Increased from 0.55f for bigger photos
     ): List<LayoutRegion> {
         val regions = mutableListOf<LayoutRegion>()
         val random = java.util.Random()
@@ -1140,62 +1140,67 @@ class SmartPhotoLayoutManager @Inject constructor(
             return regions
         }
 
-        // Calculate optimal photo count based on screen size - use MORE photos
-        // We want at least 12 photos for better coverage, adjust based on screen size
-        val minPhotos = 12  // Minimum number of photos to use
+        // Calculate optimal photo count based on screen size - use FEWER photos for larger displays
+        // to allow photos to be bigger and reduce crowding
+        val minPhotos = 8  // Reduced from 12
         val screenArea = containerWidth * containerHeight
-        val baseCount = (screenArea / (250 * 250)).coerceIn(minPhotos, 25)
+        val baseCount = (screenArea / (350 * 350)).coerceIn(minPhotos, 20) // Larger divisor = fewer photos
 
-        // Use more photos than requested to ensure good coverage
-        val effectiveCount = max(baseCount, requestedPhotoCount)
+        // Use fewer photos than requested to ensure better sizing
+        val effectiveCount = min(baseCount, requestedPhotoCount)
 
         Log.d(TAG, "Creating scattered collage with $effectiveCount photos for screen ${containerWidth}x${containerHeight}")
 
         // Calculate optimal photo size to ensure good coverage
-        // Smaller photos allow for more to fit on screen with better coverage
+        // Larger photos allow for better visibility of content
         val containerDiagonal = sqrt(containerWidth.toFloat() * containerWidth +
                 containerHeight.toFloat() * containerHeight)
 
-        // Calculate smaller photo sizes for better coverage
+        // Calculate larger photo sizes for better visibility
         val optimalSize = min(
-            containerDiagonal * 0.22f, // Make base size smaller
+            containerDiagonal * 0.3f, // Increased from 0.22f for bigger photos
             min(containerWidth, containerHeight) * maxPhotoSize
         )
 
-        // Create a placement grid for even distribution
-        val gridCellSize = (optimalSize * 0.65f).toInt() // Overlap more
+        // Create a coverage map to ensure even distribution
+        val coverageMap = Array(containerWidth) { FloatArray(containerHeight) { 0f } }
+
+        // Create a placement grid with lower density for better spacing
+        val gridCellSize = (optimalSize * 0.85f).toInt() // Increased from 0.65f to reduce overlap
         val gridRows = (containerHeight / gridCellSize) + 1
         val gridCols = (containerWidth / gridCellSize) + 1
         val usedCells = mutableSetOf<Pair<Int, Int>>()
 
-        // Create positions that ensure we cover the screen edges and corners
-        val cornerAndEdgePositions = mutableListOf<Pair<Float, Float>>()
-
-        // Add corner positions with some variance
-        cornerAndEdgePositions.add(Pair(containerWidth * 0.08f, containerHeight * 0.08f)) // Top-left
-        cornerAndEdgePositions.add(Pair(containerWidth * 0.92f, containerHeight * 0.08f)) // Top-right
-        cornerAndEdgePositions.add(Pair(containerWidth * 0.08f, containerHeight * 0.92f)) // Bottom-left
-        cornerAndEdgePositions.add(Pair(containerWidth * 0.92f, containerHeight * 0.92f)) // Bottom-right
-
-        // Add edge positions
-        cornerAndEdgePositions.add(Pair(containerWidth * 0.5f, containerHeight * 0.08f)) // Top-center
-        cornerAndEdgePositions.add(Pair(containerWidth * 0.5f, containerHeight * 0.92f)) // Bottom-center
-        cornerAndEdgePositions.add(Pair(containerWidth * 0.08f, containerHeight * 0.5f)) // Left-center
-        cornerAndEdgePositions.add(Pair(containerWidth * 0.92f, containerHeight * 0.5f)) // Right-center
+        // Initialize important points that must be covered to ensure full screen usage
+        val screenCoverage = listOf(
+            Pair(containerWidth * 0.05f, containerHeight * 0.05f), // Top-left
+            Pair(containerWidth * 0.95f, containerHeight * 0.05f), // Top-right
+            Pair(containerWidth * 0.05f, containerHeight * 0.95f), // Bottom-left
+            Pair(containerWidth * 0.95f, containerHeight * 0.95f), // Bottom-right
+            Pair(containerWidth * 0.5f, containerHeight * 0.05f),  // Top-center
+            Pair(containerWidth * 0.5f, containerHeight * 0.95f),  // Bottom-center
+            Pair(containerWidth * 0.05f, containerHeight * 0.5f),  // Left-center
+            Pair(containerWidth * 0.95f, containerHeight * 0.5f),  // Right-center
+            Pair(containerWidth * 0.5f, containerHeight * 0.5f),   // Center
+            // Added more points for better distribution in mid areas
+            Pair(containerWidth * 0.25f, containerHeight * 0.25f), // Top-left quadrant
+            Pair(containerWidth * 0.75f, containerHeight * 0.25f), // Top-right quadrant
+            Pair(containerWidth * 0.25f, containerHeight * 0.75f), // Bottom-left quadrant
+            Pair(containerWidth * 0.75f, containerHeight * 0.75f)  // Bottom-right quadrant
+        )
 
         // Track placed regions for better distribution
         val placedCenters = mutableListOf<PointF>()
 
-        // First, place photos at corners and edges for better coverage
-        for (i in 0 until min(cornerAndEdgePositions.size, effectiveCount)) {
-            val position = cornerAndEdgePositions[i]
-
-            // Size variation (80-130% of optimal size)
-            val sizeVariation = 0.8f + (random.nextFloat() * 0.5f)
+        // Place photos at strategic points first for better coverage
+        val strategicPoints = screenCoverage.take(min(screenCoverage.size, effectiveCount))
+        for (position in strategicPoints) {
+            // Size variation (85-140% of optimal size) - more variation but larger average
+            val sizeVariation = 0.85f + (random.nextFloat() * 0.55f)
             val photoSize = optimalSize * sizeVariation
 
-            // Random aspect ratio between portrait and landscape (0.7 to 1.5)
-            val aspectRatio = 0.7f + (random.nextFloat() * 0.8f)
+            // Random aspect ratio with more variation (0.65 to 1.7)
+            val aspectRatio = 0.65f + (random.nextFloat() * 1.05f)
 
             // Calculate width and height based on aspect ratio
             val photoWidth: Float
@@ -1209,12 +1214,12 @@ class SmartPhotoLayoutManager @Inject constructor(
                 photoHeight = photoWidth / aspectRatio
             }
 
-            // Random rotation angle between -30 and 30 degrees
-            val rotation = -30f + (random.nextFloat() * 60f)
+            // Random rotation angle between -35 and 35 degrees (wider range)
+            val rotation = -35f + (random.nextFloat() * 70f)
 
-            // Use the predefined corner/edge position
-            val centerX = position.first
-            val centerY = position.second
+            // Use the strategic position with slight random variation
+            val centerX = position.first + (random.nextFloat() * gridCellSize * 0.2f - gridCellSize * 0.1f)
+            val centerY = position.second + (random.nextFloat() * gridCellSize * 0.2f - gridCellSize * 0.1f)
 
             // Calculate corners of rectangle
             val rect = RectF(
@@ -1233,20 +1238,21 @@ class SmartPhotoLayoutManager @Inject constructor(
             // Store rotation in suitability scores
             layoutRegion.photoSuitabilityScores[-1] = rotation
 
-            // Track placement
+            // Track placement and update coverage map
             placedCenters.add(PointF(centerX, centerY))
+            updateCoverageMap(coverageMap, centerX, centerY, photoWidth, photoHeight, containerWidth, containerHeight)
 
             regions.add(layoutRegion)
         }
 
         // Then add photos to fill the rest of the screen
         for (i in regions.size until effectiveCount) {
-            // Size variation (70-120% of optimal size)
-            val sizeVariation = 0.7f + (random.nextFloat() * 0.5f)
+            // Size variation (80-140% of optimal size) - larger average size
+            val sizeVariation = 0.8f + (random.nextFloat() * 0.6f)
             val photoSize = optimalSize * sizeVariation
 
-            // Random aspect ratio between portrait and landscape (0.7 to 1.5)
-            val aspectRatio = 0.7f + (random.nextFloat() * 0.8f)
+            // Wider variation in aspect ratio (0.65 to 1.7)
+            val aspectRatio = 0.65f + (random.nextFloat() * 1.05f)
 
             // Calculate width and height based on aspect ratio
             val photoWidth: Float
@@ -1260,90 +1266,15 @@ class SmartPhotoLayoutManager @Inject constructor(
                 photoHeight = photoWidth / aspectRatio
             }
 
-            // Random rotation angle between -30 and 30 degrees
-            val rotation = -30f + (random.nextFloat() * 60f)
+            // Random rotation angle between -35 and 35 degrees
+            val rotation = -35f + (random.nextFloat() * 70f)
 
-            // Find a good placement location
-            var bestCell: Pair<Int, Int>? = null
-            var attempts = 0
-            val maxAttempts = 30
+            // Find an area with low coverage
+            val position = findLowCoveragePosition(coverageMap, containerWidth, containerHeight,
+                photoWidth, photoHeight, placedCenters, gridCellSize)
 
-            while (bestCell == null && attempts < maxAttempts) {
-                attempts++
-
-                // Try to find an unused grid cell first
-                if (usedCells.size < gridRows * gridCols) {
-                    // Check which areas need more coverage by examining distance to existing photos
-                    var furthestDistanceCell: Pair<Int, Int>? = null
-                    var maxMinDistance = 0f
-
-                    for (row in 0 until gridRows) {
-                        for (col in 0 until gridCols) {
-                            val cell = Pair(row, col)
-                            if (!usedCells.contains(cell)) {
-                                val cellCenterX = (col * gridCellSize) + (gridCellSize / 2f)
-                                val cellCenterY = (row * gridCellSize) + (gridCellSize / 2f)
-
-                                // Find minimum distance to any existing photo center
-                                var minDistance = Float.MAX_VALUE
-                                for (center in placedCenters) {
-                                    val distance = sqrt(
-                                        (cellCenterX - center.x) * (cellCenterX - center.x) +
-                                                (cellCenterY - center.y) * (cellCenterY - center.y)
-                                    )
-                                    minDistance = min(minDistance, distance)
-                                }
-
-                                // If this is further from existing photos than previous best, use it
-                                if (minDistance > maxMinDistance) {
-                                    maxMinDistance = minDistance
-                                    furthestDistanceCell = cell
-                                }
-                            }
-                        }
-                    }
-
-                    if (furthestDistanceCell != null) {
-                        bestCell = furthestDistanceCell
-                    } else {
-                        // Fall back to a random unused cell
-                        val unusedCells = mutableListOf<Pair<Int, Int>>()
-                        for (row in 0 until gridRows) {
-                            for (col in 0 until gridCols) {
-                                val cell = Pair(row, col)
-                                if (!usedCells.contains(cell)) {
-                                    unusedCells.add(cell)
-                                }
-                            }
-                        }
-
-                        if (unusedCells.isNotEmpty()) {
-                            bestCell = unusedCells[random.nextInt(unusedCells.size)]
-                        }
-                    }
-
-                    if (bestCell != null) {
-                        usedCells.add(bestCell)
-                    }
-                } else {
-                    // Just pick a random location, grid is full
-                    bestCell = Pair(
-                        random.nextInt(gridRows),
-                        random.nextInt(gridCols)
-                    )
-                }
-            }
-
-            // Generate position from grid cell with random offset
-            val (row, col) = bestCell ?: Pair(
-                random.nextInt(gridRows),
-                random.nextInt(gridCols)
-            )
-
-            val centerX = (col * gridCellSize) + (gridCellSize / 2) +
-                    (random.nextFloat() * gridCellSize * 0.4f - gridCellSize * 0.2f)
-            val centerY = (row * gridCellSize) + (gridCellSize / 2) +
-                    (random.nextFloat() * gridCellSize * 0.4f - gridCellSize * 0.2f)
+            val centerX = position.first
+            val centerY = position.second
 
             // Ensure at least 80% of the photo is on screen
             val adjustedCenterX = centerX.coerceIn(photoWidth * 0.4f, containerWidth - photoWidth * 0.4f)
@@ -1366,33 +1297,126 @@ class SmartPhotoLayoutManager @Inject constructor(
             // Store rotation in suitability scores
             layoutRegion.photoSuitabilityScores[-1] = rotation
 
-            // Track placement
+            // Track placement and update coverage map
             placedCenters.add(PointF(adjustedCenterX, adjustedCenterY))
+            updateCoverageMap(coverageMap, adjustedCenterX, adjustedCenterY, photoWidth, photoHeight,
+                containerWidth, containerHeight)
 
             regions.add(layoutRegion)
         }
 
-        Log.d(TAG, "Created scattered collage layout with ${regions.size} photos")
+        Log.d(TAG, "Created enhanced scattered collage layout with ${regions.size} larger photos")
         return regions
     }
 
     /**
-     * Helper method to count neighboring used cells in the grid
+     * Update coverage map to track where photos have been placed
      */
-    private fun countNeighbors(row: Int, col: Int, usedCells: Set<Pair<Int, Int>>): Int {
-        var count = 0
-        for (r in max(0, row - 1)..min(row + 1, Int.MAX_VALUE)) {
-            for (c in max(0, col - 1)..min(col + 1, Int.MAX_VALUE)) {
-                if (usedCells.contains(Pair(r, c))) {
-                    count++
-                }
+    private fun updateCoverageMap(
+        coverageMap: Array<FloatArray>,
+        centerX: Float,
+        centerY: Float,
+        width: Float,
+        height: Float,
+        containerWidth: Int,
+        containerHeight: Int
+    ) {
+        val left = max(0, (centerX - width / 2).toInt())
+        val top = max(0, (centerY - height / 2).toInt())
+        val right = min(containerWidth - 1, (centerX + width / 2).toInt())
+        val bottom = min(containerHeight - 1, (centerY + height / 2).toInt())
+
+        for (x in left..right) {
+            for (y in top..bottom) {
+                coverageMap[x][y] += 1.0f
             }
         }
-        return count
+    }
+
+    /**
+     * Find a position with low photo coverage
+     */
+    private fun findLowCoveragePosition(
+        coverageMap: Array<FloatArray>,
+        containerWidth: Int,
+        containerHeight: Int,
+        photoWidth: Float,
+        photoHeight: Float,
+        placedCenters: List<PointF>,
+        gridCellSize: Int
+    ): Pair<Float, Float> {
+        val random = java.util.Random()
+        var bestScore = Float.MAX_VALUE
+        var bestX = containerWidth / 2f
+        var bestY = containerHeight / 2f
+
+        // Try multiple positions to find one with least coverage
+        val sampleCount = 15
+
+        for (i in 0 until sampleCount) {
+            // Generate a random position
+            val x = random.nextFloat() * containerWidth
+            val y = random.nextFloat() * containerHeight
+
+            // Skip if too close to container edge
+            if (x < photoWidth * 0.4f || x > containerWidth - photoWidth * 0.4f ||
+                y < photoHeight * 0.4f || y > containerHeight - photoHeight * 0.4f) {
+                continue
+            }
+
+            // Calculate coverage score for this position
+            var score = 0f
+
+            // Calculate bounds
+            val left = max(0, (x - photoWidth / 2).toInt())
+            val top = max(0, (y - photoHeight / 2).toInt())
+            val right = min(containerWidth - 1, (x + photoWidth / 2).toInt())
+            val bottom = min(containerHeight - 1, (y + photoHeight / 2).toInt())
+
+            // Sample coverage
+            for (sx in left..right step gridCellSize/2) {
+                for (sy in top..bottom step gridCellSize/2) {
+                    if (sx < containerWidth && sy < containerHeight) {
+                        score += coverageMap[sx][sy]
+                    }
+                }
+            }
+
+            // Add penalty for proximity to other photos
+            for (center in placedCenters) {
+                val distance = sqrt((x - center.x) * (x - center.x) + (y - center.y) * (y - center.y))
+
+                // Stronger avoidance of very close photos
+                if (distance < gridCellSize) {
+                    score += (gridCellSize - distance) * 8f
+                }
+            }
+
+            // Prefer positions away from center (to ensure corners get filled)
+            val distanceFromCenter = sqrt(
+                (x - containerWidth/2f) * (x - containerWidth/2f) +
+                        (y - containerHeight/2f) * (y - containerHeight/2f)
+            )
+            val maxDistance = sqrt((containerWidth/2f * containerWidth/2f) +
+                    (containerHeight/2f * containerHeight/2f))
+
+            // Adjust score with distance bonus (less penalty for edge positions)
+            score -= (distanceFromCenter / maxDistance) * 1.5f
+
+            // If this position has better score, use it
+            if (score < bestScore) {
+                bestScore = score
+                bestX = x
+                bestY = y
+            }
+        }
+
+        return Pair(bestX, bestY)
     }
 
     /**
      * Apply rotation to a photo for scattered collage effect
+     * Enhanced with slight shadow for depth
      */
     fun applyPhotoRotation(
         canvas: Canvas,
@@ -1407,16 +1431,35 @@ class SmartPhotoLayoutManager @Inject constructor(
         val centerX = region.rect.centerX()
         val centerY = region.rect.centerY()
 
+        // Create shadow paint
+        val shadowPaint = Paint(paint)
+        shadowPaint.colorFilter = null
+        shadowPaint.setShadowLayer(10f, 3f, 3f, Color.argb(90, 0, 0, 0))
+
         // Save canvas state before rotation
         canvas.save()
 
         // Rotate canvas around center point
         canvas.rotate(rotation, centerX, centerY)
 
-        // Draw the bitmap
-        canvas.drawBitmap(bitmap, null, region.rect, paint)
+        // Draw a subtle shadow for the rotated photo (rotated with the canvas)
+        val shadowRect = RectF(
+            region.rect.left + 3f,
+            region.rect.top + 3f,
+            region.rect.right + 3f,
+            region.rect.bottom + 3f
+        )
+        canvas.drawRect(shadowRect, shadowPaint)
 
-        // Restore canvas to original state
+        // Draw the photo
+        canvas.drawBitmap(
+            bitmap,
+            null,
+            region.rect,
+            paint
+        )
+
+        // Restore canvas state
         canvas.restore()
     }
 
