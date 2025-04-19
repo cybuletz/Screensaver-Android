@@ -160,19 +160,19 @@
 
     <!-- Template Layout Types -->
     <string-array name="template_type_entries">
-        <item>2 Photos (Screen Orientation-Adaptive)</item>
-        <item>Smart 3 (Main + 2, orientation adaptive)</item>
+        <item>2 Photos (Screen Orientation adaptive)</item>
+        <item>3 Photos (Screen Orientation adaptive)</item>
         <item>4 Photos (Grid)</item>
-        <item>Dynamic (Google Home Style)</item>
+        <item>Google Home Style</item>
         <item>Dynamic Masonry (Pinterest Style)</item>
-        <item>Random - All Types</item>
+        <item>Random Mix - All Types</item>
     </string-array>
 
     <string-array name="template_type_values">
         <item>2_smart</item>
         <item>8</item>
         <item>4</item>
-        <item>collage</item>
+        <item>dynamic</item>
         <item>masonry</item>
         <item>random</item>
     </string-array>

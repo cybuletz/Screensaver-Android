@@ -693,10 +693,8 @@ class PhotoDisplayManager @Inject constructor(
         val templateType = when (templateTypeStr) {
             "0" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
             "1" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
-            // REMOVE the old main left and right options:
             // "2" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT
             // "3" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT
-            // ADD new adaptive Smart 3 option:
             "8", "3_smart" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
             "4" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
             "dynamic" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
@@ -725,7 +723,9 @@ class PhotoDisplayManager @Inject constructor(
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
                 )
             } else {
                 // In portrait mode, exclude horizontal layout (side by side photos)

@@ -783,13 +783,13 @@ class SmartTemplateHelper @Inject constructor(
         val isLandscape = containerWidth > containerHeight
 
         return when (templateType) {
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL -> true // Works in both
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> true // Works in both
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL -> !isLandscape
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL -> isLandscape
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT -> true // Works in both
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> true // Works in both
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> true // Works in both
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC -> true // Works in both
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> true // Works in all orientations now
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC -> isLandscape
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> isLandscape
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> true
             else -> true
         }
