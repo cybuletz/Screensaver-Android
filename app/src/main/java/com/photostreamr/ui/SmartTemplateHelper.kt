@@ -36,7 +36,7 @@ class SmartTemplateHelper @Inject constructor(
         photos: List<Bitmap>,
         containerWidth: Int,
         containerHeight: Int,
-        requestedTemplateType: Int = EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME
+        requestedTemplateType: Int = EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
     ) = withContext(Dispatchers.Default) {
         if (photos.size < 2) {
             return@withContext -1 // Use single photo display
@@ -44,7 +44,7 @@ class SmartTemplateHelper @Inject constructor(
 
         try {
             // If a specific template type was requested (not DYNAMIC), honor it
-            if (requestedTemplateType != EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME) {
+            if (requestedTemplateType != EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART) {
                 // Check if template is compatible with current orientation
                 val isCompatible = isTemplateCompatibleWithOrientation(
                     requestedTemplateType,
@@ -75,7 +75,7 @@ class SmartTemplateHelper @Inject constructor(
             return@withContext bestLayout
         } catch (e: Exception) {
             Log.e(TAG, "Error determining best template", e)
-            return@withContext EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME // Fallback to dynamic
+            return@withContext EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART // Fallback to dynamic
         }
     }
 

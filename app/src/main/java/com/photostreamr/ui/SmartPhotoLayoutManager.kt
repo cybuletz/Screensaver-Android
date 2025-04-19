@@ -61,16 +61,17 @@ class SmartPhotoLayoutManager @Inject constructor(
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
         )
 
         private val LANDSCAPE_COMPATIBLE_LAYOUTS = setOf(
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT,
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
         )
 
         // Bitmap pool settings

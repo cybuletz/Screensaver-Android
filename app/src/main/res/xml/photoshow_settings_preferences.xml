@@ -18,7 +18,7 @@
         android:summary="@string/pref_photo_scale_summary"
         android:entries="@array/photo_scale_options"
         android:entryValues="@array/photo_scale_values"
-        android:defaultValue="fill"
+        android:defaultValue="multi_template"
         android:icon="@drawable/ic_aspect_ratio" />
 
 
@@ -28,7 +28,7 @@
         android:summary="Choose the type of photo template layout"
         android:entries="@array/template_type_entries"
         android:entryValues="@array/template_type_values"
-        android:defaultValue="0" />
+        android:defaultValue="random" />
 
     <!-- New Letterbox Settings Category -->
     <PreferenceCategory

@@ -697,7 +697,7 @@ class PhotoDisplayManager @Inject constructor(
             // "3" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT
             "8", "3_smart" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
             "4" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
-            "ghome" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME
+            //"ghome" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME
             "collage" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
             "masonry" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
             "random" -> -1  // Special value for random
@@ -724,7 +724,7 @@ class PhotoDisplayManager @Inject constructor(
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME,
+                    //EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
                 )
             } else {

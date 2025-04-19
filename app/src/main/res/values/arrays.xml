@@ -133,38 +133,37 @@
 
     <!-- Photo Scale Options -->
     <string-array name="photo_scale_options">
-        <item>Smart Fill</item>
-        <item>Fit with Letterboxing</item>
+        <item>One Photo - Smart Fill</item>
+        <!--<item>Fit with Letterboxing</item>-->
         <item>Multi-Photo Templates</item>
     </string-array>
 
     <string-array name="photo_scale_values">
         <item>smart_fill</item>
-        <item>fit</item>
+        <!--<item>fit</item>-->
         <item>multi_template</item>
-    </string-array>
+       </string-array>
 
-    <string-array name="letterbox_mode_entries">
-        <item>Simple Black</item>
-        <item>Blurred Edges</item>
-        <item>Ambient Lighting</item>
-        <item>Ambient Clouds</item>
-    </string-array>
+       <string-array name="letterbox_mode_entries">
+           <item>Simple Black</item>
+           <item>Blurred Edges</item>
+           <item>Ambient Lighting</item>
+           <item>Ambient Clouds</item>
+       </string-array>
 
-    <string-array name="letterbox_mode_values">
-        <item>black</item>
-        <item>blur</item>
-        <item>ambient</item>
-        <item>ambient_clouds</item>
-    </string-array>
+       <string-array name="letterbox_mode_values">
+           <item>black</item>
+           <item>blur</item>
+           <item>ambient</item>
+           <item>ambient_clouds</item>
+       </string-array>
 
-    <!-- Template Layout Types -->
+       <!-- Template Layout Types -->
     <string-array name="template_type_entries">
         <item>2 Photos (Screen Orientation adaptive)</item>
         <item>3 Photos (Screen Orientation adaptive)</item>
         <item>4 Photos (Grid)</item>
-        <item>Google Home Style</item>
-        <item>Dynamic Masonry (Pinterest Style)</item>
+        <item>6 Photos (Pinterest Style)</item>
         <item>Random Mix - All Types</item>
     </string-array>
 
@@ -172,7 +171,6 @@
         <item>2_smart</item>
         <item>8</item>
         <item>4</item>
-        <item>ghome</item>
         <item>masonry</item>
         <item>random</item>
     </string-array>
