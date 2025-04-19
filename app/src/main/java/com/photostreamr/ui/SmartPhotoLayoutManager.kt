@@ -620,7 +620,7 @@ class SmartPhotoLayoutManager @Inject constructor(
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT to 3,
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT to 3,
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID to 4,
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC to 3,
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME to 3,
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE to 3,
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY to 3
         )
@@ -671,7 +671,7 @@ class SmartPhotoLayoutManager @Inject constructor(
                     score += min(photosWithFaces, 4) * 0.25f
                 }
 
-                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME,
                 EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
                 EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> {
                     // Dynamic layouts benefit from diverse photo shapes

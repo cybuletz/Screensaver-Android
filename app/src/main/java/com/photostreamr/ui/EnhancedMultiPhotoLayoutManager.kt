@@ -38,7 +38,7 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
         const val LAYOUT_TYPE_3_MAIN_LEFT = 2
         const val LAYOUT_TYPE_3_MAIN_RIGHT = 3
         const val LAYOUT_TYPE_4_GRID = 4
-        const val LAYOUT_TYPE_DYNAMIC = 5
+        const val LAYOUT_TYPE_GHOME = 5
         const val LAYOUT_TYPE_DYNAMIC_COLLAGE = 6
         const val LAYOUT_TYPE_DYNAMIC_MASONRY = 7
         const val LAYOUT_TYPE_3_SMART = 8
@@ -130,7 +130,7 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
                 }
 
                 // Determine best template type if DYNAMIC was specified
-                val finalLayoutType = if (layoutType == LAYOUT_TYPE_DYNAMIC) {
+                val finalLayoutType = if (layoutType == LAYOUT_TYPE_GHOME) {
                     withContext(Dispatchers.Default) {
                         smartTemplateHelper.determineBestTemplate(
                             photoBitmaps,
@@ -249,7 +249,7 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
             LAYOUT_TYPE_2_VERTICAL, LAYOUT_TYPE_2_HORIZONTAL -> 2
             LAYOUT_TYPE_3_MAIN_LEFT, LAYOUT_TYPE_3_MAIN_RIGHT, LAYOUT_TYPE_3_SMART -> 3
             LAYOUT_TYPE_4_GRID -> 4
-            LAYOUT_TYPE_DYNAMIC -> 3
+            LAYOUT_TYPE_GHOME -> 3
             LAYOUT_TYPE_DYNAMIC_COLLAGE -> 12  // Minimum 12 photos for collage
             LAYOUT_TYPE_DYNAMIC_MASONRY -> 6   // Changed from 3 to 4
             else -> 2

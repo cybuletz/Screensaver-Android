@@ -30,13 +30,13 @@ class SmartTemplateHelper @Inject constructor(
 
     /**
      * Determine the best template type based on photos and container dimensions
-     * ENHANCED: Now respects specific template type selection
+     * ENHANCED: Now uses single photo fallback for incompatible templates
      */
     suspend fun determineBestTemplate(
         photos: List<Bitmap>,
         containerWidth: Int,
         containerHeight: Int,
-        requestedTemplateType: Int = EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC
+        requestedTemplateType: Int = EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME
     ) = withContext(Dispatchers.Default) {
         if (photos.size < 2) {
             return@withContext -1 // Use single photo display
@@ -44,7 +44,7 @@ class SmartTemplateHelper @Inject constructor(
 
         try {
             // If a specific template type was requested (not DYNAMIC), honor it
-            if (requestedTemplateType != EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC) {
+            if (requestedTemplateType != EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME) {
                 // Check if template is compatible with current orientation
                 val isCompatible = isTemplateCompatibleWithOrientation(
                     requestedTemplateType,
@@ -75,7 +75,7 @@ class SmartTemplateHelper @Inject constructor(
             return@withContext bestLayout
         } catch (e: Exception) {
             Log.e(TAG, "Error determining best template", e)
-            return@withContext EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC // Fallback to dynamic
+            return@withContext EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME // Fallback to dynamic
         }
     }
 
@@ -788,7 +788,7 @@ class SmartTemplateHelper @Inject constructor(
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT -> true // Works in both
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT -> true // Works in both
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID -> true // Works in both
-            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC -> isLandscape
+            EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME -> isLandscape
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE -> isLandscape
             EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY -> true
             else -> true
