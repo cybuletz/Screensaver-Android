@@ -296,9 +296,6 @@ class BitmapMemoryManager @Inject constructor(
     /**
      * Clear memory caches without directly recycling bitmaps
      */
-    /**
-     * Clear memory caches without directly recycling bitmaps
-     */
     fun clearMemoryCaches() {
         managerScope.launch {
             try {

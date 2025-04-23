@@ -51,9 +51,13 @@ class AdManager @Inject constructor(
         private const val TAG = "AdManager"
 
         // Test ad units for development
-        private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111"
-        private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
-        private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-3940256099942544/2247696110"
+        //private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111"
+        //private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
+        //private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-3940256099942544/2247696110"
+
+        private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-1825370608705808/5588599522"
+        private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-1825370608705808/2803751564"
+        private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-1825370608705808/2360210075"
 
         // Production ad units - replace with your actual ad unit IDs
         private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-1825370608705808/5588599522"
@@ -84,7 +88,7 @@ class AdManager @Inject constructor(
         private const val NATIVE_AD_CACHE_SIZE = 3
     }
     private var photoCount = 0
-    private var photosUntilNextAd = DEFAULT_NATIVE_AD_FREQUENCY
+    private var photosUntilNextAd = getRandomAdFrequency()
 
     private var isInitialized = false
     private var mainAdView: AdView? = null
@@ -115,7 +119,7 @@ class AdManager @Inject constructor(
     private var isLoadingNativeAd = false
     private val nativeAdLoadScope = CoroutineScope(Dispatchers.IO)
 
-    private val random = kotlin.random.Random(System.currentTimeMillis().toInt())
+    private val random = kotlin.random.Random.Default
 
     // The current listener for native ad loading
     private var nativeAdLoadListener: ((NativeAd?) -> Unit)? = null
@@ -143,8 +147,7 @@ class AdManager @Inject constructor(
 
     private fun getRandomAdFrequency(): Int {
         return try {
-            // Create a new Random instance each time instead of using the class field
-            kotlin.random.Random(System.currentTimeMillis().toInt()).nextInt(MIN_NATIVE_AD_FREQUENCY, MAX_NATIVE_AD_FREQUENCY + 1)
+            random.nextInt(MIN_NATIVE_AD_FREQUENCY, MAX_NATIVE_AD_FREQUENCY + 1)
         } catch (e: Exception) {
             Log.e(TAG, "Error generating random ad frequency", e)
             DEFAULT_NATIVE_AD_FREQUENCY
