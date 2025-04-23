@@ -55,6 +55,8 @@
         </intent>
     </queries>
 
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+
     <application
         android:name=".ScreensaverApplication"
         android:allowBackup="true"

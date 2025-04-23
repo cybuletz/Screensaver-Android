@@ -57,6 +57,7 @@ import com.photostreamr.version.ProVersionPromptDialog
 import android.widget.FrameLayout
 import com.photostreamr.widgets.WidgetPreferenceFragment
 import com.photostreamr.R
+import com.photostreamr.ads.ConsentManager
 import com.photostreamr.tutorial.HelpDialogFragment
 import com.photostreamr.tutorial.TutorialManager
 import com.photostreamr.tutorial.TutorialOverlayFragment
@@ -112,6 +113,9 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
 
     @Inject
     lateinit var adManager: AdManager
+
+    @Inject
+    lateinit var consentManager: ConsentManager
 
     private lateinit var adContainer: FrameLayout
 
@@ -494,6 +498,11 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
             "help_preferences" -> {
                 showHelpDialog()
                 true
+            }
+            "privacy_settings" -> {
+                // Show the consent form
+                consentManager.showConsentForm(requireActivity())
+                return true
             }
             else -> super.onPreferenceTreeClick(preference)
         }

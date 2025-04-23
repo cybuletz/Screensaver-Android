@@ -2,6 +2,7 @@ package com.photostreamr.ads
 
 import android.app.Activity
 import android.content.Context
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
@@ -41,11 +42,15 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 import java.util.concurrent.ConcurrentLinkedQueue
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Observer
+import com.google.ads.mediation.admob.AdMobAdapter
 
 @Singleton
 class AdManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val appVersionManager: AppVersionManager
+    private val appVersionManager: AppVersionManager,
+    private val consentManager: ConsentManager
 ) {
     companion object {
         private const val TAG = "AdManager"
@@ -59,7 +64,7 @@ class AdManager @Inject constructor(
         private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-1825370608705808/2803751564"
         private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-1825370608705808/2360210075"
 
-        // Production ad units - replace with your actual ad unit IDs
+        // Production ad units
         private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-1825370608705808/5588599522"
         private const val PRODUCTION_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-1825370608705808/2803751564"
         private const val PRODUCTION_NATIVE_AD_UNIT_ID = "ca-app-pub-1825370608705808/2360210075"
@@ -87,6 +92,7 @@ class AdManager @Inject constructor(
         // The number of native ads to preload in the cache
         private const val NATIVE_AD_CACHE_SIZE = 3
     }
+
     private var photoCount = 0
     private var photosUntilNextAd = getRandomAdFrequency()
 
@@ -124,10 +130,81 @@ class AdManager @Inject constructor(
     // The current listener for native ad loading
     private var nativeAdLoadListener: ((NativeAd?) -> Unit)? = null
 
+    // Consent state observer reference
+    private var consentObserver: Observer<ConsentManager.ConsentState>? = null
+
+    /**
+     * Set up consent state observer to react to consent changes
+     */
+    fun setupConsentObserver(lifecycleOwner: LifecycleOwner) {
+        // Remove any existing observer
+        consentObserver?.let {
+            consentManager.consentState.removeObserver(it)
+        }
+
+        // Create a new observer
+        consentObserver = Observer<ConsentManager.ConsentState> { state ->
+            Log.d(TAG, "Consent state changed to: $state")
+
+            when (state) {
+                ConsentManager.ConsentState.OBTAINED,
+                ConsentManager.ConsentState.NOT_REQUIRED -> {
+                    // Consent obtained or not required, initialize ads if needed
+                    if (!isInitialized) {
+                        initializeAds()
+                    }
+                }
+                ConsentManager.ConsentState.REQUIRED -> {
+                    // Consent required but not given, pause ads if needed
+                    pauseAds()
+                }
+                ConsentManager.ConsentState.ERROR -> {
+                    // Error occurred, log but proceed with non-personalized ads
+                    Log.e(TAG, "Error with consent, proceeding with non-personalized ads")
+                    if (!isInitialized) {
+                        initializeAds()
+                    }
+                }
+                else -> {
+                    // Unknown state, wait for proper state
+                    Log.d(TAG, "Consent in unknown state, waiting")
+                }
+            }
+        }
+
+        // Register the observer
+        consentManager.consentState.observe(lifecycleOwner, consentObserver!!)
+    }
+
+    /**
+     * Initialize the ad manager
+     */
     fun initialize() {
+        Log.d(TAG, "AdManager initialize called")
+
+        if (isInitialized) {
+            Log.d(TAG, "AdManager already initialized")
+            return
+        }
+
+        // Check if consent is needed or already given
+        if (consentManager.canShowAds()) {
+            Log.d(TAG, "Consent already obtained or not required, initializing ads")
+            initializeAds()
+        } else {
+            Log.d(TAG, "Waiting for consent before initializing ads")
+        }
+    }
+
+    /**
+     * Initialize ads after consent is handled
+     */
+    private fun initializeAds() {
         if (isInitialized) return
 
         try {
+            Log.d(TAG, "Initializing Mobile Ads SDK")
+
             MobileAds.initialize(context) { initializationStatus ->
                 Log.d(TAG, "Mobile Ads initialized: $initializationStatus")
                 isInitialized = true
@@ -272,7 +349,7 @@ class AdManager @Inject constructor(
     }
 
     fun shouldShowNativeAd(): Boolean {
-        if (appVersionManager.isProVersion()) {
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
             return false
         }
 
@@ -295,7 +372,7 @@ class AdManager @Inject constructor(
 
     // Method to preload native ads
     private fun preloadNativeAds() {
-        if (appVersionManager.isProVersion() || isLoadingNativeAd) {
+        if (appVersionManager.isProVersion() || isLoadingNativeAd || !consentManager.canShowAds()) {
             return
         }
 
@@ -315,7 +392,7 @@ class AdManager @Inject constructor(
 
     // Method to load a single native ad
     fun loadNativeAd(callback: ((NativeAd?) -> Unit)?) {
-        if (appVersionManager.isProVersion()) {
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
             callback?.invoke(null)
             return
         }
@@ -336,19 +413,24 @@ class AdManager @Inject constructor(
 
     // Internal method to handle the actual loading of native ads
     private fun loadNativeAdInternal(callback: ((NativeAd?) -> Unit)?) {
-        if (appVersionManager.isProVersion()) {
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
             callback?.invoke(null)
             return
         }
 
         if (!isInitialized) {
             initialize()
+            callback?.invoke(null)
+            return
         }
 
         // Set the callback
         nativeAdLoadListener = callback
 
         isLoadingNativeAd = true
+
+        // Create the ad request, considering consent
+        val adRequest = createAdRequest()
 
         val adLoader = AdLoader.Builder(context, NATIVE_AD_UNIT_ID)
             .forNativeAd { nativeAd ->
@@ -372,7 +454,7 @@ class AdManager @Inject constructor(
             }
             .withAdListener(object : AdListener() {
                 override fun onAdFailedToLoad(error: LoadAdError) {
-                    Log.e(TAG, "Native ad failed to load: ${error.message}")
+                    Log.e(TAG, "Ad failed to load: ${error.message}, code: ${error.code}, domain: ${error.domain}")
                     isLoadingNativeAd = false
 
                     if (nativeAdLoadListener == callback) {
@@ -382,7 +464,9 @@ class AdManager @Inject constructor(
 
                     // Retry loading after a delay
                     mainHandler.postDelayed({
-                        if (!appVersionManager.isProVersion() && nativeAdsCache.size < NATIVE_AD_CACHE_SIZE) {
+                        if (!appVersionManager.isProVersion() &&
+                            consentManager.canShowAds() &&
+                            nativeAdsCache.size < NATIVE_AD_CACHE_SIZE) {
                             loadNativeAdInternal(null) // Try to preload again
                         }
                     }, 60000) // Retry after 1 minute
@@ -400,12 +484,12 @@ class AdManager @Inject constructor(
             )
             .build()
 
-        adLoader.loadAd(AdRequest.Builder().build())
+        adLoader.loadAd(adRequest)
     }
 
     // Method to create a rendered bitmap from a native ad for displaying in the slideshow
     fun getNativeAdForSlideshow(activity: Activity, callback: (NativeAd?) -> Unit) {
-        if (appVersionManager.isProVersion()) {
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
             callback(null)
             return
         }
@@ -427,8 +511,8 @@ class AdManager @Inject constructor(
 
     // Updated method to use the AdActivity instead of direct ad display
     fun loadAndShowFullScreenInterstitial(activity: Activity) {
-        // Don't show ad if pro version or if interval hasn't passed
-        if (appVersionManager.isProVersion()) {
+        // Don't show ad if pro version, consent not given, or if interval hasn't passed
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
             return
         }
 
@@ -441,10 +525,64 @@ class AdManager @Inject constructor(
         // Record that we're showing an ad now
         lastFullScreenInterstitialTime = System.currentTimeMillis()
 
+        // Load full screen interstitial
+        if (!isFullScreenInterstitialLoading && fullScreenInterstitialAd == null) {
+            isFullScreenInterstitialLoading = true
+
+            val adRequest = createAdRequest()
+
+            InterstitialAd.load(context, INTERSTITIAL_AD_UNIT_ID, adRequest,
+                object : InterstitialAdLoadCallback() {
+                    override fun onAdLoaded(ad: InterstitialAd) {
+                        Log.d(TAG, "Full screen interstitial loaded successfully")
+                        fullScreenInterstitialAd = ad
+                        isFullScreenInterstitialLoading = false
+
+                        // Show the ad immediately after loading
+                        showFullScreenInterstitial(activity)
+                    }
+
+                    override fun onAdFailedToLoad(error: LoadAdError) {
+                        Log.e(TAG, "Full screen interstitial failed to load: ${error.message}")
+                        fullScreenInterstitialAd = null
+                        isFullScreenInterstitialLoading = false
+                    }
+                })
+        } else if (fullScreenInterstitialAd != null) {
+            // Ad already loaded, show it
+            showFullScreenInterstitial(activity)
+        }
+    }
+
+    private fun showFullScreenInterstitial(activity: Activity) {
+        fullScreenInterstitialAd?.let { ad ->
+            ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    Log.d(TAG, "Full screen interstitial dismissed")
+                    fullScreenInterstitialAd = null
+                }
+
+                override fun onAdFailedToShowFullScreenContent(error: AdError) {
+                    Log.e(TAG, "Full screen interstitial failed to show: ${error.message}")
+                    fullScreenInterstitialAd = null
+                }
+
+                override fun onAdShowedFullScreenContent() {
+                    Log.d(TAG, "Full screen interstitial showed successfully")
+                    fullScreenInterstitialAd = null
+                }
+            }
+
+            ad.show(activity)
+        }
     }
 
     // Method to check and show full screen interstitial based on timer
     fun checkAndShowFullScreenInterstitial(activity: Activity) {
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
+            return
+        }
+
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastFullScreenInterstitialTime >= FULL_SCREEN_INTERSTITIAL_INTERVAL) {
             loadAndShowFullScreenInterstitial(activity)
@@ -453,14 +591,15 @@ class AdManager @Inject constructor(
 
     // Only call this method when navigating to settings
     fun preloadInterstitialForSettings() {
-        if (appVersionManager.isProVersion() || isLoadingInterstitial) {
+        if (appVersionManager.isProVersion() || isLoadingInterstitial || !consentManager.canShowAds()) {
             return
         }
 
         showInterstitialInSettings = true
         isLoadingInterstitial = true
 
-        val adRequest = AdRequest.Builder().build()
+        val adRequest = createAdRequest()
+
         InterstitialAd.load(context, INTERSTITIAL_AD_UNIT_ID, adRequest,
             object : InterstitialAdLoadCallback() {
                 override fun onAdLoaded(ad: InterstitialAd) {
@@ -502,8 +641,8 @@ class AdManager @Inject constructor(
     }
 
     fun setupMainActivityAd(container: FrameLayout?) {
-        if (appVersionManager.isProVersion() || container == null) {
-            Log.d(TAG, "Pro version or null container, not showing ads")
+        if (appVersionManager.isProVersion() || container == null || !consentManager.canShowAds()) {
+            Log.d(TAG, "Pro version, null container, or no consent - not showing ads")
             return
         }
 
@@ -519,6 +658,7 @@ class AdManager @Inject constructor(
         try {
             if (!isInitialized) {
                 initialize()
+                return
             }
 
             // Cancel any existing refresh runnable
@@ -547,7 +687,9 @@ class AdManager @Inject constructor(
 
                         // If ad fails to load, retry after a short delay
                         mainHandler.postDelayed({
-                            if (!appVersionManager.isProVersion() && mainAdView != null) {
+                            if (!appVersionManager.isProVersion() &&
+                                consentManager.canShowAds() &&
+                                mainAdView != null) {
                                 loadMainActivityAd()
                             }
                         }, 60000) // Retry after 1 minute
@@ -567,7 +709,7 @@ class AdManager @Inject constructor(
                         container.visibility = ViewGroup.VISIBLE
 
                         // Load the ad immediately after adding to container
-                        mainAdView?.loadAd(AdRequest.Builder().build())
+                        mainAdView?.loadAd(createAdRequest())
                         Log.d(TAG, "Main activity banner ad loading requested")
 
                         // Setup the refresh timer for 10 minutes
@@ -589,7 +731,9 @@ class AdManager @Inject constructor(
 
         bannerRefreshRunnable = object : Runnable {
             override fun run() {
-                if (!appVersionManager.isProVersion() && mainAdView != null) {
+                if (!appVersionManager.isProVersion() &&
+                    consentManager.canShowAds() &&
+                    mainAdView != null) {
                     Log.d(TAG, "Refreshing banner ad after 10 minute interval")
                     loadMainActivityAd()
                 }
@@ -621,8 +765,8 @@ class AdManager @Inject constructor(
     }
 
     fun setupSettingsFragmentAd(container: FrameLayout) {
-        if (appVersionManager.isProVersion()) {
-            Log.d(TAG, "Pro version, not showing ads")
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
+            Log.d(TAG, "Pro version or no consent, not showing ads")
             container.visibility = View.GONE
             return
         }
@@ -630,6 +774,8 @@ class AdManager @Inject constructor(
         try {
             if (!isInitialized) {
                 initialize()
+                container.visibility = View.GONE
+                return
             }
 
             settingsAdView = AdView(context).apply {
@@ -678,12 +824,16 @@ class AdManager @Inject constructor(
         return interstitialAd != null &&
                 timeSinceLastAd > MINIMUM_AD_INTERVAL &&
                 !isInterstitialShowing &&
-                showInterstitialInSettings
+                showInterstitialInSettings &&
+                consentManager.canShowAds()
     }
 
     // This is now primarily used for SettingsFragment
     fun showInterstitialAd(activity: Activity? = null) {
-        if (appVersionManager.isProVersion() || isInterstitialShowing || !showInterstitialInSettings) {
+        if (appVersionManager.isProVersion() ||
+            isInterstitialShowing ||
+            !showInterstitialInSettings ||
+            !consentManager.canShowAds()) {
             return
         }
 
@@ -700,15 +850,15 @@ class AdManager @Inject constructor(
     }
 
     fun loadMainActivityAd() {
-        if (appVersionManager.isProVersion()) return
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
 
-        mainAdView?.loadAd(AdRequest.Builder().build())
+        mainAdView?.loadAd(createAdRequest())
     }
 
     fun loadSettingsAd() {
-        if (appVersionManager.isProVersion()) return
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
 
-        settingsAdView?.loadAd(AdRequest.Builder().build())
+        settingsAdView?.loadAd(createAdRequest())
     }
 
     fun pauseAds() {
@@ -719,7 +869,7 @@ class AdManager @Inject constructor(
     }
 
     fun resumeAds() {
-        if (appVersionManager.isProVersion()) return
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
 
         mainAdView?.resume()
         settingsAdView?.resume()
@@ -744,6 +894,26 @@ class AdManager @Inject constructor(
         // Clean up native ads
         nativeAdsCache.forEach { it.destroy() }
         nativeAdsCache.clear()
+    }
+
+    /**
+     * Create an AdRequest that respects user consent settings
+     */
+    private fun createAdRequest(): AdRequest {
+        val builder = AdRequest.Builder()
+
+        // Check if we can show personalized ads
+        if (!consentManager.canShowPersonalizedAds()) {
+            // Set non-personalized ads request
+            val extras = Bundle()
+            extras.putString("npa", "1")  // npa = non-personalized ads
+            builder.addNetworkExtrasBundle(AdMobAdapter::class.java, extras)
+            Log.d(TAG, "Creating non-personalized ad request")
+        } else {
+            Log.d(TAG, "Creating personalized ad request")
+        }
+
+        return builder.build()
     }
 
     object NativeAdSettings {

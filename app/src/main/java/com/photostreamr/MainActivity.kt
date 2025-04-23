@@ -58,6 +58,7 @@ import com.photostreamr.utils.BrightnessManager
 import com.photostreamr.utils.PreferenceKeys
 import com.photostreamr.utils.ScreenOrientation
 import com.photostreamr.ads.AdManager
+import com.photostreamr.ads.ConsentManager
 import com.photostreamr.version.AppVersionManager
 import com.photostreamr.version.FeatureManager
 import com.photostreamr.music.LocalMusicManager
@@ -115,7 +116,6 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var radioManager: RadioManager
 
-
     @Inject
     lateinit var localMusicManager: LocalMusicManager
 
@@ -136,6 +136,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var adManager: AdManager
+
+    @Inject
+    lateinit var consentManager: ConsentManager
 
     @Inject
     lateinit var proVersionPromptManager: ProVersionPromptManager
@@ -178,8 +181,6 @@ class MainActivity : AppCompatActivity() {
             photoDisplayManager.startPhotoDisplay()
         }
     }
-
-
 
     private fun checkForAds() {
         // For MainActivity, simply ensure the banner is loaded
@@ -252,6 +253,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Initialize consent management before ad initialization
+        initializeConsent()
+
         // Initialize ad manager - only for interstitial ads now
         try {
             adManager.initialize() // No parameters
@@ -260,13 +264,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Set up interstitial ads timer - Keeping this for full-screen interstitials
-        setupFullScreenInterstitialTimer()
+        //setupFullScreenInterstitialTimer()
 
         // Uncomment if you want to force interstitial ad at startup
-        lifecycleScope.launch {
-            delay(3000) // Wait a few seconds after app start
-            adManager.checkAndShowFullScreenInterstitial(this@MainActivity)
-        }
+        //lifecycleScope.launch {
+        //    delay(3000) // Wait a few seconds after app start
+        //    adManager.checkAndShowFullScreenInterstitial(this@MainActivity)
+        //}
 
         if (securityPreferences.isSecurityEnabled) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -708,6 +712,31 @@ class MainActivity : AppCompatActivity() {
 
         navController.navigate(R.id.action_mainFragment_to_settingsFragment)
         settingsButtonController.hide()
+    }
+
+    private fun initializeConsent() {
+        // Request consent info
+        consentManager.requestConsentInfo(this) { consentRequired ->
+            // Setup observer to react to consent changes
+            setupConsentObserver()
+
+            if (consentRequired) {
+                Log.d(TAG, "Consent is required, showing consent form")
+                // The consent form will be shown automatically by the ConsentManager
+            } else {
+                Log.d(TAG, "Consent not required or already obtained")
+                // Initialize ad manager - it will check consent status internally
+                adManager.initialize()
+
+                // Setup the consent observer to react to any consent state changes
+                setupConsentObserver()
+            }
+        }
+    }
+
+    private fun setupConsentObserver() {
+        // Setup the ad manager to observe consent state changes
+        adManager.setupConsentObserver(this)
     }
 
     private fun showBiometricPrompt(onSuccess: () -> Unit) {

@@ -862,4 +862,7 @@
     <string name="download_progress">Downloading %1$d of %2$d photos</string>
     <string name="download_completed">Downloaded %1$d of %2$d photos</string>
 
+    <string name="privacy_settings_title">Ads &amp; Privacy</string>
+    <string name="privacy_settings_summary">Manage privacy consent for personalized ads</string>
+
 </resources>

@@ -2,6 +2,7 @@ package com.photostreamr.di
 
 import android.content.Context
 import com.photostreamr.ads.AdManager
+import com.photostreamr.ads.ConsentManager
 import com.photostreamr.billing.BillingRepository
 import com.photostreamr.version.AppVersionManager
 import com.photostreamr.version.FeatureManager
@@ -49,10 +50,19 @@ object BillingModule {
 
     @Provides
     @Singleton
+    fun provideConsentManager(
+        @ApplicationContext context: Context
+    ): ConsentManager {
+        return ConsentManager(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideAdManager(
         @ApplicationContext context: Context,
-        appVersionManager: AppVersionManager
+        appVersionManager: AppVersionManager,
+        consentManager: ConsentManager
     ): AdManager {
-        return AdManager(context, appVersionManager)
+        return AdManager(context, appVersionManager, consentManager)
     }
 }

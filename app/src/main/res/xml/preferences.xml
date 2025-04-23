@@ -60,6 +60,11 @@
         app:iconSpaceReserved="true" />
 
     <Preference
+        android:key="privacy_settings"
+        android:title="@string/privacy_settings_title"
+        android:summary="@string/privacy_settings_summary" />
+
+    <Preference
         android:layout="@layout/preference_bottom_spacing"
         android:key="bottom_spacing"/>
 

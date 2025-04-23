@@ -151,6 +151,7 @@ dependencies {
 
     // Google AdMob
     implementation("com.google.android.gms:play-services-ads:22.0.0")
+    implementation("com.google.android.ump:user-messaging-platform:2.1.0")
 
     // In-app billing (optional, for handling purchases)
     implementation("com.android.billingclient:billing:6.0.1")
