@@ -13,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import androidx.lifecycle.MutableLiveData
+import androidx.preference.PreferenceManager
 import com.photostreamr.BuildConfig
 
 @Singleton
@@ -129,6 +130,9 @@ class ConsentManager @Inject constructor(
     /**
      * Show the consent form to the user
      */
+    /**
+     * Show the consent form to the user
+     */
     fun showConsentForm(activity: Activity) {
         // Check if form is already loaded
         if (consentForm != null) {
@@ -138,6 +142,8 @@ class ConsentManager @Inject constructor(
                     Log.e(TAG, "Error showing consent form: ${formError.message}")
                 } else {
                     Log.d(TAG, "Consent form shown successfully")
+
+                    // Debug the TCF preferences right after consent form is closed
                     debugTCFPreferences()
 
                     // Update the consent state after the form is closed
@@ -170,6 +176,9 @@ class ConsentManager @Inject constructor(
                             Log.e(TAG, "Error showing consent form: ${formError.message}")
                         } else {
                             Log.d(TAG, "Consent form shown successfully")
+
+                            // Debug the TCF preferences right after consent form is closed
+                            debugTCFPreferences()
 
                             // Update the consent state after the form is closed
                             consentState.value = when (consentInformation.consentStatus) {
@@ -219,6 +228,9 @@ class ConsentManager @Inject constructor(
     /**
      * Check if PERSONALIZED ads can be shown
      */
+    /**
+     * Check if PERSONALIZED ads can be shown
+     */
     fun canShowPersonalizedAds(): Boolean {
         if (!canShowAds()) {
             return false
@@ -230,11 +242,11 @@ class ConsentManager @Inject constructor(
             return true
         }
 
-        // Read the UMP_consentModeValues value directly
+        // The key point is to use the correct context and preferences name
         try {
-            val appContext = context.applicationContext
-            val prefs = appContext.getSharedPreferences("UMP", Context.MODE_PRIVATE)
-            val consentModeValues = prefs.getString("UMP_consentModeValues", "")
+            // First check: Look for UMP_consentModeValues in the UMP preferences
+            val umpPrefs = context.getSharedPreferences("UMP", Context.MODE_PRIVATE)
+            val consentModeValues = umpPrefs.getString("UMP_consentModeValues", "")
             Log.d(TAG, "UMP consent mode values: $consentModeValues")
 
             // "4444" indicates that ad personalization is allowed
@@ -246,20 +258,20 @@ class ConsentManager @Inject constructor(
             Log.e(TAG, "Error reading UMP consent mode values", e)
         }
 
-        // As a last resort, check for direct "CONSENT_SIGNAL_SUFFICIENT" status
+        // Second check: Look for IABTCF_PurposeConsents in default preferences
         try {
-            val appContext = context.applicationContext
-            val sharedPreferences = appContext.getSharedPreferences("IABTCF", Context.MODE_PRIVATE)
-            val purposeConsents = sharedPreferences.getString("IABTCF_PurposeConsents", "")
+            // Try reading from default SharedPreferences first
+            val defaultPrefs = PreferenceManager.getDefaultSharedPreferences(context)
+            val purposeConsents = defaultPrefs.getString("IABTCF_PurposeConsents", "")
 
-            Log.d(TAG, "Read TCF purpose consents: '$purposeConsents'")
+            Log.d(TAG, "Read TCF purpose consents from default prefs: '$purposeConsents'")
 
             if (purposeConsents == "11111111111") {
-                Log.d(TAG, "Full consent detected, showing personalized ads")
+                Log.d(TAG, "Full consent detected in default prefs, showing personalized ads")
                 return true
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error reading TCF consent data", e)
+            Log.e(TAG, "Error reading TCF consent data from default prefs", e)
         }
 
         // Default to non-personalized ads
@@ -269,23 +281,55 @@ class ConsentManager @Inject constructor(
 
     fun debugTCFPreferences() {
         try {
-            val prefs = context.getSharedPreferences("IABTCF", Context.MODE_PRIVATE)
-            val allPrefs = prefs.all
+            // Check UMP preferences
+            val umpPrefs = context.getSharedPreferences("UMP", Context.MODE_PRIVATE)
+            val umpAll = umpPrefs.all
 
-            Log.d(TAG, "===== TCF Preferences Debug =====")
-            Log.d(TAG, "Number of preferences: ${allPrefs.size}")
-
-            allPrefs.forEach { (key, value) ->
-                Log.d(TAG, "[$key] = $value")
+            Log.d(TAG, "===== UMP Preferences Debug =====")
+            Log.d(TAG, "Number of UMP preferences: ${umpAll.size}")
+            umpAll.forEach { (key, value) ->
+                Log.d(TAG, "UMP[$key] = $value")
             }
 
-            // Now specifically check the purpose consents key
-            val purposeConsents = prefs.getString("IABTCF_PurposeConsents", "")
-            Log.d(TAG, "Purpose consents direct check: '$purposeConsents'")
+            // Check default preferences
+            val defaultPrefs = PreferenceManager.getDefaultSharedPreferences(context)
+            val defaultAll = defaultPrefs.all.filter { (key, _) -> key.startsWith("IABTCF_") || key.startsWith("UMP_") }
 
-            Log.d(TAG, "===== End TCF Preferences Debug =====")
+            Log.d(TAG, "===== Default Preferences Debug =====")
+            Log.d(TAG, "Number of TCF/UMP preferences in default: ${defaultAll.size}")
+            defaultAll.forEach { (key, value) ->
+                Log.d(TAG, "Default[$key] = $value")
+            }
+
+            // Check IABTCF preferences specifically
+            val iabtcfPrefs = context.getSharedPreferences("IABTCF", Context.MODE_PRIVATE)
+            val iabtcfAll = iabtcfPrefs.all
+
+            Log.d(TAG, "===== IABTCF Preferences Debug =====")
+            Log.d(TAG, "Number of IABTCF preferences: ${iabtcfAll.size}")
+            iabtcfAll.forEach { (key, value) ->
+                Log.d(TAG, "IABTCF[$key] = $value")
+            }
+
+            // Now specifically check the purpose consents key in all locations
+            val umpPurposeConsents = umpPrefs.getString("IABTCF_PurposeConsents", "")
+            val defaultPurposeConsents = defaultPrefs.getString("IABTCF_PurposeConsents", "")
+            val iabtcfPurposeConsents = iabtcfPrefs.getString("IABTCF_PurposeConsents", "")
+
+            Log.d(TAG, "Purpose consents in UMP: '$umpPurposeConsents'")
+            Log.d(TAG, "Purpose consents in default: '$defaultPurposeConsents'")
+            Log.d(TAG, "Purpose consents in IABTCF: '$iabtcfPurposeConsents'")
+
+            // Check UMP_consentModeValues
+            val umpConsentValues = umpPrefs.getString("UMP_consentModeValues", "")
+            val defaultConsentValues = defaultPrefs.getString("UMP_consentModeValues", "")
+
+            Log.d(TAG, "UMP_consentModeValues in UMP: '$umpConsentValues'")
+            Log.d(TAG, "UMP_consentModeValues in default: '$defaultConsentValues'")
+
+            Log.d(TAG, "===== End Preferences Debug =====")
         } catch (e: Exception) {
-            Log.e(TAG, "Error debugging TCF preferences", e)
+            Log.e(TAG, "Error debugging preferences", e)
         }
     }
 

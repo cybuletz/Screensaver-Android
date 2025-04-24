@@ -93,6 +93,12 @@ class AdManager @Inject constructor(
         private const val NATIVE_AD_CACHE_SIZE = 3
     }
 
+    private val autoRestartHandler = Handler(Looper.getMainLooper())
+    private var autoRestartRunnable: Runnable? = null
+    private val AUTO_RESTART_INTERVAL = 4 * 60 * 60 * 1000L // 6 hours in milliseconds
+    private val adLoadTimeoutDuration = 30000L // 30 seconds timeout for ad loading
+
+
     private var photoCount = 0
     private var photosUntilNextAd = getRandomAdFrequency()
 
@@ -427,7 +433,28 @@ class AdManager @Inject constructor(
         // Set the callback
         nativeAdLoadListener = callback
 
+        // Already loading? Don't start another load
+        if (isLoadingNativeAd) {
+            Log.w(TAG, "Already loading a native ad, ignoring new request")
+            callback?.invoke(null)
+            return
+        }
+
         isLoadingNativeAd = true
+
+        // Set up a timeout to prevent infinite loading
+        val timeoutHandler = Handler(Looper.getMainLooper())
+        val timeoutRunnable = Runnable {
+            if (isLoadingNativeAd) {
+                Log.w(TAG, "Native ad loading timed out after ${adLoadTimeoutDuration/1000} seconds")
+                isLoadingNativeAd = false
+                nativeAdLoadListener?.invoke(null)
+                nativeAdLoadListener = null
+            }
+        }
+
+        // Start the timeout
+        timeoutHandler.postDelayed(timeoutRunnable, adLoadTimeoutDuration)
 
         // Create the ad request, considering consent
         val adRequest = createAdRequest()
@@ -436,6 +463,10 @@ class AdManager @Inject constructor(
             .forNativeAd { nativeAd ->
                 // This is called when a native ad has loaded successfully
                 Log.d(TAG, "Native ad loaded successfully")
+
+                // Cancel the timeout
+                timeoutHandler.removeCallbacks(timeoutRunnable)
+
                 isLoadingNativeAd = false
 
                 if (nativeAdLoadListener == callback) {
@@ -455,6 +486,10 @@ class AdManager @Inject constructor(
             .withAdListener(object : AdListener() {
                 override fun onAdFailedToLoad(error: LoadAdError) {
                     Log.e(TAG, "Ad failed to load: ${error.message}, code: ${error.code}, domain: ${error.domain}")
+
+                    // Cancel the timeout
+                    timeoutHandler.removeCallbacks(timeoutRunnable)
+
                     isLoadingNativeAd = false
 
                     if (nativeAdLoadListener == callback) {
@@ -920,5 +955,87 @@ class AdManager @Inject constructor(
         // Min and max frequency
         const val MIN_FREQUENCY = MIN_NATIVE_AD_FREQUENCY
         const val MAX_FREQUENCY = MAX_NATIVE_AD_FREQUENCY
+    }
+
+    /**
+     * Start automatic periodic reinitialization of the ad system
+     * This ensures the ad system restarts itself every 6 hours regardless of user interaction
+     */
+    fun startAutomaticReinitializer() {
+        Log.d(TAG, "Starting automatic ad system reinitialization")
+
+        // Cancel any existing runnable
+        stopAutomaticReinitializer()
+
+        autoRestartRunnable = object : Runnable {
+            override fun run() {
+                Log.d(TAG, "Performing scheduled automatic ad system restart")
+                reinitializeAdSystem()
+
+                // Schedule next restart
+                autoRestartHandler.postDelayed(this, AUTO_RESTART_INTERVAL)
+            }
+        }
+
+        // Schedule first restart
+        autoRestartHandler.postDelayed(autoRestartRunnable!!, AUTO_RESTART_INTERVAL)
+    }
+
+    /**
+     * Stop the automatic reinitialization
+     */
+    fun stopAutomaticReinitializer() {
+        autoRestartRunnable?.let {
+            autoRestartHandler.removeCallbacks(it)
+            autoRestartRunnable = null
+        }
+    }
+
+    /**
+     * Resets all ad loading states and re-initializes the ad system.
+     * This is similar to what happens when the app restarts.
+     */
+    fun reinitializeAdSystem() {
+        Log.d(TAG, "Reinitializing ad system")
+
+        // First destroy all existing ads
+        destroyAds()
+
+        // Reset all loading flags
+        isLoadingNativeAd = false
+        isLoadingInterstitial = false
+        isFullScreenInterstitialLoading = false
+        isInterstitialShowing = false
+
+        // Clear any stuck listeners
+        nativeAdLoadListener = null
+
+        // Remove any pending callbacks
+        mainHandler.removeCallbacksAndMessages(null)
+
+        // Clear out the native ads cache
+        nativeAdsCache.forEach { it.destroy() }
+        nativeAdsCache.clear()
+
+        // Set initialized to false so we can re-initialize
+        isInitialized = false
+
+        // Re-initialize the ad system
+        initialize()
+
+        // Preload native ads again
+        preloadNativeAds()
+    }
+
+    /**
+     * Resets all loading states to false. This helps recover from situations where
+     * an ad load gets stuck and prevents new ads from loading.
+     */
+    fun resetLoadingStates() {
+        Log.d(TAG, "Resetting all ad loading states")
+
+        isLoadingNativeAd = false
+        isLoadingInterstitial = false
+        isFullScreenInterstitialLoading = false
     }
 }

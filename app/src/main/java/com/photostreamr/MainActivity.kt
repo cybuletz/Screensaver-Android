@@ -336,11 +336,25 @@ class MainActivity : AppCompatActivity() {
                 brightnessManager.startMonitoring(window)
             }
 
+            // Start automatic recovery systems for long-running passive use
+            startAutomaticRecoverySystems()
+
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
         }
+    }
+
+    // Start automatic recovery systems for long-running passive use
+    private fun startAutomaticRecoverySystems() {
+        // Start automatic ad system reinitialization
+        adManager.startAutomaticReinitializer()
+
+        // Start photo slideshow recovery monitoring
+        photoDisplayManager.startAutomaticRecoveryMonitoring()
+
+        Log.d(TAG, "Automatic recovery systems started for passive long-running use")
     }
 
     private fun ensureBinding() {

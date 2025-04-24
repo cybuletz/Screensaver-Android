@@ -102,6 +102,11 @@ class PhotoDisplayManager @Inject constructor(
     private var nativeAdDuration = 10000L // Display native ads for 10 seconds
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private val recoveryHandler = Handler(Looper.getMainLooper())
+    private var recoveryRunnable: Runnable? = null
+    private var lastPhotoChangeTime = System.currentTimeMillis()
+    private val PHOTO_STUCK_THRESHOLD = 3 * 60 * 1000L // 3 minutes
+
 
     data class Views(
         val primaryView: ImageView,
@@ -1082,6 +1087,9 @@ class PhotoDisplayManager @Inject constructor(
             views.leftLetterboxView?.visibility = View.GONE
             views.rightLetterboxView?.visibility = View.GONE
 
+            // Record successful transition for monitoring
+            recordPhotoChange()
+
             // Schedule the next photo after an interval
             val interval = getIntervalMillis()
 
@@ -1493,6 +1501,82 @@ class PhotoDisplayManager @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling low memory", e)
                 showDefaultPhoto()
+            }
+        }
+    }
+
+    /**
+     * Start automatic recovery monitoring to detect and fix stuck photo slideshows
+     */
+    fun startAutomaticRecoveryMonitoring() {
+        Log.d(TAG, "Starting automatic photo slideshow recovery monitoring")
+
+        // Cancel any existing runnable
+        stopAutomaticRecoveryMonitoring()
+
+        recoveryRunnable = object : Runnable {
+            override fun run() {
+                checkAndRecoverFromStuckState()
+
+                // Schedule next check
+                recoveryHandler.postDelayed(this, 60000) // Check every minute
+            }
+        }
+
+        // Schedule first check
+        recoveryHandler.postDelayed(recoveryRunnable!!, 60000)
+    }
+
+    /**
+     * Stop the automatic recovery monitoring
+     */
+    fun stopAutomaticRecoveryMonitoring() {
+        recoveryRunnable?.let {
+            recoveryHandler.removeCallbacks(it)
+            recoveryRunnable = null
+        }
+    }
+
+    /**
+     * Record a successful photo transition
+     * This should be called whenever a photo is successfully displayed
+     */
+    fun recordPhotoChange() {
+        lastPhotoChangeTime = System.currentTimeMillis()
+    }
+
+    /**
+     * Check if the photo slideshow appears to be stuck and recover if needed
+     */
+    private fun checkAndRecoverFromStuckState() {
+        if (!isScreensaverActive) {
+            return // Only check when slideshow is active
+        }
+
+        val currentTime = System.currentTimeMillis()
+        val timeSinceLastChange = currentTime - lastPhotoChangeTime
+
+        if (timeSinceLastChange > PHOTO_STUCK_THRESHOLD) {
+            Log.w(TAG, "Photo slideshow appears stuck for ${timeSinceLastChange/1000} seconds, forcing recovery")
+
+            // Force reset the transitioning state
+            isTransitioning = false
+
+            // Force reset any native ad loading state
+            adManager.resetLoadingStates()
+
+            // Try to resume the slideshow
+            val photoCount = photoManager.getPhotoCount()
+            if (photoCount > 0) {
+                // Advance to the next photo forcibly
+                val nextIndex = (currentPhotoIndex + 1) % photoCount
+                currentPhotoIndex = nextIndex
+
+                // Load the next photo
+                loadAndDisplayPhoto(false)
+
+                // Record the change
+                recordPhotoChange()
             }
         }
     }

@@ -532,7 +532,9 @@ class PhotoRepository @Inject constructor(
             val json = preferences.getString(KEY_VIRTUAL_ALBUMS, null)
             if (!json.isNullOrEmpty()) {
                 val jsonArray = JSONArray(json)
-                virtualAlbums.clear()
+
+                // Create a temporary list instead of modifying virtualAlbums directly
+                val tempAlbums = mutableListOf<VirtualAlbum>()
 
                 for (i in 0 until jsonArray.length()) {
                     val obj = jsonArray.getJSONObject(i)
@@ -547,21 +549,18 @@ class PhotoRepository @Inject constructor(
                         name = obj.getString("name"),
                         photoUris = photoUris,
                         dateCreated = obj.getLong("dateCreated"),
-                        isSelected = obj.optBoolean("isSelected", false)  // Default to false if not present
+                        isSelected = obj.optBoolean("isSelected", false)
                     )
-                    virtualAlbums.add(album)
+                    tempAlbums.add(album)
+                }
 
-                    //Log.d(TAG, """Loaded album:
-                    //• Name: ${album.name}
-                    //• Selection state: ${album.isSelected}
-                    //• Photos: ${album.photoUris.size}""".trimIndent())
+                // Now that iteration is complete, update the virtualAlbums list
+                synchronized(virtualAlbums) {
+                    virtualAlbums.clear()
+                    virtualAlbums.addAll(tempAlbums)
                 }
 
                 val selectedCount = virtualAlbums.count { it.isSelected }
-                //Log.d(TAG, """Successfully loaded virtual albums:
-                //• Total albums: ${virtualAlbums.size}
-                //• Selected albums: $selectedCount
-                //• Total photos: ${virtualAlbums.sumOf { it.photoUris.size }}""".trimIndent())
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading virtual albums", e)
