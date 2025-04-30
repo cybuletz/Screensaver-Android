@@ -38,7 +38,7 @@ class BitmapMemoryManager @Inject constructor(
         private const val SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT = 60.0f
 
         // Cleanup cycles configuration
-        private const val MIN_PHOTOS_BETWEEN_CLEANUPS = 10
+        private const val MIN_PHOTOS_BETWEEN_CLEANUPS = 200
         private const val DEFAULT_CLEANUP_CYCLE_LENGTH = 3
         private const val SEVERE_CLEANUP_CYCLE_LENGTH = 5
 
@@ -161,7 +161,7 @@ class BitmapMemoryManager @Inject constructor(
             while (isActive) {
                 try {
                     // Calculate cleanup interval
-                    val cleanupIntervalMs = 5 * 60 * 1000L // 5 minutes default
+                    val cleanupIntervalMs = 60 * 60 * 1000L // 5 minutes default
 
                     Log.i(TAG, "💾 Scheduling next cache cleanup in ${cleanupIntervalMs/1000}s")
                     delay(cleanupIntervalMs)

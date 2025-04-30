@@ -1550,33 +1550,34 @@ class PhotoDisplayManager @Inject constructor(
      */
     private fun checkAndRecoverFromStuckState() {
         if (!isScreensaverActive) {
-            return // Only check when slideshow is active
+            return
         }
-
         val currentTime = System.currentTimeMillis()
         val timeSinceLastChange = currentTime - lastPhotoChangeTime
 
         if (timeSinceLastChange > PHOTO_STUCK_THRESHOLD) {
             Log.w(TAG, "Photo slideshow appears stuck for ${timeSinceLastChange/1000} seconds, forcing recovery")
-
-            // Force reset the transitioning state
             isTransitioning = false
 
-            // Force reset any native ad loading state
-            adManager.resetLoadingStates()
+            try {
+                adManager.reinitializeAdSystem() // Use correct method
+            } catch (e: Exception) {
+                Log.e(TAG, "Error reinitializing AdManager during recovery", e)
+            }
 
-            // Try to resume the slideshow
-            val photoCount = photoManager.getPhotoCount()
-            if (photoCount > 0) {
-                // Advance to the next photo forcibly
-                val nextIndex = (currentPhotoIndex + 1) % photoCount
-                currentPhotoIndex = nextIndex
-
-                // Load the next photo
-                loadAndDisplayPhoto(false)
-
-                // Record the change
-                recordPhotoChange()
+            lifecycleScope?.launch { // Launch coroutine for suspend calls
+                try {
+                    val photoCount = try { photoManager.getPhotoCount() } catch(e: Exception) { 0 }
+                    if (photoCount > 0) {
+                        val nextIndex = (currentPhotoIndex + 1) % photoCount
+                        currentPhotoIndex = nextIndex
+                        loadAndDisplayPhoto(false)
+                        // Note: recordPhotoChange will be called by the normal flow
+                        // triggered by loadAndDisplayPhoto -> glide -> completeTransition
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error getting photo count during recovery", e)
+                }
             }
         }
     }

@@ -226,15 +226,15 @@ class SmartTemplateHelper @Inject constructor(
         val srcRatio = srcW / srcH
 
         // Extensive logging to debug container/ratio issues
-        Log.d(TAG, "📏 CROP INPUT: src=${srcW.toInt()}x${srcH.toInt()} ratio=${String.format("%.3f", srcRatio)}, " +
-                "target=${targetWidth}x${targetHeight} ratio=${String.format("%.3f", targetRatio)}")
+        //Log.d(TAG, "📏 CROP INPUT: src=${srcW.toInt()}x${srcH.toInt()} ratio=${String.format("%.3f", srcRatio)}, " +
+        //        "target=${targetWidth}x${targetHeight} ratio=${String.format("%.3f", targetRatio)}")
 
         if (faceRects != null) {
             for (i in faceRects.indices) {
                 val face = faceRects[i]
-                Log.d(TAG, "👤 Face #${i+1}: left=${face.left.toInt()}, top=${face.top.toInt()}, " +
-                        "right=${face.right.toInt()}, bottom=${face.bottom.toInt()}, " +
-                        "size=${face.width().toInt()}x${face.height().toInt()}")
+                //Log.d(TAG, "👤 Face #${i+1}: left=${face.left.toInt()}, top=${face.top.toInt()}, " +
+                //        "right=${face.right.toInt()}, bottom=${face.bottom.toInt()}, " +
+                //        "size=${face.width().toInt()}x${face.height().toInt()}")
             }
         }
 
@@ -274,7 +274,7 @@ class SmartTemplateHelper @Inject constructor(
             maxCropTop = (srcH - maxCropH) / 2f // center by default
         }
 
-        Log.d(TAG, "🔍 MAX CROP: ${maxCropW.toInt()}x${maxCropH.toInt()} at (${maxCropLeft.toInt()},${maxCropTop.toInt()})")
+        //Log.d(TAG, "🔍 MAX CROP: ${maxCropW.toInt()}x${maxCropH.toInt()} at (${maxCropLeft.toInt()},${maxCropTop.toInt()})")
 
         // STEP 2: If no faces, use the maximum center crop (maximal zoom-out)
         if (faceRects.isNullOrEmpty()) {
@@ -328,7 +328,7 @@ class SmartTemplateHelper @Inject constructor(
         val faceCenterX = (minX + maxX) / 2f
         val faceCenterY = (minY + maxY) / 2f
 
-        Log.d(TAG, "👥 FACE REGION: ${faceWidth.toInt()}x${faceHeight.toInt()} at (${minX.toInt()},${minY.toInt()}), center at (${faceCenterX.toInt()},${faceCenterY.toInt()})")
+        //Log.d(TAG, "👥 FACE REGION: ${faceWidth.toInt()}x${faceHeight.toInt()} at (${minX.toInt()},${minY.toInt()}), center at (${faceCenterX.toInt()},${faceCenterY.toInt()})")
 
         // SPECIAL HANDLING FOR EXTREME ASPECT RATIO MISMATCHES
         if (isExtremeRatioMismatch) {
@@ -407,14 +407,14 @@ class SmartTemplateHelper @Inject constructor(
             RectF(maxCropLeft, maxCropTop, maxCropLeft + maxCropW, maxCropTop + maxCropH)
         )
 
-        Log.d(TAG, "📊 Face region overlap with max crop: ${String.format("%.1f", faceAreaInsideCrop * 100)}%")
+        //Log.d(TAG, "📊 Face region overlap with max crop: ${String.format("%.1f", faceAreaInsideCrop * 100)}%")
 
         // If faces are nearly inside the max crop (>85%), consider them inside
         val effectivelyInsideMaxCrop = facesInsideMaxCrop || faceAreaInsideCrop > 0.85f
 
         if (effectivelyInsideMaxCrop) {
             // Best case: all faces fit in max crop (or very close to it), use maximum zoom-out
-            Log.d(TAG, "👍 All faces effectively fit in maximum crop, using maximum zoom-out")
+            //Log.d(TAG, "👍 All faces effectively fit in maximum crop, using maximum zoom-out")
             return createCroppedBitmap(
                 src,
                 maxCropLeft.toInt(),

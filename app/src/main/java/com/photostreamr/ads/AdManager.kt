@@ -16,9 +16,9 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.RatingBar
 import android.widget.TextView
-import com.google.android.gms.ads.AdActivity
-import com.photostreamr.R
-import com.photostreamr.version.AppVersionManager
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Observer
+import com.google.ads.mediation.admob.AdMobAdapter
 import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdListener
 import com.google.android.gms.ads.AdLoader
@@ -35,16 +35,17 @@ import com.google.android.gms.ads.nativead.NativeAd
 import com.google.android.gms.ads.nativead.NativeAdOptions
 import com.google.android.gms.ads.nativead.NativeAdView
 import com.photostreamr.BuildConfig
+import com.photostreamr.R
+import com.photostreamr.version.AppVersionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean // Import AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
-import java.util.concurrent.ConcurrentLinkedQueue
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.Observer
-import com.google.ads.mediation.admob.AdMobAdapter
+import kotlin.jvm.Volatile // Import Volatile
 
 @Singleton
 class AdManager @Inject constructor(
@@ -55,54 +56,45 @@ class AdManager @Inject constructor(
     companion object {
         private const val TAG = "AdManager"
 
-        // Test ad units for development
-        //private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111"
-        //private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
-        //private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-3940256099942544/2247696110"
+        // Test ad units
+        //private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111" // Standard test ID
+        //private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712" // Standard test ID
+        //private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-3940256099942544/2247696110" // Standard test ID
 
+        // Production ad units (Replace with your actual IDs if necessary)
         private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-1825370608705808/5588599522"
         private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-1825370608705808/2803751564"
         private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-1825370608705808/2360210075"
 
-        // Production ad units
+        // Production ad units (Replace with your actual IDs if necessary)
         private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-1825370608705808/5588599522"
         private const val PRODUCTION_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-1825370608705808/2803751564"
         private const val PRODUCTION_NATIVE_AD_UNIT_ID = "ca-app-pub-1825370608705808/2360210075"
 
-        // Auto-detect whether we're in debug or release mode
         private val IS_DEBUG = BuildConfig.DEBUG
 
-        // Use appropriate ad unit IDs based on build type
         private val BANNER_AD_UNIT_ID = if (IS_DEBUG) TEST_BANNER_AD_UNIT_ID else PRODUCTION_BANNER_AD_UNIT_ID
         private val INTERSTITIAL_AD_UNIT_ID = if (IS_DEBUG) TEST_INTERSTITIAL_AD_UNIT_ID else PRODUCTION_INTERSTITIAL_AD_UNIT_ID
         private val NATIVE_AD_UNIT_ID = if (IS_DEBUG) TEST_NATIVE_AD_UNIT_ID else PRODUCTION_NATIVE_AD_UNIT_ID
 
-        // Configure ad display timing (in milliseconds)
         private const val INTERSTITIAL_AD_DISPLAY_DURATION = 10000L // 10 seconds
         private const val MINIMUM_AD_INTERVAL = 180000L // 3 minutes minimum between ads
-
-        // Banner refresh interval (10 minutes)
-        private const val BANNER_REFRESH_INTERVAL = 60000L // 10 minutes in milliseconds
-
-        // Native ad frequency (min and max values)
-        private const val MIN_NATIVE_AD_FREQUENCY = 10 // Min photos between random ads
-        private const val MAX_NATIVE_AD_FREQUENCY = 15 // Max photos between random ads
-        private const val DEFAULT_NATIVE_AD_FREQUENCY = 20 // Default fallback value
-
-        // The number of native ads to preload in the cache
+        private const val BANNER_REFRESH_INTERVAL = 600000L // 10 minutes in milliseconds
+        private const val MIN_NATIVE_AD_FREQUENCY = 20
+        private const val MAX_NATIVE_AD_FREQUENCY = 25
+        private const val DEFAULT_NATIVE_AD_FREQUENCY = 25
         private const val NATIVE_AD_CACHE_SIZE = 3
+        private const val AD_LOAD_TIMEOUT_DURATION = 30000L // 30 seconds
     }
 
     private val autoRestartHandler = Handler(Looper.getMainLooper())
     private var autoRestartRunnable: Runnable? = null
-    private val AUTO_RESTART_INTERVAL = 4 * 60 * 60 * 1000L // 6 hours in milliseconds
-    private val adLoadTimeoutDuration = 30000L // 30 seconds timeout for ad loading
-
+    private val AUTO_RESTART_INTERVAL = 4 * 60 * 60 * 1000L // 4 hours
 
     private var photoCount = 0
     private var photosUntilNextAd = getRandomAdFrequency()
 
-    private var isInitialized = false
+    @Volatile private var isInitialized = false // Standard volatile boolean is fine here
     private var mainAdView: AdView? = null
     private var settingsAdView: AdView? = null
     private var interstitialAd: InterstitialAd? = null
@@ -110,90 +102,70 @@ class AdManager @Inject constructor(
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var fullScreenInterstitialAd: InterstitialAd? = null
-    private var isFullScreenInterstitialLoading = false
+    // --- Use AtomicBoolean correctly ---
+    private val isFullScreenInterstitialLoading = AtomicBoolean(false)
     private var lastFullScreenInterstitialTime = 0L
     private val FULL_SCREEN_INTERSTITIAL_INTERVAL = 600000L // 10 minutes
     private val FULL_SCREEN_INTERSTITIAL_DISPLAY_DURATION = 20000L // 20 seconds
 
-    // Add a refresh handler for banner ads
     private var bannerRefreshRunnable: Runnable? = null
 
-    // Track when ads were shown
     private var lastInterstitialAdTime = 0L
-    private var isInterstitialShowing = false
-    private var isLoadingInterstitial = false
+    // --- Use AtomicBoolean correctly ---
+    private val isInterstitialShowing = AtomicBoolean(false)
+    private val isLoadingInterstitial = AtomicBoolean(false)
 
-    // Flag to track whether to show interstitial in settings
     private var showInterstitialInSettings = true
 
-    // Native ad fields
     private val nativeAdsCache = ConcurrentLinkedQueue<NativeAd>()
-    private var isLoadingNativeAd = false
+    // --- Use AtomicBoolean correctly ---
+    private val isLoadingNativeAd = AtomicBoolean(false)
     private val nativeAdLoadScope = CoroutineScope(Dispatchers.IO)
 
     private val random = kotlin.random.Random.Default
 
-    // The current listener for native ad loading
-    private var nativeAdLoadListener: ((NativeAd?) -> Unit)? = null
+    @Volatile private var currentNativeAdLoadCallback: ((NativeAd?) -> Unit)? = null
+    private val timeoutHandler = Handler(Looper.getMainLooper())
 
-    // Consent state observer reference
     private var consentObserver: Observer<ConsentManager.ConsentState>? = null
 
-    /**
-     * Set up consent state observer to react to consent changes
-     */
     fun setupConsentObserver(lifecycleOwner: LifecycleOwner) {
-        // Remove any existing observer
         consentObserver?.let {
             consentManager.consentState.removeObserver(it)
         }
 
-        // Create a new observer
         consentObserver = Observer<ConsentManager.ConsentState> { state ->
             Log.d(TAG, "Consent state changed to: $state")
-
             when (state) {
                 ConsentManager.ConsentState.OBTAINED,
                 ConsentManager.ConsentState.NOT_REQUIRED -> {
-                    // Consent obtained or not required, initialize ads if needed
                     if (!isInitialized) {
                         initializeAds()
                     }
                 }
                 ConsentManager.ConsentState.REQUIRED -> {
-                    // Consent required but not given, pause ads if needed
                     pauseAds()
                 }
                 ConsentManager.ConsentState.ERROR -> {
-                    // Error occurred, log but proceed with non-personalized ads
                     Log.e(TAG, "Error with consent, proceeding with non-personalized ads")
                     if (!isInitialized) {
                         initializeAds()
                     }
                 }
                 else -> {
-                    // Unknown state, wait for proper state
                     Log.d(TAG, "Consent in unknown state, waiting")
                 }
             }
         }
-
-        // Register the observer
         consentManager.consentState.observe(lifecycleOwner, consentObserver!!)
     }
 
-    /**
-     * Initialize the ad manager
-     */
     fun initialize() {
         Log.d(TAG, "AdManager initialize called")
-
         if (isInitialized) {
             Log.d(TAG, "AdManager already initialized")
             return
         }
-
-        // Check if consent is needed or already given
         if (consentManager.canShowAds()) {
             Log.d(TAG, "Consent already obtained or not required, initializing ads")
             initializeAds()
@@ -202,35 +174,31 @@ class AdManager @Inject constructor(
         }
     }
 
-    /**
-     * Initialize ads after consent is handled
-     */
     private fun initializeAds() {
         if (isInitialized) return
-
         try {
             Log.d(TAG, "Initializing Mobile Ads SDK")
-
             MobileAds.initialize(context) { initializationStatus ->
                 Log.d(TAG, "Mobile Ads initialized: $initializationStatus")
                 isInitialized = true
-
-                // Preload native ads right after initialization
-                preloadNativeAds()
+                preloadNativeAds() // Preload after initialization
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing AdManager", e)
         }
     }
 
-    // Getter for interstitial ad unit ID
     fun getInterstitialAdUnitId(): String {
         return INTERSTITIAL_AD_UNIT_ID
     }
 
     private fun getRandomAdFrequency(): Int {
         return try {
-            random.nextInt(MIN_NATIVE_AD_FREQUENCY, MAX_NATIVE_AD_FREQUENCY + 1)
+            if (MIN_NATIVE_AD_FREQUENCY >= MAX_NATIVE_AD_FREQUENCY + 1) {
+                DEFAULT_NATIVE_AD_FREQUENCY // Avoid IllegalArgumentException
+            } else {
+                random.nextInt(MIN_NATIVE_AD_FREQUENCY, MAX_NATIVE_AD_FREQUENCY + 1)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error generating random ad frequency", e)
             DEFAULT_NATIVE_AD_FREQUENCY
@@ -239,28 +207,18 @@ class AdManager @Inject constructor(
 
     fun getNativeAdView(activity: Activity, nativeAd: NativeAd): View {
         val inflater = LayoutInflater.from(activity)
-        // Inflate the root view first (ConstraintLayout)
         val rootView = inflater.inflate(R.layout.native_ad_layout, null) as ViewGroup
-
-        // Find the NativeAdView inside the layout
         val adView = rootView.findViewById<NativeAdView>(R.id.native_ad_view)
-
-        // Now populate the NativeAdView
         populateNativeAdView(nativeAd, adView)
-
-        // Return the root view
         return rootView
     }
 
-    // Method to populate a native ad view with ad data
     fun populateNativeAdView(nativeAd: NativeAd, adView: NativeAdView) {
         try {
-            // Set the headline
             val headlineView = adView.findViewById<TextView>(R.id.ad_headline)
             headlineView.text = nativeAd.headline
             adView.headlineView = headlineView
 
-            // Set the body text
             val bodyView = adView.findViewById<TextView>(R.id.ad_body)
             if (nativeAd.body != null) {
                 bodyView.text = nativeAd.body
@@ -270,7 +228,6 @@ class AdManager @Inject constructor(
             }
             adView.bodyView = bodyView
 
-            // Set the app icon
             val iconView = adView.findViewById<ImageView>(R.id.ad_app_icon)
             val icon = nativeAd.icon
             if (icon != null) {
@@ -281,7 +238,6 @@ class AdManager @Inject constructor(
             }
             adView.iconView = iconView
 
-            // Set the star rating
             val starRatingView = adView.findViewById<RatingBar>(R.id.ad_stars)
             if (nativeAd.starRating != null) {
                 starRatingView.rating = nativeAd.starRating!!.toFloat()
@@ -291,7 +247,6 @@ class AdManager @Inject constructor(
             }
             adView.starRatingView = starRatingView
 
-            // Set the advertiser name
             val advertiserView = adView.findViewById<TextView>(R.id.ad_advertiser)
             if (nativeAd.advertiser != null) {
                 advertiserView.text = nativeAd.advertiser
@@ -301,7 +256,6 @@ class AdManager @Inject constructor(
             }
             adView.advertiserView = advertiserView
 
-            // Set the price
             val priceView = adView.findViewById<TextView>(R.id.ad_price)
             if (nativeAd.price != null) {
                 priceView.text = nativeAd.price
@@ -311,7 +265,6 @@ class AdManager @Inject constructor(
             }
             adView.priceView = priceView
 
-            // Set the store
             val storeView = adView.findViewById<TextView>(R.id.ad_store)
             if (nativeAd.store != null) {
                 storeView.text = nativeAd.store
@@ -321,7 +274,6 @@ class AdManager @Inject constructor(
             }
             adView.storeView = storeView
 
-            // Set the call to action button
             val callToActionView = adView.findViewById<Button>(R.id.ad_call_to_action)
             if (nativeAd.callToAction != null) {
                 callToActionView.text = nativeAd.callToAction
@@ -331,18 +283,16 @@ class AdManager @Inject constructor(
             }
             adView.callToActionView = callToActionView
 
-
             val mediaView = adView.findViewById<MediaView>(R.id.ad_media)
             if (mediaView != null) {
-                adView.mediaView = mediaView // This is the key line to register the MediaView
+                adView.mediaView = mediaView
                 mediaView.visibility = View.VISIBLE
+                nativeAd.mediaContent?.let { mediaView.mediaContent = it }
             } else {
                 Log.e(TAG, "MediaView not found in layout")
             }
 
-            // Register the native ad view
             adView.setNativeAd(nativeAd)
-
             Log.d(TAG, "Native ad view populated successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error populating native ad view", e)
@@ -351,7 +301,6 @@ class AdManager @Inject constructor(
 
     fun updatePhotoCount(count: Int) {
         photoCount = count
-        Log.d(TAG, "Photo count updated: $photoCount")
     }
 
     fun shouldShowNativeAd(): Boolean {
@@ -359,264 +308,276 @@ class AdManager @Inject constructor(
             return false
         }
 
-        // Decrement our counter
         photosUntilNextAd--
 
-        Log.d(TAG, "Photos until next ad: $photosUntilNextAd")
-
-        // If we've reached zero, it's time to show an ad
         if (photosUntilNextAd <= 0) {
-            // Reset counter with a new random value for next time
             photosUntilNextAd = getRandomAdFrequency()
-            Log.d(TAG, "Ad threshold reached. Next ad will show after $photosUntilNextAd photos")
+            Log.d(TAG, "Native ad threshold reached. Next ad after $photosUntilNextAd photos")
             return true
         }
-
         return false
     }
 
-
-    // Method to preload native ads
     private fun preloadNativeAds() {
-        if (appVersionManager.isProVersion() || isLoadingNativeAd || !consentManager.canShowAds()) {
+        // --- Use .get() ---
+        if (appVersionManager.isProVersion() || isLoadingNativeAd.get() || !consentManager.canShowAds()) {
             return
         }
 
         val cacheSize = nativeAdsCache.size
         if (cacheSize >= NATIVE_AD_CACHE_SIZE) {
-            Log.d(TAG, "Native ad cache is already full ($cacheSize/$NATIVE_AD_CACHE_SIZE)")
             return
         }
 
         val numAdsToLoad = NATIVE_AD_CACHE_SIZE - cacheSize
-        Log.d(TAG, "Preloading $numAdsToLoad native ads")
-
-        for (i in 0 until numAdsToLoad) {
-            loadNativeAd(null)
+        if (numAdsToLoad > 0) {
+            Log.d(TAG, "Preloading $numAdsToLoad native ads")
+            for (i in 0 until numAdsToLoad) {
+                loadNativeAdInternal(null)
+            }
         }
     }
 
-    // Method to load a single native ad
     fun loadNativeAd(callback: ((NativeAd?) -> Unit)?) {
         if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
             callback?.invoke(null)
             return
         }
 
-        // If we have cached ads, use one
-        if (callback != null && nativeAdsCache.isNotEmpty()) {
-            val cachedAd = nativeAdsCache.poll()
-            callback.invoke(cachedAd)
-
-            // Preload a replacement
-            loadNativeAdInternal(null)
+        val cachedAd = nativeAdsCache.poll()
+        if (cachedAd != null) {
+            Log.d(TAG, "Serving native ad from cache.")
+            callback?.invoke(cachedAd)
+            preloadNativeAdsIfNeeded()
             return
         }
 
-        // No cached ad available, load a new one
+        Log.d(TAG, "Native ad cache empty, loading new ad for request.")
         loadNativeAdInternal(callback)
     }
 
-    // Internal method to handle the actual loading of native ads
     private fun loadNativeAdInternal(callback: ((NativeAd?) -> Unit)?) {
         if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
+            Log.d(TAG, "Skipping native ad load: Pro version or no consent.")
             callback?.invoke(null)
             return
         }
-
         if (!isInitialized) {
+            Log.w(TAG, "AdManager not initialized, attempting init and retry.")
             initialize()
+            mainHandler.postDelayed({ loadNativeAdInternal(callback) }, 1000)
+            return
+        }
+        // --- Use compareAndSet ---
+        if (!isLoadingNativeAd.compareAndSet(false, true)) {
+            Log.w(TAG, "Already loading native ad, ignoring new request.")
             callback?.invoke(null)
             return
         }
 
-        // Set the callback
-        nativeAdLoadListener = callback
+        Log.d(TAG, "Starting native ad load process.")
+        currentNativeAdLoadCallback = callback
 
-        // Already loading? Don't start another load
-        if (isLoadingNativeAd) {
-            Log.w(TAG, "Already loading a native ad, ignoring new request")
-            callback?.invoke(null)
-            return
-        }
-
-        isLoadingNativeAd = true
-
-        // Set up a timeout to prevent infinite loading
-        val timeoutHandler = Handler(Looper.getMainLooper())
         val timeoutRunnable = Runnable {
-            if (isLoadingNativeAd) {
-                Log.w(TAG, "Native ad loading timed out after ${adLoadTimeoutDuration/1000} seconds")
-                isLoadingNativeAd = false
-                nativeAdLoadListener?.invoke(null)
-                nativeAdLoadListener = null
+            // --- Use .get() and compareAndSet ---
+            if (isLoadingNativeAd.get()) {
+                Log.w(TAG, "Native ad loading timed out after ${AD_LOAD_TIMEOUT_DURATION / 1000} seconds.")
+                if (isLoadingNativeAd.compareAndSet(true, false)) {
+                    val timedOutCallback = currentNativeAdLoadCallback
+                    currentNativeAdLoadCallback = null
+                    timedOutCallback?.invoke(null)
+                } else {
+                    Log.d(TAG, "Timeout triggered, but loading state was already reset.")
+                }
             }
         }
+        timeoutHandler.postDelayed(timeoutRunnable, AD_LOAD_TIMEOUT_DURATION)
 
-        // Start the timeout
-        timeoutHandler.postDelayed(timeoutRunnable, adLoadTimeoutDuration)
-
-        // Create the ad request, considering consent
         val adRequest = createAdRequest()
-
         val adLoader = AdLoader.Builder(context, NATIVE_AD_UNIT_ID)
             .forNativeAd { nativeAd ->
-                // This is called when a native ad has loaded successfully
-                Log.d(TAG, "Native ad loaded successfully")
-
-                // Cancel the timeout
+                Log.d(TAG, "Native ad loaded successfully.")
                 timeoutHandler.removeCallbacks(timeoutRunnable)
 
-                isLoadingNativeAd = false
+                // --- Use compareAndSet ---
+                if (isLoadingNativeAd.compareAndSet(true, false)) {
+                    val successCallback = currentNativeAdLoadCallback
+                    currentNativeAdLoadCallback = null
 
-                if (nativeAdLoadListener == callback) {
-                    // If this is the most recent callback, invoke it
-                    callback?.invoke(nativeAd)
-                    nativeAdLoadListener = null
-                } else if (callback == null) {
-                    // If no callback, this is a preload for the cache
-                    nativeAdsCache.offer(nativeAd)
-                    Log.d(TAG, "Added native ad to cache (size: ${nativeAdsCache.size})")
+                    if (successCallback != null) {
+                        successCallback.invoke(nativeAd)
+                    } else { // Preload
+                        if (nativeAdsCache.size < NATIVE_AD_CACHE_SIZE) {
+                            nativeAdsCache.offer(nativeAd)
+                            Log.d(TAG, "Added preloaded native ad to cache (size: ${nativeAdsCache.size})")
+                        } else {
+                            Log.d(TAG, "Native ad cache full on preload success, destroying ad.")
+                            nativeAd.destroy()
+                        }
+                    }
+                    preloadNativeAdsIfNeeded()
                 } else {
-                    // This is an old callback, just add to cache
-                    nativeAdsCache.offer(nativeAd)
-                    Log.d(TAG, "Added native ad to cache (size: ${nativeAdsCache.size}) for old callback")
+                    Log.w(TAG, "Native ad loaded, but state already reset. Discarding ad.")
+                    nativeAd.destroy()
                 }
             }
             .withAdListener(object : AdListener() {
                 override fun onAdFailedToLoad(error: LoadAdError) {
-                    Log.e(TAG, "Ad failed to load: ${error.message}, code: ${error.code}, domain: ${error.domain}")
-
-                    // Cancel the timeout
+                    Log.e(TAG, "Native ad failed to load: ${error.message}, code: ${error.code}, domain: ${error.domain}")
                     timeoutHandler.removeCallbacks(timeoutRunnable)
 
-                    isLoadingNativeAd = false
-
-                    if (nativeAdLoadListener == callback) {
-                        callback?.invoke(null)
-                        nativeAdLoadListener = null
+                    // --- Use compareAndSet ---
+                    if (isLoadingNativeAd.compareAndSet(true, false)) {
+                        val failureCallback = currentNativeAdLoadCallback
+                        currentNativeAdLoadCallback = null
+                        failureCallback?.invoke(null)
+                        schedulePreloadRetry()
+                    } else {
+                        Log.d(TAG, "Native ad failed, but state already reset.")
                     }
-
-                    // Retry loading after a delay
-                    mainHandler.postDelayed({
-                        if (!appVersionManager.isProVersion() &&
-                            consentManager.canShowAds() &&
-                            nativeAdsCache.size < NATIVE_AD_CACHE_SIZE) {
-                            loadNativeAdInternal(null) // Try to preload again
-                        }
-                    }, 60000) // Retry after 1 minute
                 }
-
-                override fun onAdClosed() {
-                    Log.d(TAG, "Native ad closed")
-                }
+                override fun onAdClicked() { Log.d(TAG, "Native ad clicked.") }
+                override fun onAdImpression() { Log.d(TAG, "Native ad impression.") }
             })
-            .withNativeAdOptions(
-                NativeAdOptions.Builder()
-                    .setAdChoicesPlacement(NativeAdOptions.ADCHOICES_TOP_RIGHT)
-                    .setMediaAspectRatio(NativeAdOptions.NATIVE_MEDIA_ASPECT_RATIO_LANDSCAPE)
-                    .build()
-            )
+            .withNativeAdOptions(NativeAdOptions.Builder().build())
             .build()
 
-        adLoader.loadAd(adRequest)
+        Log.d(TAG, "Requesting AdLoader to load ad.")
+        try {
+            adLoader.loadAd(adRequest)
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception when calling adLoader.loadAd", e)
+            // --- Use .set() ---
+            isLoadingNativeAd.set(false)
+            timeoutHandler.removeCallbacks(timeoutRunnable)
+            val failureCallback = currentNativeAdLoadCallback
+            currentNativeAdLoadCallback = null
+            failureCallback?.invoke(null)
+            schedulePreloadRetry()
+        }
     }
 
-    // Method to create a rendered bitmap from a native ad for displaying in the slideshow
+    private fun schedulePreloadRetry() {
+        mainHandler.postDelayed({
+            preloadNativeAdsIfNeeded()
+        }, 60000)
+    }
+
+    private fun preloadNativeAdsIfNeeded() {
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
+
+        val cacheSize = nativeAdsCache.size
+        // --- Use .get() ---
+        if (cacheSize < NATIVE_AD_CACHE_SIZE && !isLoadingNativeAd.get()) {
+            val numToLoad = NATIVE_AD_CACHE_SIZE - cacheSize
+            Log.d(TAG, "Cache low ($cacheSize/$NATIVE_AD_CACHE_SIZE), preloading $numToLoad more native ads.")
+            for (i in 0 until numToLoad) {
+                loadNativeAdInternal(null)
+            }
+        }
+    }
+
     fun getNativeAdForSlideshow(activity: Activity, callback: (NativeAd?) -> Unit) {
         if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
             callback(null)
             return
         }
-
-        // If we have a cached ad, use it
-        if (nativeAdsCache.isNotEmpty()) {
-            callback(nativeAdsCache.poll())
-
-            // Preload a replacement
-            nativeAdLoadScope.launch {
-                preloadNativeAds()
-            }
+        val cachedAd = nativeAdsCache.poll()
+        if (cachedAd != null) {
+            callback(cachedAd)
+            preloadNativeAdsIfNeeded()
             return
         }
-
-        // Otherwise load a new ad
         loadNativeAd(callback)
     }
 
-    // Updated method to use the AdActivity instead of direct ad display
     fun loadAndShowFullScreenInterstitial(activity: Activity) {
-        // Don't show ad if pro version, consent not given, or if interval hasn't passed
-        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
-            return
-        }
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
 
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastFullScreenInterstitialTime < FULL_SCREEN_INTERSTITIAL_INTERVAL) {
-            Log.d(TAG, "Full screen interstitial interval not elapsed yet")
+            Log.d(TAG, "Full screen interstitial interval not elapsed.")
             return
         }
 
-        // Record that we're showing an ad now
-        lastFullScreenInterstitialTime = System.currentTimeMillis()
-
-        // Load full screen interstitial
-        if (!isFullScreenInterstitialLoading && fullScreenInterstitialAd == null) {
-            isFullScreenInterstitialLoading = true
-
-            val adRequest = createAdRequest()
-
-            InterstitialAd.load(context, INTERSTITIAL_AD_UNIT_ID, adRequest,
-                object : InterstitialAdLoadCallback() {
-                    override fun onAdLoaded(ad: InterstitialAd) {
-                        Log.d(TAG, "Full screen interstitial loaded successfully")
-                        fullScreenInterstitialAd = ad
-                        isFullScreenInterstitialLoading = false
-
-                        // Show the ad immediately after loading
-                        showFullScreenInterstitial(activity)
-                    }
-
-                    override fun onAdFailedToLoad(error: LoadAdError) {
-                        Log.e(TAG, "Full screen interstitial failed to load: ${error.message}")
-                        fullScreenInterstitialAd = null
-                        isFullScreenInterstitialLoading = false
-                    }
-                })
-        } else if (fullScreenInterstitialAd != null) {
-            // Ad already loaded, show it
-            showFullScreenInterstitial(activity)
+        // --- Use .get() and compareAndSet ---
+        if (isFullScreenInterstitialLoading.get() || fullScreenInterstitialAd != null) {
+            Log.d(TAG, "Interstitial already loaded or loading.")
+            if (fullScreenInterstitialAd != null) showFullScreenInterstitial(activity)
+            return
         }
+        // --- Use compareAndSet ---
+        if (!isFullScreenInterstitialLoading.compareAndSet(false, true)) {
+            Log.w(TAG, "Interstitial load already in progress (race condition).")
+            return // Avoid starting another load
+        }
+
+
+        Log.d(TAG, "Loading full screen interstitial ad.")
+        lastFullScreenInterstitialTime = currentTime
+
+        val adRequest = createAdRequest()
+        InterstitialAd.load(context, INTERSTITIAL_AD_UNIT_ID, adRequest,
+            object : InterstitialAdLoadCallback() {
+                override fun onAdLoaded(ad: InterstitialAd) {
+                    Log.d(TAG, "Full screen interstitial loaded.")
+                    // --- Use .set() ---
+                    isFullScreenInterstitialLoading.set(false)
+                    fullScreenInterstitialAd = ad
+                    showFullScreenInterstitial(activity)
+                }
+
+                override fun onAdFailedToLoad(error: LoadAdError) {
+                    Log.e(TAG, "Full screen interstitial failed to load: ${error.message}")
+                    // --- Use .set() ---
+                    isFullScreenInterstitialLoading.set(false)
+                    fullScreenInterstitialAd = null
+                }
+            })
     }
 
     private fun showFullScreenInterstitial(activity: Activity) {
-        fullScreenInterstitialAd?.let { ad ->
-            ad.fullScreenContentCallback = object : FullScreenContentCallback() {
-                override fun onAdDismissedFullScreenContent() {
-                    Log.d(TAG, "Full screen interstitial dismissed")
-                    fullScreenInterstitialAd = null
-                }
-
-                override fun onAdFailedToShowFullScreenContent(error: AdError) {
-                    Log.e(TAG, "Full screen interstitial failed to show: ${error.message}")
-                    fullScreenInterstitialAd = null
-                }
-
-                override fun onAdShowedFullScreenContent() {
-                    Log.d(TAG, "Full screen interstitial showed successfully")
-                    fullScreenInterstitialAd = null
-                }
+        val ad = fullScreenInterstitialAd
+        // --- Use .get() ---
+        if (ad == null || isInterstitialShowing.get()) {
+            Log.d(TAG, "Interstitial not ready or already showing.")
+            return
+        }
+        ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdDismissedFullScreenContent() {
+                Log.d(TAG, "Full screen interstitial dismissed.")
+                fullScreenInterstitialAd = null
+                // --- Use .set() ---
+                isInterstitialShowing.set(false)
             }
-
-            ad.show(activity)
+            override fun onAdFailedToShowFullScreenContent(error: AdError) {
+                Log.e(TAG, "Full screen interstitial failed to show: ${error.message}")
+                fullScreenInterstitialAd = null
+                // --- Use .set() ---
+                isInterstitialShowing.set(false)
+            }
+            override fun onAdShowedFullScreenContent() {
+                Log.d(TAG, "Full screen interstitial showed.")
+                // --- Use .set() ---
+                isInterstitialShowing.set(true)
+                fullScreenInterstitialAd = null
+            }
+        }
+        try {
+            // --- Use .get() ---
+            if (!isInterstitialShowing.get()) {
+                ad.show(activity)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception when showing interstitial ad", e)
+            fullScreenInterstitialAd = null
+            // --- Use .set() ---
+            isInterstitialShowing.set(false)
         }
     }
 
-    // Method to check and show full screen interstitial based on timer
     fun checkAndShowFullScreenInterstitial(activity: Activity) {
-        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
-            return
-        }
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
 
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastFullScreenInterstitialTime >= FULL_SCREEN_INTERSTITIAL_INTERVAL) {
@@ -624,52 +585,54 @@ class AdManager @Inject constructor(
         }
     }
 
-    // Only call this method when navigating to settings
     fun preloadInterstitialForSettings() {
-        if (appVersionManager.isProVersion() || isLoadingInterstitial || !consentManager.canShowAds()) {
+        // --- Use .get() ---
+        if (appVersionManager.isProVersion() || isLoadingInterstitial.get() || !consentManager.canShowAds()) {
             return
         }
 
         showInterstitialInSettings = true
-        isLoadingInterstitial = true
+        // --- Use .set() ---
+        isLoadingInterstitial.set(true)
 
+        Log.d(TAG, "Preloading interstitial ad for settings.")
         val adRequest = createAdRequest()
-
         InterstitialAd.load(context, INTERSTITIAL_AD_UNIT_ID, adRequest,
             object : InterstitialAdLoadCallback() {
                 override fun onAdLoaded(ad: InterstitialAd) {
-                    Log.d(TAG, "Interstitial ad loaded successfully")
+                    Log.d(TAG, "Interstitial ad for settings loaded.")
+                    // --- Use .set() ---
+                    isLoadingInterstitial.set(false)
                     interstitialAd = ad
-                    isLoadingInterstitial = false
-
-                    // Set full screen content callbacks
                     interstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
                         override fun onAdDismissedFullScreenContent() {
-                            Log.d(TAG, "Interstitial ad dismissed")
+                            Log.d(TAG, "Settings interstitial dismissed.")
                             interstitialAd = null
-                            isInterstitialShowing = false
+                            // --- Use .set() ---
+                            isInterstitialShowing.set(false)
                             showInterstitialInSettings = false
                         }
-
                         override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                            Log.e(TAG, "Interstitial ad failed to show: ${adError.message}")
+                            Log.e(TAG, "Settings interstitial failed to show: ${adError.message}")
                             interstitialAd = null
-                            isInterstitialShowing = false
+                            // --- Use .set() ---
+                            isInterstitialShowing.set(false)
                             showInterstitialInSettings = false
                         }
-
                         override fun onAdShowedFullScreenContent() {
-                            Log.d(TAG, "Interstitial ad showed successfully")
+                            Log.d(TAG, "Settings interstitial showed.")
                             lastInterstitialAdTime = System.currentTimeMillis()
-                            isInterstitialShowing = true
+                            // --- Use .set() ---
+                            isInterstitialShowing.set(true)
+                            interstitialAd = null
                         }
                     }
                 }
-
                 override fun onAdFailedToLoad(adError: LoadAdError) {
-                    Log.e(TAG, "Interstitial ad failed to load: ${adError.message}")
+                    Log.e(TAG, "Interstitial ad for settings failed to load: ${adError.message}")
+                    // --- Use .set() ---
+                    isLoadingInterstitial.set(false)
                     interstitialAd = null
-                    isLoadingInterstitial = false
                     showInterstitialInSettings = false
                 }
             })
@@ -677,175 +640,84 @@ class AdManager @Inject constructor(
 
     fun setupMainActivityAd(container: FrameLayout?) {
         if (appVersionManager.isProVersion() || container == null || !consentManager.canShowAds()) {
-            Log.d(TAG, "Pro version, null container, or no consent - not showing ads")
+            Log.d(TAG, "Not setting up main activity ad (Pro/No Container/No Consent).")
+            container?.visibility = View.GONE
             return
         }
-
-        // Check if we're in MainActivity by looking at the current context
-        val contextName = container.context.javaClass.simpleName
-        if (contextName == "MainActivity") {
-            Log.d(TAG, "Skipping banner ad in MainActivity - only showing full screen interstitials")
-            container.removeAllViews()
-            container.visibility = View.GONE
-            return
-        }
-
-        try {
-            if (!isInitialized) {
-                initialize()
-                return
-            }
-
-            // Cancel any existing refresh runnable
-            bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
-
-            // Get the ad size before creating the AdView
-            val adSize = getAdSizeForContainer(container)
-
-            // Create new AdView with the correct size
-            mainAdView = AdView(context).apply {
-                setAdSize(adSize)
-                setAdUnitId(BANNER_AD_UNIT_ID)
-                adListener = object : AdListener() {
-                    override fun onAdLoaded() {
-                        Log.d(TAG, "Main activity banner ad loaded")
-                        container.post {
-                            if (container.isAttachedToWindow) {
-                                container.visibility = ViewGroup.VISIBLE
-                            }
-                        }
-                    }
-
-                    override fun onAdFailedToLoad(error: LoadAdError) {
-                        Log.e(TAG, "Main activity banner ad failed to load: ${error.message}")
-                        // Don't hide the container on failure, we'll retry
-
-                        // If ad fails to load, retry after a short delay
-                        mainHandler.postDelayed({
-                            if (!appVersionManager.isProVersion() &&
-                                consentManager.canShowAds() &&
-                                mainAdView != null) {
-                                loadMainActivityAd()
-                            }
-                        }, 60000) // Retry after 1 minute
-                    }
-
-                    override fun onAdClosed() {
-                        Log.d(TAG, "Main activity banner ad closed")
-                    }
-                }
-            }
-
-            container.post {
-                try {
-                    if (container.isAttachedToWindow) {
-                        container.removeAllViews()
-                        container.addView(mainAdView)
-                        container.visibility = ViewGroup.VISIBLE
-
-                        // Load the ad immediately after adding to container
-                        mainAdView?.loadAd(createAdRequest())
-                        Log.d(TAG, "Main activity banner ad loading requested")
-
-                        // Setup the refresh timer for 10 minutes
-                        setupBannerRefreshTimer()
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error setting up ad container view", e)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting up main activity ad", e)
-        }
+        Log.d(TAG, "Skipping banner ad setup in MainActivity.")
+        container.removeAllViews()
+        container.visibility = View.GONE
+        return
     }
 
-    // Setup a timer to refresh banner ads every 10 minutes
     private fun setupBannerRefreshTimer() {
-        // Cancel any existing refresh timer
         bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
-
         bannerRefreshRunnable = object : Runnable {
             override fun run() {
-                if (!appVersionManager.isProVersion() &&
-                    consentManager.canShowAds() &&
-                    mainAdView != null) {
-                    Log.d(TAG, "Refreshing banner ad after 10 minute interval")
+                if (!appVersionManager.isProVersion() && consentManager.canShowAds() && mainAdView != null) {
+                    Log.d(TAG, "Refreshing banner ad.")
                     loadMainActivityAd()
                 }
-
-                // Schedule next refresh
-                mainHandler.postDelayed(this, BANNER_REFRESH_INTERVAL)
+                bannerRefreshRunnable?.let {
+                    mainHandler.postDelayed(it, BANNER_REFRESH_INTERVAL)
+                }
             }
         }
-
-        // Start the refresh timer
         mainHandler.postDelayed(bannerRefreshRunnable!!, BANNER_REFRESH_INTERVAL)
     }
 
-    // Helper method to calculate the optimal ad size
     private fun getAdSizeForContainer(container: FrameLayout): AdSize {
-        val display = (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
-        val outMetrics = DisplayMetrics()
-        display.getMetrics(outMetrics)
+        try {
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val display = windowManager.defaultDisplay
+            val outMetrics = DisplayMetrics()
+            display.getMetrics(outMetrics)
 
-        val density = outMetrics.density
+            val density = outMetrics.density
+            var adWidthPixels = container.width.toFloat()
+            if (adWidthPixels <= 0f) {
+                adWidthPixels = outMetrics.widthPixels.toFloat()
+            }
+            val adWidth = (adWidthPixels / density).toInt()
+            if (adWidth <= 0) return AdSize.BANNER
 
-        var adWidthPixels = container.width.toFloat()
-        if (adWidthPixels == 0f) {
-            adWidthPixels = outMetrics.widthPixels.toFloat()
+            return AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, adWidth)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting adaptive banner size", e)
+            return AdSize.BANNER
         }
-
-        val adWidth = (adWidthPixels / density).toInt()
-        return AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, adWidth)
     }
 
     fun setupSettingsFragmentAd(container: FrameLayout) {
         if (appVersionManager.isProVersion() || !consentManager.canShowAds()) {
-            Log.d(TAG, "Pro version or no consent, not showing ads")
+            Log.d(TAG, "Not setting up settings ad (Pro/No Consent).")
             container.visibility = View.GONE
             return
         }
-
         try {
             if (!isInitialized) {
                 initialize()
                 container.visibility = View.GONE
                 return
             }
-
+            val adSize = getAdSizeForContainer(container)
             settingsAdView = AdView(context).apply {
                 setAdUnitId(BANNER_AD_UNIT_ID)
-                setAdSize(AdSize.BANNER)
+                setAdSize(adSize)
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         Log.d(TAG, "Settings fragment ad loaded")
-                        container.post {
-                            container.visibility = ViewGroup.VISIBLE
-
-                            // Ensure proper margins after ad loads
-                            container.parent?.let { parent ->
-                                if (parent is ViewGroup) {
-                                    parent.requestLayout()
-                                }
-                            }
-                        }
+                        container.post { container.visibility = ViewGroup.VISIBLE }
                     }
-
                     override fun onAdFailedToLoad(error: LoadAdError) {
-                        Log.e(TAG, "Settings fragment ad failed to load: ${error.message}")
+                        Log.e(TAG, "Settings fragment ad failed: ${error.message}")
                         container.visibility = ViewGroup.GONE
                     }
                 }
             }
-
-            // Setup container
             container.removeAllViews()
             container.addView(settingsAdView)
-
-            // Set initial visibility
             container.visibility = ViewGroup.GONE
-
-            // Load ad
             loadSettingsAd()
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up settings fragment ad", e)
@@ -854,45 +726,47 @@ class AdManager @Inject constructor(
     }
 
     private fun shouldShowInterstitial(): Boolean {
-        // Check if enough time has passed since last interstitial
-        val timeSinceLastAd = System.currentTimeMillis() - lastInterstitialAdTime
+        // --- Use .get() ---
         return interstitialAd != null &&
-                timeSinceLastAd > MINIMUM_AD_INTERVAL &&
-                !isInterstitialShowing &&
+                System.currentTimeMillis() - lastInterstitialAdTime > MINIMUM_AD_INTERVAL &&
+                !isInterstitialShowing.get() &&
                 showInterstitialInSettings &&
                 consentManager.canShowAds()
     }
 
-    // This is now primarily used for SettingsFragment
     fun showInterstitialAd(activity: Activity? = null) {
-        if (appVersionManager.isProVersion() ||
-            isInterstitialShowing ||
-            !showInterstitialInSettings ||
-            !consentManager.canShowAds()) {
+        // --- Use .get() ---
+        if (appVersionManager.isProVersion() || isInterstitialShowing.get() || !showInterstitialInSettings || !consentManager.canShowAds()) {
             return
         }
-
         val ad = interstitialAd
         if (ad != null && activity != null) {
-            Log.d(TAG, "Showing interstitial ad")
-            ad.show(activity)
-            // After showing, reset the flag
-            showInterstitialInSettings = false
+            Log.d(TAG, "Showing preloaded interstitial ad for settings.")
+            try {
+                // --- Use .get() ---
+                if (!isInterstitialShowing.get()) {
+                    ad.show(activity)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception showing settings interstitial", e)
+                interstitialAd = null
+                // --- Use .set() ---
+                isInterstitialShowing.set(false)
+                showInterstitialInSettings = false
+            }
         } else if (ad == null) {
-            Log.d(TAG, "Interstitial ad not loaded yet")
+            Log.d(TAG, "Settings interstitial ad not loaded, cannot show.")
             showInterstitialInSettings = false
         }
     }
 
     fun loadMainActivityAd() {
-        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
-
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds() || mainAdView == null) return
         mainAdView?.loadAd(createAdRequest())
     }
 
     fun loadSettingsAd() {
-        if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
-
+        if (appVersionManager.isProVersion() || !consentManager.canShowAds() || settingsAdView == null) return
         settingsAdView?.loadAd(createAdRequest())
     }
 
@@ -901,141 +775,114 @@ class AdManager @Inject constructor(
         settingsAdView?.pause()
         timerRunnable?.let { mainHandler.removeCallbacks(it) }
         bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
+        Log.d(TAG, "Ads paused.")
     }
 
     fun resumeAds() {
         if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
-
         mainAdView?.resume()
         settingsAdView?.resume()
         timerRunnable?.let { mainHandler.post(it) }
-
-        // Resume banner refresh
         bannerRefreshRunnable?.let { runnable ->
             mainHandler.removeCallbacks(runnable)
             mainHandler.postDelayed(runnable, BANNER_REFRESH_INTERVAL)
         }
+        Log.d(TAG, "Ads resumed.")
     }
 
     fun destroyAds() {
+        Log.d(TAG, "Destroying ads.")
         mainAdView?.destroy()
         settingsAdView?.destroy()
         timerRunnable?.let { mainHandler.removeCallbacks(it) }
         bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
+        interstitialAd?.fullScreenContentCallback = null
         interstitialAd = null
+        fullScreenInterstitialAd?.fullScreenContentCallback = null
+        fullScreenInterstitialAd = null
         mainAdView = null
         settingsAdView = null
 
-        // Clean up native ads
         nativeAdsCache.forEach { it.destroy() }
         nativeAdsCache.clear()
+
+        stopAutomaticReinitializer()
+        isInitialized = false
     }
 
-    /**
-     * Create an AdRequest that respects user consent settings
-     */
     private fun createAdRequest(): AdRequest {
         val builder = AdRequest.Builder()
-
-        // Check if we can show personalized ads
         if (!consentManager.canShowPersonalizedAds()) {
-            // Set non-personalized ads request
             val extras = Bundle()
-            extras.putString("npa", "1")  // npa = non-personalized ads
+            extras.putString("npa", "1")
             builder.addNetworkExtrasBundle(AdMobAdapter::class.java, extras)
-            Log.d(TAG, "Creating non-personalized ad request")
-        } else {
-            Log.d(TAG, "Creating personalized ad request")
         }
-
         return builder.build()
     }
 
     object NativeAdSettings {
-        // Min and max frequency
         const val MIN_FREQUENCY = MIN_NATIVE_AD_FREQUENCY
         const val MAX_FREQUENCY = MAX_NATIVE_AD_FREQUENCY
     }
 
-    /**
-     * Start automatic periodic reinitialization of the ad system
-     * This ensures the ad system restarts itself every 6 hours regardless of user interaction
-     */
     fun startAutomaticReinitializer() {
-        Log.d(TAG, "Starting automatic ad system reinitialization")
-
-        // Cancel any existing runnable
+        Log.d(TAG, "Starting automatic ad system reinitialization timer.")
         stopAutomaticReinitializer()
-
         autoRestartRunnable = object : Runnable {
             override fun run() {
-                Log.d(TAG, "Performing scheduled automatic ad system restart")
+                Log.w(TAG, "Performing scheduled automatic ad system restart...")
                 reinitializeAdSystem()
-
-                // Schedule next restart
-                autoRestartHandler.postDelayed(this, AUTO_RESTART_INTERVAL)
+                autoRestartRunnable?.let {
+                    autoRestartHandler.postDelayed(it, AUTO_RESTART_INTERVAL)
+                }
             }
         }
-
-        // Schedule first restart
         autoRestartHandler.postDelayed(autoRestartRunnable!!, AUTO_RESTART_INTERVAL)
     }
 
-    /**
-     * Stop the automatic reinitialization
-     */
     fun stopAutomaticReinitializer() {
         autoRestartRunnable?.let {
             autoRestartHandler.removeCallbacks(it)
             autoRestartRunnable = null
+            Log.d(TAG, "Stopped automatic ad system reinitialization timer.")
         }
     }
 
-    /**
-     * Resets all ad loading states and re-initializes the ad system.
-     * This is similar to what happens when the app restarts.
-     */
     fun reinitializeAdSystem() {
-        Log.d(TAG, "Reinitializing ad system")
+        Log.w(TAG, "Reinitializing ad system...")
+        timeoutHandler.removeCallbacksAndMessages(null)
 
-        // First destroy all existing ads
-        destroyAds()
+        // --- Use .set() ---
+        isLoadingNativeAd.set(false)
+        isLoadingInterstitial.set(false)
+        isFullScreenInterstitialLoading.set(false)
+        isInterstitialShowing.set(false)
 
-        // Reset all loading flags
-        isLoadingNativeAd = false
-        isLoadingInterstitial = false
-        isFullScreenInterstitialLoading = false
-        isInterstitialShowing = false
+        currentNativeAdLoadCallback = null
 
-        // Clear any stuck listeners
-        nativeAdLoadListener = null
+        var destroyedCount = 0
+        while (nativeAdsCache.poll()?.also { it.destroy() } != null) {
+            destroyedCount++
+        }
+        if (destroyedCount > 0) Log.d(TAG, "Destroyed $destroyedCount cached native ads.")
 
-        // Remove any pending callbacks
-        mainHandler.removeCallbacksAndMessages(null)
+        interstitialAd?.fullScreenContentCallback = null
+        interstitialAd = null
+        fullScreenInterstitialAd?.fullScreenContentCallback = null
+        fullScreenInterstitialAd = null
+        Log.d(TAG, "Cleared interstitial ad references.")
 
-        // Clear out the native ads cache
-        nativeAdsCache.forEach { it.destroy() }
-        nativeAdsCache.clear()
-
-        // Set initialized to false so we can re-initialize
-        isInitialized = false
-
-        // Re-initialize the ad system
-        initialize()
-
-        // Preload native ads again
-        preloadNativeAds()
-    }
-
-    /**
-     * Resets all loading states to false. This helps recover from situations where
-     * an ad load gets stuck and prevents new ads from loading.
-     */
-    fun resetLoadingStates() {
-        Log.d(TAG, "Resetting all ad loading states")
-
-        isLoadingNativeAd = false
-        isLoadingInterstitial = false
-        isFullScreenInterstitialLoading = false
+        if (consentManager.canShowAds()) {
+            Log.d(TAG, "Re-triggering Mobile Ads SDK initialization.")
+            MobileAds.initialize(context) { status ->
+                Log.d(TAG, "Mobile Ads re-initialized after reset: $status")
+                isInitialized = true
+                preloadNativeAdsIfNeeded()
+            }
+        } else {
+            Log.d(TAG, "Consent not granted, skipping Mobile Ads re-initialization.")
+            isInitialized = false
+        }
+        Log.w(TAG, "Ad system reinitialization complete.")
     }
 }
