@@ -80,16 +80,16 @@ class AdManager @Inject constructor(
         private const val INTERSTITIAL_AD_DISPLAY_DURATION = 10000L // 10 seconds
         private const val MINIMUM_AD_INTERVAL = 180000L // 3 minutes minimum between ads
         private const val BANNER_REFRESH_INTERVAL = 600000L // 10 minutes in milliseconds
-        private const val MIN_NATIVE_AD_FREQUENCY = 20
-        private const val MAX_NATIVE_AD_FREQUENCY = 25
-        private const val DEFAULT_NATIVE_AD_FREQUENCY = 25
+        private const val MIN_NATIVE_AD_FREQUENCY = 25
+        private const val MAX_NATIVE_AD_FREQUENCY = 35
+        private const val DEFAULT_NATIVE_AD_FREQUENCY = 30
         private const val NATIVE_AD_CACHE_SIZE = 3
-        private const val AD_LOAD_TIMEOUT_DURATION = 30000L // 30 seconds
+        private const val AD_LOAD_TIMEOUT_DURATION = 10000L // 30 seconds
     }
 
     private val autoRestartHandler = Handler(Looper.getMainLooper())
     private var autoRestartRunnable: Runnable? = null
-    private val AUTO_RESTART_INTERVAL = 4 * 60 * 60 * 1000L // 4 hours
+    private val AUTO_RESTART_INTERVAL = 2 * 60 * 60 * 1000L // 2 hours
 
     private var photoCount = 0
     private var photosUntilNextAd = getRandomAdFrequency()

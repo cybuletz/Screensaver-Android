@@ -34,8 +34,8 @@ class BitmapMemoryManager @Inject constructor(
         private const val TAG = "BitmapMemoryManager"
 
         // Memory thresholds
-        private const val MEMORY_PRESSURE_THRESHOLD_PERCENT = 50.0f
-        private const val SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT = 60.0f
+        private const val MEMORY_PRESSURE_THRESHOLD_PERCENT = 40.0f
+        private const val SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT = 50.0f
 
         // Cleanup cycles configuration
         private const val MIN_PHOTOS_BETWEEN_CLEANUPS = 200
@@ -46,7 +46,7 @@ class BitmapMemoryManager @Inject constructor(
         private const val VARIETY_SINGLE_PHOTO_CHANCE = 5
 
         // Memory logging interval
-        private const val LOG_MEMORY_INTERVAL_MS = 30000L // 30 seconds
+        private const val LOG_MEMORY_INTERVAL_MS = 60000L // 30 seconds
     }
 
     // Track active cleanup state
@@ -161,14 +161,14 @@ class BitmapMemoryManager @Inject constructor(
             while (isActive) {
                 try {
                     // Calculate cleanup interval
-                    val cleanupIntervalMs = 60 * 60 * 1000L // 5 minutes default
+                    val cleanupIntervalMs = 60 * 60 * 1000L // 60 minutes default
 
                     Log.i(TAG, "💾 Scheduling next cache cleanup in ${cleanupIntervalMs/1000}s")
                     delay(cleanupIntervalMs)
 
                     // Check memory pressure and perform appropriate cleanup
                     val memoryInfo = getMemoryInfo()
-                    if (memoryInfo.usedPercent > 60f) {
+                    if (memoryInfo.usedPercent > 40f) {
                         Log.i(TAG, "💾 Memory pressure detected (${memoryInfo.usedPercent.toInt()}%), triggering bitmap AND disk cache cleanup")
                         clearMemoryCaches()
 
@@ -182,7 +182,7 @@ class BitmapMemoryManager @Inject constructor(
                         val diskCacheSizeMB = diskCacheManager.getCurrentCacheSizeMB()
                         Log.i(TAG, "💾 Checking disk cache size: $diskCacheSizeMB MB")
 
-                        if (diskCacheSizeMB > 5 && diskCacheManager.canPerformCleanup()) {
+                        if (diskCacheSizeMB > 100 && diskCacheManager.canPerformCleanup()) {
                             Log.i(TAG, "💾 Disk cache size ($diskCacheSizeMB MB) exceeds threshold, performing disk cleanup")
                             diskCacheManager.cleanupDiskCache()
                         }
