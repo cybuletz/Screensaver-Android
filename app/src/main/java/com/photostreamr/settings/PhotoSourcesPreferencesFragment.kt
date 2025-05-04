@@ -217,6 +217,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         setupPreferences()
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         when (requestCode) {
             PERMISSION_REQUEST_CODE -> {
@@ -892,6 +893,7 @@ class PhotoSourcesPreferencesFragment : PreferenceFragmentCompat() {
         }
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 

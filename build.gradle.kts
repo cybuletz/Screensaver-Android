@@ -6,11 +6,12 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.2.2")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22")
+        classpath("com.android.tools.build:gradle:8.5.0")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0")
         classpath("com.google.dagger:hilt-android-gradle-plugin:2.48.1")
         classpath("com.google.gms:google-services:4.4.0")
         classpath("com.google.firebase:firebase-crashlytics-gradle:2.9.9")
+        classpath("com.android.tools:r8:8.8.34")
     }
 }
 

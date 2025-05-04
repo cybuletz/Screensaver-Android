@@ -21,7 +21,7 @@ import kotlin.random.Random
 class PhotoPreloader @Inject constructor(
     private val context: Context,
     private val photoManager: PhotoRepository,
-    private val bitmapMemoryManager: BitmapMemoryManager
+    private val bitmapMemoryManager: BitmapMemoryManager // Keep this injection
 ) {
     companion object {
         private const val TAG = "PhotoPreloader"
@@ -72,16 +72,30 @@ class PhotoPreloader @Inject constructor(
         }
     }
 
+    // --- Method Modified ---
     /**
-     * Stop preloading process
+     * Stop preloading process and unregister remaining bitmaps.
      */
     fun stopPreloading() {
         isPreloading = false
         preloadQueue.clear()
 
-        // Let resources be cleared by Glide - don't manually recycle
-        preloadedResources.clear()
+        // --- START FIX ---
+        // Unregister all remaining tracked preloaded bitmaps from BitmapMemoryManager
+        preloadedResources.keys.forEach { url ->
+            val preloadKey = "preload:$url"
+            // Check if the drawable is a bitmap before unregistering
+            val drawable = preloadedResources[url]
+            if (drawable is BitmapDrawable) {
+                Log.d(TAG, "Unregistering remaining preloaded bitmap on stop: $preloadKey")
+                bitmapMemoryManager.unregisterActiveBitmap(preloadKey)
+            }
+        }
+        // --- END FIX ---
+
+        preloadedResources.clear() // Clear internal map
     }
+
 
     /**
      * Set the number of photos to preload ahead
@@ -107,24 +121,38 @@ class PhotoPreloader @Inject constructor(
         // Check if it's a BitmapDrawable and if the bitmap is recycled
         if (resource is BitmapDrawable && resource.bitmap.isRecycled) {
             // Remove the recycled resource from our cache
-            preloadedResources.remove(url)
+            Log.w(TAG, "Found recycled bitmap in preload cache for $url, removing.")
+            removePreloadedResource(url) // Call remove to ensure unregistration
             return null
         }
 
         return resource
     }
 
+    // --- Method Modified ---
     /**
-     * Remove a preloaded resource (call when it's been used)
+     * Remove a preloaded resource (call when it's been used) and unregister from BitmapMemoryManager.
      */
     fun removePreloadedResource(url: String) {
-        preloadedResources.remove(url)
+        val removedDrawable = preloadedResources.remove(url) // Remove from internal map first
 
-        // Periodically clean up any recycled bitmaps
+        // --- START FIX ---
+        // If successfully removed from internal map AND it was a BitmapDrawable, unregister from BitmapMemoryManager
+        if (removedDrawable != null && removedDrawable is BitmapDrawable) {
+            val preloadKey = "preload:$url"
+            Log.d(TAG, "Unregistering used preloaded bitmap with key: $preloadKey")
+            bitmapMemoryManager.unregisterActiveBitmap(preloadKey)
+        } else if (removedDrawable != null) {
+            Log.d(TAG, "Removed preloaded resource for $url, but it wasn't a BitmapDrawable.")
+        }
+        // --- END FIX ---
+
+        // Periodically clean up any recycled bitmaps (original logic)
         if (random.nextInt(10) == 0) {  // 10% chance to clean up
             cleanupRecycledResources()
         }
     }
+
 
     /**
      * Clean up any recycled bitmaps in our cache
@@ -137,13 +165,20 @@ class PhotoPreloader @Inject constructor(
             val entry = iterator.next()
             val drawable = entry.value
             if (drawable is BitmapDrawable && drawable.bitmap.isRecycled) {
-                iterator.remove()
+                val url = entry.key
+                iterator.remove() // Remove from internal map
+                // --- START FIX ---
+                // Also unregister from BitmapMemoryManager
+                val preloadKey = "preload:$url"
+                Log.w(TAG, "Unregistering recycled bitmap found during cleanup: $preloadKey")
+                bitmapMemoryManager.unregisterActiveBitmap(preloadKey)
+                // --- END FIX ---
                 count++
             }
         }
 
         if (count > 0) {
-            Log.d(TAG, "Removed $count recycled bitmaps from preload cache")
+            Log.d(TAG, "Removed and unregistered $count recycled bitmaps from preload cache during cleanup")
         }
     }
 
@@ -170,13 +205,13 @@ class PhotoPreloader @Inject constructor(
                             nextIndex = random.nextInt(photoCount)
                         } while (nextIndex == currentPhotoIndex)
                         nextIndex
-                    }
+                    }.distinct() // Ensure unique indices even in random selection
                 } else {
                     // For sequential order, take next N indices
                     (1..preloadCount).map { offset ->
                         (currentPhotoIndex + offset) % photoCount
                     }
-                }
+                }.distinct() // Ensure unique indices
 
                 // Add URLs to preload queue
                 for (index in indicesToPreload) {
@@ -193,7 +228,8 @@ class PhotoPreloader @Inject constructor(
                         url
                     }
 
-                    if (!preloadedResources.containsKey(urlToAdd)) {
+                    // Only add if not already preloaded AND not currently in the queue
+                    if (!preloadedResources.containsKey(urlToAdd) && !preloadQueue.contains(urlToAdd)) {
                         preloadQueue.add(urlToAdd)
                     }
                 }
@@ -210,10 +246,14 @@ class PhotoPreloader @Inject constructor(
      * Process the preload queue, respecting concurrency limits
      */
     private suspend fun processPreloadQueue() {
+        // Run processing on the Main thread to start Glide loads, but listener runs elsewhere
         withContext(Dispatchers.Main) {
             while (isPreloading && preloadQueue.isNotEmpty() && activePreloads < MAX_CONCURRENT_PRELOADS) {
                 val url = preloadQueue.poll() ?: break
-                preloadPhoto(url)
+                // Check again if it got preloaded while waiting in the queue
+                if (!preloadedResources.containsKey(url)) {
+                    preloadPhoto(url)
+                }
             }
         }
     }
@@ -222,15 +262,16 @@ class PhotoPreloader @Inject constructor(
      * Preload a single photo using Glide
      */
     private fun preloadPhoto(url: String) {
-        if (!isPreloading || url in preloadedResources) {
+        if (!isPreloading) { // Check if preloading is still active
             return
         }
 
         activePreloads++
+        Log.d(TAG, "Starting preload for: $url (Active: $activePreloads)")
 
-        GlideApp.with(context)
+        GlideApp.with(context.applicationContext) // Use application context
             .load(url)
-            .diskCacheStrategy(DiskCacheStrategy.ALL)
+            .diskCacheStrategy(DiskCacheStrategy.ALL) // Cache aggressively
             .listener(object : RequestListener<Drawable> {
                 override fun onLoadFailed(
                     e: GlideException?,
@@ -240,11 +281,9 @@ class PhotoPreloader @Inject constructor(
                 ): Boolean {
                     Log.e(TAG, "Failed to preload: $url", e)
                     activePreloads--
-
-                    preloaderScope.launch {
-                        processPreloadQueue()
-                    }
-                    return false
+                    // Try processing queue again on failure
+                    preloaderScope.launch { processPreloadQueue() }
+                    return false // Let Glide handle error placeholder if needed elsewhere
                 }
 
                 override fun onResourceReady(
@@ -256,22 +295,31 @@ class PhotoPreloader @Inject constructor(
                 ): Boolean {
                     Log.d(TAG, "Successfully preloaded: $url")
 
+                    // --- START FIX ---
                     // Register this bitmap with the memory manager for tracking
+                    // Use a specific key format "preload:<url>"
                     if (resource is BitmapDrawable && !resource.bitmap.isRecycled) {
-                        bitmapMemoryManager.registerActiveBitmap("preload:$url", resource.bitmap)
+                        val preloadKey = "preload:$url"
+                        bitmapMemoryManager.registerActiveBitmap(preloadKey, resource.bitmap)
+                    } else {
+                        Log.w(TAG, "Preloaded resource is not a non-recycled BitmapDrawable for $url, cannot track.")
                     }
+                    // --- END FIX ---
 
+                    // Store the resource locally
                     preloadedResources[url] = resource
                     activePreloads--
 
-                    preloaderScope.launch {
-                        processPreloadQueue()
-                    }
+                    // Continue processing the queue
+                    preloaderScope.launch { processPreloadQueue() }
+
+                    // Return false so Glide doesn't try to display it anywhere else
                     return false
                 }
             })
-            .preload()
+            .preload() // Use preload() which doesn't require a target view
     }
+
 
     /**
      * Update based on a new current photo index
@@ -290,7 +338,7 @@ class PhotoPreloader @Inject constructor(
      * Clean up resources
      */
     fun cleanup() {
-        stopPreloading()
+        stopPreloading() // This now handles unregistration
         preloaderJob.cancel()
     }
 }

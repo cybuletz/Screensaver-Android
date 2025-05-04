@@ -4,28 +4,39 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.photostreamr.data.AppDataManager
-import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import timber.log.Timber
-import javax.inject.Inject
 
-@AndroidEntryPoint
+// Remove @AndroidEntryPoint since we'll use EntryPoints
 class BootReceiver : BroadcastReceiver() {
-    @Inject
-    lateinit var appDataManager: AppDataManager
+    // Define an EntryPoint interface
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface BootReceiverEntryPoint {
+        fun appDataManager(): AppDataManager
+    }
+
+    // Get dependencies through EntryPointAccessors
+    private fun getAppDataManager(context: Context): AppDataManager {
+        return EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            BootReceiverEntryPoint::class.java
+        ).appDataManager()
+    }
 
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
             Timber.d("Boot completed, initializing app state")
-            initializeAppState()
+            // Get the dependency when needed
+            val appDataManager = getAppDataManager(context)
+            initializeAppState(appDataManager)
         }
     }
 
-    private fun initializeAppState() {
-        if (!::appDataManager.isInitialized) {
-            Timber.e("AppDataManager not initialized")
-            return
-        }
-
+    private fun initializeAppState(appDataManager: AppDataManager) {
         try {
             val currentState = appDataManager.getCurrentState()
 
@@ -44,7 +55,7 @@ class BootReceiver : BroadcastReceiver() {
             // Check if photostreamr was active
             if (currentState.isScreensaverReady) {
                 Timber.d("Restoring photostreamr state")
-                restoreScreensaverState()
+                restoreScreensaverState(appDataManager)
             }
 
             Timber.i("App state initialized successfully after boot")
@@ -54,8 +65,7 @@ class BootReceiver : BroadcastReceiver() {
         }
     }
 
-
-    private fun restoreScreensaverState() {
+    private fun restoreScreensaverState(appDataManager: AppDataManager) {
         appDataManager.updateState { state ->
             state.copy(
                 lastSyncTimestamp = System.currentTimeMillis()

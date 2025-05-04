@@ -217,3 +217,20 @@
 -keepclassmembers class * {
     void initialize();
 }
+
+-dontwarn android.media.LoudnessCodecController$OnLoudnessCodecUpdateListener
+-dontwarn android.media.LoudnessCodecController
+-dontwarn java.beans.ConstructorProperties
+-dontwarn java.beans.Transient
+-dontwarn javax.naming.NamingEnumeration
+-dontwarn javax.naming.NamingException
+-dontwarn javax.naming.directory.Attribute
+-dontwarn javax.naming.directory.Attributes
+-dontwarn javax.naming.directory.DirContext
+-dontwarn javax.naming.directory.InitialDirContext
+
+-dontwarn android.media.LoudnessCodecController**
+-dontwarn com.google.android.gms.internal.location.zze$Companion
+-dontwarn com.google.android.gms.internal.location.zze
+-dontwarn com.fasterxml.jackson.databind.ext.Java7SupportImpl
+-dontwarn com.fasterxml.jackson.module.**

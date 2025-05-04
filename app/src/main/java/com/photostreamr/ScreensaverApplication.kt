@@ -32,6 +32,11 @@ import com.photostreamr.version.AppVersionManager
 import java.io.File
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+// Import ComponentCallbacks2 for trim memory levels
+import android.content.ComponentCallbacks2
+// Import SmartPhotoLayoutManager to pass to BitmapMemoryManager
+import com.photostreamr.ui.SmartPhotoLayoutManager
+import com.photostreamr.ui.DiskCacheManager
 
 
 /**
@@ -62,6 +67,15 @@ class ScreensaverApplication : Application() {
 
     @Inject
     lateinit var bitmapMemoryManager: BitmapMemoryManager
+
+    // Inject SmartPhotoLayoutManager to pass to BitmapMemoryManager
+    @Inject
+    lateinit var smartPhotoLayoutManager: SmartPhotoLayoutManager
+
+    // Inject DiskCacheManager
+    @Inject
+    lateinit var diskCacheManager: DiskCacheManager
+
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var firebaseAnalytics: FirebaseAnalytics
@@ -196,7 +210,7 @@ class ScreensaverApplication : Application() {
                 StrictMode.ThreadPolicy.Builder()
                     .detectAll()
                     .penaltyLog()
-                    .permitDiskReads()
+                    .permitDiskReads() // Allow disk reads on main thread for now (consider moving later)
                     .build()
             )
 
@@ -302,7 +316,7 @@ class ScreensaverApplication : Application() {
 
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             CACHE_CLEANUP_WORK,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.KEEP, // Use KEEP or REPLACE based on desired behavior
             cacheCleanupRequest
         )
     }
@@ -314,7 +328,7 @@ class ScreensaverApplication : Application() {
 
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             PHOTO_REFRESH_WORK,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.KEEP, // Use KEEP or REPLACE based on desired behavior
             photoRefreshRequest
         )
     }
@@ -337,8 +351,11 @@ class ScreensaverApplication : Application() {
 
     override fun onLowMemory() {
         super.onLowMemory()
-        Timber.w("Low memory condition detected")
-        clearNonEssentialCaches()
+        Timber.w("🚨🚨 System onLowMemory() callback received 🚨🚨")
+        // Delegate to BitmapMemoryManager for aggressive cleanup
+        bitmapMemoryManager.onLowMemory(smartPhotoLayoutManager)
+        // Also trigger disk cache cleanup if possible
+        diskCacheManager.forceCleanupNow()
         // Update to use appDataManager
         if (appDataManager.getCurrentState().isScreensaverReady) {
             photoSourceState.recordPreviewEnded()
@@ -347,38 +364,33 @@ class ScreensaverApplication : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        when (level) {
-            TRIM_MEMORY_RUNNING_CRITICAL,
-            TRIM_MEMORY_COMPLETE -> {
-                Timber.w("Critical memory condition detected")
-                clearAllCaches()
-                // End preview mode if active
-                if (photoSourceState.isInPreviewMode) {
-                    photoSourceState.recordPreviewEnded()
-                }
-            }
-            TRIM_MEMORY_RUNNING_LOW,
-            TRIM_MEMORY_RUNNING_MODERATE -> {
-                Timber.w("Moderate memory condition detected")
-                clearNonEssentialCaches()
+        Timber.w("⚠️ System onTrimMemory() callback received - level: $level")
+        // Delegate to BitmapMemoryManager to handle memory trimming
+        bitmapMemoryManager.onTrimMemory(level, smartPhotoLayoutManager)
+
+        // Additionally, clear disk cache on severe trim levels if needed
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            if (diskCacheManager.canPerformCleanup()) {
+                Timber.w("⚠️ Triggering disk cache cleanup due to onTrimMemory level: $level")
+                diskCacheManager.cleanupDiskCache()
             }
         }
-    }
 
-    private fun clearAllCaches() {
-        // Implementation for clearing all caches
-    }
-
-    private fun clearNonEssentialCaches() {
-        // Implementation for clearing non-essential caches
+        // End preview mode if active during severe memory pressure
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL && photoSourceState.isInPreviewMode) {
+            photoSourceState.recordPreviewEnded()
+        }
     }
 
     override fun onTerminate() {
         applicationScope.launch(NonCancellable) {
             try {
                 spotifyManager.disconnect()
+                // Also ensure managers are cleaned up
+                bitmapMemoryManager.cleanup()
+                diskCacheManager.cleanup()
             } catch (e: Exception) {
-                Timber.e(e, "Error disconnecting Spotify")
+                Timber.e(e, "Error during application termination cleanup")
             }
         }
         super.onTerminate()

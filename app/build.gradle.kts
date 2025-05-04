@@ -1,3 +1,5 @@
+
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -135,8 +137,8 @@ android {
             // Remove the "-Xuse-k2" flag as it's deprecated
         )
         // Add explicit language version
-        languageVersion = "1.9"
-        apiVersion = "1.9"
+        languageVersion = "2.0"
+        apiVersion = "2.0"
     }
 }
 
@@ -150,16 +152,19 @@ dependencies {
     val grpcVersion = "1.58.0"
 
     // Google AdMob
-    implementation("com.google.android.gms:play-services-ads:22.0.0")
-    implementation("com.google.android.ump:user-messaging-platform:2.1.0")
+    implementation("com.google.android.gms:play-services-ads:24.2.0")
+    implementation("com.google.android.ump:user-messaging-platform:3.2.0")
 
     // In-app billing (optional, for handling purchases)
-    implementation("com.android.billingclient:billing:6.0.1")
+    implementation("com.android.billingclient:billing:7.1.1")
 
     implementation("com.google.android.play:feature-delivery:2.1.0")
     implementation("com.google.android.play:feature-delivery-ktx:2.1.0")
 
-    implementation("com.google.mlkit:face-detection:16.1.6")
+    implementation("com.google.mlkit:face-detection:16.1.7")
+
+    implementation("androidx.room:room-common:2.6.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.7.0")
 
     // SMB library for network file access
     implementation("eu.agno3.jcifs:jcifs-ng:2.1.9")
@@ -184,8 +189,8 @@ dependencies {
 
 
     // AutoValue
-    kapt("com.google.auto.value:auto-value:1.9")
-    implementation("com.google.auto.value:auto-value-annotations:1.9")
+    kapt("com.google.auto.value:auto-value:1.11.0")
+    implementation("com.google.auto.value:auto-value-annotations:1.11.0")
 
     // Navigation
     implementation("androidx.navigation:navigation-fragment-ktx:$navVersion")
@@ -251,7 +256,7 @@ dependencies {
     // Glide
     implementation("com.github.bumptech.glide:glide:4.16.0")
     implementation("com.github.bumptech.glide:okhttp3-integration:4.16.0")
-    kapt("com.github.bumptech.glide:compiler:4.16.0")
+    kapt("com.github.bumptech.glide:compiler:5.0.0-rc01")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
 
     // RecyclerView

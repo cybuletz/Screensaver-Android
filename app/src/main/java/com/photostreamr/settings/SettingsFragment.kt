@@ -128,6 +128,7 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
         private const val REQUEST_SELECT_PHOTOS = 1001
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
