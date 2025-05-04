@@ -669,16 +669,39 @@ class AdManager @Inject constructor(
     private fun getAdSizeForContainer(container: FrameLayout): AdSize {
         try {
             val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val display = windowManager.defaultDisplay
-            val outMetrics = DisplayMetrics()
-            display.getMetrics(outMetrics)
 
-            val density = outMetrics.density
-            var adWidthPixels = container.width.toFloat()
-            if (adWidthPixels <= 0f) {
-                adWidthPixels = outMetrics.widthPixels.toFloat()
+            // Get the screen metrics based on Android version
+            val displayMetrics = DisplayMetrics()
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                // Android 11+ (API 30+) approach
+                val metrics = context.resources.displayMetrics
+                val bounds = windowManager.currentWindowMetrics.bounds
+
+                displayMetrics.apply {
+                    density = metrics.density
+                    widthPixels = bounds.width()
+                    heightPixels = bounds.height()
+                }
+            } else {
+                // Pre-Android 11 approach (deprecated but needed for backward compatibility)
+                @Suppress("DEPRECATION")
+                val display = windowManager.defaultDisplay
+                @Suppress("DEPRECATION")
+                display.getMetrics(displayMetrics)
             }
+
+            // Calculate ad width based on the container or screen width
+            val density = displayMetrics.density
+            var adWidthPixels = container.width.toFloat()
+
+            if (adWidthPixels <= 0f) {
+                adWidthPixels = displayMetrics.widthPixels.toFloat()
+            }
+
             val adWidth = (adWidthPixels / density).toInt()
+
+            // Return appropriate ad size
             if (adWidth <= 0) return AdSize.BANNER
 
             return AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, adWidth)

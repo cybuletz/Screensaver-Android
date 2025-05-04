@@ -149,7 +149,7 @@ dependencies {
     val lifecycleVersion = "2.6.2"
     val hiltVersion = "2.48.1"
     val coroutinesVersion = "1.7.3"
-    val grpcVersion = "1.58.0"
+    val grpcVersion = "1.72.0"
 
     // Google AdMob
     implementation("com.google.android.gms:play-services-ads:24.2.0")
@@ -179,7 +179,7 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.databinding:databinding-runtime:8.1.4")
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
@@ -217,47 +217,47 @@ dependencies {
     implementation("com.jakewharton.timber:timber:5.0.1")
 
     // Testing
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     testImplementation("junit:junit:4.13.2")
 
     // Material Design
-    implementation("com.google.android.material:material:1.5.0")
+    implementation("com.google.android.material:material:1.12.0")
 
     //Spotify
-    implementation("com.spotify.android:auth:2.1.1")
+    implementation("com.spotify.android:auth:2.1.2")
     implementation(files("libs/spotify-app-remote-release-0.8.0.aar"))
-    implementation("se.michaelthelin.spotify:spotify-web-api-java:8.0.0")
+    implementation("se.michaelthelin.spotify:spotify-web-api-java:9.2.0")
 
     // Google Services
-    implementation("com.google.android.gms:play-services-base:18.2.0")
-    implementation("com.google.android.gms:play-services-auth:20.7.0")
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
+    implementation("com.google.android.gms:play-services-base:18.7.0")
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
+    implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
     implementation("com.google.firebase:firebase-crashlytics-ktx")
-    implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
-    implementation("com.google.api:gax:2.19.5")
-    implementation("com.google.android.gms:play-services-location:21.1.0")
-    implementation("com.google.android.recaptcha:recaptcha:18.4.0")
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.34.0")
+    implementation("com.google.api:gax:2.64.3")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.recaptcha:recaptcha:18.7.0")
 
     implementation("com.google.android.play:app-update:2.1.0")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
 
     // Google Photos Library
     implementation("com.google.photos.library:google-photos-library-client:1.7.3")
-    implementation("com.google.api-client:google-api-client-android:2.2.0")
-    implementation("com.google.api-client:google-api-client-gson:2.2.0")
+    implementation("com.google.api-client:google-api-client-android:2.7.2")
+    implementation("com.google.api-client:google-api-client-gson:2.7.2")
 
     // Retrofit
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
 
     // Glide
     implementation("com.github.bumptech.glide:glide:4.16.0")
     implementation("com.github.bumptech.glide:okhttp3-integration:4.16.0")
     kapt("com.github.bumptech.glide:compiler:5.0.0-rc01")
-    implementation("com.squareup.okhttp3:okhttp:4.11.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // RecyclerView
     implementation("androidx.recyclerview:recyclerview:1.3.2")
@@ -273,14 +273,12 @@ dependencies {
     implementation("io.grpc:grpc-stub:$grpcVersion")
 
     // JSON
-    implementation("org.json:json:20231013")
+    implementation("org.json:json:20250107")
 
     // Add these dependencies if you're using them
-    implementation("org.slf4j:slf4j-api:1.7.36")
-    implementation("org.slf4j:slf4j-simple:1.7.36")
+    implementation("org.slf4j:slf4j-api:2.0.17")
+    implementation("org.slf4j:slf4j-simple:2.0.17")
 
     // If you need the Jetty ALPN boot library
     implementation("org.eclipse.jetty.alpn:alpn-api:1.1.3.v20160715")
-
-    implementation("com.google.api-client:google-api-client-gson:2.2.0")
 }

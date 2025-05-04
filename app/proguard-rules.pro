@@ -234,3 +234,5 @@
 -dontwarn com.google.android.gms.internal.location.zze
 -dontwarn com.fasterxml.jackson.databind.ext.Java7SupportImpl
 -dontwarn com.fasterxml.jackson.module.**
+-dontwarn io.grpc.InternalGlobalInterceptors
+-dontwarn io.grpc.internal.AbstractManagedChannelImplBuilder
