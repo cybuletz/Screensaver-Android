@@ -854,4 +854,10 @@ class BitmapMemoryManager @Inject constructor(
             Log.e(TAG, "Error during BitmapMemoryManager cleanup", e)
         }
     }
+
+    fun resumeMonitoringIfNeeded() {
+        if (!isMonitoringActive) {
+            startMonitoring()
+        }
+    }
 }

@@ -15,6 +15,7 @@ import javax.inject.Inject
 import android.view.animation.AnimationUtils
 import com.google.android.material.snackbar.Snackbar
 import androidx.preference.PreferenceManager
+import com.photostreamr.ui.BitmapMemoryManager
 import com.photostreamr.ui.PhotoDisplayManager
 import kotlinx.coroutines.flow.collectLatest
 
@@ -31,6 +32,9 @@ class MainFragment : Fragment() {
 
     @Inject
     lateinit var photoManager: PhotoRepository
+
+    @Inject
+    lateinit var bitmapMemoryManager: BitmapMemoryManager
 
     private var isPhotoDisplayActive = false
 
@@ -234,6 +238,7 @@ class MainFragment : Fragment() {
         if (isPhotoDisplayActive) {
             startPhotoDisplay()
         }
+        bitmapMemoryManager.resumeMonitoringIfNeeded()
         updatePreviewButtonState()
     }
 
