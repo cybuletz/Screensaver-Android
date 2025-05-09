@@ -83,16 +83,17 @@ class AdManager @Inject constructor(
         private const val MIN_NATIVE_AD_FREQUENCY = 25
         private const val MAX_NATIVE_AD_FREQUENCY = 35
         private const val DEFAULT_NATIVE_AD_FREQUENCY = 30
-        private const val NATIVE_AD_CACHE_SIZE = 3
-        private const val AD_LOAD_TIMEOUT_DURATION = 10000L // 30 seconds
+        private const val NATIVE_AD_CACHE_SIZE = 1
+        private const val AD_LOAD_TIMEOUT_DURATION = 10000L // 10 seconds
     }
-
-    private val autoRestartHandler = Handler(Looper.getMainLooper())
-    private var autoRestartRunnable: Runnable? = null
-    private val AUTO_RESTART_INTERVAL = 2 * 60 * 60 * 1000L // 2 hours
+    private val random = java.util.Random()
 
     private var photoCount = 0
     private var photosUntilNextAd = getRandomAdFrequency()
+
+    private val autoRestartHandler = Handler(Looper.getMainLooper())
+    private var autoRestartRunnable: Runnable? = null
+    private val AUTO_RESTART_INTERVAL = 1 * 60 * 60 * 1000L // 2 hours
 
     @Volatile private var isInitialized = false // Standard volatile boolean is fine here
     private var mainAdView: AdView? = null
@@ -121,8 +122,6 @@ class AdManager @Inject constructor(
     // --- Use AtomicBoolean correctly ---
     private val isLoadingNativeAd = AtomicBoolean(false)
     private val nativeAdLoadScope = CoroutineScope(Dispatchers.IO)
-
-    private val random = kotlin.random.Random.Default
 
     @Volatile private var currentNativeAdLoadCallback: ((NativeAd?) -> Unit)? = null
     private val timeoutHandler = Handler(Looper.getMainLooper())
@@ -195,9 +194,9 @@ class AdManager @Inject constructor(
     private fun getRandomAdFrequency(): Int {
         return try {
             if (MIN_NATIVE_AD_FREQUENCY >= MAX_NATIVE_AD_FREQUENCY + 1) {
-                DEFAULT_NATIVE_AD_FREQUENCY // Avoid IllegalArgumentException
+                DEFAULT_NATIVE_AD_FREQUENCY
             } else {
-                random.nextInt(MIN_NATIVE_AD_FREQUENCY, MAX_NATIVE_AD_FREQUENCY + 1)
+                random.nextInt(MAX_NATIVE_AD_FREQUENCY - MIN_NATIVE_AD_FREQUENCY + 1) + MIN_NATIVE_AD_FREQUENCY
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error generating random ad frequency", e)
@@ -309,6 +308,7 @@ class AdManager @Inject constructor(
         }
 
         photosUntilNextAd--
+        Log.d(TAG, "Photos until next ad: $photosUntilNextAd")
 
         if (photosUntilNextAd <= 0) {
             photosUntilNextAd = getRandomAdFrequency()
@@ -669,39 +669,16 @@ class AdManager @Inject constructor(
     private fun getAdSizeForContainer(container: FrameLayout): AdSize {
         try {
             val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val display = windowManager.defaultDisplay
+            val outMetrics = DisplayMetrics()
+            display.getMetrics(outMetrics)
 
-            // Get the screen metrics based on Android version
-            val displayMetrics = DisplayMetrics()
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                // Android 11+ (API 30+) approach
-                val metrics = context.resources.displayMetrics
-                val bounds = windowManager.currentWindowMetrics.bounds
-
-                displayMetrics.apply {
-                    density = metrics.density
-                    widthPixels = bounds.width()
-                    heightPixels = bounds.height()
-                }
-            } else {
-                // Pre-Android 11 approach (deprecated but needed for backward compatibility)
-                @Suppress("DEPRECATION")
-                val display = windowManager.defaultDisplay
-                @Suppress("DEPRECATION")
-                display.getMetrics(displayMetrics)
-            }
-
-            // Calculate ad width based on the container or screen width
-            val density = displayMetrics.density
+            val density = outMetrics.density
             var adWidthPixels = container.width.toFloat()
-
             if (adWidthPixels <= 0f) {
-                adWidthPixels = displayMetrics.widthPixels.toFloat()
+                adWidthPixels = outMetrics.widthPixels.toFloat()
             }
-
             val adWidth = (adWidthPixels / density).toInt()
-
-            // Return appropriate ad size
             if (adWidth <= 0) return AdSize.BANNER
 
             return AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, adWidth)
@@ -813,24 +790,49 @@ class AdManager @Inject constructor(
         Log.d(TAG, "Ads resumed.")
     }
 
+    fun removeAllHandlers() {
+        mainHandler.removeCallbacksAndMessages(null)
+        autoRestartHandler.removeCallbacksAndMessages(null)
+        timeoutHandler.removeCallbacksAndMessages(null)
+    }
+
     fun destroyAds() {
-        Log.d(TAG, "Destroying ads.")
+        // Log memory BEFORE ad cleanup
+        val runtime = Runtime.getRuntime()
+        val javaHeapBefore = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024).toFloat()
+        val nativeHeapBefore = android.os.Debug.getNativeHeapAllocatedSize() / (1024 * 1024).toFloat()
+        Log.i(TAG, "Memory BEFORE destroyAds: Java heap: %.2f MB, Native heap: %.2f MB".format(javaHeapBefore, nativeHeapBefore))
+
         mainAdView?.destroy()
+        mainAdView = null
         settingsAdView?.destroy()
+        settingsAdView = null
         timerRunnable?.let { mainHandler.removeCallbacks(it) }
         bannerRefreshRunnable?.let { mainHandler.removeCallbacks(it) }
         interstitialAd?.fullScreenContentCallback = null
         interstitialAd = null
         fullScreenInterstitialAd?.fullScreenContentCallback = null
         fullScreenInterstitialAd = null
-        mainAdView = null
-        settingsAdView = null
 
-        nativeAdsCache.forEach { it.destroy() }
+        // Destroy all native ads and clear cache
+        nativeAdsCache.forEach {
+            it.destroy()
+        }
         nativeAdsCache.clear()
+
+        // Remove all handler callbacks to prevent leaks
+        mainHandler.removeCallbacksAndMessages(null)
+        autoRestartHandler.removeCallbacksAndMessages(null)
+        timeoutHandler.removeCallbacksAndMessages(null)
 
         stopAutomaticReinitializer()
         isInitialized = false
+
+
+        // Log memory AFTER ad cleanup
+        val javaHeapAfter = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024).toFloat()
+        val nativeHeapAfter = android.os.Debug.getNativeHeapAllocatedSize() / (1024 * 1024).toFloat()
+        Log.i(TAG, "Memory AFTER destroyAds: Java heap: %.2f MB, Native heap: %.2f MB".format(javaHeapAfter, nativeHeapAfter))
     }
 
     private fun createAdRequest(): AdRequest {
@@ -873,6 +875,7 @@ class AdManager @Inject constructor(
 
     fun reinitializeAdSystem() {
         Log.w(TAG, "Reinitializing ad system...")
+        destroyAds()
         timeoutHandler.removeCallbacksAndMessages(null)
 
         // --- Use .set() ---

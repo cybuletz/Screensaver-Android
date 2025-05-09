@@ -415,16 +415,12 @@ class BitmapMemoryManager @Inject constructor(
             }
         }
 
-        Log.i(TAG, """
+        Log.w(TAG, """
             $reason
             📱 App Memory:
             • Java heap: ${formatBytes(memInfo.usedMemory)} / ${formatBytes(memInfo.maxMemory)} (${decimalFormat.format(memInfo.usedPercent)}%)
             • Native heap: ${formatBytes(nativeHeap)}
             • Memory pressure: $memoryPressureLevel
-            
-            🖼️ Bitmap Memory:
-            • Tracked bitmaps: $trackedBitmaps
-            • Estimated bitmap memory: ${formatBytes(trackedBitmapMem)}
             
             💻 System Memory:
             • Available: ${formatBytes(systemAvailMem)} / ${formatBytes(systemTotalMem)} (${decimalFormat.format(systemAvailMem.toFloat() / systemTotalMem * 100)}%)

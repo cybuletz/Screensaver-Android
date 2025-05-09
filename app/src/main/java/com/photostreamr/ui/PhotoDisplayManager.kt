@@ -1315,6 +1315,12 @@ class PhotoDisplayManager @Inject constructor(
                         }
 
                         Log.d(TAG, "Native ad received successfully, displaying")
+
+                        // --- MEMORY LEAK FIX: destroy previous NativeAd if present ---
+                        if (currentNativeAd != null) {
+                            Log.d(TAG, "Destroying previous NativeAd before showing a new one")
+                            currentNativeAd?.destroy()
+                        }
                         currentNativeAd = nativeAd
 
                         try {
@@ -1336,6 +1342,14 @@ class PhotoDisplayManager @Inject constructor(
                             val parent = views.primaryView.parent as? ViewGroup
 
                             if (parent != null) {
+                                // --- CLEANUP: Remove any old ad containers first ---
+                                for (i in parent.childCount - 1 downTo 0) {
+                                    val child = parent.getChildAt(i)
+                                    if (child is FrameLayout && child.tag == "native_ad_container") {
+                                        parent.removeViewAt(i)
+                                    }
+                                }
+
                                 // Add the ad container
                                 parent.addView(adContainer)
                                 adContainer.bringToFront()
@@ -1348,8 +1362,12 @@ class PhotoDisplayManager @Inject constructor(
                                     try {
                                         parent.removeView(adContainer)
                                         isShowingNativeAd = false
-                                        currentNativeAd?.destroy()
-                                        currentNativeAd = null
+                                        // --- MEMORY LEAK FIX: destroy NativeAd when it's no longer shown ---
+                                        if (currentNativeAd != null) {
+                                            Log.d(TAG, "Destroying NativeAd after use")
+                                            currentNativeAd?.destroy()
+                                            currentNativeAd = null
+                                        }
 
                                         // Continue with regular photos
                                         loadAndDisplayPhoto()
@@ -1363,13 +1381,20 @@ class PhotoDisplayManager @Inject constructor(
                                 Log.e(TAG, "Cannot find parent view to add ad container")
                                 isShowingNativeAd = false
                                 views.loadingIndicator?.visibility = View.GONE
+                                // --- MEMORY LEAK FIX: destroy NativeAd if not shown ---
+                                Log.d(TAG, "Destroying NativeAd that wasn't displayed")
+                                nativeAd.destroy()
+                                currentNativeAd = null
                                 loadAndDisplayPhoto()
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error displaying native ad", e)
                             isShowingNativeAd = false
                             views.loadingIndicator?.visibility = View.GONE
+                            // --- MEMORY LEAK FIX: destroy NativeAd if error ---
+                            Log.d(TAG, "Destroying NativeAd due to display error")
                             nativeAd.destroy()
+                            currentNativeAd = null
                             loadAndDisplayPhoto()
                         }
                     }
@@ -1383,8 +1408,20 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    private fun cleanupCurrentNativeAd() {
+        try {
+            currentNativeAd?.destroy()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error destroying native ad", e)
+        } finally {
+            currentNativeAd = null
+            isShowingNativeAd = false
+        }
+    }
+
     fun stopPhotoDisplay() {
         isScreensaverActive = false
+        cleanupCurrentNativeAd()
         photoPreloader.stopPreloading()
         displayJob?.cancel()
         displayJob = null
@@ -1411,6 +1448,11 @@ class PhotoDisplayManager @Inject constructor(
         bitmapMemoryManager.cleanup()
         diskCacheManager.cleanup()
         managerJob.cancel()
+        if (currentNativeAd != null) {
+            Log.d(TAG, "Destroying NativeAd during PhotoDisplayManager cleanup")
+            currentNativeAd?.destroy()
+            currentNativeAd = null
+        }
     }
 
     fun updatePhotoSources(virtualAlbumPhotos: List<Uri> = emptyList()) {

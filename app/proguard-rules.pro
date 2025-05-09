@@ -58,9 +58,7 @@
 
 # For mediation adapters (if using)
 -keepattributes *Annotation*
--keepclassmembers class * {
-    @com.google.android.gms.ads.annotation.AdUrlParam <fields>;
-}
+
 
 # Hilt and Dagger rules
 -keep class dagger.** { *; }
@@ -139,10 +137,19 @@
 
 # Google Services and Libraries
 -keep class com.google.android.gms.** { *; }
+-keep class com.google.ads.** { *; }
 -keep class com.google.api.** { *; }
 -keep class com.google.cloud.** { *; }
 -dontwarn com.google.api.**
 -dontwarn com.google.cloud.**
+
+# Prevent removal/obfuscation of all fields (needed for AtomicReferenceFieldUpdater, reflection, etc)
+-keepclassmembers class * {
+    private volatile <fields>;
+}
+-keepclassmembers class * {
+    <fields>;
+}
 
 # Firebase
 -keep class com.google.firebase.** { *; }

@@ -1569,6 +1569,7 @@ class MainActivity : AppCompatActivity() {
 
             try {
                 adManager.destroyAds()
+                adManager.removeAllHandlers()
             } catch (e: Exception) {
                 Log.e(TAG, "Error destroying ads", e)
             }
