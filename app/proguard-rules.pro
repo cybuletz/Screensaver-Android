@@ -52,6 +52,9 @@
    public *;
 }
 
+-keep class com.google.android.gms.internal.ads.** { *; }
+-keepnames class com.google.android.gms.ads.** { *; }
+
 -keep public class com.google.ads.** {
    public *;
 }

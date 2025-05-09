@@ -98,7 +98,15 @@ class SmartPhotoLayoutManager @Inject constructor(
          */
         @Synchronized
         fun getBitmap(width: Int, height: Int, config: Bitmap.Config): Bitmap {
-            val key = Pair(width, height)
+            // Safety check for dimensions
+            val safeWidth = max(1, width)
+            val safeHeight = max(1, height)
+
+            if (width <= 0 || height <= 0) {
+                Log.w(TAG, "Attempted to create bitmap with invalid dimensions: ${width}x${height}, using ${safeWidth}x${safeHeight} instead")
+            }
+
+            val key = Pair(safeWidth, safeHeight)
 
             // Try to get an existing bitmap of the right size from the pool
             val availableBitmaps = bitmapPool[key]
@@ -116,17 +124,17 @@ class SmartPhotoLayoutManager @Inject constructor(
 
                 totalReusedBitmaps++
 
-                Log.d(TAG, "♻️ Reused bitmap from pool: ${width}x${height} ($config)")
+                Log.d(TAG, "♻️ Reused bitmap from pool: ${safeWidth}x${safeHeight} ($config)")
 
                 return bitmap
             }
 
             // No existing bitmap available, create a new one
-            val newBitmap = Bitmap.createBitmap(width, height, config)
+            val newBitmap = Bitmap.createBitmap(safeWidth, safeHeight, config)
             inUseBitmaps.add(newBitmap)
             totalCreatedBitmaps++
 
-            Log.d(TAG, "🆕 Created new bitmap: ${width}x${height} ($config)")
+            Log.d(TAG, "🆕 Created new bitmap: ${safeWidth}x${safeHeight} ($config)")
 
             return newBitmap
         }

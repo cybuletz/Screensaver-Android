@@ -320,9 +320,11 @@ class PhotoRepository @Inject constructor(
     fun validateStoredPhotos() {
         repoScope.launch {
             try {
-                val currentPhotos = loadPhotos() ?: emptyList()
+                // Create a safe copy of the current photos before validating
+                val currentPhotos = loadPhotos()?.toList() ?: emptyList()
                 Log.d(TAG, "Validating ${currentPhotos.size} stored photos")
 
+                // Using toList() to create a safe copy for iteration
                 val validPhotos = currentPhotos.filter { photo ->
                     val uri = Uri.parse(photo.baseUrl)
                     photoUriManager.hasValidPermission(uri)
@@ -340,18 +342,23 @@ class PhotoRepository @Inject constructor(
                     Log.d(TAG, "All stored photos are valid")
                 }
 
-                // Update virtual albums to remove invalid photos
-                val updatedAlbums = virtualAlbums.map { album ->
-                    val validUris = album.photoUris.filter { uri ->
+                // Create a safe copy of virtualAlbums for iteration
+                val currentAlbums = ArrayList(virtualAlbums) // Safe copy
+
+                // Create a new list for the updated albums instead of modifying them in place
+                val updatedAlbums = currentAlbums.map { album ->
+                    val validUris = ArrayList(album.photoUris).filter { uri ->
                         photoUriManager.hasValidPermission(Uri.parse(uri))
                     }
                     album.copy(photoUris = validUris)
                 }.filter { it.photoUris.isNotEmpty() }
 
                 // Update albums if any changes
-                if (updatedAlbums.sumOf { it.photoUris.size } < virtualAlbums.sumOf { it.photoUris.size }) {
-                    virtualAlbums.clear()
-                    virtualAlbums.addAll(updatedAlbums)
+                if (updatedAlbums.sumOf { it.photoUris.size } < currentAlbums.sumOf { it.photoUris.size }) {
+                    synchronized(virtualAlbums) {  // Add synchronization
+                        virtualAlbums.clear()
+                        virtualAlbums.addAll(updatedAlbums)
+                    }
                     saveVirtualAlbums()
                 }
 

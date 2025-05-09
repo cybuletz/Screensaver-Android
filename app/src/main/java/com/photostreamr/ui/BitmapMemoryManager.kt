@@ -38,7 +38,7 @@ class BitmapMemoryManager @Inject constructor(
         private const val SEVERE_MEMORY_PRESSURE_THRESHOLD_PERCENT = 50.0f
 
         // Cleanup cycles configuration
-        private const val MIN_PHOTOS_BETWEEN_CLEANUPS = 200
+        private const val MIN_PHOTOS_BETWEEN_CLEANUPS = 100
         private const val DEFAULT_CLEANUP_CYCLE_LENGTH = 3
         private const val SEVERE_CLEANUP_CYCLE_LENGTH = 5
 
@@ -61,6 +61,10 @@ class BitmapMemoryManager @Inject constructor(
     private var managerJob = SupervisorJob()
     private var managerScope = CoroutineScope(Dispatchers.IO + managerJob)
 
+    private var lastCacheClearTime = 0L
+    private val MIN_CACHE_CLEAR_INTERVAL_MS = 2000L // 500ms minimum between cleanups
+    private var appStartTime = System.currentTimeMillis()
+    private val WARMUP_PERIOD_MS = 30_000L
 
     // Track memory state
     private var memoryPressureLevel = MemoryPressureLevel.NORMAL
@@ -155,8 +159,8 @@ class BitmapMemoryManager @Inject constructor(
 
         // Create new job
         schedulerJob = managerScope.launch {
-            // Delay initial cleanup
-            delay(10_000)
+            // CHANGE THIS LINE: Increase initial delay to 5 minutes instead of 10 seconds
+            delay(5 * 60 * 1000L) // 5 minutes delay before first cleanup
 
             while (isActive) {
                 try {
@@ -200,7 +204,7 @@ class BitmapMemoryManager @Inject constructor(
     /**
      * Determine if we should display a single photo instead of a template
      * - For memory cleanup when needed
-     * - For visual variety randomly
+     * - For visual variety randomly (but not during startup)
      */
     fun shouldShowSinglePhoto(): Boolean {
         // Check if we're in an active cleanup cycle
@@ -226,8 +230,9 @@ class BitmapMemoryManager @Inject constructor(
             return true
         }
 
-        // Show single photos occasionally for visual variety
-        if (Random.nextInt(VARIETY_SINGLE_PHOTO_CHANCE) == 0) {
+        // Skip random variety during app startup period
+        val isInWarmupPeriod = System.currentTimeMillis() - appStartTime < WARMUP_PERIOD_MS
+        if (!isInWarmupPeriod && Random.nextInt(VARIETY_SINGLE_PHOTO_CHANCE) == 0) {
             Log.d(TAG, "Showing single photo for visual variety")
             return true
         }
@@ -297,6 +302,23 @@ class BitmapMemoryManager @Inject constructor(
      * Clear memory caches without directly recycling bitmaps
      */
     fun clearMemoryCaches() {
+        val currentTime = System.currentTimeMillis()
+
+        // First check: Skip cleanups completely during app startup warmup period
+        val appRuntime = currentTime - appStartTime
+        if (appRuntime < WARMUP_PERIOD_MS) {
+            Log.d(TAG, "🧹 STARTUP PROTECTION: Skipping cleanup during warmup period (${appRuntime}ms elapsed of ${WARMUP_PERIOD_MS}ms)")
+            return
+        }
+
+        // Second check: Prevent multiple rapid cleanups
+        if (currentTime - lastCacheClearTime < MIN_CACHE_CLEAR_INTERVAL_MS) {
+            Log.d(TAG, "🧹 Skipping cleanup - too soon since last cleanup (${(currentTime - lastCacheClearTime)}ms < ${MIN_CACHE_CLEAR_INTERVAL_MS}ms)")
+            return
+        }
+
+        lastCacheClearTime = currentTime
+
         managerScope.launch {
             try {
                 // Log state before cleanup
@@ -338,15 +360,15 @@ class BitmapMemoryManager @Inject constructor(
                 val bitmapMemFreed = beforeBitmapMem - afterBitmapMem
 
                 Log.d(TAG, """
-            🧹 Memory cleanup complete:
-            • Memory before: ${formatBytes(beforeInfo.usedMemory)} (${decimalFormat.format(beforeInfo.usedPercent)}%)
-            • Memory after:  ${formatBytes(afterInfo.usedMemory)} (${decimalFormat.format(afterInfo.usedPercent)}%)
-            • Memory freed:  ${formatBytes(memoryFreed.coerceAtLeast(0))}
-            
-            • Bitmaps before: $beforeCount (${formatBytes(beforeBitmapMem)})
-            • Bitmaps after:  $afterCount (${formatBytes(afterBitmapMem)})
-            • Bitmaps freed:  $removedBitmaps (${formatBytes(bitmapMemFreed.coerceAtLeast(0))})
-            """.trimIndent())
+        🧹 Memory cleanup complete:
+        • Memory before: ${formatBytes(beforeInfo.usedMemory)} (${decimalFormat.format(beforeInfo.usedPercent)}%)
+        • Memory after:  ${formatBytes(afterInfo.usedMemory)} (${decimalFormat.format(afterInfo.usedPercent)}%)
+        • Memory freed:  ${formatBytes(memoryFreed.coerceAtLeast(0))}
+        
+        • Bitmaps before: $beforeCount (${formatBytes(beforeBitmapMem)})
+        • Bitmaps after:  $afterCount (${formatBytes(afterBitmapMem)})
+        • Bitmaps freed:  $removedBitmaps (${formatBytes(bitmapMemFreed.coerceAtLeast(0))})
+        """.trimIndent())
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error in clearMemoryCaches", e)

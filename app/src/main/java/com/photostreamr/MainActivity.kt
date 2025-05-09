@@ -66,6 +66,7 @@ import com.photostreamr.music.LocalMusicPreferences
 import com.photostreamr.ui.BitmapMemoryManager
 import com.photostreamr.ui.DiskCacheManager
 import com.photostreamr.version.ProVersionPromptManager
+import java.util.concurrent.atomic.AtomicBoolean
 
 
 @AndroidEntryPoint
@@ -158,6 +159,9 @@ class MainActivity : AppCompatActivity() {
 
     private var currentActivity: Activity? = null
 
+    private var photoDisplayInitiated = false
+    private var photoDisplayLaunched = AtomicBoolean(false)
+
     private val viewLifecycleOwner: LifecycleOwner?
         get() = try {
             val navHostFragment = supportFragmentManager
@@ -216,6 +220,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         currentActivity = this
 
+        // Add this near the beginning to capture all log output
+        Log.i(TAG, "=== MainActivity onCreate started ===")
+
         _binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -263,15 +270,6 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error initializing ad manager", e)
         }
 
-        // Set up interstitial ads timer - Keeping this for full-screen interstitials
-        //setupFullScreenInterstitialTimer()
-
-        // Uncomment if you want to force interstitial ad at startup
-        //lifecycleScope.launch {
-        //    delay(3000) // Wait a few seconds after app start
-        //    adManager.checkAndShowFullScreenInterstitial(this@MainActivity)
-        //}
-
         if (securityPreferences.isSecurityEnabled) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startLockTask()
@@ -291,41 +289,12 @@ class MainActivity : AppCompatActivity() {
             setupFirstLaunchUI()
             setupNavigation()
             setupSettingsButton()
-            setupTouchListener()
             initializePhotoDisplayManager()
 
-            // Add validation here after photo manager is initialized
-            lifecycleScope.launch {
-                photoRepository.validateStoredPhotos()
-            }
+            // with centralized photo initialization
+            initializePhotosOnce()
 
-            initializePhotos()
             preventUnauthorizedClosure()
-
-            photoDisplayManager.updatePhotoSources()
-            checkInitialChargingState()
-
-            if (navController.currentDestination?.id == R.id.mainFragment) {
-                lifecycleScope.launch {
-                    delay(500)
-                    photoDisplayManager.startPhotoDisplay()
-                }
-            }
-
-            if (intent?.getBooleanExtra("start_screensaver", false) == true) {
-                lifecycleScope.launch {
-                    try {
-                        if (navController.currentDestination?.id != R.id.mainFragment) {
-                            navController.navigate(R.id.mainFragment)
-                        }
-                        delay(500)
-                        setupFullScreen()
-                        photoDisplayManager.startPhotoDisplay()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error handling charging start", e)
-                    }
-                }
-            }
 
             observeWidgetStates()
             setupKeepScreenOnObserver()
@@ -343,6 +312,50 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
             finish()
+        }
+
+        Log.i(TAG, "=== MainActivity onCreate completed ===")
+    }
+
+    private fun initializePhotosOnce() {
+        // Skip if already launched
+        if (photoDisplayLaunched.getAndSet(true)) {
+            Log.w(TAG, "Photo display has already been launched, ignoring additional attempts")
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                // Validate photos first
+                photoRepository.validateStoredPhotos()
+
+                // Update photo sources
+                photoDisplayManager.updatePhotoSources()
+
+                // Allow some time for the UI to settle
+                delay(750)
+
+                // Check charging and start preferences
+                val startFromCharging = intent?.getBooleanExtra("start_screensaver", false) == true
+
+                // Start photo display if needed
+                if (navController.currentDestination?.id == R.id.mainFragment) {
+                    Log.i(TAG, "Starting photo display (from main initialization)")
+                    photoDisplayManager.startPhotoDisplay()
+                } else if (startFromCharging) {
+                    Log.i(TAG, "Navigating to main and starting display (from charging)")
+                    try {
+                        navController.navigate(R.id.mainFragment)
+                        delay(500)
+                        setupFullScreen()
+                        photoDisplayManager.startPhotoDisplay()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error starting from charging", e)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in initializePhotosOnce", e)
+            }
         }
     }
 
@@ -632,33 +645,6 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error opening URL: $url", e)
             showToast("Could not open link")
-        }
-    }
-
-    private fun initializePhotos() {
-        lifecycleScope.launch {
-            try {
-                val selectedAlbums = preferences.getSelectedAlbumIds()
-                if (selectedAlbums.isNotEmpty()) {
-                    Log.d(TAG, "Found ${selectedAlbums.size} saved albums")
-
-                    // Load photos from PhotoRepository instead
-                    val photos = photoRepository.getAllPhotos()
-                    if (photos.isNotEmpty()) {
-                        if (!isDestroyed) {
-                            photoDisplayManager.startPhotoDisplay()
-                        } else {
-                            Log.d(TAG, "Activity is destroyed, skipping photo display")
-                        }
-                    } else {
-                        Log.e(TAG, "No photos found in repository")
-                    }
-                } else {
-                    Log.d(TAG, "No albums selected")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in initializePhotos", e)
-            }
         }
     }
 
@@ -975,9 +961,13 @@ class MainActivity : AppCompatActivity() {
 
         Log.d(TAG, "Handling charging state: charging=$isCharging, startOnCharge=$startOnCharge")
 
-        if (isCharging && startOnCharge) {
+        // If photo display is already going, don't start it again
+        if (isCharging && startOnCharge && !photoDisplayLaunched.get()) {
             lifecycleScope.launch {
                 try {
+                    // Set the flag first to prevent race conditions
+                    photoDisplayLaunched.set(true)
+
                     // Navigate to main fragment if needed
                     if (navController.currentDestination?.id != R.id.mainFragment) {
                         navController.navigate(R.id.mainFragment)
@@ -994,6 +984,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        photoDisplayLaunched.set(false)
+
+        authManager.resetAuthenticationState()
     }
 
     private fun initializePhotoDisplayManager() {
@@ -1442,12 +1439,6 @@ class MainActivity : AppCompatActivity() {
         if (securityPreferences.isSecurityEnabled && !isAuthenticating) {
             moveTaskToBack(true)  // Force app to background on home button
         }
-    }
-
-    override fun onStop() {
-        super.onStop()
-        // Always reset auth state when stopping the activity
-        authManager.resetAuthenticationState()
     }
 
     override fun onResume() {

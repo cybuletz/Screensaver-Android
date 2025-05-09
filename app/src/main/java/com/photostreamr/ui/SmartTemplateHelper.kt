@@ -13,6 +13,7 @@ import javax.inject.Singleton
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /**
  * Helper class that acts as a bridge between SmartPhotoLayoutManager and other components
@@ -43,6 +44,29 @@ class SmartTemplateHelper @Inject constructor(
         }
 
         try {
+            // MODIFIED: Special handling for random template
+            // If "random" was specifically requested
+            if (requestedTemplateType == -1) { // Assuming -1 is used for random template
+                // Force selection of a valid template instead of returning -1
+                val isLandscape = containerWidth > containerHeight
+                val availableTemplateTypes = if (isLandscape) {
+                    listOf(
+                        EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
+                        EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
+                        EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+                        EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+                    )
+                } else {
+                    listOf(
+                        EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
+                        EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
+                        EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+                        EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+                    )
+                }
+                return@withContext availableTemplateTypes[Random.Default.nextInt(availableTemplateTypes.size)]
+            }
+
             // If a specific template type was requested (not DYNAMIC), honor it
             if (requestedTemplateType != EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART) {
                 // Check if template is compatible with current orientation
@@ -75,7 +99,8 @@ class SmartTemplateHelper @Inject constructor(
             return@withContext bestLayout
         } catch (e: Exception) {
             Log.e(TAG, "Error determining best template", e)
-            return@withContext EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART // Fallback to dynamic
+            // MODIFIED: Return a safe default rather than single photo fallback
+            return@withContext EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
         }
     }
 

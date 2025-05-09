@@ -97,6 +97,8 @@ class PhotoDisplayManager @Inject constructor(
 
     private var hasLoadedPhotos = false
 
+    private var isStartingDisplay = false
+
     private var currentNativeAd: NativeAd? = null
     private var isShowingNativeAd = false
     private var nativeAdDuration = 10000L // Display native ads for 10 seconds
@@ -107,6 +109,8 @@ class PhotoDisplayManager @Inject constructor(
     private var lastPhotoChangeTime = System.currentTimeMillis()
     private val PHOTO_STUCK_THRESHOLD = 3 * 60 * 1000L // 3 minutes
 
+    private var lastDisplayStartTime = 0L
+    private val MIN_DISPLAY_INTERVAL = 1500L // 1.5 seconds minimum between display starts
 
     data class Views(
         val primaryView: ImageView,
@@ -384,11 +388,25 @@ class PhotoDisplayManager @Inject constructor(
             }
         }
 
-    private fun loadAndDisplayPhoto(fromCache: Boolean = false) {
+    fun loadAndDisplayPhoto(fromCache: Boolean = false) {
+        val startTime = System.currentTimeMillis()
+
+        // IMPROVED: Better transition flag handling
         if (isTransitioning) {
-            Log.d(TAG, "Skipping photo load - transition in progress")
-            return
+            val lastPhotoChangeTimeDiff = System.currentTimeMillis() - lastPhotoChangeTime
+
+            // More aggressive transition reset
+            if (lastPhotoChangeTimeDiff > 5000) { // 5 seconds
+                Log.w(TAG, "Transition flag has been stuck for over 5 seconds, forcibly resetting it")
+                isTransitioning = false
+            } else {
+                Log.d(TAG, "Skipping photo load - transition in progress for ${lastPhotoChangeTimeDiff}ms")
+                return
+            }
         }
+
+        // Always update the last photo change time on attempt
+        lastPhotoChangeTime = System.currentTimeMillis()
 
         // Check if music should be playing
         if (isScreensaverActive && spotifyPreferences.isEnabled() &&
@@ -426,6 +444,8 @@ class PhotoDisplayManager @Inject constructor(
                     PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?:
                 PhotoResizeManager.DEFAULT_DISPLAY_MODE
 
+                Log.d(TAG, "Display mode: $displayMode (shouldShowSinglePhoto: $shouldShowSinglePhoto)")
+
                 // If we should show a single photo due to memory pressure or visual variety,
                 // override the display mode to use single photo display
                 if (shouldShowSinglePhoto && displayMode == PhotoResizeManager.DISPLAY_MODE_MULTI_TEMPLATE) {
@@ -448,6 +468,7 @@ class PhotoDisplayManager @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error finding valid photo", e)
+                isTransitioning = false // Reset flag on error
                 showDefaultPhoto()
             }
         }
@@ -901,6 +922,25 @@ class PhotoDisplayManager @Inject constructor(
     }
 
     fun startPhotoDisplay() {
+        // Strong throttling - don't allow rapid consecutive calls
+        val currentTime = System.currentTimeMillis()
+        val timeSinceLastStart = currentTime - lastDisplayStartTime
+
+        if (timeSinceLastStart < MIN_DISPLAY_INTERVAL) {
+            Log.d(TAG, "Ignoring startPhotoDisplay() - called too soon after previous start (${timeSinceLastStart}ms < ${MIN_DISPLAY_INTERVAL}ms)")
+            return
+        }
+
+        // Double protection against concurrent calls
+        if (isStartingDisplay) {
+            Log.d(TAG, "Display start already in progress, ignoring duplicate call")
+            return
+        }
+
+        // Record this attempt even if it fails
+        lastDisplayStartTime = currentTime
+        isStartingDisplay = true
+
         val interval = getIntervalMillis()
         Log.d(TAG, "Starting photo display with interval: ${interval}ms")
 
@@ -924,13 +964,26 @@ class PhotoDisplayManager @Inject constructor(
         if (photoCount == 0) {
             Log.d(TAG, "No photos available (no albums selected), showing default photo")
             showDefaultPhoto()
+            isStartingDisplay = false
             return
         }
 
         wasDisplayingPhotos = true
 
+        // Reset any stuck transition flags
+        if (isTransitioning) {
+            val lastPhotoChangeTimeDiff = System.currentTimeMillis() - lastPhotoChangeTime
+            if (lastPhotoChangeTimeDiff > 10000) { // 10 seconds
+                Log.w(TAG, "Transition flag was stuck when starting display, resetting it")
+                isTransitioning = false
+            }
+        }
+
         // Just load the first photo immediately - the rest will be scheduled by completeTransition
         loadAndDisplayPhoto(false)
+
+        // Reset flag after initial setup is complete
+        isStartingDisplay = false
     }
 
     private fun resetViewProperties(views: Views) {

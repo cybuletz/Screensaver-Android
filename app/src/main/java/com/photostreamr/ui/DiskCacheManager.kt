@@ -58,12 +58,6 @@ class DiskCacheManager @Inject constructor(
 
     init {
         startDiskCacheTracking()
-
-        managerScope.launch {
-            delay(5000) // Wait 5 seconds after app start
-            Log.i(TAG, "💾 TESTING: Forcing cleanup to verify functionality")
-            forceCleanupNow()
-        }
     }
 
     /**

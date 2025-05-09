@@ -86,8 +86,13 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
         layoutType: Int,
         callback: TemplateReadyCallback
     ) {
+        // First log parameters for debugging
+        Log.d(TAG, "createTemplate called with width=$containerWidth, height=$containerHeight, " +
+                "photoIdx=$currentPhotoIndex, layoutType=$layoutType")
+
         // Validate dimensions first
         if (containerWidth <= 0 || containerHeight <= 0) {
+            Log.e(TAG, "Invalid container dimensions: ${containerWidth}x${containerHeight}")
             callback.onTemplateError("Invalid container dimensions: ${containerWidth}x${containerHeight}")
             return
         }
@@ -95,6 +100,7 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
         managerScope.launch {
             try {
                 val photoCount = photoManager.getPhotoCount()
+                Log.d(TAG, "Template creation with $photoCount photos available")
 
                 // Check if we have enough photos for a template
                 if (photoCount < MIN_PHOTOS_FOR_TEMPLATE) {
@@ -103,9 +109,37 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
                     return@launch
                 }
 
+                // Get template type from preferences
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                val templateTypeStr = prefs.getString(
+                    PhotoResizeManager.TEMPLATE_TYPE_KEY,
+                    PhotoResizeManager.TEMPLATE_TYPE_DEFAULT.toString()
+                )
+
+                Log.d(TAG, "Template type from preferences: $templateTypeStr, requested: $layoutType")
+
+                // MODIFIED: Much stronger handling of random template
+                val effectiveLayoutType = when {
+                    // Case 1: Explicitly random type from preferences
+                    templateTypeStr == "random" -> {
+                        selectRandomTemplate(containerWidth, containerHeight)
+                    }
+                    // Case 2: -1 passed as layout type (system using random)
+                    layoutType == -1 -> {
+                        selectRandomTemplate(containerWidth, containerHeight)
+                    }
+                    // Case 3: Normal specified template
+                    else -> layoutType
+                }
+
+                // Log the final template type for debugging
+                Log.d(TAG, "Creating template with effective type: $effectiveLayoutType (from requested: $layoutType)")
+
                 // Determine indices of photos to include
-                val requiredCount = getOrientationAdjustedPhotoCount(layoutType, containerWidth, containerHeight)
+                val requiredCount = getOrientationAdjustedPhotoCount(effectiveLayoutType, containerWidth, containerHeight)
                 val photoIndices = getPhotoIndices(currentPhotoIndex, photoCount, requiredCount)
+
+                Log.d(TAG, "Loading $requiredCount photos for template type $effectiveLayoutType")
 
                 // Load all photos
                 val photoBitmaps = withContext(Dispatchers.IO) {
@@ -113,13 +147,14 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
                 }
 
                 if (photoBitmaps.isEmpty()) {
+                    Log.e(TAG, "Failed to load photos for template")
                     callback.onTemplateError("Failed to load photos")
                     return@launch
                 }
 
                 // If we couldn't load enough photos, fall back to single photo
                 if (photoBitmaps.size < MIN_PHOTOS_FOR_TEMPLATE) {
-                    Log.d(TAG, "Not enough photos loaded, using single photo")
+                    Log.d(TAG, "Not enough photos loaded (${photoBitmaps.size}), using single photo")
                     if (photoBitmaps.isNotEmpty()) {
                         val singlePhotoDrawable = BitmapDrawable(context.resources, photoBitmaps[0])
                         callback.onTemplateReady(singlePhotoDrawable, -1)
@@ -127,39 +162,6 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
                         callback.onTemplateError("Failed to load any photos")
                     }
                     return@launch
-                }
-
-                // Determine best template type if DYNAMIC was specified
-                val finalLayoutType = if (layoutType == LAYOUT_TYPE_GHOME) {
-                    withContext(Dispatchers.Default) {
-                        smartTemplateHelper.determineBestTemplate(
-                            photoBitmaps,
-                            containerWidth,
-                            containerHeight,
-                            layoutType  // Pass requested type for context
-                        )
-                    }
-                } else {
-                    layoutType
-                }
-
-                // Check if this layout is compatible with the current orientation
-                val isCompatible = smartTemplateHelper.isTemplateCompatibleWithOrientation(
-                    finalLayoutType,
-                    containerWidth,
-                    containerHeight
-                )
-
-                // If not compatible, fall back to a more suitable layout
-                val effectiveLayoutType = if (!isCompatible) {
-                    Log.d(TAG, "Template type $finalLayoutType not compatible with orientation, using fallback")
-                    if (containerWidth > containerHeight) {
-                        LAYOUT_TYPE_2_HORIZONTAL
-                    } else {
-                        LAYOUT_TYPE_2_VERTICAL
-                    }
-                } else {
-                    finalLayoutType
                 }
 
                 // Create template using SmartTemplateHelper
@@ -171,16 +173,48 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
                 )
 
                 if (templateDrawable != null) {
+                    Log.d(TAG, "Successfully created template drawable for type $effectiveLayoutType")
                     callback.onTemplateReady(templateDrawable, effectiveLayoutType)
                 } else {
+                    Log.e(TAG, "Failed to create template drawable")
                     callback.onTemplateError("Failed to create template")
                 }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error creating template", e)
-                callback.onTemplateError("Error: ${e.message}")
+                // Make sure to provide a fallback that works
+                try {
+                    createSinglePhotoTemplate(containerWidth, containerHeight, currentPhotoIndex, callback)
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Error creating fallback single photo template", e2)
+                    callback.onTemplateError("Error: ${e.message}. Fallback also failed.")
+                }
             }
         }
+    }
+
+    private fun selectRandomTemplate(containerWidth: Int, containerHeight: Int): Int {
+        val isLandscape = containerWidth > containerHeight
+
+        // Always use a reasonable subset of templates that work well
+        val options = if (isLandscape) {
+            listOf(
+                LAYOUT_TYPE_2_HORIZONTAL,  // 2 side-by-side photos
+                LAYOUT_TYPE_3_MAIN_LEFT,   // 3 photos, main one on left
+                LAYOUT_TYPE_4_GRID         // 4 photos in a grid
+            )
+        } else {
+            listOf(
+                LAYOUT_TYPE_2_VERTICAL,    // 2 stacked photos
+                LAYOUT_TYPE_3_MAIN_LEFT,   // 3 photos, main one on top
+                LAYOUT_TYPE_4_GRID         // 4 photos in a grid
+            )
+        }
+
+        // Always make a new random number, don't reuse existing ones
+        val selected = options[Random.nextInt(options.size)]
+        Log.d(TAG, "Random template selected: $selected for ${if(isLandscape) "landscape" else "portrait"} orientation")
+        return selected
     }
 
     /**
