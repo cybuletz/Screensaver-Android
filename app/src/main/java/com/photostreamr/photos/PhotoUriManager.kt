@@ -2,6 +2,7 @@ package com.photostreamr.photos
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
@@ -61,6 +62,21 @@ class PhotoUriManager @Inject constructor(
 
         // Cache miss - perform actual validation
         cacheMisses++
+
+        // Special case for DownloadProvider raw URIs - apply to all Android versions since we
+        // don't know if this issue is exclusively on Android 8
+        if ("com.android.providers.downloads.documents" == uri.authority &&
+            uri.path?.startsWith("/document/raw:") == true) {
+
+            Log.i(TAG, "DownloadProvider raw URI: $uriString - assuming valid at save time, will be verified when loaded")
+
+            // Store in cache as valid
+            validationCache[uriString] = true
+            timestampCache[uriString] = System.currentTimeMillis()
+
+            logCacheStatsIfNeeded()
+            return true
+        }
 
         // For Google Photos URIs - check only cache
         if (isGooglePhotosUri(uri)) {

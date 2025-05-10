@@ -2,6 +2,7 @@ package com.photostreamr.ads
 
 import android.app.Activity
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -93,7 +94,7 @@ class AdManager @Inject constructor(
 
     private val autoRestartHandler = Handler(Looper.getMainLooper())
     private var autoRestartRunnable: Runnable? = null
-    private val AUTO_RESTART_INTERVAL = 1 * 60 * 60 * 1000L // 2 hours
+    private val AUTO_RESTART_INTERVAL = 1 * 60 * 60 * 1000L // 1 hour
 
     @Volatile private var isInitialized = false // Standard volatile boolean is fine here
     private var mainAdView: AdView? = null
@@ -286,6 +287,35 @@ class AdManager @Inject constructor(
             if (mediaView != null) {
                 adView.mediaView = mediaView
                 mediaView.visibility = View.VISIBLE
+
+                // Version-specific memory optimization for Android 11 and below
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                    // Use software rendering instead of hardware acceleration
+                    mediaView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+
+                    // Optimize layout parameters for lower memory usage
+                    val layoutParams = mediaView.layoutParams
+                    if (layoutParams is ViewGroup.LayoutParams) {
+                        // Maintain aspect ratio but limit maximum size
+                        if (layoutParams is ViewGroup.MarginLayoutParams) {
+                            // Add some constraints to help with memory usage
+                            val displayMetrics = context.resources.displayMetrics
+                            val maxWidth = displayMetrics.widthPixels / 2
+                            if (layoutParams.width > maxWidth) {
+                                layoutParams.width = maxWidth
+                            }
+                        }
+                        mediaView.layoutParams = layoutParams
+                    }
+
+                    // Log the optimization
+                    Log.d(TAG, "Applied memory optimization for MediaView on Android ${Build.VERSION.SDK_INT}")
+                } else {
+                    // Use hardware acceleration for better performance on newer devices
+                    mediaView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                }
+
+                // Apply media content
                 nativeAd.mediaContent?.let { mediaView.mediaContent = it }
             } else {
                 Log.e(TAG, "MediaView not found in layout")

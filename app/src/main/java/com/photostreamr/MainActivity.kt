@@ -289,6 +289,7 @@ class MainActivity : AppCompatActivity() {
             setupFirstLaunchUI()
             setupNavigation()
             setupSettingsButton()
+            setupTouchListener()
             initializePhotoDisplayManager()
 
             // with centralized photo initialization
