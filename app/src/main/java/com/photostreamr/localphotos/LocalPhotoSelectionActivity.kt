@@ -31,6 +31,7 @@ import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.photostreamr.databinding.ItemFolderBinding
+import kotlinx.coroutines.cancelChildren
 
 @AndroidEntryPoint
 class LocalPhotoSelectionActivity : AppCompatActivity() {
@@ -471,7 +472,8 @@ class LocalPhotoSelectionActivity : AppCompatActivity() {
             invalidateOptionsMenu() // Update menu
             loadPhotos()
         } else {
-            // Otherwise, just finish the activity
+            // Clean up before finishing
+            releasePhotoReferences()
             super.onBackPressed()
         }
     }
@@ -493,15 +495,16 @@ class LocalPhotoSelectionActivity : AppCompatActivity() {
                 val processedUris = photosToSave.mapNotNull { photo ->
                     try {
                         val uri = photo.uri
-                        // Only try to take persistable permissions for non-MediaStore URIs
-                        if (!uri.toString().startsWith("content://media/")) {
+                        // Only take persistable permissions for non-MediaStore URIs that need them
+                        if (!uri.toString().startsWith("content://media/") &&
+                            !uri.toString().startsWith("content://com.android.providers")) {
                             try {
-                                contentResolver.takePersistableUriPermission(
-                                    uri,
-                                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                )
+                                // Use contentResolver directly from the activity
+                                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                contentResolver.takePersistableUriPermission(uri, flags)
+                                Log.d(TAG, "Took persistable permission for: $uri")
                             } catch (e: SecurityException) {
-                                // Log but continue - MediaStore URIs don't need persistable permissions
+                                // This is expected for MediaStore URIs and system content providers
                                 Log.d(TAG, "No need for persistable permission for: $uri")
                             }
                         }
@@ -534,6 +537,35 @@ class LocalPhotoSelectionActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Force Glide to clear memory
+        Glide.get(this).clearMemory()
+
+        // Encourage garbage collection
+        System.gc()
+
+        // Clear adapter reference
+        if (::adapter.isInitialized) {
+            // Clear any preselected photos
+            adapter.setPreselectedPhotos(emptyList())
+        }
+
+        // Clear selected photos
+        selectedPhotos.clear()
+    }
+
+    private fun releasePhotoReferences() {
+        // Clear recycler view adapter to release view holders
+        binding.recyclerView.adapter = null
+
+        // Cancel any ongoing operations
+        lifecycleScope.coroutineContext.cancelChildren()
+
+        // Tell Glide to clear any resources
+        Glide.get(this).clearMemory()
     }
 }
 

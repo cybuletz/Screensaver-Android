@@ -137,32 +137,6 @@ class PhotoUriManager @Inject constructor(
         return false
     }
 
-    // Clean up expired cache entries
-    fun cleanExpiredEntries() {
-        val currentTime = System.currentTimeMillis()
-        val expiredKeys = timestampCache.entries
-            .filter { currentTime - it.value > CACHE_EXPIRY_MS }
-            .map { it.key }
-
-        if (expiredKeys.isNotEmpty()) {
-            Log.d(TAG, "Cleaning ${expiredKeys.size} expired cache entries")
-            expiredKeys.forEach { key ->
-                validationCache.remove(key)
-                timestampCache.remove(key)
-            }
-        }
-    }
-
-    // Add method to clear the cache
-    fun clearValidationCache() {
-        validationCache.clear()
-        timestampCache.clear()
-        cacheHits = 0
-        cacheMisses = 0
-        totalValidations = 0
-        Log.d(TAG, "URI validation cache cleared")
-    }
-
     fun isGooglePhotosUri(uri: Uri): Boolean {
         val uriString = uri.toString()
         return uriString.contains("com.google.android.apps.photos") ||
