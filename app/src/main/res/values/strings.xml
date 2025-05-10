@@ -865,4 +865,12 @@
     <string name="privacy_settings_title">Ads &amp; Privacy</string>
     <string name="privacy_settings_summary">Manage privacy consent for personalized ads</string>
 
+    <string name="select_folder">Select Folder</string>
+    <string name="photo_count">%1$d photos</string>
+    <string name="folder_thumbnail">Folder thumbnail</string>
+    <string name="photo_thumbnail">Photo thumbnail</string>
+    <string name="folder_option_message">This folder contains %1$d photos. Would you like to select all photos or browse the folder?</string>
+    <string name="added_photos_from_folder">Added %1$d photos from %2$s</string>
+    <string name="error_selecting_photos">Error selecting photos</string>
+
 </resources>
