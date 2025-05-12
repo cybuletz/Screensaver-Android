@@ -16,10 +16,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
 import android.graphics.drawable.Drawable
-import com.bumptech.glide.load.DataSource
-import com.bumptech.glide.load.engine.GlideException
-import com.bumptech.glide.request.RequestListener
-import com.bumptech.glide.request.target.Target
 import kotlin.random.Random
 import kotlinx.coroutines.delay
 import com.photostreamr.R
@@ -38,9 +34,7 @@ import android.app.Activity
 import android.graphics.drawable.BitmapDrawable
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import com.bumptech.glide.load.HttpException
 import com.google.android.gms.ads.nativead.NativeAd
-import com.photostreamr.glide.GlideApp
 import com.photostreamr.music.SpotifyManager
 import com.photostreamr.music.SpotifyPreferences
 import android.os.Handler
@@ -601,14 +595,26 @@ class PhotoDisplayManager @Inject constructor(
                             // Create drawable from the smart cropped bitmap
                             val drawable = BitmapDrawable(context.resources, smartCroppedBitmap)
 
-                            // Apply the transition effect with the smart cropped drawable
-                            val glideListener = createGlideListener(views, photoIndex, startTime, transitionEffect)
-                            glideListener.onResourceReady(
-                                drawable,
-                                uri,
-                                views.overlayView as Target<Drawable>,
-                                DataSource.LOCAL,
-                                true
+                            // Apply the transition effect directly
+                            views.overlayView.setImageDrawable(drawable)
+                            views.overlayView.visibility = View.VISIBLE
+
+                            // Use PhotoTransitionEffects directly
+                            val transitionViews = PhotoTransitionEffects.TransitionViews(
+                                primaryView = views.primaryView,
+                                overlayView = views.overlayView,
+                                container = views.container,
+                                topLetterboxView = views.topLetterboxView,
+                                bottomLetterboxView = views.bottomLetterboxView
+                            )
+
+                            transitionEffects.performTransition(
+                                views = transitionViews,
+                                resource = drawable,
+                                nextIndex = photoIndex,
+                                transitionEffect = transitionEffect,
+                                transitionDuration = transitionDuration,
+                                callback = this@PhotoDisplayManager
                             )
                         } else {
                             // If bitmap loading failed
@@ -828,14 +834,27 @@ class PhotoDisplayManager @Inject constructor(
                     try {
                         imageLoadStrategy.loadImage(uri, views.overlayView, options)
                             .onSuccess { drawable ->
-                                // Use the transition effect directly
-                                val glideListener = createGlideListener(views, photoIndex, startTime, transitionEffect)
-                                glideListener.onResourceReady(
-                                    drawable,  // the drawable resource
-                                    uri,       // model
-                                    views.overlayView as Target<Drawable>,  // target
-                                    DataSource.MEMORY_CACHE,  // dataSource
-                                    true       // isFirstResource
+                                // Manually apply the transition effect without using Glide's listener
+                                // This is the key change
+                                views.overlayView.setImageDrawable(drawable)
+                                views.overlayView.visibility = View.VISIBLE
+
+                                // Use PhotoTransitionEffects directly
+                                val transitionViews = PhotoTransitionEffects.TransitionViews(
+                                    primaryView = views.primaryView,
+                                    overlayView = views.overlayView,
+                                    container = views.container,
+                                    topLetterboxView = views.topLetterboxView,
+                                    bottomLetterboxView = views.bottomLetterboxView
+                                )
+
+                                transitionEffects.performTransition(
+                                    views = transitionViews,
+                                    resource = drawable,
+                                    nextIndex = photoIndex,
+                                    transitionEffect = transitionEffect,
+                                    transitionDuration = transitionDuration,
+                                    callback = this@PhotoDisplayManager
                                 )
                             }
                             .onFailure { error ->
@@ -999,80 +1018,6 @@ class PhotoDisplayManager @Inject constructor(
             rotation = 0f
             translationZ = 0f
             visibility = View.VISIBLE
-        }
-    }
-
-    private fun createGlideListener(views: Views, nextIndex: Int, startTime: Long, transitionEffect: String) = object : RequestListener<Drawable> {
-        override fun onLoadFailed(
-            e: GlideException?,
-            model: Any?,
-            target: Target<Drawable>,
-            isFirstResource: Boolean
-        ): Boolean {
-            Log.e(TAG, "Failed to load photo: $model", e)
-            isTransitioning = false
-
-            // If we get a 403, try refreshing the token and retrying
-            if (e?.rootCauses?.any { it is HttpException && it.statusCode == 403 } == true) {
-                lifecycleScope?.launch {
-                    try {
-                        if (photoManager.refreshTokens()) {
-                            // Add a small delay before retrying
-                            delay(500)
-                            // Clear Glide's memory cache for this URL to force a new request
-                            model?.toString()?.let { url ->
-                                Glide.get(context).clearMemory()
-                                GlideApp.with(context).clear(views.overlayView)
-                            }
-                            // Retry the load after token refresh
-                            loadAndDisplayPhoto(true)
-                        } else {
-                            Log.e(TAG, "Failed to refresh tokens")
-                            showErrorMessage("Failed to refresh authentication")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error during token refresh", e)
-                        showErrorMessage("Authentication error")
-                    }
-                }
-            }
-
-            return false
-        }
-
-        override fun onResourceReady(
-            resource: Drawable,
-            model: Any,
-            target: Target<Drawable>,
-            dataSource: DataSource,
-            isFirstResource: Boolean
-        ): Boolean {
-            Log.d(TAG, "Photo loaded, starting transition: $transitionEffect")
-
-            // Try to apply letterboxing if needed (only happens if in "fit" mode)
-            photoResizeManager.processPhoto(resource, views.overlayView)
-
-            // Create TransitionViews object for the PhotoTransitionEffects class
-            val transitionViews = PhotoTransitionEffects.TransitionViews(
-                primaryView = views.primaryView,
-                overlayView = views.overlayView,
-                container = views.container,
-                topLetterboxView = views.topLetterboxView,
-                bottomLetterboxView = views.bottomLetterboxView
-            )
-
-            // Use the PhotoTransitionEffects class to perform the transition
-            transitionEffects.performTransition(
-                views = transitionViews,
-                resource = resource,
-                nextIndex = nextIndex,
-                transitionEffect = transitionEffect,
-                transitionDuration = transitionDuration,
-                callback = this@PhotoDisplayManager
-            )
-
-            trackPhotoLoadTime(dataSource == DataSource.MEMORY_CACHE, System.currentTimeMillis() - startTime)
-            return true // Return true to indicate we've handled setting the resource
         }
     }
 
@@ -1481,7 +1426,6 @@ class PhotoDisplayManager @Inject constructor(
             lastPhotoUrl = null
         }
 
-        // Ask Glide to clear memory
         bitmapMemoryManager.clearMemoryCaches()
 
         Log.d(TAG, "Photo display stopped")
@@ -1568,34 +1512,6 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
-    fun handleLowMemory() {
-        Log.w(TAG, "Low memory condition detected")
-        lifecycleScope?.launch {
-            try {
-                // Pause Spotify playback if necessary
-                if (isScreensaverActive && spotifyPreferences.isEnabled()) {
-                    spotifyManager.pause()
-                }
-
-                photoCache.performSmartCleanup()
-                displayJob?.cancel()
-
-                val currentPhoto = views?.primaryView?.drawable
-                if (currentPhoto != null) {
-                    currentPhoto.toBitmap()?.let { bitmap ->
-                        photoCache.cacheLastPhotoBitmap(bitmap)
-                    }
-                }
-
-                Glide.get(context).clearMemory()
-                startPhotoDisplay()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling low memory", e)
-                showDefaultPhoto()
-            }
-        }
-    }
-
     /**
      * Start automatic recovery monitoring to detect and fix stuck photo slideshows
      */
@@ -1663,8 +1579,6 @@ class PhotoDisplayManager @Inject constructor(
                         val nextIndex = (currentPhotoIndex + 1) % photoCount
                         currentPhotoIndex = nextIndex
                         loadAndDisplayPhoto(false)
-                        // Note: recordPhotoChange will be called by the normal flow
-                        // triggered by loadAndDisplayPhoto -> glide -> completeTransition
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error getting photo count during recovery", e)

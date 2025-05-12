@@ -170,13 +170,13 @@ class CoilImageLoadStrategy @Inject constructor(
 
             val result = imageLoader.execute(request)
             if (result is SuccessResult && result.drawable is BitmapDrawable) {
-                (result.drawable as BitmapDrawable).bitmap.copy(Bitmap.Config.ARGB_8888, true)
+                return@withContext (result.drawable as BitmapDrawable).bitmap
             } else {
-                null
+                return@withContext null
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading bitmap: $uri", e)
-            null
+            return@withContext null
         }
     }
 }

@@ -385,19 +385,16 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
                     val preloadedResource = photoPreloader.getPreloadedResource(urlToUse)
                     if (preloadedResource != null && preloadedResource is BitmapDrawable) {
                         try {
-                            // Create a copy of the bitmap to avoid recycling issues
-                            val source = preloadedResource.bitmap
-                            if (!source.isRecycled) {
-                                val copy = source.copy(source.config, true)
-                                return@async copy
-                            }
+                            // For hardware bitmaps, we can't copy them directly
+                            // Instead, load directly with Coil with hardware disabled
+                            return@async imageLoadStrategy.loadBitmap(urlToUse)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error using preloaded resource", e)
                         }
                     }
 
-                    // Load with Glide if not preloaded
-                    loadSinglePhoto(urlToUse)
+                    // Load with Coil if not preloaded or preloaded handling failed
+                    return@async imageLoadStrategy.loadBitmap(urlToUse)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error loading photo", e)
                     return@async null
@@ -425,12 +422,12 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
             // Use the current coroutine scope instead of preloaderScope
             CoroutineScope(Dispatchers.IO).launch {
                 try {
+                    // Call loadBitmap which now disables hardware bitmaps
                     val bitmap = imageLoadStrategy.loadBitmap(url)
+
                     if (bitmap != null) {
-                        // Make a copy to avoid recycling issues
-                        val copy = bitmap.copy(bitmap.config, true)
-                        bitmap.recycle() // Recycle the original to save memory
-                        continuation.resume(copy) {
+                        // No need to make a copy anymore since we're already getting a non-hardware bitmap
+                        continuation.resume(bitmap) {
                             Log.w(TAG, "Continuation was cancelled after resource ready", it)
                         }
                     } else {
