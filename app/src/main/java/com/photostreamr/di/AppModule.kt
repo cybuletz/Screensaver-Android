@@ -145,7 +145,6 @@ object AppModule {
         )
     }
 
-
     @Provides
     @Singleton
     fun provideBitmapMemoryManager(
