@@ -9,7 +9,6 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Debug
 import android.util.Log
-import com.bumptech.glide.Glide
 import kotlinx.coroutines.*
 import java.lang.ref.WeakReference
 import java.text.DecimalFormat
@@ -20,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
+import coil.imageLoader
 
 /**
  * Manages memory for photo bitmaps with automatic cleanup cycles
@@ -329,13 +329,13 @@ class BitmapMemoryManager @Inject constructor(
                 // Clean up our tracking map
                 cleanupTrackingMap()
 
-                // Clear Glide's memory cache on main thread
+                // Clear Coil's memory cache on main thread
                 withContext(Dispatchers.Main) {
                     try {
-                        Log.d(TAG, "🧹 Clearing Glide memory cache")
-                        Glide.get(context).clearMemory()
+                        Log.d(TAG, "🧹 Clearing Coil memory cache")
+                        context.imageLoader.memoryCache?.clear()
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error clearing Glide memory cache", e)
+                        Log.e(TAG, "Error clearing Coil memory cache", e)
                     }
                 }
 
@@ -632,7 +632,6 @@ class BitmapMemoryManager @Inject constructor(
         )
     }
 
-
     /**
      * Clear all bitmap caches (memory and disk) for aggressive cleanup
      * This includes both memory caches and disk caches
@@ -652,20 +651,20 @@ class BitmapMemoryManager @Inject constructor(
                 // First clear memory cache on main thread
                 withContext(Dispatchers.Main) {
                     try {
-                        Log.d(TAG, "🧹 Clearing Glide memory cache")
-                        Glide.get(context).clearMemory()
+                        Log.d(TAG, "🧹 Clearing Coil memory cache")
+                        context.imageLoader.memoryCache?.clear()
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error clearing Glide memory cache", e)
+                        Log.e(TAG, "Error clearing Coil memory cache", e)
                     }
                 }
 
                 // Then clear disk cache on IO thread
                 withContext(Dispatchers.IO) {
                     try {
-                        Log.d(TAG, "💾 Clearing Glide disk cache")
-                        Glide.get(context).clearDiskCache()
+                        Log.d(TAG, "💾 Clearing Coil disk cache")
+                        context.imageLoader.diskCache?.clear()
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error clearing Glide disk cache", e)
+                        Log.e(TAG, "Error clearing Coil disk cache", e)
                     }
                 }
 

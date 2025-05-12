@@ -2,7 +2,6 @@ package com.photostreamr.ui
 
 import android.content.Context
 import android.util.Log
-import com.bumptech.glide.Glide
 import kotlinx.coroutines.*
 import java.io.File
 import java.text.DecimalFormat
@@ -12,9 +11,10 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
+import coil.imageLoader
 
 /**
- * Tracks and manages Glide's disk cache to prevent excessive storage usage
+ * Tracks and manages Coil's disk cache to prevent excessive storage usage
  * Works alongside BitmapMemoryManager for complete memory management
  */
 @Singleton
@@ -185,9 +185,9 @@ class DiskCacheManager @Inject constructor(
                 val beforeSize = currentCacheSize
                 Log.i(TAG, "💾 Starting disk cache cleanup (${formatBytes(beforeSize)})")
 
-                // Clear Glide's disk cache on IO thread
+                // Clear Coil's disk cache on IO thread
                 withContext(Dispatchers.IO) {
-                    Glide.get(context).clearDiskCache()
+                    context.imageLoader.diskCache?.clear()
                 }
 
                 // Small delay to allow disk operations to complete
@@ -232,7 +232,7 @@ class DiskCacheManager @Inject constructor(
     private fun logDiskCacheMetrics() {
         try {
             val cacheSizeMB = currentCacheSize / (1024 * 1024)
-            val cacheDir = Glide.getPhotoCacheDir(context)
+            val cacheDir = getCacheDirectory()  // Updated to use Coil's cache directory
             val fileCount = cacheDir?.listFiles()?.size ?: 0
             val trend = calculateCacheTrend()
 
@@ -251,6 +251,19 @@ class DiskCacheManager @Inject constructor(
 
         } catch (e: Exception) {
             Log.e(TAG, "Error logging disk cache metrics", e)
+        }
+    }
+
+    /**
+     * Get the Coil cache directory
+     */
+    private fun getCacheDirectory(): File? {
+        return try {
+            // Access Coil's disk cache - direct access to the directory
+            context.cacheDir.resolve("image_cache")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error accessing Coil cache directory", e)
+            null
         }
     }
 
@@ -330,14 +343,14 @@ class DiskCacheManager @Inject constructor(
     }
 
     /**
-     * Calculate the total size of Glide's disk cache
+     * Calculate the total size of Coil's disk cache
      */
     private fun calculateDiskCacheSize(): Long {
         var totalSize = 0L
         try {
-            val glideCacheDir = Glide.getPhotoCacheDir(context)
-            if (glideCacheDir != null && glideCacheDir.exists()) {
-                totalSize = calculateDirSize(glideCacheDir)
+            val cacheDir = getCacheDirectory()
+            if (cacheDir != null && cacheDir.exists()) {
+                totalSize = calculateDirSize(cacheDir)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error calculating disk cache size", e)
