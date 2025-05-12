@@ -28,6 +28,7 @@ import kotlin.coroutines.resume
 import kotlin.math.*
 import java.util.concurrent.ConcurrentHashMap
 import android.os.Build
+import com.photostreamr.photos.CoilImageLoadStrategy
 
 /**
  * Manages intelligent photo layouts using ML Kit face detection for subject-aware cropping
@@ -35,7 +36,8 @@ import android.os.Build
  */
 @Singleton
 class SmartPhotoLayoutManager @Inject constructor(
-    private val context: Context
+    private val context: Context,
+    private val imageLoadStrategy: CoilImageLoadStrategy
 ) {
     companion object {
         private const val TAG = "SmartPhotoLayoutManager"

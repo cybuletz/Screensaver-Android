@@ -155,6 +155,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-ads:24.2.0")
     implementation("com.google.android.ump:user-messaging-platform:3.2.0")
 
+    // Coil
+    implementation("io.coil-kt:coil:2.4.0")
+
     // In-app billing (optional, for handling purchases)
     implementation("com.android.billingclient:billing:7.1.1")
 

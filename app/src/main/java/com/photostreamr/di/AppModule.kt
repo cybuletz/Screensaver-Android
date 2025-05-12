@@ -28,6 +28,7 @@ import com.photostreamr.recovery.StateRestoration
 import com.photostreamr.data.PhotoCache
 import com.photostreamr.music.SpotifyManager
 import com.photostreamr.music.SpotifyPreferences
+import com.photostreamr.photos.CoilImageLoadStrategy
 import com.photostreamr.photos.PersistentPhotoCache
 import com.photostreamr.photos.PhotoUriManager
 import com.photostreamr.photos.network.NetworkPhotoManager
@@ -125,7 +126,8 @@ object AppModule {
         bitmapMemoryManager: BitmapMemoryManager,
         smartTemplateHelper: SmartTemplateHelper,
         smartPhotoLayoutManager: SmartPhotoLayoutManager,
-        diskCacheManager: DiskCacheManager
+        diskCacheManager: DiskCacheManager,
+        imageLoadStrategy: CoilImageLoadStrategy
     ): PhotoDisplayManager {
         return PhotoDisplayManager(
             photoManager = photoRepository,
@@ -141,7 +143,8 @@ object AppModule {
             bitmapMemoryManager = bitmapMemoryManager,
             smartTemplateHelper = smartTemplateHelper,
             smartPhotoLayoutManager = smartPhotoLayoutManager,
-            diskCacheManager = diskCacheManager
+            diskCacheManager = diskCacheManager,
+            imageLoadStrategy
         )
     }
 
@@ -156,8 +159,17 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideSmartPhotoLayoutManager(context: Context): SmartPhotoLayoutManager {
-        return SmartPhotoLayoutManager(context)
+    fun provideSmartPhotoLayoutManager(context: Context, imageLoadStrategy: CoilImageLoadStrategy): SmartPhotoLayoutManager {
+        return SmartPhotoLayoutManager(context, imageLoadStrategy)
+    }
+
+    @Singleton
+    @Provides
+    fun provideImageLoadStrategy(
+        @ApplicationContext context: Context,
+        bitmapMemoryManager: BitmapMemoryManager
+    ): CoilImageLoadStrategy {
+        return CoilImageLoadStrategy(context, bitmapMemoryManager)
     }
 
     @Provides
@@ -177,14 +189,16 @@ object AppModule {
         photoRepository: PhotoRepository,
         photoPreloader: PhotoPreloader,
         smartPhotoLayoutManager: SmartPhotoLayoutManager,
-        smartTemplateHelper: SmartTemplateHelper
+        smartTemplateHelper: SmartTemplateHelper,
+        imageLoadStrategy: CoilImageLoadStrategy
     ): EnhancedMultiPhotoLayoutManager {
         return EnhancedMultiPhotoLayoutManager(
             context,
             photoRepository,
             photoPreloader,
             smartPhotoLayoutManager,
-            smartTemplateHelper
+            smartTemplateHelper,
+            imageLoadStrategy
         )
     }
 
@@ -193,9 +207,10 @@ object AppModule {
     fun providePhotoPreloader(
         @ApplicationContext context: Context,
         photoRepository: PhotoRepository,
-        bitmapMemoryManager: BitmapMemoryManager
+        bitmapMemoryManager: BitmapMemoryManager,
+        imageLoadStrategy: CoilImageLoadStrategy
     ): PhotoPreloader {
-        return PhotoPreloader(context, photoRepository, bitmapMemoryManager)
+        return PhotoPreloader(context, photoRepository, bitmapMemoryManager, imageLoadStrategy)
     }
 
     @Provides

@@ -55,6 +55,8 @@ import android.renderscript.Allocation
 import android.renderscript.Element
 import android.renderscript.RenderScript
 import android.renderscript.ScriptIntrinsicBlur
+import com.photostreamr.photos.CoilImageLoadStrategy
+import com.photostreamr.photos.ImageLoadStrategy
 
 
 @Singleton
@@ -72,7 +74,8 @@ class PhotoDisplayManager @Inject constructor(
     private val bitmapMemoryManager: BitmapMemoryManager,
     private val smartTemplateHelper: SmartTemplateHelper,
     private val smartPhotoLayoutManager: SmartPhotoLayoutManager,
-    private val diskCacheManager: DiskCacheManager
+    private val diskCacheManager: DiskCacheManager,
+    private val imageLoadStrategy: CoilImageLoadStrategy
 ) : PhotoTransitionEffects.TransitionCompletionCallback,
     EnhancedMultiPhotoLayoutManager.TemplateReadyCallback {
 
@@ -578,75 +581,52 @@ class PhotoDisplayManager @Inject constructor(
                 Log.d(TAG, "Displaying smart cropped photo $photoIndex: $uri" + (if(isCached) " (cached)" else ""))
 
                 withContext(Dispatchers.Main) {
-                    GlideApp.with(context)
-                        .asBitmap()
-                        .load(uri)
-                        .diskCacheStrategy(DiskCacheStrategy.ALL)
-                        .error(R.drawable.default_photo)
-                        .listener(object : RequestListener<Bitmap> {
-                            override fun onLoadFailed(
-                                e: GlideException?,
-                                model: Any?,
-                                target: Target<Bitmap>,
-                                isFirstResource: Boolean
-                            ): Boolean {
-                                Log.e(TAG, "Failed to load photo for smart crop: $model", e)
-                                isTransitioning = false
+                    // Load bitmap with Coil
+                    try {
+                        // Force CENTER_CROP scale type for smart fill mode
+                        views.overlayView.scaleType = ImageView.ScaleType.CENTER_CROP
+                        views.primaryView.scaleType = ImageView.ScaleType.CENTER_CROP
 
-                                // Skip to next photo
-                                currentPhotoIndex = photoIndex
-                                loadAndDisplayPhoto(false)
-                                return false
-                            }
+                        // Load the bitmap directly for processing
+                        val bitmap = imageLoadStrategy.loadBitmap(uri)
 
-                            override fun onResourceReady(
-                                resource: Bitmap,
-                                model: Any,
-                                target: Target<Bitmap>,
-                                dataSource: DataSource,
-                                isFirstResource: Boolean
-                            ): Boolean {
-                                // Process with smart ML-based cropping
-                                currentScope.launch {
-                                    try {
-                                        Log.d(TAG, "Processing with smart ML-based cropping")
+                        if (bitmap != null) {
+                            // Process with our direct smart cropping method
+                            val smartCroppedBitmap = smartPhotoLayoutManager.createSmartCroppedPhoto(
+                                bitmap,
+                                containerWidth,
+                                containerHeight
+                            )
 
-                                        // Force CENTER_CROP scale type for smart fill mode
-                                        views.overlayView.scaleType = ImageView.ScaleType.CENTER_CROP
-                                        views.primaryView.scaleType = ImageView.ScaleType.CENTER_CROP
+                            // Create drawable from the smart cropped bitmap
+                            val drawable = BitmapDrawable(context.resources, smartCroppedBitmap)
 
-                                        // Process the photo with our direct smart cropping method
-                                        val smartCroppedBitmap = smartPhotoLayoutManager.createSmartCroppedPhoto(
-                                            resource,
-                                            containerWidth,
-                                            containerHeight
-                                        )
+                            // Apply the transition effect with the smart cropped drawable
+                            val glideListener = createGlideListener(views, photoIndex, startTime, transitionEffect)
+                            glideListener.onResourceReady(
+                                drawable,
+                                uri,
+                                views.overlayView as Target<Drawable>,
+                                DataSource.LOCAL,
+                                true
+                            )
+                        } else {
+                            // If bitmap loading failed
+                            Log.e(TAG, "Failed to load bitmap for smart crop: $uri")
+                            isTransitioning = false
 
-                                        // Create drawable from the smart cropped bitmap
-                                        val drawable = BitmapDrawable(context.resources, smartCroppedBitmap)
+                            // Skip to next photo
+                            currentPhotoIndex = photoIndex
+                            loadAndDisplayPhoto(false)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing with ML Kit", e)
+                        isTransitioning = false
 
-                                        // Apply the transition effect with the smart cropped drawable
-                                        val success = createGlideListener(views, photoIndex, startTime, transitionEffect)
-                                            .onResourceReady(drawable, model, target as Target<Drawable>, dataSource, isFirstResource)
-
-                                        if (!success) {
-                                            // If the listener didn't handle it, set the drawable directly
-                                            views.overlayView.setImageDrawable(drawable)
-                                            isTransitioning = false
-                                        }
-
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error processing with ML Kit", e)
-                                        // Fall back to regular photo display with original bitmap
-                                        val regularDrawable = BitmapDrawable(context.resources, resource)
-                                        createGlideListener(views, photoIndex, startTime, transitionEffect)
-                                            .onResourceReady(regularDrawable, model, target as Target<Drawable>, dataSource, isFirstResource)
-                                    }
-                                }
-                                return true
-                            }
-                        })
-                        .submit()
+                        // Skip to next photo
+                        currentPhotoIndex = photoIndex
+                        loadAndDisplayPhoto(false)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error displaying smart cropped photo", e)
@@ -826,38 +806,54 @@ class PhotoDisplayManager @Inject constructor(
                 Log.d(TAG, "Displaying photo $photoIndex: $uri" + (if(isCached) " (cached)" else ""))
 
                 withContext(Dispatchers.Main) {
-                    GlideApp.with(context)
-                        .load(uri)
-                        .diskCacheStrategy(DiskCacheStrategy.ALL)
-                        .error(R.drawable.default_photo)
-                        .listener(object : RequestListener<Drawable> {
-                            override fun onLoadFailed(
-                                e: GlideException?,
-                                model: Any?,
-                                target: Target<Drawable>,
-                                isFirstResource: Boolean
-                            ): Boolean {
-                                Log.e(TAG, "Failed to load photo: $model", e)
+                    // Get display mode
+                    val displayMode = prefs.getString(PhotoResizeManager.PREF_KEY_PHOTO_SCALE,
+                        PhotoResizeManager.DEFAULT_DISPLAY_MODE) ?: PhotoResizeManager.DEFAULT_DISPLAY_MODE
+
+                    // Use scale type based on display mode
+                    val scaleType = when(displayMode) {
+                        PhotoResizeManager.DISPLAY_MODE_FILL,
+                        PhotoResizeManager.DISPLAY_MODE_SMART_FILL -> ImageLoadStrategy.ScaleType.CENTER_CROP
+                        else -> ImageLoadStrategy.ScaleType.FIT_CENTER
+                    }
+
+                    // Create options
+                    val options = ImageLoadStrategy.ImageLoadOptions(
+                        scaleType = scaleType,
+                        diskCacheStrategy = ImageLoadStrategy.DiskCacheStrategy.ALL,
+                        error = R.drawable.default_photo
+                    )
+
+                    // Load with Coil directly without using RequestListener
+                    try {
+                        imageLoadStrategy.loadImage(uri, views.overlayView, options)
+                            .onSuccess { drawable ->
+                                // Use the transition effect directly
+                                val glideListener = createGlideListener(views, photoIndex, startTime, transitionEffect)
+                                glideListener.onResourceReady(
+                                    drawable,  // the drawable resource
+                                    uri,       // model
+                                    views.overlayView as Target<Drawable>,  // target
+                                    DataSource.MEMORY_CACHE,  // dataSource
+                                    true       // isFirstResource
+                                )
+                            }
+                            .onFailure { error ->
+                                Log.e(TAG, "Failed to load photo: $uri", error)
                                 isTransitioning = false
 
                                 // Skip to next photo
                                 currentPhotoIndex = photoIndex
                                 loadAndDisplayPhoto(false)
-                                return false
                             }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error loading with Coil: $uri", e)
+                        isTransitioning = false
 
-                            override fun onResourceReady(
-                                resource: Drawable,
-                                model: Any,
-                                target: Target<Drawable>,
-                                dataSource: DataSource,
-                                isFirstResource: Boolean
-                            ): Boolean {
-                                return createGlideListener(views, photoIndex, startTime, transitionEffect)
-                                    .onResourceReady(resource, model, target, dataSource, isFirstResource)
-                            }
-                        })
-                        .into(views.overlayView)
+                        // Skip to next photo
+                        currentPhotoIndex = photoIndex
+                        loadAndDisplayPhoto(false)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error displaying photo", e)

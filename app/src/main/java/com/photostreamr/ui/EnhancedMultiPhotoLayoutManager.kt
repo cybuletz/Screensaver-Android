@@ -11,6 +11,7 @@ import android.graphics.drawable.Drawable
 import android.util.Log
 import androidx.preference.PreferenceManager
 import com.photostreamr.PhotoRepository
+import com.photostreamr.photos.CoilImageLoadStrategy
 import kotlinx.coroutines.*
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,7 +28,8 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
     private val photoManager: PhotoRepository,
     private val photoPreloader: PhotoPreloader,
     private val smartPhotoLayoutManager: SmartPhotoLayoutManager,
-    private val smartTemplateHelper: SmartTemplateHelper
+    private val smartTemplateHelper: SmartTemplateHelper,
+    private val imageLoadStrategy: CoilImageLoadStrategy
 ) {
     companion object {
         private const val TAG = "EnhancedMultiPhotoLayoutManager"
@@ -420,53 +422,36 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
      */
     private suspend fun loadSinglePhoto(url: String): Bitmap? = suspendCancellableCoroutine { continuation ->
         try {
-            com.bumptech.glide.Glide.with(context.applicationContext)
-                .asBitmap()
-                .load(url)
-                .diskCacheStrategy(com.bumptech.glide.load.engine.DiskCacheStrategy.ALL)
-                .listener(object : com.bumptech.glide.request.RequestListener<Bitmap> {
-                    override fun onLoadFailed(
-                        e: com.bumptech.glide.load.engine.GlideException?,
-                        model: Any?,
-                        target: com.bumptech.glide.request.target.Target<Bitmap>,
-                        isFirstResource: Boolean
-                    ): Boolean {
-                        Log.e(TAG, "Failed to load bitmap: $url", e)
+            // Use the current coroutine scope instead of preloaderScope
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val bitmap = imageLoadStrategy.loadBitmap(url)
+                    if (bitmap != null) {
+                        // Make a copy to avoid recycling issues
+                        val copy = bitmap.copy(bitmap.config, true)
+                        bitmap.recycle() // Recycle the original to save memory
+                        continuation.resume(copy) {
+                            Log.w(TAG, "Continuation was cancelled after resource ready", it)
+                        }
+                    } else {
+                        Log.e(TAG, "Failed to load bitmap: $url")
                         continuation.resume(null) {
                             Log.w(TAG, "Continuation was cancelled during load failure", it)
                         }
-                        return false
                     }
-
-                    override fun onResourceReady(
-                        resource: Bitmap,
-                        model: Any,
-                        target: com.bumptech.glide.request.target.Target<Bitmap>,
-                        dataSource: com.bumptech.glide.load.DataSource,
-                        isFirstResource: Boolean
-                    ): Boolean {
-                        // Make a copy to avoid recycling issues
-                        try {
-                            val copy = resource.copy(resource.config, true)
-                            continuation.resume(copy) {
-                                Log.w(TAG, "Continuation was cancelled after resource ready", it)
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error copying bitmap", e)
-                            continuation.resume(null) {
-                                Log.w(TAG, "Continuation was cancelled during copy error", it)
-                            }
-                        }
-                        return true
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading bitmap", e)
+                    continuation.resume(null) {
+                        Log.w(TAG, "Continuation was cancelled during exception", it)
                     }
-                })
-                .submit()
+                }
+            }
 
             continuation.invokeOnCancellation {
                 Log.d(TAG, "Loading cancelled for URL: $url")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception loading bitmap with Glide", e)
+            Log.e(TAG, "Exception loading bitmap", e)
             continuation.resume(null) {
                 Log.w(TAG, "Continuation was cancelled during exception", it)
             }
