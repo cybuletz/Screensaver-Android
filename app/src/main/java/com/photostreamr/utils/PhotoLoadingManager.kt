@@ -1,8 +1,6 @@
 package com.photostreamr.utils
 
 import android.content.Context
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.photostreamr.models.MediaItem
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -13,21 +11,27 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
+import coil.ImageLoader
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import coil.size.Size
 
 @Singleton
 class PhotoLoadingManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val scope: CoroutineScope
 ) {
-    private val requestManager = Glide.with(context)
+    private val imageLoader = ImageLoader.Builder(context)
+        .crossfade(true)
+        .diskCachePolicy(CachePolicy.ENABLED)
+        .memoryCachePolicy(CachePolicy.ENABLED)
+        .build()
 
     private lateinit var diskCache: File
 
-
     companion object {
-        const val QUALITY_LOW = 1
-        const val QUALITY_MEDIUM = 2
-        const val QUALITY_HIGH = 3
         private const val TAG = "PhotoLoadingManager"
     }
 
@@ -40,36 +44,15 @@ class PhotoLoadingManager @Inject constructor(
         }
     }
 
-    fun preloadPhoto(mediaItem: MediaItem) {
-        try {
-            requestManager
-                .load(mediaItem.baseUrl)
-                .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .skipMemoryCache(false)
-                .preload()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error preloading photo: ${mediaItem.id}", e)
-        }
-    }
-
-    fun isPhotoCached(mediaItem: MediaItem): Boolean {
-        return try {
-            Glide.with(context)
-                .load(mediaItem.baseUrl)
-                .onlyRetrieveFromCache(true)
-                .submit()
-                .get() != null
-        } catch (e: Exception) {
-            false
-        }
-    }
-
     fun cleanup() {
         scope.launch(Dispatchers.IO) {
             try {
-                Glide.get(context).clearDiskCache()
+                // Clear disk cache
+                imageLoader.diskCache?.clear()
+
                 withContext(Dispatchers.Main) {
-                    Glide.get(context).clearMemory()
+                    // Clear memory cache
+                    imageLoader.memoryCache?.clear()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error during cleanup", e)

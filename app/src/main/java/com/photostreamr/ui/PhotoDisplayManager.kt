@@ -5,8 +5,6 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.lifecycle.LifecycleCoroutineScope
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.photostreamr.PhotoRepository
 import com.photostreamr.data.PhotoCache
 import com.photostreamr.models.LoadingState
@@ -49,6 +47,10 @@ import android.renderscript.Allocation
 import android.renderscript.Element
 import android.renderscript.RenderScript
 import android.renderscript.ScriptIntrinsicBlur
+import coil.imageLoader
+import coil.load
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.photostreamr.photos.CoilImageLoadStrategy
 import com.photostreamr.photos.ImageLoadStrategy
 
@@ -916,10 +918,10 @@ class PhotoDisplayManager @Inject constructor(
 
                 // Load default photo without animation and show message
                 views.primaryView.post {
-                    Glide.with(context)
-                        .load(R.drawable.default_photo)
-                        .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
-                        .into(views.primaryView)
+                    views.primaryView.load(R.drawable.default_photo) {
+                        diskCachePolicy(CachePolicy.ENABLED)
+                        crossfade(false)
+                    }
 
                     // Show message overlay
                     views.overlayMessageContainer?.visibility = View.VISIBLE
@@ -932,6 +934,45 @@ class PhotoDisplayManager @Inject constructor(
                 Log.d(TAG, "No photos message shown")
             } catch (e: Exception) {
                 Log.e(TAG, "Error showing no photos message", e)
+            }
+        }
+    }
+
+    private fun preloadDefaultPhoto() {
+        try {
+            // Create request for preloading default photo
+            val request = ImageRequest.Builder(context.applicationContext)
+                .data(R.drawable.default_photo)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .build()
+
+            // Enqueue the request with the ImageLoader
+            context.imageLoader.enqueue(request)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preloading default photo", e)
+        }
+    }
+
+    private fun showDefaultPhoto() {
+        views?.let { views ->
+            try {
+                // Hide any existing messages first
+                hideAllMessages()
+
+                // Load default photo without animation
+                views.primaryView.post {
+                    views.primaryView.load(R.drawable.default_photo) {
+                        diskCachePolicy(CachePolicy.ENABLED)
+                        crossfade(false) // No animation
+                    }
+
+                    // Ensure the view is visible
+                    views.primaryView.visibility = View.VISIBLE
+                }
+
+                Log.d(TAG, "Default photo loaded")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading default photo", e)
             }
         }
     }
@@ -1201,41 +1242,6 @@ class PhotoDisplayManager @Inject constructor(
         currentScope.launch {
             stopPhotoDisplay()
             startPhotoDisplay()
-        }
-    }
-
-    private fun preloadDefaultPhoto() {
-        try {
-            Glide.with(context.applicationContext)
-                .load(R.drawable.default_photo)
-                .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
-                .submit()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error preloading default photo", e)
-        }
-    }
-
-    private fun showDefaultPhoto() {
-        views?.let { views ->
-            try {
-                // Hide any existing messages first
-                hideAllMessages()
-
-                // Load default photo without animation
-                views.primaryView.post {
-                    Glide.with(context)
-                        .load(R.drawable.default_photo)
-                        .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
-                        .into(views.primaryView)
-
-                    // Ensure the view is visible
-                    views.primaryView.visibility = View.VISIBLE
-                }
-
-                Log.d(TAG, "Default photo loaded")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading default photo", e)
-            }
         }
     }
 

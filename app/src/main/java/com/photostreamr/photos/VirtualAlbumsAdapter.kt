@@ -6,13 +6,15 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.RequestManager
 import com.photostreamr.R
 import com.photostreamr.databinding.ItemVirtualAlbumBinding
 import android.net.Uri
+import coil.ImageLoader
+import coil.load
+import coil.size.Scale
 
 class VirtualAlbumsAdapter(
-    private val glide: RequestManager,
+    private val imageLoader: ImageLoader,
     private val onAlbumClick: (VirtualAlbum) -> Unit,
     private val onAlbumOptionsClick: (VirtualAlbum) -> Unit,
     private val onAlbumSelectionChanged: (VirtualAlbum, Boolean) -> Unit
@@ -46,11 +48,11 @@ class VirtualAlbumsAdapter(
                     album.name
                 )
 
-                // Load album cover image
+                // Load album cover image with Coil
                 album.photoUris.firstOrNull()?.let { coverUri ->
-                    glide.load(Uri.parse(coverUri))
-                        .centerCrop()
-                        .into(albumCover)
+                    albumCover.load(Uri.parse(coverUri), imageLoader) {
+                        scale(Scale.FILL)  // Equivalent to centerCrop
+                    }
                 }
 
                 // Set click listener on the entire item for selection/deselection

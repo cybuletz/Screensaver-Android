@@ -25,18 +25,28 @@ import android.os.Build
 import android.view.Menu
 import android.view.ViewGroup
 import android.widget.Toast
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.Glide
+import coil.ImageLoader
+import coil.dispose
+import coil.load
+import coil.size.Scale
 import com.photostreamr.databinding.ItemFolderBinding
+import com.photostreamr.ui.BitmapMemoryManager
 import kotlinx.coroutines.cancelChildren
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class LocalPhotoSelectionActivity : AppCompatActivity() {
     private lateinit var binding: ActivityLocalPhotoSelectionBinding
     private lateinit var adapter: LocalPhotoAdapter
+
+    @Inject
+    lateinit var imageLoader: ImageLoader
+
+    @Inject
+    lateinit var bitmapMemoryManager: BitmapMemoryManager
 
     // Added for folder navigation
     private var currentFolderId: String? = null
@@ -141,9 +151,12 @@ class LocalPhotoSelectionActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        adapter = LocalPhotoAdapter { isSelected ->
-            updateSelectionCount(adapter.getSelectedPhotos().size)
-        }
+        adapter = LocalPhotoAdapter(
+            { isSelected ->
+                updateSelectionCount(adapter.getSelectedPhotos().size)
+            },
+            bitmapMemoryManager // Use the injected instance
+        )
 
         binding.recyclerView.apply {
             layoutManager = GridLayoutManager(this@LocalPhotoSelectionActivity, 3)
@@ -541,8 +554,8 @@ class LocalPhotoSelectionActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Force Glide to clear memory
-        Glide.get(this).clearMemory()
+        // Clear memory cache
+        imageLoader.memoryCache?.clear()
 
         // Encourage garbage collection
         System.gc()
@@ -564,8 +577,8 @@ class LocalPhotoSelectionActivity : AppCompatActivity() {
         // Cancel any ongoing operations
         lifecycleScope.coroutineContext.cancelChildren()
 
-        // Tell Glide to clear any resources
-        Glide.get(this).clearMemory()
+        // Clear Coil's memory cache
+        imageLoader.memoryCache?.clear()
     }
 }
 
@@ -596,13 +609,12 @@ class FolderAdapter(
             folderName.text = folder.name
             photoCount.text = holder.itemView.context.getString(R.string.photo_count, folder.count)
 
-            // Load folder thumbnail
-            Glide.with(holder.itemView.context)
-                .load(folder.coverUri)
-                .placeholder(R.drawable.placeholder_album)
-                .error(R.drawable.placeholder_album_error)
-                .centerCrop()
-                .into(folderThumbnail)
+            // Load folder thumbnail with Coil
+            folderThumbnail.load(folder.coverUri) {
+                placeholder(R.drawable.placeholder_album)
+                error(R.drawable.placeholder_album_error)
+                scale(Scale.FILL) // equivalent to centerCrop
+            }
 
             root.setOnClickListener {
                 onFolderSelected(folder)
@@ -611,4 +623,10 @@ class FolderAdapter(
     }
 
     override fun getItemCount() = folders.size
+
+    // Make sure to dispose of images when recycled
+    override fun onViewRecycled(holder: FolderViewHolder) {
+        super.onViewRecycled(holder)
+        holder.binding.folderThumbnail.dispose()
+    }
 }

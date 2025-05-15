@@ -8,20 +8,22 @@ import android.widget.CheckBox
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.photostreamr.R
 import android.net.Uri
-import com.bumptech.glide.load.engine.DiskCacheStrategy
+import android.util.Log
+import coil.dispose
+import coil.load
+import coil.request.CachePolicy
+import coil.size.Scale
 
 class LocalPhotoAdapter(
-    private val onSelectionChanged: (Boolean) -> Unit
+    private val onSelectionChanged: (Boolean) -> Unit,
+    private val bitmapMemoryManager: com.photostreamr.ui.BitmapMemoryManager
 ) : ListAdapter<LocalPhoto, LocalPhotoAdapter.PhotoViewHolder>(PhotoDiffCallback()) {
 
     private val selectedPhotos = mutableSetOf<Uri>()
-
-    // Add target size options for thumbnails
     private val thumbnailSize = 300
+    private val TAG = "LocalPhotoAdapter"
 
     fun setPreselectedPhotos(photos: List<Uri>) {
         selectedPhotos.clear()
@@ -44,15 +46,26 @@ class LocalPhotoAdapter(
     override fun onBindViewHolder(holder: PhotoViewHolder, position: Int) {
         val photo = getItem(position)
 
-        // Use better thumbnail loading approach
-        Glide.with(holder.imageView)
-            .load(photo.uri)
-            .override(thumbnailSize, thumbnailSize) // Specify size to avoid loading full image
-            .thumbnail(0.1f)
-            .transition(DrawableTransitionOptions.withCrossFade())
-            .centerCrop()
-            .diskCacheStrategy(DiskCacheStrategy.RESOURCE) // Cache processed resources
-            .into(holder.imageView)
+        // COIL REPLACEMENT FOR GLIDE - with proper 2.7.0 API usage
+        holder.imageView.load(photo.uri) {
+            size(thumbnailSize, thumbnailSize)
+            crossfade(true)
+            scale(Scale.FILL) // This is the equivalent of centerCrop in Coil
+            memoryCachePolicy(CachePolicy.ENABLED)
+            diskCachePolicy(CachePolicy.DISABLED) // Don't cache local photos on disk
+            listener(
+                onSuccess = { _, result ->
+                    val drawable = result.drawable
+                    // Register bitmap with memory manager for tracking
+                    if (drawable is android.graphics.drawable.BitmapDrawable && drawable.bitmap != null) {
+                        bitmapMemoryManager.registerActiveBitmap("thumbnail:${photo.uri.hashCode()}", drawable.bitmap)
+                    }
+                },
+                onError = { _, throwable ->
+                    Log.e(TAG, "Error loading thumbnail for ${photo.uri}: ${throwable.toString()}")
+                }
+            )
+        }
 
         val isSelected = selectedPhotos.contains(photo.uri)
         holder.checkbox.isChecked = isSelected
@@ -72,8 +85,17 @@ class LocalPhotoAdapter(
 
     override fun onViewRecycled(holder: PhotoViewHolder) {
         super.onViewRecycled(holder)
+
+        // Get the photo URI for this position to unregister bitmap
+        val position = holder.bindingAdapterPosition
+        if (position != RecyclerView.NO_POSITION) {
+            val photo = getItem(position)
+            // Unregister the bitmap from memory manager
+            bitmapMemoryManager.unregisterActiveBitmap("thumbnail:${photo.uri.hashCode()}")
+        }
+
         // Clear the ImageView to free up memory
-        Glide.with(holder.imageView).clear(holder.imageView)
+        holder.imageView.dispose()
     }
 
     fun getSelectedPhotos(): List<LocalPhoto> = currentList.filter { selectedPhotos.contains(it.uri) }

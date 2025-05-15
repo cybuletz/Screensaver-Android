@@ -11,12 +11,12 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.RequestManager
 import com.photostreamr.databinding.FragmentPhotoListBinding
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import coil.ImageLoader
 
 @AndroidEntryPoint
 class PhotoListFragment : Fragment() {
@@ -25,14 +25,14 @@ class PhotoListFragment : Fragment() {
     private val viewModel: PhotoManagerViewModel by activityViewModels()
 
     @Inject
-    lateinit var glide: RequestManager
+    lateinit var imageLoader: ImageLoader
 
     @Inject
     lateinit var photoUriManager: PhotoUriManager
 
     private val photoAdapter by lazy {
         PhotoGridAdapter(
-            glide = glide,
+            imageLoader = imageLoader,
             photoUriManager = photoUriManager,
             onPhotoClick = { photo ->
                 // Use our safe method

@@ -27,11 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
 import android.content.Intent
 import kotlinx.coroutines.*
-import com.bumptech.glide.Glide
-import com.bumptech.glide.RequestManager
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.request.RequestOptions
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import android.provider.MediaStore
 import android.net.Uri
 import android.os.Build
@@ -40,13 +36,15 @@ import com.photostreamr.PhotoRepository.PhotoAddMode
 import com.photostreamr.photos.PhotoManagerActivity
 import com.photostreamr.photos.PhotoManagerViewModel
 import com.photostreamr.photos.PhotoUriManager
+import coil.ImageLoader
+import coil.request.ImageRequest
 
 
 @AndroidEntryPoint
 class AlbumSelectionActivity : AppCompatActivity() {
     private lateinit var binding: ActivityAlbumSelectionBinding
     private lateinit var albumAdapter: AlbumAdapter
-    private lateinit var glideRequestManager: RequestManager
+    private lateinit var imageLoader: ImageLoader
     private val loadingJob = SupervisorJob()
     private val activityScope = CoroutineScope(Dispatchers.Main + loadingJob)
 
@@ -77,18 +75,12 @@ class AlbumSelectionActivity : AppCompatActivity() {
         binding = ActivityAlbumSelectionBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Initialize Glide RequestManager with optimized settings
-        glideRequestManager = Glide.with(this)
-            .setDefaultRequestOptions(
-                RequestOptions()
-                    .diskCacheStrategy(DiskCacheStrategy.ALL)
-                    .skipMemoryCache(false)
-                    .centerCrop()
-                    .dontAnimate()
-                    .timeout(10000)
-                    .placeholder(R.drawable.placeholder_album)
-                    .error(R.drawable.placeholder_album_error)
-            )
+        // Initialize Coil ImageLoader with optimized settings
+        imageLoader = ImageLoader.Builder(this)
+            .crossfade(true)
+            .placeholder(R.drawable.placeholder_album)
+            .error(R.drawable.placeholder_album_error)
+            .build()
 
         setupViews()
         observeViewModel()
@@ -166,7 +158,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                 recycleChildrenOnDetach = true
             }
 
-            albumAdapter = AlbumAdapter(glideRequestManager) { album ->
+            albumAdapter = AlbumAdapter(imageLoader) { album ->
                 if (!viewModel.isLoading.value) {
                     toggleAlbumSelection(album)
                 }
@@ -181,7 +173,7 @@ class AlbumSelectionActivity : AppCompatActivity() {
                     when (newState) {
                         RecyclerView.SCROLL_STATE_IDLE -> {
                             Log.d(TAG, "Scroll IDLE - resuming image loading")
-                            glideRequestManager.resumeRequests()
+                            // No need to resume requests with Coil as it handles this automatically
                         }
                         RecyclerView.SCROLL_STATE_DRAGGING -> {
                             Log.d(TAG, "Scroll DRAGGING")
@@ -276,13 +268,8 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        Log.d(TAG, "Activity onStop - clearing RecyclerView")
-        try {
-            // Don't clear memory cache, just pending requests
-            glideRequestManager.pauseRequests()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in onStop", e)
-        }
+        Log.d(TAG, "Activity onStop")
+        // Coil automatically handles request lifecycle with the Activity
     }
 
     private suspend fun createMediaItemFromUri(uri: Uri, uriData: PhotoUriManager.UriData): MediaItem {
@@ -841,17 +828,13 @@ class AlbumSelectionActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         Log.d(TAG, "Activity onDestroy")
-        glideRequestManager.clear(binding.albumRecyclerView)
+        // No need to clear image views with Coil, it's handled automatically
         binding.albumRecyclerView.adapter = null
 
         lifecycleScope.launch {
             try {
                 withContext(NonCancellable) {
-                    // Only clear memory if actually destroying
-                    if (isFinishing) {
-                        Log.d(TAG, "Clearing Glide memory cache")
-                        Glide.get(applicationContext).clearMemory()
-                    }
+                    // Nothing specific to clean up with Coil
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error during cleanup", e)
@@ -862,5 +845,4 @@ class AlbumSelectionActivity : AppCompatActivity() {
         }
         super.onDestroy()
     }
-
 }

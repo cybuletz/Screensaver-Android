@@ -10,7 +10,6 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
-import com.bumptech.glide.RequestManager
 import com.photostreamr.R
 import com.photostreamr.databinding.FragmentAlbumListBinding
 import com.google.android.material.snackbar.Snackbar
@@ -19,6 +18,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import coil.ImageLoader
 
 @AndroidEntryPoint
 class AlbumListFragment : Fragment() {
@@ -27,7 +27,7 @@ class AlbumListFragment : Fragment() {
     private val viewModel: PhotoManagerViewModel by activityViewModels()
 
     @Inject
-    lateinit var glide: RequestManager
+    lateinit var imageLoader: ImageLoader
 
     private lateinit var virtualAlbumsAdapter: VirtualAlbumsAdapter
 
@@ -113,7 +113,7 @@ class AlbumListFragment : Fragment() {
 
     private fun setupVirtualAlbumsRecyclerView() {
         virtualAlbumsAdapter = VirtualAlbumsAdapter(
-            glide = glide,
+            imageLoader = imageLoader,
             onAlbumClick = { album: VirtualAlbum ->
                 Log.d(TAG, "Album clicked: ${album.id}")
             },

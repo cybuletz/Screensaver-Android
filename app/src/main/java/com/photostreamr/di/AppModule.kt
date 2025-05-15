@@ -1,8 +1,8 @@
 package com.photostreamr.di
 
 import android.content.Context
-import com.bumptech.glide.Glide
-import com.bumptech.glide.RequestManager
+import coil.ImageLoader
+import coil.request.CachePolicy
 import com.photostreamr.analytics.PhotoAnalytics
 import com.photostreamr.utils.AppPreferences
 import com.photostreamr.utils.NotificationHelper
@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import com.photostreamr.PhotoRepository
+import com.photostreamr.R
 import com.photostreamr.ads.AdManager
 import com.photostreamr.auth.GoogleAuthManager
 import com.photostreamr.data.AppDataManager
@@ -31,7 +32,6 @@ import com.photostreamr.music.SpotifyPreferences
 import com.photostreamr.photos.CoilImageLoadStrategy
 import com.photostreamr.photos.PersistentPhotoCache
 import com.photostreamr.photos.PhotoUriManager
-import com.photostreamr.photos.network.NetworkPhotoManager
 import com.photostreamr.security.AppAuthManager
 import com.photostreamr.security.BiometricHelper
 import com.photostreamr.security.SecurityPreferences
@@ -68,16 +68,22 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideGlide(@ApplicationContext context: Context): RequestManager {
-        return Glide.with(context)
-    }
-
-    @Provides
-    @Singleton
     fun provideAppPreferences(
         @ApplicationContext context: Context
     ): AppPreferences {
         return AppPreferences(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideImageLoader(@ApplicationContext context: Context): ImageLoader {
+        return ImageLoader.Builder(context)
+            .crossfade(true)
+            .diskCachePolicy(CachePolicy.ENABLED)
+            .memoryCachePolicy(CachePolicy.ENABLED)
+            .placeholder(R.drawable.placeholder_album)
+            .error(R.drawable.placeholder_album_error)
+            .build()
     }
 
     @Provides

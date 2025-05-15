@@ -1,17 +1,12 @@
 package com.photostreamr.binding
 
-import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
 import androidx.databinding.BindingAdapter
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.DataSource
-import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.load.engine.GlideException
-import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
-import com.bumptech.glide.request.RequestListener
-import com.bumptech.glide.request.target.Target
 import com.photostreamr.utils.OnPhotoLoadListener
+import coil.load
+import coil.request.CachePolicy
+import coil.size.Scale
 
 object ImageBindingAdapter {
     private const val CROSSFADE_DURATION = 300
@@ -29,39 +24,29 @@ object ImageBindingAdapter {
             return
         }
 
-        val request = Glide.with(view.context)
-            .load(url as String)
-            .transition(DrawableTransitionOptions.withCrossFade(CROSSFADE_DURATION))
-            .diskCacheStrategy(DiskCacheStrategy.ALL)
-            .listener(object : RequestListener<Drawable> {
-                override fun onLoadFailed(
-                    e: GlideException?,
-                    model: Any?,
-                    target: Target<Drawable>,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    listener?.onPhotoLoadComplete(false)
-                    return false
-                }
+        view.load(url) {
+            crossfade(CROSSFADE_DURATION)
+            memoryCachePolicy(CachePolicy.ENABLED)
+            diskCachePolicy(CachePolicy.ENABLED)
 
-                override fun onResourceReady(
-                    resource: Drawable,
-                    model: Any,
-                    target: Target<Drawable>,
-                    dataSource: DataSource,
-                    isFirstResource: Boolean
-                ): Boolean {
+            // Handle size based on quality
+            when (quality) {
+                1 -> size(720, 720)
+                2 -> size(1080, 1080)
+                3 -> size(coil.size.Size.ORIGINAL)
+                else -> size(coil.size.Size.ORIGINAL)
+            }
+
+            // Set up listeners
+            listener(
+                onSuccess = { _, _ ->
                     listener?.onPhotoLoadComplete(true)
-                    return false
+                },
+                onError = { _, _ ->
+                    listener?.onPhotoLoadComplete(false)
                 }
-            })
-
-        when (quality) {
-            1 -> request.override(720, 720)
-            2 -> request.override(1080, 1080)
-            3 -> request.override(Target.SIZE_ORIGINAL)
-            else -> request.override(Target.SIZE_ORIGINAL)
-        }.into(view)
+            )
+        }
     }
 
     @JvmStatic

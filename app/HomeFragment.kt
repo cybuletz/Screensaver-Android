@@ -8,8 +8,8 @@ import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
+import coil.load
+import coil.transition.CrossfadeTransition
 import com.photostreamr.databinding.FragmentHomeBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -62,10 +62,9 @@ class HomeFragment : Fragment() {
     private fun observeViewModel() {
         viewModel.currentPhoto.observe(viewLifecycleOwner) { photoUrl ->
             photoUrl?.let { url ->
-                Glide.with(this)
-                    .load(url)
-                    .transition(DrawableTransitionOptions.withCrossFade())
-                    .into(binding.photoPreview)
+                binding.photoPreview.load(url) {
+                    crossfade(true)
+                }
             }
         }
     }

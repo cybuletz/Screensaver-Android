@@ -10,7 +10,6 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
-import com.bumptech.glide.RequestManager
 import com.photostreamr.R
 import com.photostreamr.databinding.ActivityPhotoManagerBinding
 import com.photostreamr.databinding.DialogCreateAlbumBinding
@@ -51,9 +50,6 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
     private val _photos = MutableStateFlow<List<ManagedPhoto>>(emptyList())
     private val photos: StateFlow<List<ManagedPhoto>> = _photos.asStateFlow()
     private val dialogShownThisSession = MutableStateFlow(false)
-
-    @Inject
-    lateinit var glide: RequestManager
 
     @Inject
     lateinit var appPreferences: AppPreferences

@@ -10,14 +10,16 @@ import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.RequestManager
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.photostreamr.R
 import com.photostreamr.models.Album
+import coil.ImageLoader
+import coil.load
+import coil.request.CachePolicy
+import coil.size.Scale
 
 
 class AlbumAdapter(
-    private val glideRequestManager: RequestManager,
+    private val imageLoader: ImageLoader,
     private val onAlbumClick: (Album) -> Unit
 ) : ListAdapter<Album, AlbumAdapter.AlbumViewHolder>(AlbumDiffCallback()) {
 
@@ -40,7 +42,7 @@ class AlbumAdapter(
         return AlbumViewHolder(
             LayoutInflater.from(parent.context)
                 .inflate(R.layout.item_album, parent, false),
-            glideRequestManager,
+            imageLoader,
             onAlbumClick
         ).also { holders.add(it) }
     }
@@ -53,18 +55,18 @@ class AlbumAdapter(
         super.onViewRecycled(holder)
         holders.remove(holder)
         if (DEBUG) Log.d(TAG, "View recycled at position: ${holder.bindingAdapterPosition}")
-        // Don't clear the image here
+        // Don't need to clear image - Coil handles view recycling automatically
     }
 
     override fun onViewDetachedFromWindow(holder: AlbumViewHolder) {
         super.onViewDetachedFromWindow(holder)
         if (DEBUG) Log.d(TAG, "View detached at position: ${holder.bindingAdapterPosition}")
-        // Don't clear the image here
+        // Don't need to clear image - Coil handles this automatically
     }
 
     class AlbumViewHolder(
         itemView: View,
-        private val glideRequestManager: RequestManager,
+        private val imageLoader: ImageLoader,
         private val onAlbumClick: (Album) -> Unit
     ) : RecyclerView.ViewHolder(itemView) {
         private val titleTextView: TextView = itemView.findViewById(R.id.albumTitle)
@@ -111,14 +113,14 @@ class AlbumAdapter(
             if (album.coverPhotoUrl?.isNotEmpty() == true) {
                 if (DEBUG) Log.d(TAG, "Loading URL: ${album.coverPhotoUrl} for album: ${album.title}")
 
-                glideRequestManager
-                    .load(album.coverPhotoUrl)
-                    .placeholder(R.drawable.placeholder_album)
-                    .error(R.drawable.placeholder_album_error)
-                    .diskCacheStrategy(DiskCacheStrategy.ALL)
-                    .centerCrop()
-                    .dontAnimate()
-                    .into(coverImageView)
+                coverImageView.load(album.coverPhotoUrl, imageLoader) {
+                    placeholder(R.drawable.placeholder_album)
+                    error(R.drawable.placeholder_album_error)
+                    memoryCachePolicy(CachePolicy.ENABLED)
+                    diskCachePolicy(CachePolicy.ENABLED)
+                    scale(Scale.FILL) // equivalent to centerCrop
+                    crossfade(false) // equivalent to dontAnimate()
+                }
             } else {
                 if (DEBUG) Log.w(TAG, "No cover URL for album: ${album.title}")
                 coverImageView.setImageResource(R.drawable.placeholder_album)

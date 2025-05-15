@@ -216,11 +216,5 @@
                 android:value="androidx.startup" />
         </provider>
 
-        <meta-data
-            android:name="com.photostreamr.glide.PhotosGlideModule"
-            android:value="GlideModule" />
-
-
-
     </application>
 </manifest>
