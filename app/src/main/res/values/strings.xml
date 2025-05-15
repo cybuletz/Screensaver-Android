@@ -653,7 +653,7 @@
 
     <string name="sources">Sources</string>
     <string name="photos_added_guidance">Photos added! Go to Photos tab to manage them.</string>
-    <string name="go_to_photos">Go to Photos</string>
+    <string name="go_to_photos">Play Photos</string>
     <string name="create_default_album">Create Default Album</string>
     <string name="default_album_explanation">Would you like to create a default album with your selected photos? You can create more albums manually later.</string>
     <string name="create">Create</string>

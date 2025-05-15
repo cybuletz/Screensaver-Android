@@ -1,5 +1,6 @@
 package com.photostreamr.photos
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.Menu
@@ -26,6 +27,7 @@ import android.widget.TextView
 import com.photostreamr.PhotoRepository
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
+import com.photostreamr.MainActivity
 import com.photostreamr.utils.AppPreferences
 import com.photostreamr.settings.PhotoSourcesPreferencesFragment
 import kotlinx.coroutines.Dispatchers
@@ -227,17 +229,18 @@ class PhotoManagerActivity : AppCompatActivity(), PhotoSourcesPreferencesFragmen
                     // Create default album with timestamp
                     createDefaultAlbum()
 
-                    // Navigate to Photos tab
-                    binding.viewPager.apply {
-                        isUserInputEnabled = false
-                        post {
-                            setCurrentItem(1, false)
-                            binding.tabLayout.selectTab(binding.tabLayout.getTabAt(1))
-                            requestLayout()
-                            invalidate()
-                            postDelayed({ isUserInputEnabled = true }, 100)
-                        }
+                    // After saving virtual albums, navigate to MainActivity directly
+                    val mainIntent = Intent(this@PhotoManagerActivity, MainActivity::class.java).apply {
+                        // The following flags are critical to clear the back stack and start MainActivity fresh
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP
+
+                        // Add this extra flag to indicate we're coming from album selection
+                        putExtra("from_album_selection", true)
                     }
+                    startActivity(mainIntent)
+                    finish() // Important - finish the current activity
                 }
             }
             .setCancelable(false)

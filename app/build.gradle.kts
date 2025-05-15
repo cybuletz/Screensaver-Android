@@ -152,7 +152,7 @@ dependencies {
     val grpcVersion = "1.72.0"
 
     // Google AdMob
-    implementation("com.google.android.gms:play-services-ads:24.2.0")
+    implementation("com.google.android.gms:play-services-ads:24.1.0")
     implementation("com.google.android.ump:user-messaging-platform:3.2.0")
 
     // Coil

@@ -122,6 +122,22 @@ class SmartTemplateHelper @Inject constructor(
 
             Log.d(TAG, "📊 SMART FILL starting with ${photos.size} photo(s), template type: $templateType")
 
+            // Calculate memory budget and choose bitmap configuration accordingly
+            val memInfo = bitmapMemoryManager.getMemoryInfo()
+            val availableMemoryMB = memInfo.freeMemory / (1024 * 1024)
+            val safeMemoryBudgetMB = availableMemoryMB * 0.6f // Use 60% of available memory
+
+            // Estimate memory needs (4 bytes per pixel for ARGB_8888, 2 bytes for RGB_565)
+            val estimatedMemoryPerPhotoMB = (containerWidth * containerHeight * 4) / (1024 * 1024)
+            val totalEstimatedMemoryMB = estimatedMemoryPerPhotoMB * photos.size
+
+            val bitmapConfig = if (totalEstimatedMemoryMB > safeMemoryBudgetMB) {
+                Log.d(TAG, "Memory budget constraint detected ($totalEstimatedMemoryMB MB > $safeMemoryBudgetMB MB), using RGB_565")
+                Bitmap.Config.RGB_565  // Half the memory of ARGB_8888
+            } else {
+                Bitmap.Config.ARGB_8888
+            }
+
             // Single photo case - delegate to photo resize manager
             if (photos.size == 1 || templateType == -1) {
                 val result = createSinglePhotoTemplate(photos[0], containerWidth, containerHeight)
@@ -168,8 +184,8 @@ class SmartTemplateHelper @Inject constructor(
                 croppedBitmaps[regionIndex] = cropped
             }
 
-            // Compose the template bitmap
-            val templateBitmap = Bitmap.createBitmap(containerWidth, containerHeight, Bitmap.Config.ARGB_8888)
+            // Compose the template bitmap with the chosen configuration
+            val templateBitmap = Bitmap.createBitmap(containerWidth, containerHeight, bitmapConfig)
             val canvas = Canvas(templateBitmap)
             canvas.drawColor(Color.BLACK)
             val paint = Paint().apply {
@@ -199,6 +215,13 @@ class SmartTemplateHelper @Inject constructor(
                         val destRect = RectF(left, top, left + width, top + height)
                         canvas.drawBitmap(bitmap, null, destRect, paint)
                     }
+                }
+            }
+
+            // Recycle intermediate cropped bitmaps as they're no longer needed
+            for ((_, bitmap) in croppedBitmaps) {
+                if (!bitmap.isRecycled) {
+                    bitmap.recycle()
                 }
             }
 

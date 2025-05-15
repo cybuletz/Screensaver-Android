@@ -36,10 +36,10 @@ class CoilImageLoadStrategy @Inject constructor(
      */
     private fun getApiOptimizedScaleFactor(): Float {
         return when {
-            Build.VERSION.SDK_INT <= Build.VERSION_CODES.O -> 0.33f  // Android 8.0: Most restrictive (1/3)
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.O -> 0.4f  // Android 8.0: Most restrictive (1/3)
             Build.VERSION.SDK_INT <= Build.VERSION_CODES.P -> 0.4f   // Android 9.0: Still quite restrictive
             Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q -> 0.5f   // Android 10: Moderate restriction
-            Build.VERSION.SDK_INT <= Build.VERSION_CODES.S -> 0.75f  // Android 11-12: Minor restriction
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.S -> 0.5f  // Android 11-12: Minor restriction
             else -> 1.0f  // Android 13+: No restrictions
         }
     }
@@ -56,6 +56,7 @@ class CoilImageLoadStrategy @Inject constructor(
             Build.VERSION.SDK_INT <= Build.VERSION_CODES.O -> false  // Disable on Android 8.0 (Oreo)
             Build.VERSION.SDK_INT <= Build.VERSION_CODES.P -> false  // Disable on Android 9.0 (Pie)
             Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q -> false  // Disable on Android 10.0 (Q)
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.S -> false  // // Disable on Android 11.0 (Q)
             else -> true  // Enable on Android 11+ (R and above)
         }
 

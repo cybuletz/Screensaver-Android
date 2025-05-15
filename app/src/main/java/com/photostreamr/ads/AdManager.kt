@@ -1,10 +1,13 @@
 package com.photostreamr.ads
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.AttributeSet
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.LayoutInflater
@@ -41,6 +44,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean // Import AtomicBoolean
 import javax.inject.Inject
@@ -85,6 +89,9 @@ class AdManager @Inject constructor(
         private const val DEFAULT_NATIVE_AD_FREQUENCY = 30
         private const val NATIVE_AD_CACHE_SIZE = 1
         private const val AD_LOAD_TIMEOUT_DURATION = 10000L // 10 seconds
+
+        private val adCacheTimes = ConcurrentHashMap<NativeAd, Long>()
+        private val MAX_AD_CACHE_AGE_MS = 5 * 60 * 1000L  // 5 minutes
     }
     private val random = java.util.Random()
 
@@ -204,14 +211,127 @@ class AdManager @Inject constructor(
         }
     }
 
+    /**
+     * Disables hardware acceleration for ad views on Android versions up to and including Android 11
+     * to prevent GPU-related crashes with native ads.
+     * Also disables drawing cache on Android 8 to prevent NullPointerException in Bitmap.mDensity.
+     */
+    fun ensureSafeHardwareAcceleration(view: View) {
+        try {
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) { // R = Android 11
+                // Disable hardware acceleration for Android 11 and below
+                view.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+
+                // Drawing cache bug fix for Android 8
+                if (Build.VERSION.SDK_INT == Build.VERSION_CODES.O) {
+                    view.setDrawingCacheEnabled(false)
+
+                    // Apply the fix to all child views if this is a ViewGroup
+                    if (view is ViewGroup) {
+                        disableDrawingCacheRecursively(view)
+                    }
+
+                    Log.d(TAG, "Applied Android 8 drawing cache fix to prevent NPE")
+                }
+
+                Log.d(TAG, "Using software rendering for ads on Android ${Build.VERSION.SDK_INT}")
+            } else {
+                // For newer versions, use hardware acceleration
+                view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                Log.d(TAG, "Using hardware rendering for ads on Android ${Build.VERSION.SDK_INT}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting layer type", e)
+        }
+    }
+
+    /**
+     * Completely disables drawing cache throughout the entire view hierarchy
+     * This is critical for preventing the NullPointerException in Bitmap.mDensity on Android 8
+     */
+    @Suppress("DEPRECATION")
+    private fun disableDrawingCacheRecursively(viewGroup: ViewGroup) {
+        // Disable on the parent
+        viewGroup.setDrawingCacheEnabled(false)
+
+        // Process all children
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            if (child != null) {
+                child.setDrawingCacheEnabled(false)
+
+                // Force quality to LOW to prevent cache creation
+                try {
+                    child.drawingCacheQuality = View.DRAWING_CACHE_QUALITY_LOW
+                } catch (e: Exception) {
+                    // Ignore, just an extra precaution
+                }
+
+                // Recursively process any ViewGroups
+                if (child is ViewGroup) {
+                    disableDrawingCacheRecursively(child)
+                }
+            }
+        }
+    }
+
     fun getNativeAdView(activity: Activity, nativeAd: NativeAd): View {
         val inflater = LayoutInflater.from(activity)
+
+        // Do NOT try to set a factory - it's already set and causing the exception
         val rootView = inflater.inflate(R.layout.native_ad_layout, null) as ViewGroup
+
+        // Instead, directly process the entire view hierarchy after inflation
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.O) {
+            safelyDisableDrawingCacheForEntireHierarchy(rootView)
+        }
+
+        ensureSafeHardwareAcceleration(rootView)
         val adView = rootView.findViewById<NativeAdView>(R.id.native_ad_view)
         populateNativeAdView(nativeAd, adView)
         return rootView
     }
 
+    /**
+     * Safely disables drawing cache for an entire view hierarchy
+     * This method is safe to call and won't throw exceptions about factories
+     */
+    @Suppress("DEPRECATION")
+    private fun safelyDisableDrawingCacheForEntireHierarchy(view: View) {
+        try {
+            // Apply to this view
+            view.setDrawingCacheEnabled(false)
+
+            // Apply special handling for certain view types
+            if (view is MediaView) {
+                view.setDrawingCacheEnabled(false)
+                view.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+
+                // Force layout pass to ensure settings take effect before drawing
+                view.post {
+                    view.requestLayout()
+                }
+            }
+
+            // Recursively process children if this is a ViewGroup
+            if (view is ViewGroup) {
+                for (i in 0 until view.childCount) {
+                    val child = view.getChildAt(i)
+                    if (child != null) {
+                        safelyDisableDrawingCacheForEntireHierarchy(child)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Don't let any exception propagate, just log it
+            Log.e(TAG, "Error while disabling drawing cache: ${e.message}")
+        }
+    }
+
+    /**
+     * Populates a NativeAdView with data from a NativeAd
+     * Safely handles media content to prevent GPU-related crashes on Android 11 and below
+     */
     fun populateNativeAdView(nativeAd: NativeAd, adView: NativeAdView) {
         try {
             val headlineView = adView.findViewById<TextView>(R.id.ad_headline)
@@ -282,11 +402,47 @@ class AdManager @Inject constructor(
             }
             adView.callToActionView = callToActionView
 
+            // MODIFIED: Handle MediaView safely - use software rendering but don't hide
             val mediaView = adView.findViewById<MediaView>(R.id.ad_media)
             if (mediaView != null) {
-                adView.mediaView = mediaView
-                mediaView.visibility = View.VISIBLE
-                nativeAd.mediaContent?.let { mediaView.mediaContent = it }
+                try {
+                    // Force software rendering for MediaView on Android 11 and below
+                    if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.R) {
+                        mediaView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+
+                        // CRITICAL: Disable drawing cache for MediaView on Android 8
+                        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.O) {
+                            mediaView.setDrawingCacheEnabled(false)
+
+                            // Force layout to update internal state before any drawing happens
+                            mediaView.measure(
+                                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                            )
+                            mediaView.layout(0, 0, mediaView.measuredWidth, mediaView.measuredHeight)
+                        }
+
+                        Log.d(TAG, "Set MediaView to software rendering on Android ${android.os.Build.VERSION.SDK_INT}")
+                    }
+
+                    // Set the media view and content for all Android versions
+                    adView.mediaView = mediaView
+                    mediaView.visibility = View.VISIBLE
+
+                    // Try to set the media content
+                    if (nativeAd.mediaContent != null) {
+                        try {
+                            // IMPORTANT: Wrap this in a try-catch as it's often the trigger for the crash
+                            mediaView.setImageScaleType(ImageView.ScaleType.CENTER_CROP)
+                            mediaView.mediaContent = nativeAd.mediaContent
+                            Log.d(TAG, "MediaView content set successfully")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error setting media content", e)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error setting up MediaView, but keeping it visible", e)
+                }
             } else {
                 Log.e(TAG, "MediaView not found in layout")
             }
@@ -409,9 +565,11 @@ class AdManager @Inject constructor(
                     } else { // Preload
                         if (nativeAdsCache.size < NATIVE_AD_CACHE_SIZE) {
                             nativeAdsCache.offer(nativeAd)
+                            // ADDED: Track when this ad was cached
+                            adCacheTimes[nativeAd] = System.currentTimeMillis()
                             Log.d(TAG, "Added preloaded native ad to cache (size: ${nativeAdsCache.size})")
                         } else {
-                            Log.d(TAG, "Native ad cache full on preload success, destroying ad.")
+                            Log.d(TAG, "Native ad cache full, destroying ad")
                             nativeAd.destroy()
                         }
                     }
@@ -466,13 +624,37 @@ class AdManager @Inject constructor(
     private fun preloadNativeAdsIfNeeded() {
         if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
 
+        cleanAgedAds()
+
         val cacheSize = nativeAdsCache.size
-        // --- Use .get() ---
         if (cacheSize < NATIVE_AD_CACHE_SIZE && !isLoadingNativeAd.get()) {
             val numToLoad = NATIVE_AD_CACHE_SIZE - cacheSize
             Log.d(TAG, "Cache low ($cacheSize/$NATIVE_AD_CACHE_SIZE), preloading $numToLoad more native ads.")
             for (i in 0 until numToLoad) {
                 loadNativeAdInternal(null)
+            }
+        }
+    }
+
+    private fun cleanAgedAds() {
+        val currentTime = System.currentTimeMillis()
+        val iterator = adCacheTimes.entries.iterator()
+
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            val ad = entry.key
+            val cacheTime = entry.value
+
+            if (currentTime - cacheTime > MAX_AD_CACHE_AGE_MS) {
+                try {
+                    nativeAdsCache.remove(ad)
+                    ad.destroy()
+                    iterator.remove()
+                    Log.d(TAG, "Removed aged ad from cache (age: ${(currentTime - cacheTime)/1000}s)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error removing aged ad", e)
+                    iterator.remove()
+                }
             }
         }
     }

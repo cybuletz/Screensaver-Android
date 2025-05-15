@@ -1323,6 +1323,30 @@ class PhotoDisplayManager @Inject constructor(
                             // Create the native ad view
                             val adRootView = adManager.getNativeAdView(activity, nativeAd)
 
+                            // Apply software rendering to prevent GPU allocation crashes
+                            if (adManager is AdManager) {
+                                try {
+                                    // Use software rendering for Android 11 and below
+                                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+                                        adRootView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                                        Log.d(TAG, "Using software rendering for native ad on Android ${Build.VERSION.SDK_INT} (≤ Android 11)")
+
+                                        // Find and set software rendering for MediaView specifically
+                                        try {
+                                            val mediaView = adRootView.findViewById<View>(R.id.ad_media)
+                                            if (mediaView != null) {
+                                                mediaView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                                                Log.d(TAG, "Set MediaView to software rendering")
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Error finding MediaView", e)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Failed to set layer type on ad view", e)
+                                }
+                            }
+
                             // Create a frame to hold the ad view
                             val adContainer = FrameLayout(activity)
                             adContainer.layoutParams = FrameLayout.LayoutParams(
@@ -1331,6 +1355,11 @@ class PhotoDisplayManager @Inject constructor(
                             )
                             adContainer.tag = "native_ad_container"
                             adContainer.addView(adRootView)
+
+                            // NEW CODE: Apply software rendering to the container as well
+                            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+                                adContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                            }
 
                             // Get the parent view to add our ad container to
                             val parent = views.primaryView.parent as? ViewGroup
