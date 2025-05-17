@@ -3,11 +3,14 @@ package com.photostreamr.ui
 import android.content.Context
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.net.Uri
+import android.os.Build
 import android.util.Log
 import com.photostreamr.PhotoRepository
 import com.photostreamr.photos.CoilImageLoadStrategy
 import com.photostreamr.photos.ImageLoadStrategy
 import kotlinx.coroutines.*
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -47,6 +50,77 @@ class PhotoPreloader @Inject constructor(
     // Preloading configuration
     private var preloadCount = DEFAULT_PRELOAD_COUNT
     private var isRandomOrder = false
+
+    // Track content:// URIs we've opened
+    private val openContentUris = ConcurrentHashMap<String, Long>()
+
+    /**
+     * Release resources for a content:// URI to prevent native heap accumulation
+     * This is particularly important for Android 8.0 (Oreo)
+     */
+    fun releaseContentUri(uri: String) {
+        if (!uri.startsWith("content://")) return
+
+        try {
+            // Remove from tracking
+            openContentUris.remove(uri)
+
+            // Try to explicitly close resources
+            context.contentResolver.openInputStream(Uri.parse(uri))?.close()
+
+            // Force GC on Android 8 to help release native resources
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.O) {
+                System.gc()
+            }
+
+            Log.d(TAG, "Released resources for content URI: $uri")
+        } catch (e: Exception) {
+            Log.d(TAG, "Non-critical error releasing content URI: ${e.message}")
+        }
+    }
+
+    /**
+     * Pre-prepare a content:// URI for loading to ensure proper resource management
+     */
+    suspend fun prepareContentUri(uri: String) = withContext(Dispatchers.IO) {
+        if (!uri.startsWith("content://")) return@withContext
+
+        try {
+            // Track when we accessed this URI
+            openContentUris[uri] = System.currentTimeMillis()
+
+            // Pre-open and close to ensure it's accessible
+            context.contentResolver.openInputStream(Uri.parse(uri))?.close()
+
+            Log.d(TAG, "Prepared content URI: $uri")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing content URI: $uri", e)
+        }
+    }
+
+    /**
+     * Clean up any content URIs we've tracked
+     */
+    private fun cleanupContentUris() {
+        // Only keep track of the last 10 URIs to avoid memory bloat
+        if (openContentUris.size > 10) {
+            // Get oldest URIs
+            val oldestEntries = openContentUris.entries
+                .sortedBy { it.value }
+                .take(openContentUris.size - 10)
+
+            // Release them
+            oldestEntries.forEach { (uri, _) ->
+                try {
+                    releaseContentUri(uri)
+                } catch (e: Exception) {
+                    // Ignore, best effort cleanup
+                }
+            }
+
+            Log.d(TAG, "Cleaned up ${oldestEntries.size} old content URIs")
+        }
+    }
 
     /**
      * Start preloading process for upcoming photos
@@ -137,9 +211,10 @@ class PhotoPreloader @Inject constructor(
             Log.d(TAG, "Removed preloaded resource for $url, but it wasn't a BitmapDrawable.")
         }
 
-        // Periodically clean up any recycled bitmaps
+        // Periodically clean up any recycled bitmaps and content URIs
         if (random.nextInt(10) == 0) {  // 10% chance to clean up
             cleanupRecycledResources()
+            cleanupContentUris()
         }
     }
 
@@ -258,6 +333,11 @@ class PhotoPreloader @Inject constructor(
 
         preloaderScope.launch {
             try {
+                // For content:// URIs, do special preparation
+                if (url.startsWith("content://")) {
+                    prepareContentUri(url)
+                }
+
                 val options = ImageLoadStrategy.ImageLoadOptions(
                     diskCacheStrategy = ImageLoadStrategy.DiskCacheStrategy.ALL,
                     isHighPriority = false
@@ -312,6 +392,17 @@ class PhotoPreloader @Inject constructor(
      */
     fun cleanup() {
         stopPreloading() // This now handles unregistration
+
+        // Also clean up any content URIs we've accessed
+        openContentUris.keys.forEach { uri ->
+            try {
+                releaseContentUri(uri)
+            } catch (e: Exception) {
+                // Ignore, just cleaning up
+            }
+        }
+        openContentUris.clear()
+
         preloaderJob.cancel()
     }
 }

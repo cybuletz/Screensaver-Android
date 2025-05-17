@@ -4,6 +4,7 @@ import android.content.Context
 import com.photostreamr.ads.AdManager
 import com.photostreamr.ads.ConsentManager
 import com.photostreamr.billing.BillingRepository
+import com.photostreamr.ui.BitmapMemoryManager
 import com.photostreamr.version.AppVersionManager
 import com.photostreamr.version.FeatureManager
 import dagger.Module

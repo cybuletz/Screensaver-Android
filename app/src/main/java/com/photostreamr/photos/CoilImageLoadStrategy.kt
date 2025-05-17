@@ -100,51 +100,57 @@ class CoilImageLoadStrategy @Inject constructor(
                 val scaleFactor = getApiOptimizedScaleFactor()
                 targetWidth = (screenWidth * scaleFactor).toInt()
                 targetHeight = (screenHeight * scaleFactor).toInt()
-
-                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P && scaleFactor < 1.0f) {
-                    Log.d(TAG, "Applying downsizing for API ${Build.VERSION.SDK_INT}: " +
-                            "${targetWidth}x${targetHeight} (scale: $scaleFactor)")
-                }
             }
 
+            // Special handling for local content URIs to reduce memory usage
+            val isLocalContentUri = uri.startsWith("content://") &&
+                    !uri.contains("com.google.android") &&
+                    !uri.contains("googleusercontent.com")
+
+            // Modify the API-optimized scale factor for Android 8.0 (Oreo)
+            // to be more aggressive with local content URIs
             val request = ImageRequest.Builder(context)
                 .data(uri)
                 .target(target)
                 .apply {
-                    // Apply calculated size for better memory management
                     size(targetWidth, targetHeight)
 
-                    // Apply scale type
-                    scale(when(options.scaleType) {
-                        ImageLoadStrategy.ScaleType.FIT_CENTER -> Scale.FIT
+                    scale(when (options.scaleType) {
                         ImageLoadStrategy.ScaleType.CENTER_CROP -> Scale.FILL
+                        ImageLoadStrategy.ScaleType.FIT_CENTER -> Scale.FIT
                         ImageLoadStrategy.ScaleType.CENTER_INSIDE -> Scale.FIT
                     })
 
-                    // Apply cache policy
-                    diskCachePolicy(when(options.diskCacheStrategy) {
-                        ImageLoadStrategy.DiskCacheStrategy.NONE -> CachePolicy.DISABLED
-                        ImageLoadStrategy.DiskCacheStrategy.AUTOMATIC,
-                        ImageLoadStrategy.DiskCacheStrategy.ALL -> CachePolicy.ENABLED
-                    })
+                    crossfade(true)
+
+                    memoryCachePolicy(CachePolicy.ENABLED)
+
+                    // Apply special parameters for local URIs to reduce memory usage
+                    if (isLocalContentUri) {
+                        diskCachePolicy(CachePolicy.DISABLED)
+
+                        // Use RGB_565 for local URIs to reduce memory usage
+                        bitmapConfig(Bitmap.Config.RGB_565)
+
+                        // Disable hardware acceleration on Android 8.0 (API 26)
+                        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.O) {
+                            allowHardware(false)
+                        }
+                    } else {
+                        diskCachePolicy(when(options.diskCacheStrategy) {
+                            ImageLoadStrategy.DiskCacheStrategy.NONE -> CachePolicy.DISABLED
+                            ImageLoadStrategy.DiskCacheStrategy.AUTOMATIC,
+                            ImageLoadStrategy.DiskCacheStrategy.ALL -> CachePolicy.ENABLED
+                        })
+                    }
 
                     // Apply placeholder and error drawables
                     options.placeholder?.let { placeholder(it) }
                     options.error?.let { error(it) }
-
-                    // Set priority
-                    if (options.isHighPriority) {
-                        listener(onSuccess = { request, result ->
-                            val drawable = result.drawable
-                            if (drawable is BitmapDrawable && drawable.bitmap != null) {
-                                val key = "loaded:${uri.hashCode()}"
-                                bitmapMemoryManager.registerActiveBitmap(key, drawable.bitmap)
-                            }
-                        })
-                    }
                 }
                 .build()
 
+            // Execute the request
             when (val result = imageLoader.execute(request)) {
                 is SuccessResult -> {
                     val drawable = result.drawable

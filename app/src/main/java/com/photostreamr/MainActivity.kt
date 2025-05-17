@@ -42,8 +42,10 @@ import com.photostreamr.widgets.WidgetManager
 import com.photostreamr.widgets.WidgetState
 import com.photostreamr.widgets.WidgetType
 import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
+import android.widget.FrameLayout
 import androidx.activity.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -65,6 +67,7 @@ import com.photostreamr.music.LocalMusicManager
 import com.photostreamr.music.LocalMusicPreferences
 import com.photostreamr.ui.BitmapMemoryManager
 import com.photostreamr.ui.DiskCacheManager
+import com.photostreamr.utils.AppRestartManager
 import com.photostreamr.version.ProVersionPromptManager
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -150,6 +153,8 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var diskCacheManager: DiskCacheManager
 
+    private lateinit var appRestartManager: AppRestartManager
+
     private var isDestroyed = false
 
     private var isAuthenticating = false
@@ -216,6 +221,66 @@ class MainActivity : AppCompatActivity() {
         handler.postDelayed(runnable, FULL_SCREEN_AD_CHECK_INTERVAL)
     }
 
+    /**
+     * Start slideshow automatically after restart with a random photo
+     */
+    private fun startSlideshowAfterRestart() {
+        try {
+            Log.d("MainActivity", "Starting slideshow after restart with random photo")
+
+            // Mark restart complete
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            prefs.edit().putBoolean("is_performing_restart", false).apply()
+
+            // Start slideshow - ensure we're getting a random next photo
+            photoDisplayManager.startPhotoDisplayWithRandomPhoto()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error starting slideshow after restart", e)
+
+            // Fallback to normal photo display
+            photoDisplayManager.startPhotoDisplay()
+        }
+    }
+
+    // Add this to MainActivity
+    private fun checkForForcedRestart() {
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.O ||
+            Build.VERSION.SDK_INT == Build.VERSION_CODES.O_MR1) {
+
+            // Check if we need to force a restart based on uptime
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val lastRestartAttempt = prefs.getLong("last_restart_attempt", 0L)
+            val currentTime = System.currentTimeMillis()
+
+            // If it's been more than 8 hours since our last restart attempt,
+            // but we don't see evidence of successful restarts, force one
+            if (lastRestartAttempt > 0 &&
+                currentTime - lastRestartAttempt > 8 * 60 * 60 * 1000) {
+
+                val lastSuccessfulRestart = prefs.getLong("last_restart_timestamp", 0L)
+
+                // If the last attempt didn't succeed (no successful restart recorded)
+                // or it's been too long since a successful restart
+                if (lastSuccessfulRestart < lastRestartAttempt ||
+                    currentTime - lastSuccessfulRestart > 8 * 60 * 60 * 1000) {
+
+                    Log.w(TAG, "Detected possible stuck restart mechanism on Android 8")
+
+                    // Schedule a forced restart in 2 minutes
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (!isFinishing && !isDestroyed) {
+                            Log.w(TAG, "Executing forced restart for Android 8")
+                            appRestartManager.forceRestartOnAndroid8(this)
+                        }
+                    }, 2 * 60 * 1000)
+                }
+            }
+
+            // Update last restart attempt time
+            prefs.edit().putLong("last_restart_attempt", currentTime).apply()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         currentActivity = this
@@ -223,6 +288,36 @@ class MainActivity : AppCompatActivity() {
         // Add this near the beginning to capture all log output
         Log.i(TAG, "=== MainActivity onCreate started ===")
 
+        // Initialize AppRestartManager early, before any UI operations
+        if (!::appRestartManager.isInitialized) {
+            appRestartManager = AppRestartManager(applicationContext)
+            Log.d(TAG, "AppRestartManager initialized")
+        }
+
+        // Check if we need to perform a restart - do this before any UI setup
+        if (intent?.getBooleanExtra("perform_restart", false) == true) {
+            val restartTypeOrdinal = intent.getIntExtra("restart_type", AppRestartManager.RESTART_TYPE_ACTIVITY)
+            val source = intent.getStringExtra("restart_source") ?: "unknown"
+            val timestamp = intent.getLongExtra("restart_timestamp", 0L)
+
+            Log.d(TAG, "Handling restart request from $source (timestamp: $timestamp)")
+
+            // This is important - wait for the UI thread to settle before restarting
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    Log.d(TAG, "Initiating restart via AppRestartManager")
+                    appRestartManager.initiateRestart(this, restartTypeOrdinal)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to initiate restart", e)
+                }
+            }, 200)
+
+            // Prevent further initialization
+            Log.d(TAG, "Skipping normal initialization due to pending restart")
+            return
+        }
+
+        // Continue with normal initialization
         _binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -277,8 +372,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         try {
+            // Standard intent handling
             if (intent?.getBooleanExtra("start_screensaver", false) == true) {
                 Log.d(TAG, "Started from charging receiver at ${intent?.getLongExtra("timestamp", 0L)}")
+            }
+
+            // Check if returning from a restart
+            if (intent?.getBooleanExtra("restarted", true) == true) {
+                Log.d(TAG, "Activity/process restarted, will auto-start slideshow")
+                // Will perform the seamless transition in onResume
             }
 
             ensureBinding()
@@ -309,6 +411,12 @@ class MainActivity : AppCompatActivity() {
             // Start automatic recovery systems for long-running passive use
             startAutomaticRecoverySystems()
 
+            // Schedule the next periodic restarts
+            appRestartManager.scheduleAllRestarts(this)
+
+            // Add this right here - after scheduling restarts but before completing onCreate
+            checkForForcedRestart()
+
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate", e)
             showToast("Error initializing app")
@@ -316,6 +424,28 @@ class MainActivity : AppCompatActivity() {
         }
 
         Log.i(TAG, "=== MainActivity onCreate completed ===")
+    }
+
+    /**
+     * Start slideshow automatically after restart with a random photo
+     */
+    private fun startSlideshowWithRandomPhotoAfterRestart() {
+        try {
+            Log.d(TAG, "Starting slideshow after restart with random photo")
+
+            // Mark restart complete
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            prefs.edit().putBoolean("is_performing_restart", false).apply()
+
+            // Start slideshow with random photo - skip any intro animations
+            photoDisplayManager.startPhotoDisplayWithRandomPhoto()
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting slideshow after restart", e)
+
+            // Fallback to normal photo display
+            photoDisplayManager.startPhotoDisplay()
+        }
     }
 
     private fun initializePhotosOnce() {
@@ -1445,6 +1575,32 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         currentActivity = this
+
+        // Check if returning from a restart
+        if (intent?.getBooleanExtra("restarted", false) == true) {
+            val restartTypeOrdinal = intent.getIntExtra("restart_type", AppRestartManager.RESTART_TYPE_ACTIVITY)
+            val restartType = if (restartTypeOrdinal == AppRestartManager.RESTART_TYPE_PROCESS)
+                "process" else "activity"
+
+            Log.d(TAG, "Resuming after $restartType restart - will start slideshow with random photo")
+
+            // Fade in from black if needed
+            fadeInFromBlack()
+
+            // Clear the flag so we only do this once
+            intent.removeExtra("restarted")
+
+            // Mark that we're coming from a restart (use safely)
+            try {
+                PreferenceManager.getDefaultSharedPreferences(this).edit()
+                    .putBoolean("is_performing_restart", false)
+                    .putLong("last_restart_timestamp", System.currentTimeMillis())
+                    .apply()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating restart preferences", e)
+            }
+        }
+
         try {
             adManager.resumeAds()
         } catch (e: Exception) {
@@ -1481,20 +1637,38 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Always check security on resume if enabled
-        if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
-            checkSecurityWithCallback {
-                // Only continue after successful authentication
+        // Check if we're coming from a restart to handle differently
+        val wasRestarted = intent?.getBooleanExtra("restarted", false) == true
+
+        if (wasRestarted) {
+            // Coming from restart - bypass security and start with random photo
+            // Give UI time to initialize
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!isDestroyed &&
+                    photoRepository.getAllPhotos().isNotEmpty() &&
+                    navController.currentDestination?.id == R.id.mainFragment) {
+
+                    // Start with random photo for seamless experience
+                    photoDisplayManager.startPhotoDisplayWithRandomPhoto()
+                    Log.d(TAG, "Started slideshow with random photo after restart")
+                }
+            }, 300)
+        } else {
+            // Normal resume flow - handle security as usual
+            if (securityPreferences.isSecurityEnabled && !authManager.isAuthenticated()) {
+                checkSecurityWithCallback {
+                    // Only continue after successful authentication
+                    if (!isDestroyed && photoRepository.getAllPhotos().isNotEmpty() &&
+                        navController.currentDestination?.id == R.id.mainFragment) {
+                        photoDisplayManager.startPhotoDisplay()
+                    }
+                }
+            } else {
+                // No security needed, continue normally
                 if (!isDestroyed && photoRepository.getAllPhotos().isNotEmpty() &&
                     navController.currentDestination?.id == R.id.mainFragment) {
                     photoDisplayManager.startPhotoDisplay()
                 }
-            }
-        } else {
-            // No security needed, continue normally
-            if (!isDestroyed && photoRepository.getAllPhotos().isNotEmpty() &&
-                navController.currentDestination?.id == R.id.mainFragment) {
-                photoDisplayManager.startPhotoDisplay()
             }
         }
 
@@ -1503,6 +1677,37 @@ class MainActivity : AppCompatActivity() {
             Handler(Looper.getMainLooper()).postDelayed({
                 brightnessManager.startMonitoring(window)
             }, 100)
+        }
+    }
+
+    /**
+     * Fade in from black after restart
+     */
+    private fun fadeInFromBlack() {
+        try {
+            // Create a black overlay that will fade out
+            val rootView = findViewById<ViewGroup>(android.R.id.content)
+            val blackOverlay = View(this).apply {
+                setBackgroundColor(Color.BLACK)
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            rootView.addView(blackOverlay)
+
+            // Animate from black to transparent
+            blackOverlay.animate()
+                .alpha(0f)
+                .setDuration(800)
+                .withEndAction {
+                    rootView.removeView(blackOverlay)
+                }
+                .start()
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during fade-in animation", e)
         }
     }
 
@@ -1559,6 +1764,12 @@ class MainActivity : AppCompatActivity() {
         try {
             isDestroyed = true
 
+            // Cancel any scheduled restarts first
+            if (::appRestartManager.isInitialized) {
+                appRestartManager.cancelScheduledRestarts()
+                Log.d(TAG, "Cancelled scheduled restarts in onDestroy")
+            }
+
             try {
                 adManager.destroyAds()
                 adManager.removeAllHandlers()
@@ -1566,24 +1777,60 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "Error destroying ads", e)
             }
 
-            viewLifecycleOwner?.lifecycleScope?.launch(Dispatchers.Main) {
-                withContext(NonCancellable) {
+            // Fix for the lifecycle owner issue
+            try {
+                val lifecycleOwner = try {
+                    viewLifecycleOwner
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not access viewLifecycleOwner, using 'this' instead", e)
+                    this
+                }
+
+                // Use a more reliable approach for cleanup
+                lifecycleScope.launch(Dispatchers.Main) {
+                    withContext(NonCancellable) {
+                        try {
+                            photoDisplayManager.cleanup()
+                            Log.d(TAG, "Photo display manager cleaned up successfully")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error cleaning up photo display manager", e)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in lifecycle cleanup", e)
+                // Fallback direct cleanup
+                try {
                     photoDisplayManager.cleanup()
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Error in fallback photo manager cleanup", e2)
                 }
             }
 
             if (::settingsButtonController.isInitialized) {
-                settingsButtonController.cleanup()
+                try {
+                    settingsButtonController.cleanup()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error cleaning up settings button controller", e)
+                }
             }
 
+            try {
+                widgetManager.cleanup()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error cleaning up widget manager", e)
+            }
+
+            // Clear references
             _binding = null
             _navController = null
-            widgetManager.cleanup()
             currentActivity = null
 
+            // Call super at the end
             super.onDestroy()
         } catch (e: Exception) {
             Log.e(TAG, "Error in onDestroy", e)
+            // Make sure we always call super.onDestroy() and clear the current activity
             currentActivity = null
             super.onDestroy()
         }

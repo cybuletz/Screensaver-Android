@@ -538,6 +538,11 @@ class PhotoDisplayManager @Inject constructor(
                             Log.d(TAG, "Skipping uncached Google Photos URI: $nextUrl")
                             currentPhotoIndex = nextIndex
                         }
+                    } else if (nextUrl.startsWith("content://")) {
+                        // For local content URIs, prepare them properly
+                        photoPreloader.prepareContentUri(nextUrl)
+                        displaySmartCroppedPhoto(nextIndex, nextUrl, false)
+                        foundValidPhoto = true
                     } else {
                         // Regular URI, display with smart crop
                         displaySmartCroppedPhoto(nextIndex, nextUrl, false)
@@ -564,8 +569,22 @@ class PhotoDisplayManager @Inject constructor(
 
         isTransitioning = true
 
+        // Handle local content URI resources before starting transition
+        if (uri.startsWith("content://") && Build.VERSION.SDK_INT == Build.VERSION_CODES.O) {
+            // Release previous URI resources
+            val oldUri = photoManager.getPhotoUrl(currentPhotoIndex)
+            if (oldUri != null && oldUri.startsWith("content://")) {
+                photoPreloader.releaseContentUri(oldUri)
+            }
+        }
+
         currentScope.launch {
             try {
+                // If this is a local content URI, prepare it
+                if (uri.startsWith("content://")) {
+                    photoPreloader.prepareContentUri(uri)
+                }
+
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
                 val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
                 val startTime = System.currentTimeMillis()
@@ -587,6 +606,12 @@ class PhotoDisplayManager @Inject constructor(
                         val bitmap = imageLoadStrategy.loadBitmap(uri)
 
                         if (bitmap != null) {
+                            // Register local URI bitmaps with the memory manager
+                            if (uri.startsWith("content://")) {
+                                bitmapMemoryManager.registerActiveBitmap("localUri:${uri.hashCode()}", bitmap)
+                                Log.d(TAG, "Registered local URI bitmap for tracking: $uri")
+                            }
+
                             // Process with our direct smart cropping method
                             val smartCroppedBitmap = smartPhotoLayoutManager.createSmartCroppedPhoto(
                                 bitmap,
@@ -678,6 +703,11 @@ class PhotoDisplayManager @Inject constructor(
                             Log.d(TAG, "Skipping uncached Google Photos URI: $nextUrl")
                             currentPhotoIndex = nextIndex
                         }
+                    } else if (nextUrl.startsWith("content://")) {
+                        // For local content URIs, make sure we prepare them properly
+                        photoPreloader.prepareContentUri(nextUrl)
+                        displayPhoto(nextIndex, nextUrl, false)
+                        foundValidPhoto = true
                     } else {
                         // Regular URI, display directly
                         displayPhoto(nextIndex, nextUrl, false)
@@ -803,8 +833,22 @@ class PhotoDisplayManager @Inject constructor(
 
         isTransitioning = true
 
+        // Handle local content URI resources before starting transition
+        if (uri.startsWith("content://") && Build.VERSION.SDK_INT == Build.VERSION_CODES.O) {
+            // Release previous URI resources
+            val oldUri = photoManager.getPhotoUrl(currentPhotoIndex)
+            if (oldUri != null && oldUri.startsWith("content://")) {
+                photoPreloader.releaseContentUri(oldUri)
+            }
+        }
+
         currentScope.launch {
             try {
+                // If this is a local content URI, prepare it
+                if (uri.startsWith("content://")) {
+                    photoPreloader.prepareContentUri(uri)
+                }
+
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
                 val transitionEffect = prefs.getString("transition_effect", "fade") ?: "fade"
                 val startTime = System.currentTimeMillis()
@@ -836,6 +880,12 @@ class PhotoDisplayManager @Inject constructor(
                     try {
                         imageLoadStrategy.loadImage(uri, views.overlayView, options)
                             .onSuccess { drawable ->
+                                // Register local URI bitmaps with the memory manager
+                                if (uri.startsWith("content://") && drawable is BitmapDrawable && drawable.bitmap != null) {
+                                    bitmapMemoryManager.registerActiveBitmap("localUri:${uri.hashCode()}", drawable.bitmap)
+                                    Log.d(TAG, "Registered local URI bitmap for tracking: $uri")
+                                }
+
                                 // Manually apply the transition effect without using Glide's listener
                                 // This is the key change
                                 views.overlayView.setImageDrawable(drawable)
@@ -881,6 +931,106 @@ class PhotoDisplayManager @Inject constructor(
                 isTransitioning = false
                 showDefaultPhoto()
             }
+        }
+    }
+
+    /**
+     * Complete the transition between photos
+     */
+    private fun completeTransition(views: Views, resource: Drawable, nextIndex: Int) {
+        try {
+            // Reset flag
+            isTransitioning = false
+
+            // Get current URI before we update the index
+            val currentUri = photoManager.getPhotoUrl(currentPhotoIndex)
+
+            // Validate the resource is not corrupt
+            if (resource is BitmapDrawable) {
+                val bitmap = resource.bitmap
+                if (bitmap == null || bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
+                    Log.e(TAG, "Invalid bitmap resource detected in transition completion! Skipping to next photo.")
+
+                    // Safety fallback - clean up and move to next photo
+                    isTransitioning = false
+                    loadAndDisplayPhoto(false)
+                    return
+                }
+            }
+
+            // Get previous drawable that's now being replaced
+            val previousDrawable = views.primaryView.drawable
+
+            // First set the primary view to display the new drawable
+            views.primaryView.setImageDrawable(resource)
+            views.primaryView.visibility = View.VISIBLE
+
+            // Clean up any previous local URI bitmap
+            if (currentUri != null && currentUri.startsWith("content://")) {
+                bitmapMemoryManager.unregisterActiveBitmap("localUri:${currentUri.hashCode()}")
+                photoPreloader.releaseContentUri(currentUri)
+            }
+
+            // Update the current photo index
+            currentPhotoIndex = nextIndex
+
+            // Reset the overlay view
+            views.overlayView.setImageDrawable(null)
+            views.overlayView.visibility = View.INVISIBLE
+
+            // Reset animation properties
+            views.primaryView.apply {
+                alpha = 1f
+                scaleX = 1f
+                scaleY = 1f
+                translationX = 0f
+                translationY = 0f
+                rotationX = 0f
+                rotationY = 0f
+                rotation = 0f
+            }
+
+            // IMPORTANT CHANGE: Release previous bitmap back to the pool instead of recycling it
+            if (previousDrawable is BitmapDrawable && previousDrawable.bitmap != null && !previousDrawable.bitmap.isRecycled) {
+                // Release the bitmap back to the pool
+                smartPhotoLayoutManager.releaseBitmap(previousDrawable.bitmap)
+                Log.d(TAG, "Released previous bitmap back to the pool")
+            }
+
+            // Hide the letterbox views if they're visible
+            views.topLetterboxView?.visibility = View.GONE
+            views.bottomLetterboxView?.visibility = View.GONE
+            views.leftLetterboxView?.visibility = View.GONE
+            views.rightLetterboxView?.visibility = View.GONE
+
+            // Record successful transition for monitoring
+            recordPhotoChange()
+
+            // Schedule the next photo after an interval
+            val interval = getIntervalMillis()
+
+            // Cancel any existing display job
+            displayJob?.cancel()
+
+            // Create a new job to show the next photo after the interval
+            displayJob = lifecycleScope?.launch {
+                try {
+                    delay(interval)
+                    if (isActive) {
+                        loadAndDisplayPhoto(false)
+                    }
+                } catch (e: CancellationException) {
+                    // Expected during cancellation
+                    Log.d(TAG, "Photo transition job cancelled")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during photo transition", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error completing transition", e)
+            // Safety fallback
+            isTransitioning = false
+            loadAndDisplayPhoto(false)
         }
     }
 
@@ -1059,97 +1209,6 @@ class PhotoDisplayManager @Inject constructor(
             rotation = 0f
             translationZ = 0f
             visibility = View.VISIBLE
-        }
-    }
-
-    /**
-     * Complete the transition between photos
-     */
-    private fun completeTransition(views: Views, resource: Drawable, nextIndex: Int) {
-        try {
-            // Reset flag
-            isTransitioning = false
-
-            // Validate the resource is not corrupt
-            if (resource is BitmapDrawable) {
-                val bitmap = resource.bitmap
-                if (bitmap == null || bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
-                    Log.e(TAG, "Invalid bitmap resource detected in transition completion! Skipping to next photo.")
-
-                    // Safety fallback - clean up and move to next photo
-                    isTransitioning = false
-                    loadAndDisplayPhoto(false)
-                    return
-                }
-            }
-
-            // Get previous drawable that's now being replaced
-            val previousDrawable = views.primaryView.drawable
-
-            // First set the primary view to display the new drawable
-            views.primaryView.setImageDrawable(resource)
-            views.primaryView.visibility = View.VISIBLE
-
-            // Update the current photo index
-            currentPhotoIndex = nextIndex
-
-            // Reset the overlay view
-            views.overlayView.setImageDrawable(null)
-            views.overlayView.visibility = View.INVISIBLE
-
-            // Reset animation properties
-            views.primaryView.apply {
-                alpha = 1f
-                scaleX = 1f
-                scaleY = 1f
-                translationX = 0f
-                translationY = 0f
-                rotationX = 0f
-                rotationY = 0f
-                rotation = 0f
-            }
-
-            // IMPORTANT CHANGE: Release previous bitmap back to the pool instead of recycling it
-            if (previousDrawable is BitmapDrawable && previousDrawable.bitmap != null && !previousDrawable.bitmap.isRecycled) {
-                // Release the bitmap back to the pool
-                smartPhotoLayoutManager.releaseBitmap(previousDrawable.bitmap)
-                Log.d(TAG, "Released previous bitmap back to the pool")
-            }
-
-            // Hide the letterbox views if they're visible
-            views.topLetterboxView?.visibility = View.GONE
-            views.bottomLetterboxView?.visibility = View.GONE
-            views.leftLetterboxView?.visibility = View.GONE
-            views.rightLetterboxView?.visibility = View.GONE
-
-            // Record successful transition for monitoring
-            recordPhotoChange()
-
-            // Schedule the next photo after an interval
-            val interval = getIntervalMillis()
-
-            // Cancel any existing display job
-            displayJob?.cancel()
-
-            // Create a new job to show the next photo after the interval
-            displayJob = lifecycleScope?.launch {
-                try {
-                    delay(interval)
-                    if (isActive) {
-                        loadAndDisplayPhoto(false)
-                    }
-                } catch (e: CancellationException) {
-                    // Expected during cancellation
-                    Log.d(TAG, "Photo transition job cancelled")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error during photo transition", e)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error completing transition", e)
-            // Safety fallback
-            isTransitioning = false
-            loadAndDisplayPhoto(false)
         }
     }
 
@@ -1619,6 +1678,71 @@ class PhotoDisplayManager @Inject constructor(
                     Log.e(TAG, "Error getting photo count during recovery", e)
                 }
             }
+        }
+    }
+
+    /**
+     * Start photo display with a guaranteed random photo
+     * Used after restart to ensure we don't show the same photo
+     */
+    fun startPhotoDisplayWithRandomPhoto() {
+        // Reset the state first
+        isScreensaverActive = true
+
+        // Get a new random index that's different from the current one
+        val nextIndex = getRandomDifferentPhotoIndex()
+
+        Log.d(TAG, "Selected random photo ${nextIndex} for restart (was ${currentPhotoIndex})")
+
+        // Update the index
+        currentPhotoIndex = nextIndex
+
+        // Load the photo with normal slideshow timer
+        loadAndDisplayPhoto(false)
+
+        // Log that we've started with a random photo
+        Log.d(TAG, "Started photo display with random photo index: $currentPhotoIndex")
+    }
+
+    /**
+     * Get a photo index that's likely different from the current one
+     * Used for ensuring varied experience after restart
+     */
+    private fun getRandomDifferentPhotoIndex(): Int {
+        val photoCount = photoManager.getPhotoCount()
+
+        // If we have few photos, just add 1 and wrap around
+        if (photoCount <= 3) {
+            return (currentPhotoIndex + 1) % photoCount
+        }
+
+        // With more photos, pick a truly random one but avoid current
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val wasRestarting = prefs.getBoolean("is_performing_restart", false)
+
+        // During restart, be extra sure we get a different photo
+        return if (wasRestarting) {
+            // Get a sequence of photos to avoid
+            val excludeIndices = setOf(
+                currentPhotoIndex,
+                (currentPhotoIndex + 1) % photoCount,
+                (currentPhotoIndex - 1 + photoCount) % photoCount
+            )
+
+            // Keep trying until we find one not in the exclude list
+            var candidate = Random.nextInt(photoCount)
+            while (excludeIndices.contains(candidate)) {
+                candidate = Random.nextInt(photoCount)
+            }
+
+            candidate
+        } else {
+            // Normal operation, just avoid current
+            var newIndex = Random.nextInt(photoCount)
+            if (newIndex == currentPhotoIndex) {
+                newIndex = (newIndex + 1) % photoCount
+            }
+            newIndex
         }
     }
 }

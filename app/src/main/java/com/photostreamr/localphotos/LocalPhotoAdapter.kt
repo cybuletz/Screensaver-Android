@@ -85,17 +85,20 @@ class LocalPhotoAdapter(
 
     override fun onViewRecycled(holder: PhotoViewHolder) {
         super.onViewRecycled(holder)
+        try {
+            val position = holder.bindingAdapterPosition
+            if (position != RecyclerView.NO_POSITION) {
+                val photo = getItem(position)
+                val key = "thumbnail:${photo.uri.hashCode()}"
+                bitmapMemoryManager.unregisterActiveBitmap(key)
+            }
 
-        // Get the photo URI for this position to unregister bitmap
-        val position = holder.bindingAdapterPosition
-        if (position != RecyclerView.NO_POSITION) {
-            val photo = getItem(position)
-            // Unregister the bitmap from memory manager
-            bitmapMemoryManager.unregisterActiveBitmap("thumbnail:${photo.uri.hashCode()}")
+            // Clear the ImageView properly
+            // No need to call any special dispose method, setting null is enough
+            holder.imageView.setImageDrawable(null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onViewRecycled", e)
         }
-
-        // Clear the ImageView to free up memory
-        holder.imageView.dispose()
     }
 
     fun getSelectedPhotos(): List<LocalPhoto> = currentList.filter { selectedPhotos.contains(it.uri) }

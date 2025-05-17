@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Add these permissions -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- For devices running Android 12 and higher -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     
     <!-- For Android 12 and below -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -144,6 +149,15 @@
                     android:host="callback"/>
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".utils.RestartBroadcastReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.photostreamr.ACTION_RESTART" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".receivers.BootReceiver"

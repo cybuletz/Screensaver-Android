@@ -12,11 +12,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
 import coil.ImageLoader
-import coil.disk.DiskCache
-import coil.memory.MemoryCache
 import coil.request.CachePolicy
-import coil.request.ImageRequest
-import coil.size.Size
 
 @Singleton
 class PhotoLoadingManager @Inject constructor(

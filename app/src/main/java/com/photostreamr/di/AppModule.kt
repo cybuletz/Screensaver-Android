@@ -1,8 +1,15 @@
 package com.photostreamr.di
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Build
 import coil.ImageLoader
+import coil.disk.DiskCache
+import coil.intercept.Interceptor
+import coil.memory.MemoryCache
 import coil.request.CachePolicy
+import coil.request.ImageResult
 import com.photostreamr.analytics.PhotoAnalytics
 import com.photostreamr.utils.AppPreferences
 import com.photostreamr.utils.NotificationHelper
@@ -76,14 +83,56 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideImageLoader(@ApplicationContext context: Context): ImageLoader {
+    fun provideImageLoader(
+        @ApplicationContext context: Context,
+        bitmapMemoryManager: BitmapMemoryManager
+    ): ImageLoader {
         return ImageLoader.Builder(context)
+            .allowHardware(Build.VERSION.SDK_INT > Build.VERSION_CODES.O)
+            .memoryCache {
+                MemoryCache.Builder(context)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(context.cacheDir.resolve("image_cache"))
+                    .maxSizePercent(0.02)
+                    .build()
+            }
+            .components {
+                // Add an interceptor that optimizes local content URIs
+                add(LocalContentUriInterceptor(context))
+            }
             .crossfade(true)
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .placeholder(R.drawable.placeholder_album)
-            .error(R.drawable.placeholder_album_error)
             .build()
+    }
+
+    /**
+     * Custom interceptor to optimize local content:// URIs
+     */
+    private class LocalContentUriInterceptor(val context: Context) : Interceptor {
+        override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
+            val request = chain.request
+            val data = request.data
+
+            // Check if this is a content URI for local photos
+            if (data is String && data.startsWith("content://")) {
+                val uri = Uri.parse(data)
+
+                // Special handling for local content URIs
+                val newRequest = request.newBuilder()
+                    .memoryCacheKey(data) // Use the URI string as the cache key
+                    .diskCachePolicy(CachePolicy.DISABLED) // Don't cache local URIs on disk
+                    .allowHardware(Build.VERSION.SDK_INT > Build.VERSION_CODES.O) // Disable hardware bitmaps on Android 8
+                    .bitmapConfig(Bitmap.Config.RGB_565)
+                    .build()
+
+                return chain.proceed(newRequest)
+            }
+
+            return chain.proceed(request)
+        }
     }
 
     @Provides
