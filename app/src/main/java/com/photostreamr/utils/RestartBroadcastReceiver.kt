@@ -1,5 +1,7 @@
 package com.photostreamr.utils
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -19,14 +21,15 @@ class RestartBroadcastReceiver : BroadcastReceiver() {
         if (restartTypeOrdinal == AppRestartManager.RESTART_TYPE_PROCESS) {
             Log.d(TAG, "Received PROCESS restart signal (timestamp: $timestamp)")
 
-            // For Android 8, we need a more aggressive approach
+            // For Android 8, use a more aggressive and faster restart approach
             if (Build.VERSION.SDK_INT == Build.VERSION_CODES.O ||
                 Build.VERSION.SDK_INT == Build.VERSION_CODES.O_MR1) {
 
-                Log.d(TAG, "Using Android 8 specific process restart method")
+                Log.d(TAG, "Using Android 8 specific fast process restart method")
 
-                // Create launch intent with stronger flags
+                // Create launch intent - include all flags needed for proper restart
                 val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+                    // Set all flags needed for a complete restart
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -34,34 +37,62 @@ class RestartBroadcastReceiver : BroadcastReceiver() {
                     putExtra("restarted", true)
                     putExtra("restart_type", restartTypeOrdinal)
                     putExtra("restart_timestamp", System.currentTimeMillis())
-
-                    // Set background color to black to make restart visible
-                    putExtra("force_black_background", true)
+                    putExtra("fast_restart", true)
                 }
 
-                // Start a new activity first
+                // Create a PendingIntent to launch after we exit
+                val flags = PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_CANCEL_CURRENT or
+                        (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
+
+                val pendingIntent = PendingIntent.getActivity(
+                    context, 1001, launchIntent, flags
+                )
+
+                // Use AlarmManager for immediate restart
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
                 try {
-                    context.startActivity(launchIntent)
-                    Log.d(TAG, "Started new activity instance for Android 8 restart")
+                    // Set for immediate restart - use setExact for better timing
+                    alarmManager.setExact(
+                        AlarmManager.RTC,
+                        System.currentTimeMillis() + 50, // Just 50ms delay
+                        pendingIntent
+                    )
+                    Log.d(TAG, "Set exact alarm for immediate restart")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to start new activity", e)
+                    try {
+                        // Fall back to regular set if setExact fails
+                        alarmManager.set(
+                            AlarmManager.RTC,
+                            System.currentTimeMillis() + 50,
+                            pendingIntent
+                        )
+                        Log.d(TAG, "Set regular alarm for immediate restart")
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "Failed to set any alarm", e2)
+                    }
                 }
 
-                // Wait a moment, then kill process
-                Handler(Looper.getMainLooper()).postDelayed({
+                // Immediately start the activity as well (backup method)
+                try {
+                    launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                    context.startActivity(launchIntent)
+                    Log.d(TAG, "Started activity directly as backup")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to start activity directly", e)
+                }
+
+                // Kill process immediately without delay
+                try {
+                    Log.d(TAG, "CRITICAL: Forcibly terminating process from broadcast receiver")
+                    Runtime.getRuntime().exit(0)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to exit runtime", e)
                     try {
-                        Log.d(TAG, "CRITICAL: Forcibly terminating process from broadcast receiver")
-                        Runtime.getRuntime().exit(0) // More forceful than Process.killProcess
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to exit runtime", e)
-                        try {
-                            Log.d(TAG, "Attempting alternate process kill method")
-                            android.os.Process.killProcess(android.os.Process.myPid())
-                        } catch (e2: Exception) {
-                            Log.e(TAG, "All process kill attempts failed", e2)
-                        }
+                        android.os.Process.killProcess(android.os.Process.myPid())
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "All process kill attempts failed", e2)
                     }
-                }, 1000) // Give it a full second
+                }
 
                 return
             }

@@ -29,8 +29,11 @@ class AppRestartManager(private val context: Context) {
         private const val TAG = "AppRestartManager"
 
         // Restart intervals - can customize as needed
-        private const val ACTIVITY_RESTART_INTERVAL_MS = 33 * 60 * 1000L // 4 hours
-        private const val PROCESS_RESTART_INTERVAL_MS = 1 * 60 * 60 * 1000L // 24 hours
+        private const val ACTIVITY_RESTART_INTERVAL_MS = 4 * 60 * 60 * 1000L // 4 hours
+        private const val PROCESS_RESTART_INTERVAL_MS = 24 * 60 * 60 * 1000L // 24 hours
+
+        //private const val ACTIVITY_RESTART_INTERVAL_MS = 1 * 60 * 1000L // 4 hours
+        //private const val PROCESS_RESTART_INTERVAL_MS = 3 * 60 * 1000L // 24 hours
 
         // Request codes
         private const val ACTIVITY_RESTART_REQUEST_CODE = 9876
