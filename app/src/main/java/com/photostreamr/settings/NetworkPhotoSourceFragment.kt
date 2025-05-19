@@ -1,6 +1,7 @@
 package com.photostreamr.settings
 
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
@@ -20,6 +21,7 @@ import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.photostreamr.MainActivity
 import com.photostreamr.PhotoRepository
 import com.photostreamr.R
 import com.photostreamr.models.MediaItem
@@ -613,6 +615,11 @@ class NetworkPhotoSourceFragment : Fragment() {
     }
 
     private fun addSelectedPhotosToRepository() {
+        if (!isAdded || view == null) {
+            Log.w(TAG, "Cannot add photos - fragment is detached")
+            return
+        }
+
         if (selectedResources.isEmpty()) {
             Toast.makeText(requireContext(), R.string.no_photos_selected, Toast.LENGTH_SHORT).show()
             return
@@ -715,29 +722,29 @@ class NetworkPhotoSourceFragment : Fragment() {
                         return@withContext
                     }
 
-                    // Add to PhotoRepository using the correct mode from your implementation
+                    // Add to PhotoRepository
                     photoRepository.addPhotos(mediaItems, PhotoRepository.PhotoAddMode.MERGE)
 
                     // Update UI
                     progressBar.isVisible = false
                     statusText.text = getString(R.string.network_photos_added, mediaItems.size)
 
-                    Toast.makeText(
-                        requireContext(),
-                        getString(R.string.added_network_photos, mediaItems.size),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    try {
+                        // Show custom dialog
+                        showNetworkPhotosAddedDialog(mediaItems.size)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error showing dialog", e)
+                        // Fallback in case of error - still notify parent fragment
+                        val parentFragment = parentFragment
+                        if (parentFragment is PhotoSourcesPreferencesFragment) {
+                            parentFragment.onNetworkPhotosAdded(mediaItems.size)
+                        }
 
-                    // Update selected photos in parent fragment
-                    val parentFragment = parentFragment
-                    if (parentFragment is PhotoSourcesPreferencesFragment) {
-                        parentFragment.onNetworkPhotosAdded(mediaItems.size)
+                        // Clear selection as fallback
+                        selectedResources.clear()
+                        resourceAdapter.submitList(networkPhotoManager.folderContents.value)
+                        updateSelectedPhotosCount()
                     }
-
-                    // Clear selection
-                    selectedResources.clear()
-                    resourceAdapter.submitList(networkPhotoManager.folderContents.value)
-                    updateSelectedPhotosCount()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error adding network photos", e)
@@ -760,6 +767,45 @@ class NetworkPhotoSourceFragment : Fragment() {
                 }
             }
         }
+    }
+
+    private fun showNetworkPhotosAddedDialog(count: Int) {
+        if (!isAdded) {
+            Log.w(TAG, "Cannot show dialog - fragment is detached")
+            return
+        }
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.photos_added_title)
+            .setMessage(getString(R.string.network_photos_added, count))
+            .setPositiveButton(R.string.add_more_photos) { dialog, _ ->
+                dialog.dismiss()
+                selectedResources.clear()
+                resourceAdapter.submitList(networkPhotoManager.folderContents.value)
+                updateSelectedPhotosCount()
+            }
+            .setNegativeButton(R.string.go_to_photos) { dialog, _ ->
+                dialog.dismiss()
+
+                // Update parent fragment
+                val parentFragment = parentFragment
+                if (parentFragment is PhotoSourcesPreferencesFragment) {
+                    parentFragment.onNetworkPhotosAdded(count)
+                }
+
+                // Start MainActivity directly with slideshow
+                val intent = Intent(requireContext(), MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("from_album_selection", true)
+                    putExtra("start_slideshow", true)
+                }
+                startActivity(intent)
+                requireActivity().finish()
+            }
+            .setCancelable(false)
+            .show()
     }
 
     private fun getMimeType(fileName: String): String {

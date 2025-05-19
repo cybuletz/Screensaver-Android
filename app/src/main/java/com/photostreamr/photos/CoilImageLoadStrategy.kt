@@ -36,19 +36,19 @@ class CoilImageLoadStrategy @Inject constructor(
      */
     private fun getApiOptimizedScaleFactor(): Float {
         return when {
-            Build.VERSION.SDK_INT <= Build.VERSION_CODES.O -> 0.4f  // Android 8.0: Most restrictive (1/3)
-            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P -> 0.4f   // Android 9.0: Still quite restrictive
-            Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q -> 0.5f   // Android 10: Moderate restriction
-            Build.VERSION.SDK_INT <= Build.VERSION_CODES.S -> 0.5f  // Android 11-12: Minor restriction
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.O -> 0.75f  // Android 8.0: Most restrictive (1/3)
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P -> 0.75f   // Android 9.0: Still quite restrictive
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q -> 0.75f   // Android 10: Moderate restriction
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.S -> 0.9f  // Android 11-12: Minor restriction
             else -> 1.0f  // Android 13+: No restrictions
         }
     }
 
     val imageLoader: ImageLoader by lazy {
         val memoryCacheSizePercent = when {
-            Build.VERSION.SDK_INT <= Build.VERSION_CODES.O -> 0.15  // 15% for Android 8.0
-            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P -> 0.2   // 20% for Android 9.0
-            else -> 0.25  // 25% for Android 10+
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.O -> 0.3  // 15% for Android 8.0
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P -> 0.4   // 20% for Android 9.0
+            else -> 0.5  // 25% for Android 10+
         }
 
         // Configure hardware bitmap usage based on API level

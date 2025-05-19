@@ -224,7 +224,7 @@ class PhotoShowSettingsPreferenceFragment : PreferenceFragmentCompat() {
                     "photo_scale" -> outState.putString(preference.key, prefs.getString(preference.key, "fill"))
                     "transition_effect" -> outState.putString(preference.key, prefs.getString(preference.key, "fade"))
                     "transition_duration" -> outState.putInt(preference.key, prefs.getInt(preference.key, 2))
-                    "photo_interval" -> outState.putInt(preference.key, prefs.getInt(preference.key, 5))
+                    "photo_interval" -> outState.putInt(preference.key, prefs.getInt(preference.key, 10))
                 }
             }
         }
