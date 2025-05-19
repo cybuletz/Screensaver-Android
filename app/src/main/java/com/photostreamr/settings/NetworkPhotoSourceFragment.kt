@@ -158,6 +158,19 @@ class NetworkPhotoSourceFragment : Fragment() {
                 serversRecyclerView.requestLayout()
             }
         }
+
+        // Ensure we scroll to top when new folder contents are loaded
+        resourceAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onChanged() {
+                browseRecyclerView.scrollToPosition(0)
+            }
+
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
+                if (positionStart == 0) {
+                    browseRecyclerView.scrollToPosition(0)
+                }
+            }
+        })
     }
 
     private fun observeDownloadProgress() {
@@ -299,6 +312,14 @@ class NetworkPhotoSourceFragment : Fragment() {
         selectedResources.clear()
 
         progressBar.isVisible = true
+        statusText.text = "Connecting to ${server.name}..."
+
+        // Clear the current list to show visual feedback
+        resourceAdapter.submitList(emptyList())
+        updateSelectedPhotosCount()
+
+        // Force scroll to top
+        browseRecyclerView.scrollToPosition(0)
 
         // Start browsing the server
         viewLifecycleOwner.lifecycleScope.launch {
@@ -312,6 +333,9 @@ class NetworkPhotoSourceFragment : Fragment() {
                         getString(R.string.error_browsing_network, result.exceptionOrNull()?.message),
                         Toast.LENGTH_SHORT
                     ).show()
+                } else {
+                    // Update UI text immediately
+                    selectedPathText.text = getString(R.string.no_folder_selected)
                 }
             } catch (e: Exception) {
                 progressBar.isVisible = false
@@ -449,12 +473,27 @@ class NetworkPhotoSourceFragment : Fragment() {
         }
     }
 
+    // Replace these two methods completely
+
     private fun browseTo(resource: NetworkResource) {
         progressBar.isVisible = true
+        statusText.text = "Loading ${resource.name}..."
         selectedResources.clear()
+
+        // Clear the current list to show visual feedback
+        resourceAdapter.submitList(emptyList())
+        updateSelectedPhotosCount()
+
+        // Keep track of where we're going
+        currentServer = resource.server
+        currentPath = resource.path
+
+        // Force scroll to top
+        browseRecyclerView.scrollToPosition(0)
 
         viewLifecycleOwner.lifecycleScope.launch {
             try {
+                // Use our tracked path instead of relying solely on the manager
                 val result = networkPhotoManager.browseNetworkPath(resource.server, resource.path)
                 progressBar.isVisible = false
 
@@ -464,6 +503,9 @@ class NetworkPhotoSourceFragment : Fragment() {
                         getString(R.string.error_browsing_network, result.exceptionOrNull()?.message),
                         Toast.LENGTH_SHORT
                     ).show()
+                } else {
+                    // Update UI text immediately
+                    selectedPathText.text = resource.path
                 }
             } catch (e: Exception) {
                 progressBar.isVisible = false
@@ -477,27 +519,46 @@ class NetworkPhotoSourceFragment : Fragment() {
     }
 
     private fun navigateBack() {
-        // First check if view is still valid before accessing viewLifecycleOwner
+        // First check if view is still valid
         if (view == null || !isAdded) {
             Log.w(TAG, "navigateBack called when Fragment view is null or Fragment is detached")
             return
         }
 
         val server = currentServer ?: return
-        val currentPathValue = networkPhotoManager.currentBrowsingPath.value ?: return
 
-        // Get parent path
-        val parentPath = if (currentPathValue.contains("/")) {
-            currentPathValue.substringBeforeLast("/")
+        // Get parent path manually from our tracked path
+        val currentPathValue = currentPath
+        if (currentPathValue.isBlank()) return
+
+        // Calculate parent path (handle trailing slashes correctly)
+        val cleanPath = currentPathValue.trimEnd('/')
+        val parentPath = if (cleanPath.contains("/")) {
+            cleanPath.substringBeforeLast("/")
         } else {
             ""
         }
 
+        Log.d(TAG, "Navigating back from: $currentPathValue to: $parentPath")
+
+        // Update UI immediately
         progressBar.isVisible = true
+        statusText.text = "Navigating to parent folder..."
         selectedResources.clear()
+
+        // Clear the current list to show visual feedback
+        resourceAdapter.submitList(emptyList())
+        updateSelectedPhotosCount()
+
+        // Update our tracked path
+        currentPath = parentPath
+
+        // Force scroll to top
+        browseRecyclerView.scrollToPosition(0)
 
         viewLifecycleOwner.lifecycleScope.launch {
             try {
+                // Use our tracked path instead of relying solely on the manager
                 val result = networkPhotoManager.browseNetworkPath(server, parentPath)
                 progressBar.isVisible = false
 
@@ -507,6 +568,9 @@ class NetworkPhotoSourceFragment : Fragment() {
                         getString(R.string.error_browsing_network, result.exceptionOrNull()?.message),
                         Toast.LENGTH_SHORT
                     ).show()
+                } else {
+                    // Update UI text immediately
+                    selectedPathText.text = parentPath.ifBlank { getString(R.string.no_folder_selected) }
                 }
             } catch (e: Exception) {
                 progressBar.isVisible = false
