@@ -13,7 +13,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,9 +26,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.receiveAsFlow
-
 
 @Singleton
 class PhotoDownloadManager @Inject constructor(
@@ -61,10 +57,6 @@ class PhotoDownloadManager @Inject constructor(
     private val downloadScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val downloadExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_DOWNLOADS)
 
-    private val workProgressMap = ConcurrentHashMap<String, Boolean>()
-    private val completedDownloads = AtomicInteger(0)
-    private val totalQueuedDownloads = AtomicInteger(0)
-
     // Track ongoing operations
     private val activeDownloads = ConcurrentHashMap<String, Job>()
 
@@ -76,6 +68,7 @@ class PhotoDownloadManager @Inject constructor(
     private val _downloadProgress = MutableLiveData<DownloadProgress>()
     val downloadProgress: LiveData<DownloadProgress> = _downloadProgress
 
+    private val completedDownloads = AtomicInteger(0)
     private val failedDownloads = AtomicInteger(0)
     private val totalDownloads = AtomicInteger(0)
     private var currentAlbumId: String? = null
@@ -276,359 +269,44 @@ class PhotoDownloadManager @Inject constructor(
         editor.apply()
     }
 
-    // Replace your downloadFolderContents method with this optimized version
     fun downloadFolderContents(folder: NetworkResource, addToAlbums: Boolean = true) {
-        Log.d(TAG, "Starting downloadFolderContents for folder: ${folder.name}")
-
-        // Reset counters
-        completedDownloads.set(0)
-        totalQueuedDownloads.set(0)
-        failedDownloads.set(0)
-        workProgressMap.clear()
-
-        // Start showing progress immediately
-        _downloadProgress.postValue(
-            DownloadProgress(
-                isActive = true,
-                completed = 0,
-                total = 0,
-                failed = 0
-            )
-        )
-
         downloadScope.launch {
             try {
-                // Create a virtual album for this folder
-                val albumId = "network_" + folder.server.id + "_" + folder.path.hashCode()
-                val albumName = "Network: ${folder.name}"
+                // Reset counters
+                completedDownloads.set(0)
+                failedDownloads.set(0)
+                totalDownloads.set(0)
 
-                Log.d(TAG, "Creating virtual album: $albumName with ID: $albumId")
+                // Clear existing download states
+                _downloadState.value = emptyMap()
 
-                // Check if album exists or create a new one
-                val existingAlbums = photoRepository.getAllAlbums()
-                val existingAlbum = existingAlbums.find { it.id == albumId }
+                // Create a virtual album
+                val albumId = "network_${System.currentTimeMillis()}"
+                currentAlbumId = albumId
 
-                if (existingAlbum == null) {
-                    // Create new album
-                    photoRepository.addVirtualAlbum(
-                        VirtualAlbum(
-                            id = albumId,
-                            name = albumName,
-                            photoUris = emptyList(),
-                            isSelected = true
-                        )
-                    )
+                val virtualAlbum = VirtualAlbum(
+                    id = albumId,
+                    name = "Network: ${folder.name}",
+                    photoUris = mutableListOf(),
+                    dateCreated = System.currentTimeMillis(),
+                    isSelected = true // Auto-select for immediate viewing
+                )
 
-                    Log.d(TAG, "Created new virtual album: $albumName")
+                // Add empty album to repository to make it available immediately
+                if (addToAlbums) {
+                    photoRepository.addVirtualAlbum(virtualAlbum)
                 }
 
-                // Start scanning folder for images - using an iterative approach
-                Log.d(TAG, "Starting scan of folder: ${folder.path} for images")
-                val scanStart = System.currentTimeMillis()
+                // Update progress
+                updateProgress(true)
 
-                // Use a queue-based approach to collect all resources
-                val allResources = mutableListOf<NetworkResource>()
-                collectAllResourcesNonRecursive(folder, allResources)
+                // Save initial state
+                saveState()
 
-                val imageResources = allResources.filter { it.isImage }
-                totalQueuedDownloads.set(imageResources.size)
-                totalDownloads.set(imageResources.size)
-
-                val scanEnd = System.currentTimeMillis()
-                Log.d(TAG, "Completed scan in ${scanEnd - scanStart}ms. Found ${imageResources.size} images to download")
-
-                // Switch to main thread for LiveData operations
-                withContext(Dispatchers.Main) {
-                    // Setup a single observer for all work
-                    setupProgressObserver()
-                }
-
-                // Use direct downloading with controlled concurrency instead of WorkManager
-                // This gives us better control over connection limits to avoid timeouts
-                downloadWithControlledConcurrency(imageResources, albumId, 4) // Use 4 concurrent connections max
-
+                // Scan folder
+                scanAndDownloadFolder(folder, albumId)
             } catch (e: Exception) {
                 Log.e(TAG, "Error in folder download", e)
-                _downloadProgress.postValue(
-                    DownloadProgress(
-                        isActive = false,
-                        completed = completedDownloads.get(),
-                        total = totalQueuedDownloads.get(),
-                        failed = failedDownloads.get()
-                    )
-                )
-            }
-        }
-    }
-
-    // Direct download with controlled concurrency to avoid overwhelming the SMB server
-    private suspend fun downloadWithControlledConcurrency(
-        resources: List<NetworkResource>,
-        albumId: String,
-        maxConcurrent: Int = 4
-    ) {
-        // Create a channel for controlling concurrency
-        val channel = Channel<NetworkResource>(Channel.RENDEZVOUS)
-
-        // Launch producer coroutine
-        val producerJob = downloadScope.launch {
-            for (resource in resources) {
-                channel.send(resource)
-            }
-            channel.close()
-        }
-
-        // Launch consumer coroutines (limited by maxConcurrent)
-        val consumerJobs = List(maxConcurrent) {
-            downloadScope.launch {
-                // Correct way to consume from a Flow
-                channel.receiveAsFlow().collect { resource ->
-                    try {
-                        val photoId = "${resource.server.id}_${resource.path.hashCode()}"
-                        Log.d(TAG, "Starting direct download for ${resource.name}")
-
-                        // Download file directly
-                        val uri = networkPhotoManager.downloadAndCachePhoto(resource)
-
-                        if (uri != null) {
-                            // Create media item
-                            val mediaItem = MediaItem(
-                                id = photoId,
-                                albumId = albumId,
-                                baseUrl = uri,
-                                mimeType = getMimeType(resource.name),
-                                width = 0,
-                                height = 0,
-                                description = resource.name,
-                                createdAt = System.currentTimeMillis(),
-                                loadState = MediaItem.LoadState.IDLE
-                            )
-
-                            // Add to repository and update album
-                            withContext(Dispatchers.Main) {
-                                photoRepository.addPhotos(listOf(mediaItem), PhotoRepository.PhotoAddMode.MERGE)
-
-                                // Update the virtual album
-                                photoRepository.getAllAlbums().find { it.id == albumId }?.let { album ->
-                                    val updatedUris = album.photoUris.toMutableList()
-                                    updatedUris.add(uri)
-
-                                    val updatedAlbum = album.copy(photoUris = updatedUris)
-
-                                    val allAlbums = photoRepository.getAllAlbums().toMutableList()
-                                    val index = allAlbums.indexOfFirst { it.id == albumId }
-                                    if (index >= 0) {
-                                        allAlbums[index] = updatedAlbum
-                                        photoRepository.syncVirtualAlbums(allAlbums)
-                                    }
-                                }
-                            }
-
-                            // Update progress
-                            completedDownloads.incrementAndGet()
-                            Log.d(TAG, "Direct download completed for ${resource.name}")
-                        } else {
-                            // Failed to download
-                            failedDownloads.incrementAndGet()
-                            Log.e(TAG, "Failed to download: ${resource.name}")
-                        }
-                    } catch (e: Exception) {
-                        failedDownloads.incrementAndGet()
-                        Log.e(TAG, "Error downloading ${resource.name}", e)
-                    }
-
-                    // Update progress
-                    val completed = completedDownloads.get()
-                    val failed = failedDownloads.get()
-                    val total = totalDownloads.get()
-
-                    _downloadProgress.postValue(
-                        DownloadProgress(
-                            isActive = completed + failed < total,
-                            completed = completed,
-                            total = total,
-                            failed = failed
-                        )
-                    )
-                }
-            }
-        }
-
-        // Wait for all downloads to complete
-        consumerJobs.forEach { it.join() }
-        producerJob.join()
-
-        // Final progress update
-        _downloadProgress.postValue(
-            DownloadProgress(
-                isActive = false,
-                completed = completedDownloads.get(),
-                total = totalDownloads.get(),
-                failed = failedDownloads.get()
-            )
-        )
-
-        Log.d(TAG, "All downloads completed with direct download approach. " +
-                "Successful: ${completedDownloads.get()}, Failed: ${failedDownloads.get()}")
-    }
-
-    // Helper method to determine MIME type
-    private fun getMimeType(fileName: String): String {
-        return when {
-            fileName.endsWith(".jpg", ignoreCase = true) ||
-                    fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
-            fileName.endsWith(".png", ignoreCase = true) -> "image/png"
-            fileName.endsWith(".gif", ignoreCase = true) -> "image/gif"
-            fileName.endsWith(".bmp", ignoreCase = true) -> "image/bmp"
-            fileName.endsWith(".webp", ignoreCase = true) -> "image/webp"
-            else -> "image/jpeg" // Default to JPEG
-        }
-    }
-
-    // Non-recursive resource collection using a queue approach
-    private suspend fun collectAllResourcesNonRecursive(rootFolder: NetworkResource, allResources: MutableList<NetworkResource>) {
-        val foldersToProcess = ArrayDeque<NetworkResource>()
-        foldersToProcess.add(rootFolder)
-
-        while (foldersToProcess.isNotEmpty()) {
-            val currentFolder = foldersToProcess.removeFirst()
-
-            try {
-                val result = networkPhotoManager.browseNetworkPath(currentFolder.server, currentFolder.path)
-                if (result.isFailure) {
-                    Log.e(TAG, "Failed to browse folder: ${currentFolder.path}", result.exceptionOrNull())
-                    continue
-                }
-
-                val resources = result.getOrDefault(emptyList())
-
-                // Add all resources from this folder
-                allResources.addAll(resources)
-
-                // Add subfolders to the queue for processing
-                for (resource in resources) {
-                    if (resource.isDirectory) {
-                        foldersToProcess.add(resource)
-                    }
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error collecting resources from folder: ${currentFolder.path}", e)
-            }
-        }
-    }
-
-    // Setup a single observer for all work instead of one per download
-    private fun setupProgressObserver() {
-        // Use a single observer for all work with the tag
-        workManager.getWorkInfosByTagLiveData(WORK_TAG_DOWNLOAD)
-            .observeForever(object : androidx.lifecycle.Observer<List<WorkInfo>> {
-                override fun onChanged(workInfos: List<WorkInfo>) {
-                    var completed = 0
-                    var failed = 0
-                    var running = 0
-
-                    for (workInfo in workInfos) {
-                        when (workInfo.state) {
-                            WorkInfo.State.SUCCEEDED -> completed++
-                            WorkInfo.State.FAILED -> failed++
-                            WorkInfo.State.RUNNING -> running++
-                            else -> { /* Other states don't count for our metrics */ }
-                        }
-                    }
-
-                    // Update our counters
-                    if (completedDownloads.get() < completed) {
-                        completedDownloads.set(completed)
-                    }
-
-                    if (failedDownloads.get() < failed) {
-                        failedDownloads.set(failed)
-                    }
-
-                    val totalDone = completed + failed
-                    val totalExpected = totalQueuedDownloads.get()
-
-                    // Only post updates every second or when significant changes occur
-                    val isActive = running > 0 || totalDone < totalExpected
-
-                    _downloadProgress.postValue(
-                        DownloadProgress(
-                            isActive = isActive,
-                            completed = completedDownloads.get(),
-                            total = totalQueuedDownloads.get(),
-                            failed = failedDownloads.get()
-                        )
-                    )
-
-                    // If all downloads are completed, remove this observer
-                    if (!isActive) {
-                        workManager.getWorkInfosByTagLiveData(WORK_TAG_DOWNLOAD).removeObserver(this)
-                        Log.d(TAG, "All downloads completed: $completed successful, $failed failed")
-                    }
-                }
-            })
-    }
-
-    // Enqueue downloads in batches for better performance
-    private fun enqueueDownloadBatch(resources: List<NetworkResource>, albumId: String) {
-        val workRequests = resources.map { resource ->
-            val photoId = "${resource.server.id}_${resource.path.hashCode()}"
-
-            // Serialize server and resource to JSON strings
-            val serverJson = serializeServerToJson(resource.server)
-            val resourceJson = serializeResourceToJson(resource)
-
-            // Use WorkManager to download in background
-            val workData = workDataOf(
-                WORK_DATA_SERVER to serverJson,
-                WORK_DATA_RESOURCE to resourceJson,
-                WORK_DATA_ALBUM_ID to albumId,
-                WORK_DATA_PHOTO_ID to photoId
-            )
-
-            OneTimeWorkRequestBuilder<PhotoDownloadWorker>()
-                .setInputData(workData)
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
-                )
-                .addTag(WORK_TAG_DOWNLOAD)
-                .build()
-        }
-
-        // Enqueue all work requests at once
-        workManager.enqueue(workRequests)
-        Log.d(TAG, "Enqueued batch of ${resources.size} downloads")
-    }
-
-    private fun startProgressMonitoring() {
-        downloadScope.launch {
-            try {
-                var isActive = true
-                while (isActive) {
-                    val completed = completedDownloads.get()
-                    val total = totalQueuedDownloads.get()
-
-                    Log.d(TAG, "Download progress: $completed/$total")
-
-                    _downloadProgress.postValue(
-                        DownloadProgress(
-                            isActive = completed < total,
-                            completed = completed,
-                            total = total
-                        )
-                    )
-
-                    isActive = completed < total
-                    delay(1000) // update once per second
-                }
-
-                Log.d(TAG, "All downloads completed: ${completedDownloads.get()}/${totalQueuedDownloads.get()}")
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error monitoring download progress", e)
             }
         }
     }
@@ -642,81 +320,21 @@ class PhotoDownloadManager @Inject constructor(
             }
 
             val resources = result.getOrDefault(emptyList())
-            val imageResources = resources.filter { it.isImage }
+            val images = resources.filter { it.isImage }
             val subfolders = resources.filter { it.isDirectory }
 
-            // Queue all images for download
-            Log.d(TAG, "Found ${imageResources.size} images and ${subfolders.size} subfolders in ${folder.path}")
+            // Update total count
+            totalDownloads.addAndGet(images.size)
 
-            for (resource in imageResources) {
-                val photoId = "${resource.server.id}_${resource.path.hashCode()}"
+            // Update and save state
+            saveState()
 
-                // Add to queue counter
-                totalQueuedDownloads.incrementAndGet()
-
-                // Serialize server and resource to JSON strings
-                val serverJson = serializeServerToJson(resource.server)
-                val resourceJson = serializeResourceToJson(resource)
-
-                // Use WorkManager to download in background
-                val workData = workDataOf(
-                    WORK_DATA_SERVER to serverJson,
-                    WORK_DATA_RESOURCE to resourceJson,
-                    WORK_DATA_ALBUM_ID to albumId,
-                    WORK_DATA_PHOTO_ID to photoId
-                )
-
-                val workRequest = OneTimeWorkRequestBuilder<PhotoDownloadWorker>()
-                    .setInputData(workData)
-                    .setConstraints(
-                        Constraints.Builder()
-                            .setRequiredNetworkType(NetworkType.CONNECTED)
-                            .build()
-                    )
-                    .addTag(WORK_TAG_DOWNLOAD)
-                    .build()
-
-                // Track this work
-                workProgressMap[workRequest.id.toString()] = false
-
-                // Define a WorkInfo observer (using LiveData's Observer interface with non-nullable parameter)
-                val liveData = workManager.getWorkInfoByIdLiveData(workRequest.id)
-
-                // Use withContext to switch to the Main dispatcher for LiveData observation
-                withContext(Dispatchers.Main) {
-                    liveData.observeForever(object : androidx.lifecycle.Observer<WorkInfo> {
-                        override fun onChanged(workInfo: WorkInfo) {
-                            when (workInfo.state) {
-                                WorkInfo.State.SUCCEEDED -> {
-                                    Log.d(TAG, "Work completed for: ${resource.name}")
-                                    completedDownloads.incrementAndGet()
-                                    workProgressMap[workRequest.id.toString()] = true
-                                    liveData.removeObserver(this)
-                                }
-                                WorkInfo.State.FAILED -> {
-                                    Log.e(TAG, "Work failed for: ${resource.name}")
-                                    completedDownloads.incrementAndGet()
-                                    workProgressMap[workRequest.id.toString()] = true
-                                    liveData.removeObserver(this)
-                                }
-                                WorkInfo.State.CANCELLED -> {
-                                    Log.d(TAG, "Work cancelled for: ${resource.name}")
-                                    liveData.removeObserver(this)
-                                }
-                                else -> {
-                                    // Do nothing for other states
-                                }
-                            }
-                        }
-                    })
-                }
-
-                // Enqueue the work
-                workManager.enqueue(workRequest)
-                Log.d(TAG, "Enqueued background download for ${resource.name}")
+            // Start downloading images using WorkManager for background processing
+            for (image in images) {
+                enqueuePhotoDownload(image, albumId)
             }
 
-            // Process all subfolders recursively
+            // Process subfolders recursively
             for (subfolder in subfolders) {
                 scanAndDownloadFolder(subfolder, albumId)
             }
@@ -724,31 +342,6 @@ class PhotoDownloadManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error scanning folder: ${folder.path}", e)
         }
-    }
-
-    // Add these helper methods to your class if they don't exist:
-    private fun serializeServerToJson(server: NetworkServer): String {
-        val json = JSONObject().apply {
-            put("id", server.id)
-            put("name", server.name)
-            put("address", server.address)
-            server.username?.let { put("username", it) }
-            server.password?.let { put("password", it) }
-            put("isManual", server.isManual)
-        }
-        return json.toString()
-    }
-
-    private fun serializeResourceToJson(resource: NetworkResource): String {
-        val json = JSONObject().apply {
-            put("path", resource.path)
-            put("name", resource.name)
-            put("isDirectory", resource.isDirectory)
-            put("isImage", resource.isImage)
-            put("size", resource.size)
-            put("lastModified", resource.lastModified)
-        }
-        return json.toString()
     }
 
     private fun enqueuePhotoDownload(resource: NetworkResource, albumId: String) {
@@ -987,6 +580,18 @@ class PhotoDownloadManager @Inject constructor(
                 isActive = isActive
             )
         )
+    }
+
+    private fun getMimeType(fileName: String): String {
+        return when {
+            fileName.endsWith(".jpg", ignoreCase = true) ||
+                    fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+            fileName.endsWith(".png", ignoreCase = true) -> "image/png"
+            fileName.endsWith(".gif", ignoreCase = true) -> "image/gif"
+            fileName.endsWith(".bmp", ignoreCase = true) -> "image/bmp"
+            fileName.endsWith(".webp", ignoreCase = true) -> "image/webp"
+            else -> "image/jpeg" // Default to JPEG
+        }
     }
 
     fun cancelAllDownloads() {
