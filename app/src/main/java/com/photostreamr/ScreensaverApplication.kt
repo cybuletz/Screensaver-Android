@@ -34,9 +34,13 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 // Import ComponentCallbacks2 for trim memory levels
 import android.content.ComponentCallbacks2
+import android.util.Log
+import com.photostreamr.photos.network.PhotoDownloadManager
 // Import SmartPhotoLayoutManager to pass to BitmapMemoryManager
 import com.photostreamr.ui.SmartPhotoLayoutManager
 import com.photostreamr.ui.DiskCacheManager
+import androidx.work.Configuration
+
 
 
 /**
@@ -68,13 +72,14 @@ class ScreensaverApplication : Application() {
     @Inject
     lateinit var bitmapMemoryManager: BitmapMemoryManager
 
-    // Inject SmartPhotoLayoutManager to pass to BitmapMemoryManager
     @Inject
     lateinit var smartPhotoLayoutManager: SmartPhotoLayoutManager
 
-    // Inject DiskCacheManager
     @Inject
     lateinit var diskCacheManager: DiskCacheManager
+
+    @Inject
+    lateinit var photoDownloadManager: PhotoDownloadManager
 
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -92,6 +97,7 @@ class ScreensaverApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
         checkFirstInstall()
         initializeApp()
         appVersionManager.refreshVersionState()
@@ -125,7 +131,21 @@ class ScreensaverApplication : Application() {
         initializeAppData()
         initializeSpotify()
         initializeRadio()
+        initializeNetworkDownloads()
         logApplicationStart()
+    }
+
+    private fun initializeNetworkDownloads() {
+        applicationScope.launch {
+            try {
+                // Resume any pending downloads
+                photoDownloadManager.resumeDownloads()
+                Timber.d("Network downloads resumed")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to resume network downloads")
+                FirebaseCrashlytics.getInstance().recordException(e)
+            }
+        }
     }
 
     private fun checkFirstInstall() {

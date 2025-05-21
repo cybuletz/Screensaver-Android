@@ -161,6 +161,8 @@ class MainActivity : AppCompatActivity() {
 
     private var photoDisplayInitiated = false
     private var photoDisplayLaunched = AtomicBoolean(false)
+    private var initialResumePerformed = false
+
 
     private val viewLifecycleOwner: LifecycleOwner?
         get() = try {

@@ -1,6 +1,7 @@
 package com.photostreamr.di
 
 import android.content.Context
+import androidx.work.WorkManager
 import com.photostreamr.PhotoRepository
 import com.photostreamr.photos.network.NetworkPhotoManager
 import com.photostreamr.photos.network.PhotoDownloadManager
@@ -29,8 +30,9 @@ object NetworkModule {
     fun providePhotoDownloadManager(
         @ApplicationContext context: Context,
         networkPhotoManager: NetworkPhotoManager,
-        photoRepository: PhotoRepository
+        photoRepository: PhotoRepository,
+        workManager: WorkManager
     ): PhotoDownloadManager {
-        return PhotoDownloadManager(context, networkPhotoManager, photoRepository)
+        return PhotoDownloadManager(context, networkPhotoManager, photoRepository, workManager)
     }
 }

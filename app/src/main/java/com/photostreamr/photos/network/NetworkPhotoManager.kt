@@ -196,7 +196,7 @@ class NetworkPhotoManager @Inject constructor(
     }
 
     /**
-     * Download and cache a network resource
+     * Download and cache a network resource with resume support
      */
     suspend fun downloadAndCachePhoto(resource: NetworkResource): String? {
         return withContext(Dispatchers.IO) {
@@ -240,36 +240,204 @@ class NetworkPhotoManager @Inject constructor(
                     // Use large buffer for better performance
                     val bufferSize = 1048576  // 1MB buffer
 
-                    // Get input stream with buffering - create it here, don't assign to inputStream yet
-                    val bufferedStream = BufferedInputStream(smbFile.inputStream, bufferSize)
-                    inputStream = bufferedStream  // Now assign so it gets closed in finally block
+                    // Create cache directory
+                    val cacheDir = File(context.cacheDir, "network_photos")
+                    cacheDir.mkdirs()
 
-                    // Use PersistentPhotoCache to process the image directly from the stream
-                    val cacheResult = photoRepository.persistentPhotoCache.cacheNetworkPhoto(bufferedStream, photoId)
+                    // Generate unique, safe filename - shorter to avoid path length issues
+                    val safeName = resource.name.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+                    val fileName = "${resource.server.id.substring(0, 8)}_${safeName}"
+                    val cacheFile = File(cacheDir, fileName)
+                    val tempFile = File(cacheDir, "temp_${fileName}")
+                    val resumeInfoFile = File(cacheDir, "resume_${fileName}.json")
 
-                    return@withContext when (cacheResult) {
-                        is PersistentPhotoCache.CacheResult.Success -> {
-                            Log.d(TAG, "Successfully cached photo: ${resource.name}")
-                            cacheResult.cachedUri
+                    // Get total file size
+                    val fileSize = smbFile.length()
+
+                    // Check if we already have a complete and valid cached file
+                    if (cacheFile.exists() && cacheFile.length() > 0 &&
+                        cacheFile.length() >= fileSize * 0.99) {
+                        try {
+                            // Verify file is a valid image
+                            val options = BitmapFactory.Options()
+                            options.inJustDecodeBounds = true
+                            BitmapFactory.decodeFile(cacheFile.absolutePath, options)
+
+                            if (options.outWidth > 0 && options.outHeight > 0) {
+                                Log.d(TAG, "Using valid cached image file for ${resource.name}: ${cacheFile.path}")
+
+                                try {
+                                    val uri = FileProvider.getUriForFile(
+                                        context,
+                                        "com.photostreamr.fileprovider",
+                                        cacheFile
+                                    )
+                                    return@withContext uri.toString()
+                                } catch (e: IllegalArgumentException) {
+                                    Log.e(TAG, "FileProvider error for cached file: ${cacheFile.path}", e)
+                                    // Try a different approach if FileProvider fails
+                                    return@withContext Uri.fromFile(cacheFile).toString()
+                                }
+                            } else {
+                                Log.d(TAG, "Cached file exists but is not a valid image, re-downloading")
+                                cacheFile.delete()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error checking cached file validity", e)
+                            cacheFile.delete()
                         }
-                        is PersistentPhotoCache.CacheResult.Error -> {
-                            Log.e(TAG, "Failed to cache photo: ${resource.name} - ${cacheResult.message}")
-                            null
+                    }
+
+                    // Check for resumable download
+                    var bytesDownloaded = 0L
+                    if (tempFile.exists() && resumeInfoFile.exists()) {
+                        try {
+                            // Read resume info
+                            val resumeInfo = JSONObject(resumeInfoFile.readText())
+                            val lastModified = resumeInfo.optLong("lastModified", 0)
+                            val storedFileSize = resumeInfo.optLong("fileSize", 0)
+                            bytesDownloaded = tempFile.length()
+
+                            // Check if resume info is valid
+                            if (lastModified == resource.lastModified &&
+                                storedFileSize == fileSize &&
+                                bytesDownloaded > 0 &&
+                                bytesDownloaded < fileSize) {
+
+                                Log.d(TAG, "Resuming download of ${resource.name} from byte $bytesDownloaded")
+                            } else {
+                                // Invalid resume info, start fresh
+                                bytesDownloaded = 0
+                                tempFile.delete()
+                                resumeInfoFile.delete()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error reading resume info, starting fresh download", e)
+                            bytesDownloaded = 0
+                            tempFile.delete()
+                            resumeInfoFile.delete()
                         }
+                    } else {
+                        // No resume info, start fresh download
+                        bytesDownloaded = 0
+                        tempFile.delete()
+                        resumeInfoFile.delete()
+                    }
+
+                    // Save resume info
+                    if (bytesDownloaded == 0L) {
+                        try {
+                            val resumeInfo = JSONObject().apply {
+                                put("lastModified", resource.lastModified)
+                                put("fileSize", fileSize)
+                                put("startTime", System.currentTimeMillis())
+                            }
+                            resumeInfoFile.writeText(resumeInfo.toString())
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error saving resume info", e)
+                        }
+                    }
+
+                    // Use buffered streams with fixed buffer size
+                    val outputStream = if (bytesDownloaded > 0) {
+                        BufferedOutputStream(FileOutputStream(tempFile, true), bufferSize)
+                    } else {
+                        BufferedOutputStream(FileOutputStream(tempFile), bufferSize)
+                    }
+
+                    // For resumable downloads, we need to skip the bytes already downloaded
+                    val inputStream: InputStream
+                    if (bytesDownloaded > 0) {
+                        val sis = smbFile.inputStream
+                        sis.skip(bytesDownloaded)
+                        inputStream = BufferedInputStream(sis, bufferSize)
+                    } else {
+                        inputStream = BufferedInputStream(smbFile.inputStream, bufferSize)
+                    }
+
+                    // Copy with a progress counter
+                    val buffer = ByteArray(bufferSize)
+                    var bytesRead: Int
+                    var totalBytesRead = bytesDownloaded
+                    val startTime = System.currentTimeMillis()
+
+                    try {
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
+                            totalBytesRead += bytesRead
+
+                            // Log progress less frequently for better performance
+                            if (totalBytesRead >= fileSize / 2 && totalBytesRead - bytesRead < fileSize / 2) {
+                                Log.d(TAG, "Download progress: 50% ($totalBytesRead/$fileSize bytes)")
+                            }
+                        }
+                        outputStream.flush()
+
+                        val endTime = System.currentTimeMillis()
+                        val downloadSpeed = totalBytesRead / ((endTime - startTime) / 1000.0) // bytes per second
+                        val speedInMB = downloadSpeed / (1024 * 1024)
+                        Log.d(TAG, "Download complete in ${endTime - startTime}ms (${String.format("%.2f", speedInMB)} MB/s)")
+
+                    } finally {
+                        try { outputStream.close() } catch (e: Exception) { Log.e(TAG, "Error closing output stream", e) }
+                        try { inputStream.close() } catch (e: Exception) { Log.e(TAG, "Error closing input stream", e) }
+                    }
+
+                    // Verify download is complete
+                    val downloadSuccess = tempFile.exists() && tempFile.length() > 0
+
+                    if (downloadSuccess && tempFile.length() >= fileSize * 0.99) {
+                        // Verify file is actually a valid image
+                        val options = BitmapFactory.Options()
+                        options.inJustDecodeBounds = true
+                        BitmapFactory.decodeFile(tempFile.absolutePath, options)
+
+                        if (options.outWidth > 0 && options.outHeight > 0) {
+                            // It's a valid image, move to final location
+                            if (cacheFile.exists()) {
+                                cacheFile.delete()
+                            }
+
+                            if (tempFile.renameTo(cacheFile)) {
+                                // Download completed successfully, remove resume info file
+                                resumeInfoFile.delete()
+
+                                Log.d(TAG, "Successfully downloaded valid image ${resource.name} (${cacheFile.length()} bytes)")
+
+                                try {
+                                    val uri = FileProvider.getUriForFile(
+                                        context,
+                                        "com.photostreamr.fileprovider",
+                                        cacheFile
+                                    )
+                                    return@withContext uri.toString()
+                                } catch (e: IllegalArgumentException) {
+                                    // If FileProvider fails, try direct file URI
+                                    Log.e(TAG, "FileProvider error, falling back to direct file URI", e)
+                                    return@withContext Uri.fromFile(cacheFile).toString()
+                                }
+                            } else {
+                                Log.e(TAG, "Failed to move temp file to final location")
+                                return@withContext null
+                            }
+                        } else {
+                            Log.e(TAG, "Downloaded file is not a valid image")
+                            tempFile.delete()
+                            resumeInfoFile.delete()
+                            return@withContext null
+                        }
+                    } else {
+                        Log.e(TAG, "Incomplete download: ${tempFile.length()} of $fileSize bytes for ${resource.name}")
+                        // Don't delete temp file or resume info to allow for resume later
+                        return@withContext null
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error downloading and caching photo", e)
+                    Log.e(TAG, "Failed to download SMB file for ${resource.name}", e)
                     return@withContext null
-                } finally {
-                    try {
-                        inputStream?.close()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error closing input stream", e)
-                    }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error in downloadAndCachePhoto", e)
-                return@withContext null
+                Log.e(TAG, "Error in downloadAndCachePhoto for ${resource.name}", e)
+                null
             }
         }
     }

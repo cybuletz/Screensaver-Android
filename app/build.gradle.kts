@@ -144,6 +144,9 @@ android {
 
 dependencies {
     implementation("androidx.palette:palette-ktx:1.0.0")
+    implementation("androidx.hilt:hilt-common:1.2.0")
+    implementation("androidx.hilt:hilt-work:1.2.0")
+
     // Version constants
     val navVersion = "2.7.6"
     val lifecycleVersion = "2.6.2"
