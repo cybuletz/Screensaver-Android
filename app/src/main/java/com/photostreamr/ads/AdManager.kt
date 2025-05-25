@@ -44,6 +44,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.jvm.Volatile
@@ -84,8 +85,9 @@ class AdManager @Inject constructor(
         private const val MIN_NATIVE_AD_FREQUENCY = 25
         private const val MAX_NATIVE_AD_FREQUENCY = 35
         private const val DEFAULT_NATIVE_AD_FREQUENCY = 30
-        private const val NATIVE_AD_CACHE_SIZE = 1
+        private const val NATIVE_AD_CACHE_SIZE = 3 // Increased from 1 to 3
         private const val AD_LOAD_TIMEOUT_DURATION = 10000L // 10 seconds
+        private const val MIN_AD_REQUEST_INTERVAL = 180000L // 3 minutes minimum between ad requests
     }
     private val random = java.util.Random()
 
@@ -95,6 +97,12 @@ class AdManager @Inject constructor(
     private val autoRestartHandler = Handler(Looper.getMainLooper())
     private var autoRestartRunnable: Runnable? = null
     private val AUTO_RESTART_INTERVAL = 1 * 60 * 60 * 1000L // 2 hours
+
+    private var lastAdRequestTime = 0L
+    private var retryCount = 0
+    private val MAX_RETRIES = 3
+    private val pendingAdRequests = AtomicInteger(0)
+    private val MAX_CONCURRENT_REQUESTS = 1
 
     @Volatile private var isInitialized = false // Standard volatile boolean is fine here
     private var mainAdView: AdView? = null
@@ -572,6 +580,15 @@ class AdManager @Inject constructor(
 
         if (photosUntilNextAd <= 0) {
             photosUntilNextAd = getRandomAdFrequency()
+
+            // Check if we have a cached ad before showing
+            if (nativeAdsCache.isEmpty() && System.currentTimeMillis() - lastAdRequestTime < MIN_AD_REQUEST_INTERVAL) {
+                // If we don't have a cached ad and we've requested too recently, wait longer
+                Log.d(TAG, "Ad threshold reached but no cached ads available and rate limited. Delaying ad show.")
+                photosUntilNextAd = 5 // Show after a few more photos instead
+                return false
+            }
+
             Log.d(TAG, "Native ad threshold reached. Next ad after $photosUntilNextAd photos")
             return true
         }
@@ -622,12 +639,29 @@ class AdManager @Inject constructor(
             callback?.invoke(null)
             return
         }
+
+        // Rate limiting check
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastAdRequestTime < MIN_AD_REQUEST_INTERVAL) {
+            Log.d(TAG, "Rate limiting ad request (too frequent), using cache instead")
+            callback?.invoke(nativeAdsCache.poll())
+            return
+        }
+
         if (!isInitialized) {
             Log.w(TAG, "AdManager not initialized, attempting init and retry.")
             initialize()
             mainHandler.postDelayed({ loadNativeAdInternal(callback) }, 1000)
             return
         }
+
+        // Concurrent requests limit
+        if (pendingAdRequests.get() >= MAX_CONCURRENT_REQUESTS) {
+            Log.d(TAG, "Too many concurrent ad requests, using cache or skipping")
+            callback?.invoke(nativeAdsCache.poll())
+            return
+        }
+
         // --- Use compareAndSet ---
         if (!isLoadingNativeAd.compareAndSet(false, true)) {
             Log.w(TAG, "Already loading native ad, ignoring new request.")
@@ -636,6 +670,8 @@ class AdManager @Inject constructor(
         }
 
         Log.d(TAG, "Starting native ad load process.")
+        lastAdRequestTime = currentTime
+        pendingAdRequests.incrementAndGet()
         currentNativeAdLoadCallback = callback
 
         val timeoutRunnable = Runnable {
@@ -646,6 +682,7 @@ class AdManager @Inject constructor(
                     val timedOutCallback = currentNativeAdLoadCallback
                     currentNativeAdLoadCallback = null
                     timedOutCallback?.invoke(null)
+                    pendingAdRequests.decrementAndGet()
                 } else {
                     Log.d(TAG, "Timeout triggered, but loading state was already reset.")
                 }
@@ -658,6 +695,10 @@ class AdManager @Inject constructor(
             .forNativeAd { nativeAd ->
                 Log.d(TAG, "Native ad loaded successfully.")
                 timeoutHandler.removeCallbacks(timeoutRunnable)
+                pendingAdRequests.decrementAndGet()
+
+                // Reset retry count on success
+                retryCount = 0
 
                 // --- Use compareAndSet ---
                 if (isLoadingNativeAd.compareAndSet(true, false)) {
@@ -685,6 +726,7 @@ class AdManager @Inject constructor(
                 override fun onAdFailedToLoad(error: LoadAdError) {
                     Log.e(TAG, "Native ad failed to load: ${error.message}, code: ${error.code}, domain: ${error.domain}")
                     timeoutHandler.removeCallbacks(timeoutRunnable)
+                    pendingAdRequests.decrementAndGet()
 
                     // --- Use compareAndSet ---
                     if (isLoadingNativeAd.compareAndSet(true, false)) {
@@ -709,6 +751,7 @@ class AdManager @Inject constructor(
             Log.e(TAG, "Exception when calling adLoader.loadAd", e)
             // --- Use .set() ---
             isLoadingNativeAd.set(false)
+            pendingAdRequests.decrementAndGet()
             timeoutHandler.removeCallbacks(timeoutRunnable)
             val failureCallback = currentNativeAdLoadCallback
             currentNativeAdLoadCallback = null
@@ -718,22 +761,41 @@ class AdManager @Inject constructor(
     }
 
     private fun schedulePreloadRetry() {
-        mainHandler.postDelayed({
-            preloadNativeAdsIfNeeded()
-        }, 60000)
+        if (retryCount < MAX_RETRIES) {
+            retryCount++
+            val delayTime = 60000L * retryCount // Increasing delay with each retry
+            Log.d(TAG, "Scheduling preload retry #$retryCount in ${delayTime/1000} seconds")
+
+            mainHandler.postDelayed({
+                preloadNativeAdsIfNeeded()
+            }, delayTime)
+        } else {
+            Log.d(TAG, "Max retries ($MAX_RETRIES) reached, scheduling longer delay")
+            retryCount = 0 // Reset after a longer timeout
+            mainHandler.postDelayed({
+                preloadNativeAdsIfNeeded()
+            }, 300000) // 5 minute timeout after max retries
+        }
     }
 
     private fun preloadNativeAdsIfNeeded() {
         if (appVersionManager.isProVersion() || !consentManager.canShowAds()) return
 
+        // Rate limiting check
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastAdRequestTime < MIN_AD_REQUEST_INTERVAL) {
+            Log.d(TAG, "Rate limiting preload (too frequent), will try later")
+            return
+        }
+
         val cacheSize = nativeAdsCache.size
         // --- Use .get() ---
-        if (cacheSize < NATIVE_AD_CACHE_SIZE && !isLoadingNativeAd.get()) {
-            val numToLoad = NATIVE_AD_CACHE_SIZE - cacheSize
+        if (cacheSize < NATIVE_AD_CACHE_SIZE && !isLoadingNativeAd.get() && pendingAdRequests.get() < MAX_CONCURRENT_REQUESTS) {
+            val numToLoad = Math.min(NATIVE_AD_CACHE_SIZE - cacheSize, MAX_CONCURRENT_REQUESTS)
             Log.d(TAG, "Cache low ($cacheSize/$NATIVE_AD_CACHE_SIZE), preloading $numToLoad more native ads.")
-            for (i in 0 until numToLoad) {
-                loadNativeAdInternal(null)
-            }
+
+            // Only preload one ad at a time to avoid flooding
+            loadNativeAdInternal(null)
         }
     }
 
@@ -982,41 +1044,6 @@ class AdManager @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up settings fragment ad", e)
             container.visibility = ViewGroup.GONE
-        }
-    }
-
-    private fun shouldShowInterstitial(): Boolean {
-        // --- Use .get() ---
-        return interstitialAd != null &&
-                System.currentTimeMillis() - lastInterstitialAdTime > MINIMUM_AD_INTERVAL &&
-                !isInterstitialShowing.get() &&
-                showInterstitialInSettings &&
-                consentManager.canShowAds()
-    }
-
-    fun showInterstitialAd(activity: Activity? = null) {
-        // --- Use .get() ---
-        if (appVersionManager.isProVersion() || isInterstitialShowing.get() || !showInterstitialInSettings || !consentManager.canShowAds()) {
-            return
-        }
-        val ad = interstitialAd
-        if (ad != null && activity != null) {
-            Log.d(TAG, "Showing preloaded interstitial ad for settings.")
-            try {
-                // --- Use .get() ---
-                if (!isInterstitialShowing.get()) {
-                    ad.show(activity)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Exception showing settings interstitial", e)
-                interstitialAd = null
-                // --- Use .set() ---
-                isInterstitialShowing.set(false)
-                showInterstitialInSettings = false
-            }
-        } else if (ad == null) {
-            Log.d(TAG, "Settings interstitial ad not loaded, cannot show.")
-            showInterstitialInSettings = false
         }
     }
 

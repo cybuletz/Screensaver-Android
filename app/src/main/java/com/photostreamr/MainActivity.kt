@@ -161,7 +161,6 @@ class MainActivity : AppCompatActivity() {
 
     private var photoDisplayInitiated = false
     private var photoDisplayLaunched = AtomicBoolean(false)
-    private var initialResumePerformed = false
 
 
     private val viewLifecycleOwner: LifecycleOwner?
@@ -224,6 +223,9 @@ class MainActivity : AppCompatActivity() {
 
         // Add this near the beginning to capture all log output
         Log.i(TAG, "=== MainActivity onCreate started ===")
+
+        PreferenceManager.setDefaultValues(this, R.xml.photoshow_settings_preferences, true)
+        PreferenceManager.setDefaultValues(this, R.xml.display_preferences, true)
 
         _binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -1562,7 +1564,6 @@ class MainActivity : AppCompatActivity() {
 
             try {
                 adManager.destroyAds()
-                adManager.removeAllHandlers()
             } catch (e: Exception) {
                 Log.e(TAG, "Error destroying ads", e)
             }

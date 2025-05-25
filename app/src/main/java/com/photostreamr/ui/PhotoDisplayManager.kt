@@ -1128,6 +1128,21 @@ class PhotoDisplayManager @Inject constructor(
     }
 
     fun startPhotoDisplay() {
+        // Firebase Analytics log
+        try {
+            val analytics = com.google.firebase.analytics.FirebaseAnalytics.getInstance(context)
+            analytics.logEvent("screensaver_playing", null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error logging to Firebase Analytics", e)
+        }
+
+        // Firebase Crashlytics log
+        try {
+            com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().log("Screensaver is playing")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error logging to Crashlytics", e)
+        }
+
         // Strong throttling - don't allow rapid consecutive calls
         val currentTime = System.currentTimeMillis()
         val timeSinceLastStart = currentTime - lastDisplayStartTime
@@ -1679,29 +1694,6 @@ class PhotoDisplayManager @Inject constructor(
                 }
             }
         }
-    }
-
-    /**
-     * Start photo display with a guaranteed random photo
-     * Used after restart to ensure we don't show the same photo
-     */
-    fun startPhotoDisplayWithRandomPhoto() {
-        // Reset the state first
-        isScreensaverActive = true
-
-        // Get a new random index that's different from the current one
-        val nextIndex = getRandomDifferentPhotoIndex()
-
-        Log.d(TAG, "Selected random photo ${nextIndex} for restart (was ${currentPhotoIndex})")
-
-        // Update the index
-        currentPhotoIndex = nextIndex
-
-        // Load the photo with normal slideshow timer
-        loadAndDisplayPhoto(false)
-
-        // Log that we've started with a random photo
-        Log.d(TAG, "Started photo display with random photo index: $currentPhotoIndex")
     }
 
     /**

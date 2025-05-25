@@ -6,6 +6,8 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
 import com.photostreamr.R
+import com.photostreamr.version.FeatureManager
+import com.photostreamr.version.ProVersionPromptDialog
 import com.photostreamr.widgets.WidgetManager
 import com.photostreamr.widgets.WidgetPreferenceDialog
 import com.photostreamr.widgets.WidgetType
@@ -17,6 +19,9 @@ class WidgetsSettingsPreferenceFragment : PreferenceFragmentCompat() {
 
     @Inject
     lateinit var widgetManager: WidgetManager
+
+    @Inject
+    lateinit var featureManager: FeatureManager
 
     private var initialPreferences: Bundle? = null
 
@@ -32,6 +37,7 @@ class WidgetsSettingsPreferenceFragment : PreferenceFragmentCompat() {
             savePreferenceState(preferenceScreen, this)
         }
 
+        setupProBadgeForMusic()
         setupPreferenceListeners()
         updateWidgetSummaries()
     }
@@ -140,23 +146,65 @@ class WidgetsSettingsPreferenceFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun getPreferenceIndex(parent: androidx.preference.PreferenceGroup, preference: Preference): Int {
+        for (i in 0 until parent.preferenceCount) {
+            if (parent.getPreference(i) == preference) return i
+        }
+        return -1
+    }
+
+    /**
+     * Swap out the Music Widget setting with a ProBadgePreference if the user is not Pro.
+     */
+    private fun setupProBadgeForMusic() {
+        val musicPref = findPreference<Preference>("music_widget_settings")
+        if (musicPref != null && !featureManager.isFeatureAvailable(FeatureManager.Feature.MUSIC)) {
+            val parent = musicPref.parent as? androidx.preference.PreferenceGroup ?: return
+            val index = getPreferenceIndex(parent, musicPref)
+
+            val proPref = ProBadgePreference(requireContext()).apply {
+                key = musicPref.key
+                title = musicPref.title
+                summary = musicPref.summary
+                order = musicPref.order
+                icon = musicPref.icon
+                layoutResource = musicPref.layoutResource
+                isEnabled = true // Allow click to show dialog!
+
+                setOnPreferenceClickListener {
+                    ProVersionPromptDialog.newInstance(FeatureManager.Feature.MUSIC)
+                        .show(parentFragmentManager, "pro_version_prompt_music_widget")
+                    true
+                }
+            }
+
+            parent.removePreference(musicPref)
+            parent.addPreference(proPref)
+            if (index >= 0) {
+                proPref.order = musicPref.order
+            }
+        }
+    }
+
     private fun setupPreferenceListeners() {
         findPreference<Preference>("clock_widget_settings")?.setOnPreferenceClickListener {
             val dialog = WidgetPreferenceDialog.newInstance(WidgetType.CLOCK)
             dialog.show(childFragmentManager, "clock_widget_settings")
             true
         }
-
         findPreference<Preference>("weather_widget_settings")?.setOnPreferenceClickListener {
             val dialog = WidgetPreferenceDialog.newInstance(WidgetType.WEATHER)
             dialog.show(childFragmentManager, "weather_widget_settings")
             true
         }
-
-        findPreference<Preference>("music_widget_settings")?.setOnPreferenceClickListener {
-            val dialog = WidgetPreferenceDialog.newInstance(WidgetType.MUSIC)
-            dialog.show(childFragmentManager, "music_widget_settings")
-            true
+        // Do not attach a click listener for music_widget_settings here;
+        // it is handled by setupProBadgeForMusic for the badge, and for Pro users, the dialog is available below.
+        if (featureManager.isFeatureAvailable(FeatureManager.Feature.MUSIC)) {
+            findPreference<Preference>("music_widget_settings")?.setOnPreferenceClickListener {
+                val dialog = WidgetPreferenceDialog.newInstance(WidgetType.MUSIC)
+                dialog.show(childFragmentManager, "music_widget_settings")
+                true
+            }
         }
     }
 

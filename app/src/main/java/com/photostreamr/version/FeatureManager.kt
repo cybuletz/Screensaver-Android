@@ -31,13 +31,14 @@ class FeatureManager @Inject constructor(
     )
 
     fun isFeatureAvailable(feature: Feature): Boolean {
-        // Photo slideshow is always available
-        if (feature == Feature.PHOTO_SLIDESHOW) {
-            return true
+        // Photo slideshow, widgets, transition effects are always available except MUSIC, SECURITY
+        return when (feature) {
+            Feature.PHOTO_SLIDESHOW,
+            Feature.WIDGETS,
+            Feature.TRANSITION_EFFECTS -> true
+            Feature.MUSIC,
+            Feature.SECURITY -> appVersionManager.isProVersion()
         }
-
-        // All other features require pro version
-        return appVersionManager.isProVersion()
     }
 
     fun showProVersionPrompt(feature: Feature): Boolean {
