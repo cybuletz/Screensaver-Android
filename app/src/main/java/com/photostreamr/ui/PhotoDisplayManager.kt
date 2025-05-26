@@ -138,11 +138,20 @@ class PhotoDisplayManager @Inject constructor(
     private var showLocation: Boolean = false
     private var isRandomOrder: Boolean = false
 
+    // Collage rate limiting - count-based with random intervals
+    private var templatesSinceLastCollage = 0
+    private var templatesNeededUntilNextCollage = 0
+    private var lastSelectedTemplateType = -1
+
     companion object {
         private const val TAG = "PhotoDisplayManager"
         const val PREF_KEY_INTERVAL = "photo_interval"
         const val DEFAULT_INTERVAL_SECONDS = 5
         private const val MILLIS_PER_SECOND = 1000L
+
+        // Collage rate limiting constants
+        private const val MIN_TEMPLATES_BETWEEN_COLLAGE = 6
+        private const val MAX_TEMPLATES_BETWEEN_COLLAGE = 9
     }
 
     init {
@@ -167,6 +176,15 @@ class PhotoDisplayManager @Inject constructor(
                 }
             }
         }
+
+        // Initialize collage rate limiting with first random interval
+        templatesNeededUntilNextCollage = Random.nextInt(
+            MIN_TEMPLATES_BETWEEN_COLLAGE,
+            MAX_TEMPLATES_BETWEEN_COLLAGE + 1
+        )
+        templatesSinceLastCollage = templatesNeededUntilNextCollage // Allow collage on first run if random allows
+
+        Log.d(TAG, "Initialized collage rate limiting: first collage in $templatesNeededUntilNextCollage templates")
     }
 
     override fun onTemplateReady(result: Drawable, layoutType: Int) {
@@ -727,6 +745,39 @@ class PhotoDisplayManager @Inject constructor(
         }
     }
 
+    /**
+     * Check if collage template can be shown based on random count-based rate limiting
+     */
+    private fun canShowCollageTemplate(): Boolean {
+        val canShow = templatesSinceLastCollage >= templatesNeededUntilNextCollage
+
+        Log.d(TAG, "Collage rate limit check: templatesSinceLastCollage=$templatesSinceLastCollage, " +
+                "templatesNeededUntilNextCollage=$templatesNeededUntilNextCollage, canShow=$canShow")
+
+        return canShow
+    }
+
+    /**
+     * Track template usage for rate limiting
+     */
+    private fun trackTemplateUsage(templateType: Int) {
+        if (templateType == EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE) {
+            // Reset counter and set new random interval for next collage
+            templatesSinceLastCollage = 0
+            templatesNeededUntilNextCollage = Random.nextInt(
+                MIN_TEMPLATES_BETWEEN_COLLAGE,
+                MAX_TEMPLATES_BETWEEN_COLLAGE + 1
+            )
+            Log.d(TAG, "Collage template used, next collage in $templatesNeededUntilNextCollage templates")
+        } else {
+            // Increment counter for non-collage templates
+            templatesSinceLastCollage++
+            Log.d(TAG, "Non-collage template used, templates since last collage: $templatesSinceLastCollage/$templatesNeededUntilNextCollage")
+        }
+
+        lastSelectedTemplateType = templateType
+    }
+
 
     private fun createAndDisplayTemplate(views: Views, containerWidth: Int, containerHeight: Int) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
@@ -737,15 +788,12 @@ class PhotoDisplayManager @Inject constructor(
         val templateType = when (templateTypeStr) {
             "0" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
             "1" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
-            // "2" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_LEFT
-            // "3" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_MAIN_RIGHT
             "8", "3_smart" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
             "4" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID
-            //"ghome" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME
             "collage" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
             "masonry" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
             "random" -> -1  // Special value for random
-            "2_smart" -> {  // Smart 2-photo template that adapts to orientation
+            "2_smart" -> {
                 if (containerWidth > containerHeight) {
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
                 } else {
@@ -757,33 +805,41 @@ class PhotoDisplayManager @Inject constructor(
 
         // Handle random template type selection
         val finalTemplateType = if (templateType == -1) {
-            // User selected random templates, pick one at random
             val isLandscape = containerWidth > containerHeight
 
-            // Filter templates based on orientation to avoid inappropriate layouts
             val availableTemplateTypes = if (isLandscape) {
-                // In landscape mode, exclude vertical layout (stacked photos)
-                listOf(
+                val base = mutableListOf(
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
-                    //EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
                 )
+                // Only add DYNAMIC_COLLAGE if Android 11+ AND rate limiting allows it
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+                    canShowCollageTemplate()) {
+                    base.add(EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE)
+                }
+                base
             } else {
-                // In portrait mode, exclude horizontal layout (side by side photos)
-                listOf(
+                val base = mutableListOf(
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
                 )
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+                    canShowCollageTemplate()) {
+                    base.add(EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE)
+                }
+                base
             }
             availableTemplateTypes[Random.Default.nextInt(availableTemplateTypes.size)]
         } else {
             templateType
         }
+
+        // Track template usage for rate limiting
+        trackTemplateUsage(finalTemplateType)
 
         Log.d(TAG, "Creating template with type: $finalTemplateType (from setting: $templateTypeStr)")
 
