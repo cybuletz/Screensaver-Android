@@ -99,7 +99,7 @@
         <!-- Settings Activity -->
         <activity
             android:name=".SettingsActivity"
-            android:theme="@style/Theme.Screensaver"
+            android:theme="@style/Theme.Screensaver.Settings"
             android:label="@string/settings_title"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"

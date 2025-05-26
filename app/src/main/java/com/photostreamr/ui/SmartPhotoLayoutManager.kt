@@ -1300,31 +1300,38 @@ class SmartPhotoLayoutManager @Inject constructor(
         // Check if we're in landscape mode
         val isLandscape = containerWidth > containerHeight
 
-        // Initialize important points that must be covered to ensure full screen usage
+        // Calculate safe boundaries to avoid edge positioning issues
+        val safeBounds = calculateSafeBoundaries(containerWidth, containerHeight)
+
+        // Initialize important points that avoid problematic edges
         val screenCoverage = mutableListOf(
-            Pair(containerWidth * 0.05f, containerHeight * 0.05f), // Top-left
-            Pair(containerWidth * 0.95f, containerHeight * 0.05f), // Top-right
-            Pair(containerWidth * 0.05f, containerHeight * 0.95f), // Bottom-left
-            Pair(containerWidth * 0.95f, containerHeight * 0.95f), // Bottom-right
-            Pair(containerWidth * 0.5f, containerHeight * 0.05f),  // Top-center
-            Pair(containerWidth * 0.5f, containerHeight * 0.95f),  // Bottom-center
-            Pair(containerWidth * 0.05f, containerHeight * 0.5f),  // Left-center
-            Pair(containerWidth * 0.95f, containerHeight * 0.5f),  // Right-center
-            Pair(containerWidth * 0.5f, containerHeight * 0.5f),   // Center
-            Pair(containerWidth * 0.25f, containerHeight * 0.25f), // Top-left quadrant
-            Pair(containerWidth * 0.75f, containerHeight * 0.25f), // Top-right quadrant
-            Pair(containerWidth * 0.25f, containerHeight * 0.75f), // Bottom-left quadrant
-            Pair(containerWidth * 0.75f, containerHeight * 0.75f)  // Bottom-right quadrant
+            Pair(safeBounds.left + safeBounds.width() * 0.1f, safeBounds.top + safeBounds.height() * 0.1f), // Top-left (safer)
+            Pair(safeBounds.left + safeBounds.width() * 0.9f, safeBounds.top + safeBounds.height() * 0.1f), // Top-right (safer)
+            Pair(safeBounds.left + safeBounds.width() * 0.1f, safeBounds.top + safeBounds.height() * 0.9f), // Bottom-left (safer)
+            Pair(safeBounds.left + safeBounds.width() * 0.9f, safeBounds.top + safeBounds.height() * 0.9f), // Bottom-right (safer)
+            Pair(safeBounds.centerX(), safeBounds.top + safeBounds.height() * 0.2f),  // Top-center
+            Pair(safeBounds.centerX(), safeBounds.top + safeBounds.height() * 0.8f),  // Bottom-center
+            Pair(safeBounds.left + safeBounds.width() * 0.2f, safeBounds.centerY()),  // Left-center
+            Pair(safeBounds.left + safeBounds.width() * 0.8f, safeBounds.centerY()),  // Right-center
+            Pair(safeBounds.centerX(), safeBounds.centerY()),   // Center
+            Pair(safeBounds.left + safeBounds.width() * 0.3f, safeBounds.top + safeBounds.height() * 0.3f), // Top-left quadrant
+            Pair(safeBounds.left + safeBounds.width() * 0.7f, safeBounds.top + safeBounds.height() * 0.3f), // Top-right quadrant
+            Pair(safeBounds.left + safeBounds.width() * 0.3f, safeBounds.top + safeBounds.height() * 0.7f), // Bottom-left quadrant
+            Pair(safeBounds.left + safeBounds.width() * 0.7f, safeBounds.top + safeBounds.height() * 0.7f)  // Bottom-right quadrant
         )
 
         // Force at least one large photo directly in the right-bottom area in landscape mode
         // Precisely positioned to cover the commonly empty area
         if (isLandscape) {
             // Remove any existing right-bottom point
-            screenCoverage.removeAll { it.first > containerWidth * 0.6f && it.second > containerHeight * 0.6f }
+            screenCoverage.removeAll { it.first > safeBounds.left + safeBounds.width() * 0.6f &&
+                    it.second > safeBounds.top + safeBounds.height() * 0.6f }
 
-            // Add a targeted point for the right-bottom empty area
-            screenCoverage.add(0, Pair(containerWidth * 0.8f, containerHeight * 0.75f))
+            // Add a targeted point for the right-bottom empty area, but within safe bounds
+            screenCoverage.add(0, Pair(
+                safeBounds.left + safeBounds.width() * 0.75f,
+                safeBounds.top + safeBounds.height() * 0.7f
+            ))
         }
 
         // Track placed regions for better distribution
@@ -1475,9 +1482,12 @@ class SmartPhotoLayoutManager @Inject constructor(
             val centerX = position.first
             val centerY = position.second
 
-            // Ensure at least 80% of the photo is on screen
-            val adjustedCenterX = centerX.coerceIn(photoWidth * 0.4f, containerWidth - photoWidth * 0.4f)
-            val adjustedCenterY = centerY.coerceIn(photoHeight * 0.4f, containerHeight - photoHeight * 0.4f)
+            // Ensure at least 80% of the photo is on screen with safer margins
+            val safeMarginX = max(photoWidth * 0.5f, containerWidth * 0.12f)
+            val safeMarginY = max(photoHeight * 0.5f, containerHeight * 0.12f)
+
+            val adjustedCenterX = centerX.coerceIn(safeMarginX, containerWidth - safeMarginX)
+            val adjustedCenterY = centerY.coerceIn(safeMarginY, containerHeight - safeMarginY)
 
             // Calculate rectangle
             val rect = RectF(
@@ -1587,9 +1597,12 @@ class SmartPhotoLayoutManager @Inject constructor(
             val x = random.nextFloat() * containerWidth
             val y = random.nextFloat() * containerHeight
 
-            // Skip if too close to container edge
-            if (x < photoWidth * 0.4f || x > containerWidth - photoWidth * 0.4f ||
-                y < photoHeight * 0.4f || y > containerHeight - photoHeight * 0.4f) {
+            // Skip if too close to container edge - use safer margins
+            val safeMarginX = max(photoWidth * 0.5f, containerWidth * 0.15f)
+            val safeMarginY = max(photoHeight * 0.5f, containerHeight * 0.15f)
+
+            if (x < safeMarginX || x > containerWidth - safeMarginX ||
+                y < safeMarginY || y > containerHeight - safeMarginY) {
                 continue
             }
 
@@ -2241,5 +2254,21 @@ class SmartPhotoLayoutManager @Inject constructor(
         }
 
         return resultBitmap
+    }
+
+    /**
+     * Calculate adaptive boundaries that work on all devices
+     */
+    private fun calculateSafeBoundaries(containerWidth: Int, containerHeight: Int): RectF {
+        // Use percentage of smaller dimension for consistent margins
+        val minDimension = min(containerWidth, containerHeight)
+        val margin = (minDimension * 0.12f).coerceAtLeast(60f) // Minimum 60px margin
+
+        return RectF(
+            margin,
+            margin,
+            containerWidth - margin,
+            containerHeight - margin
+        )
     }
 }

@@ -1128,17 +1128,22 @@ class PhotoDisplayManager @Inject constructor(
     }
 
     fun startPhotoDisplay() {
-        // Firebase Analytics log
         try {
             val analytics = com.google.firebase.analytics.FirebaseAnalytics.getInstance(context)
+
+            // Log custom event
             analytics.logEvent("screensaver_playing", null)
+
+            // Set user property (example: indicate user has started screensaver)
+            analytics.setUserProperty("screensaver_status", "playing")
         } catch (e: Exception) {
             Log.e(TAG, "Error logging to Firebase Analytics", e)
         }
 
         // Firebase Crashlytics log
         try {
-            com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().log("Screensaver is playing")
+            com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
+                .log("Screensaver is playing")
         } catch (e: Exception) {
             Log.e(TAG, "Error logging to Crashlytics", e)
         }

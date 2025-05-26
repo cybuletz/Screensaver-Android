@@ -28,4 +28,33 @@
         <item name="cardViewStyle">@style/Widget.MaterialComponents.CardView</item>
         <item name="cardBackgroundColor">?attr/colorSurface</item>
     </style>
+
+    <style name="Theme.Screensaver.Settings" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+
+        <item name="colorPrimary">@color/blue_light</item>
+        <item name="colorPrimaryVariant">@color/blue_light</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/blue_light</item>
+        <item name="colorSecondaryVariant">@color/blue_light</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+        <item name="android:windowContentTransitions">true</item>
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
+        <item name="android:dialogPreferredPadding">24dp</item>
+        <item name="dialogPreferredPadding">24dp</item>
+        <item name="android:listPreferredItemPaddingLeft">24dp</item>
+        <item name="android:listPreferredItemPaddingRight">24dp</item>
+        <item name="android:listPreferredItemHeightSmall">72dp</item>
+        <item name="colorSurface">@color/settings_card_background_dark</item>
+        <item name="colorOnSurface">@color/white</item>
+        <item name="colorOnSurfaceVariant">#BBBBBB</item>
+        <item name="android:windowBackground">@color/background_dark</item>
+        <item name="elevationOverlayEnabled">false</item>
+        <item name="materialCardViewStyle">@style/Widget.MaterialComponents.CardView</item>
+        <item name="cardViewStyle">@style/Widget.MaterialComponents.CardView</item>
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
+    </style>
+
 </resources>

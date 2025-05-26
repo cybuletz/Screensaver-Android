@@ -247,15 +247,23 @@ class AppDataManager @Inject constructor(
     private suspend fun saveState(state: AppDataState) {
         withContext(Dispatchers.IO) {
             try {
+                // Defensive: remove any nulls before serialization
+                val safeState = state.copy(
+                    selectedLocalPhotos = state.selectedLocalPhotos.filterNotNull().toSet(),
+                    photoSources = state.photoSources.filterNotNull().toSet(),
+                    selectedAlbums = state.selectedAlbums.filterNotNull().toSet(),
+                    selectedLocalFolders = state.selectedLocalFolders.filterNotNull().toSet(),
+                    activeDays = state.activeDays.filterNotNull().toSet()
+                )
                 // First save to backup
                 context.getSharedPreferences("${PREFERENCES_NAME}${BACKUP_SUFFIX}", Context.MODE_PRIVATE)
                     .edit()
-                    .putString(KEY_APP_STATE, gson.toJson(state))
+                    .putString(KEY_APP_STATE, gson.toJson(safeState))
                     .commit()
 
                 // Then save to main storage
                 preferences.edit()
-                    .putString(KEY_APP_STATE, gson.toJson(state))
+                    .putString(KEY_APP_STATE, gson.toJson(safeState))
                     .commit()
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save state")
@@ -263,6 +271,7 @@ class AppDataManager @Inject constructor(
             }
         }
     }
+
 
     private suspend fun loadState(): AppDataState {
         return withContext(Dispatchers.IO) {
