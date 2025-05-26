@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.util.Log
 import androidx.preference.PreferenceManager
 import com.photostreamr.PhotoRepository
@@ -200,17 +201,26 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
 
         // Always use a reasonable subset of templates that work well
         val options = if (isLandscape) {
-            listOf(
+            val base = mutableListOf(
                 LAYOUT_TYPE_2_HORIZONTAL,  // 2 side-by-side photos
                 LAYOUT_TYPE_3_MAIN_LEFT,   // 3 photos, main one on left
                 LAYOUT_TYPE_4_GRID         // 4 photos in a grid
             )
+            // Include DYNAMIC_COLLAGE only if Android 10+ (API 29+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                base.add(LAYOUT_TYPE_DYNAMIC_COLLAGE)
+            }
+            base
         } else {
-            listOf(
+            val base = mutableListOf(
                 LAYOUT_TYPE_2_VERTICAL,    // 2 stacked photos
                 LAYOUT_TYPE_3_MAIN_LEFT,   // 3 photos, main one on top
                 LAYOUT_TYPE_4_GRID         // 4 photos in a grid
             )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                base.add(LAYOUT_TYPE_DYNAMIC_COLLAGE)
+            }
+            base
         }
 
         // Always make a new random number, don't reuse existing ones

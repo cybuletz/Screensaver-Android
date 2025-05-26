@@ -15,7 +15,7 @@
         android:summary="Control screen brightness" />
 
     <ListPreference
-        android:defaultValue="SYSTEM"
+        android:defaultValue="LANDSCAPE"
         android:entries="@array/screen_orientation_entries"
         android:entryValues="@array/screen_orientation_values"
         android:key="screen_orientation"

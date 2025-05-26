@@ -767,7 +767,7 @@ class PhotoDisplayManager @Inject constructor(
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-                    //EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE,
                     //EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_GHOME,
                     EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
                 )
