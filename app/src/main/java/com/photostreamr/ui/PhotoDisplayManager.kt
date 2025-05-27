@@ -749,10 +749,15 @@ class PhotoDisplayManager @Inject constructor(
      * Check if collage template can be shown based on random count-based rate limiting
      */
     private fun canShowCollageTemplate(): Boolean {
+        // Check if we've shown enough non-collage templates before showing another collage
         val canShow = templatesSinceLastCollage >= templatesNeededUntilNextCollage
 
-        Log.d(TAG, "Collage rate limit check: templatesSinceLastCollage=$templatesSinceLastCollage, " +
-                "templatesNeededUntilNextCollage=$templatesNeededUntilNextCollage, canShow=$canShow")
+        // Log with clearer wording to avoid confusion
+        if (canShow) {
+            Log.d(TAG, "Collage rate limit check: ELIGIBLE for collage (${templatesSinceLastCollage} templates since last collage, needed ${templatesNeededUntilNextCollage})")
+        } else {
+            Log.d(TAG, "Collage rate limit check: NOT ELIGIBLE YET for collage (${templatesSinceLastCollage}/${templatesNeededUntilNextCollage} templates since last collage)")
+        }
 
         return canShow
     }
@@ -772,20 +777,27 @@ class PhotoDisplayManager @Inject constructor(
         } else {
             // Increment counter for non-collage templates
             templatesSinceLastCollage++
-            Log.d(TAG, "Non-collage template used, templates since last collage: $templatesSinceLastCollage/$templatesNeededUntilNextCollage")
+
+            // Make log message clearer by indicating eligibility
+            if (templatesSinceLastCollage >= templatesNeededUntilNextCollage) {
+                Log.d(TAG, "Non-collage template used, ELIGIBLE for collage (${templatesSinceLastCollage}/${templatesNeededUntilNextCollage} templates since last collage)")
+            } else {
+                Log.d(TAG, "Non-collage template used, NOT YET ELIGIBLE for collage (${templatesSinceLastCollage}/${templatesNeededUntilNextCollage} templates since last collage)")
+            }
         }
 
         lastSelectedTemplateType = templateType
     }
 
 
+    // Modify this method to respect rate limiting for explicit collage selection
     private fun createAndDisplayTemplate(views: Views, containerWidth: Int, containerHeight: Int) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val templateTypeStr = prefs.getString(PhotoResizeManager.TEMPLATE_TYPE_KEY,
             PhotoResizeManager.TEMPLATE_TYPE_DEFAULT.toString())
 
-        // Map string values to template types
-        val templateType = when (templateTypeStr) {
+        // Map string values to template types (keep your existing mapping code)
+        val baseTemplateType = when (templateTypeStr) {
             "0" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
             "1" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
             "8", "3_smart" -> EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART
@@ -803,39 +815,28 @@ class PhotoDisplayManager @Inject constructor(
             else -> templateTypeStr?.toIntOrNull() ?: PhotoResizeManager.TEMPLATE_TYPE_DEFAULT
         }
 
-        // Handle random template type selection
-        val finalTemplateType = if (templateType == -1) {
-            val isLandscape = containerWidth > containerHeight
+        // Replace the existing collage check with this stronger implementation
+        val finalTemplateType = if (baseTemplateType == EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE) {
+            // Direct collage selection - check if rate limiting allows it
+            val apiCheck = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q  // Android 10 or newer
+            val canShowCollage = canShowCollageTemplate() && apiCheck
 
-            val availableTemplateTypes = if (isLandscape) {
-                val base = mutableListOf(
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
-                )
-                // Only add DYNAMIC_COLLAGE if Android 11+ AND rate limiting allows it
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
-                    canShowCollageTemplate()) {
-                    base.add(EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE)
+            if (!canShowCollage) {
+                Log.d(TAG, "COLLAGE BLOCKED by rate limiting")
+                // Choose a different template type
+                if (containerWidth > containerHeight) {
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL
+                } else {
+                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL
                 }
-                base
             } else {
-                val base = mutableListOf(
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
-                    EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
-                )
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
-                    canShowCollageTemplate()) {
-                    base.add(EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE)
-                }
-                base
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
             }
-            availableTemplateTypes[Random.Default.nextInt(availableTemplateTypes.size)]
+        } else if (baseTemplateType == -1) {
+            // Random template selection
+            handleRandomTemplateSelection(containerWidth, containerHeight)
         } else {
-            templateType
+            baseTemplateType
         }
 
         // Track template usage for rate limiting
@@ -846,7 +847,7 @@ class PhotoDisplayManager @Inject constructor(
         // Start preloading for upcoming photos
         photoPreloader.startPreloading(currentPhotoIndex, isRandomOrder)
 
-        // Add safety check for available photos
+        // The rest of your method remains the same
         lifecycleScope?.launch {
             try {
                 val photoCount = photoManager.getPhotoCount()
@@ -864,7 +865,6 @@ class PhotoDisplayManager @Inject constructor(
 
                 if (photoCount < minPhotosNeeded) {
                     Log.w(TAG, "Not enough photos for selected template type. Needed: $minPhotosNeeded, Available: $photoCount")
-                    // Fall back to single photo display
                     loadAndDisplayPhoto(false)
                     return@launch
                 }
@@ -878,9 +878,54 @@ class PhotoDisplayManager @Inject constructor(
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Error preparing template display", e)
-                loadAndDisplayPhoto(false) // Fall back to regular photo display
+                loadAndDisplayPhoto(false)
             }
         }
+    }
+
+    // Add this helper method to handle random template selection with rate limiting
+    private fun handleRandomTemplateSelection(containerWidth: Int, containerHeight: Int): Int {
+        val isLandscape = containerWidth > containerHeight
+        val apiCheck = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q // Android 10 or newer
+        val canShowCollage = canShowCollageTemplate() && apiCheck
+
+        // Log the collage check for debugging
+        if (apiCheck && !canShowCollageTemplate()) {
+            Log.d(TAG, "Collage check: API=${Build.VERSION.SDK_INT}, canShow=false")
+            Log.d(TAG, "COLLAGE BLOCKED by rate limiting")
+        }
+
+        // Build the list of available templates based on orientation and collage availability
+        val availableTemplateTypes = if (isLandscape) {
+            val base = mutableListOf(
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_HORIZONTAL,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+            )
+            // Only include collage if rate limiting allows it
+            if (canShowCollage) {
+                base.add(EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE)
+            }
+            base
+        } else {
+            val base = mutableListOf(
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_2_VERTICAL,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_3_SMART,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_4_GRID,
+                EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_MASONRY
+            )
+            // Only include collage if rate limiting allows it
+            if (canShowCollage) {
+                base.add(EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE)
+            }
+            base
+        }
+
+        // Select a random template from the available options
+        val selected = availableTemplateTypes[Random.Default.nextInt(availableTemplateTypes.size)]
+        Log.d(TAG, "Random template selected: $selected for ${if(isLandscape) "landscape" else "portrait"} orientation")
+        return selected
     }
 
     private fun displayPhoto(photoIndex: Int, uri: String, isCached: Boolean) {

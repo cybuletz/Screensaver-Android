@@ -121,18 +121,14 @@ class EnhancedMultiPhotoLayoutManager @Inject constructor(
 
                 Log.d(TAG, "Template type from preferences: $templateTypeStr, requested: $layoutType")
 
-                // MODIFIED: Much stronger handling of random template
-                val effectiveLayoutType = when {
-                    // Case 1: Explicitly random type from preferences
-                    templateTypeStr == "random" -> {
-                        selectRandomTemplate(containerWidth, containerHeight)
-                    }
-                    // Case 2: -1 passed as layout type (system using random)
-                    layoutType == -1 -> {
-                        selectRandomTemplate(containerWidth, containerHeight)
-                    }
-                    // Case 3: Normal specified template
-                    else -> layoutType
+                // FIXED: Do NOT select a new random template type when one was specifically provided!
+                // Only randomize if -1 was explicitly passed as layout type
+                val effectiveLayoutType = if (layoutType == -1) {
+                    // Only if -1 was passed (system requesting random), select a random template
+                    selectRandomTemplate(containerWidth, containerHeight)
+                } else {
+                    // Otherwise use the one provided by PhotoDisplayManager
+                    layoutType
                 }
 
                 // Log the final template type for debugging

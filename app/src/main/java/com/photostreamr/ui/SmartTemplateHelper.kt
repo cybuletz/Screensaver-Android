@@ -14,6 +14,15 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.random.Random
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RadialGradient
+import android.graphics.Shader
+import android.renderscript.Allocation
+import android.renderscript.Element
+import android.renderscript.RenderScript
+import android.renderscript.ScriptIntrinsicBlur
+import androidx.palette.graphics.Palette
 
 /**
  * Helper class that acts as a bridge between SmartPhotoLayoutManager and other components
@@ -104,6 +113,168 @@ class SmartTemplateHelper @Inject constructor(
         }
     }
 
+    /**
+     * Adjusts a color to be more pastel and suitable for ambient effects
+     */
+    private fun adjustColorForAmbient(color: Int, random: java.util.Random): Int {
+        // Convert to HSV
+        val hsv = FloatArray(3)
+        Color.colorToHSV(color, hsv)
+
+        // Add slight randomness to hue
+        var hue = (hsv[0] + random.nextFloat() * 20 - 10) % 360
+        if (hue < 0) hue += 360
+        hsv[0] = hue
+
+        // Reduce saturation to make colors more pastel
+        hsv[1] = (hsv[1] * 0.6f).coerceIn(0.2f, 0.7f)
+
+        // Make colors lighter by boosting brightness
+        hsv[2] = (hsv[2] * 1.2f + 0.1f).coerceIn(0.5f, 0.95f)
+
+        // Low alpha for subtle blending effect
+        val alpha = (50 + random.nextInt(50)).coerceIn(50, 100)
+
+        return Color.HSVToColor(alpha, hsv)
+    }
+
+    /**
+     * Creates a beautiful ambient background gradient for collage templates
+     * using colors extracted from the photos in the collage
+     */
+    private fun createAmbientCollageBackground(
+        photos: List<Bitmap>,
+        width: Int,
+        height: Int
+    ): Bitmap {
+        Log.d(TAG, "Creating ambient background for dynamic collage")
+        Log.d(TAG, "Creating collage ambient background with ${photos.size} photos")
+
+        val startTime = System.currentTimeMillis()
+
+        // Create a bitmap with the container dimensions
+        val backgroundBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(backgroundBitmap)
+
+        // First fill with dark background to ensure no transparency
+        canvas.drawColor(Color.argb(255, 15, 15, 15))
+
+        try {
+            // Extract colors from all photos
+            val allColors = mutableListOf<Int>()
+            val random = java.util.Random(System.currentTimeMillis())
+
+            // Sample colors from each photo
+            for (photo in photos) {
+                // Use Palette API to extract dominant colors
+                val palette = Palette.from(photo).generate()
+
+                // Add colors from palette with fallbacks
+                palette.vibrantSwatch?.rgb?.let { allColors.add(it) }
+                palette.lightVibrantSwatch?.rgb?.let { allColors.add(it) }
+                palette.darkVibrantSwatch?.rgb?.let { allColors.add(it) }
+                palette.mutedSwatch?.rgb?.let { allColors.add(it) }
+
+                // If we couldn't get colors from palette, sample directly
+                if (allColors.size < photos.size) {
+                    // Sample up to 3 random pixels from each photo
+                    for (i in 0 until 3) {
+                        val x = random.nextInt(photo.width)
+                        val y = random.nextInt(photo.height)
+                        allColors.add(photo.getPixel(x, y))
+                    }
+                }
+            }
+
+            // If we still don't have enough colors, add some defaults
+            if (allColors.size < 5) {
+                allColors.add(Color.rgb(30, 30, 40))  // Dark blue-gray
+                allColors.add(Color.rgb(40, 20, 40))  // Dark purple
+                allColors.add(Color.rgb(20, 35, 35))  // Dark teal
+            }
+
+            // Adjust colors to be more pastel and translucent
+            val adjustedColors = allColors.map { color ->
+                adjustColorForAmbient(color, random)
+            }
+
+            // Create large, soft blobs of color
+            val numBlobs = 20 + random.nextInt(15)  // 20-35 blobs
+
+            for (i in 0 until numBlobs) {
+                // Random position across the entire canvas
+                val x = random.nextInt(width)
+                val y = random.nextInt(height)
+
+                // Large, varied sizes for the blobs
+                val size = (width * 0.2f) + random.nextFloat() * (width * 0.3f)
+
+                // Random color from our palette
+                val color = adjustedColors[random.nextInt(adjustedColors.size)]
+
+                // Create a soft radial gradient for the blob
+                val paint = Paint()
+                paint.isAntiAlias = true
+
+                // Use screen blend mode for light-like effect that builds up
+                paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
+
+                // Create radial gradient with soft edges
+                val gradientColors = intArrayOf(
+                    color,
+                    Color.argb((Color.alpha(color) * 0.5f).toInt(),
+                        Color.red(color),
+                        Color.green(color),
+                        Color.blue(color)),
+                    Color.argb(0, Color.red(color), Color.green(color), Color.blue(color))
+                )
+
+                paint.shader = RadialGradient(
+                    x.toFloat(),
+                    y.toFloat(),
+                    size,
+                    gradientColors,
+                    floatArrayOf(0f, 0.7f, 1f),
+                    Shader.TileMode.CLAMP
+                )
+
+                // Draw the blob
+                canvas.drawCircle(x.toFloat(), y.toFloat(), size, paint)
+            }
+
+            // Apply a blur effect to smooth everything out
+            try {
+                val rs = RenderScript.create(context)
+                val input = Allocation.createFromBitmap(rs, backgroundBitmap)
+                val output = Allocation.createTyped(rs, input.type)
+                val script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
+
+                script.setRadius(25f)  // Strong blur for a dreamy effect
+                script.setInput(input)
+                script.forEach(output)
+                output.copyTo(backgroundBitmap)
+
+                input.destroy()
+                output.destroy()
+                script.destroy()
+                rs.destroy()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error applying blur to background", e)
+            }
+
+            Log.d(TAG, "Successfully created collage ambient background")
+
+            return backgroundBitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating ambient background for collage", e)
+
+            // Fill with black in case of error
+            val errorBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            Canvas(errorBitmap).drawColor(Color.BLACK)
+            return errorBitmap
+        }
+    }
+
     suspend fun createSmartTemplate(
         photos: List<Bitmap>,
         containerWidth: Int,
@@ -184,10 +355,24 @@ class SmartTemplateHelper @Inject constructor(
                 croppedBitmaps[regionIndex] = cropped
             }
 
-            // Compose the template bitmap with the chosen configuration
+            // Create the template bitmap with the chosen configuration
             val templateBitmap = Bitmap.createBitmap(containerWidth, containerHeight, bitmapConfig)
             val canvas = Canvas(templateBitmap)
-            canvas.drawColor(Color.BLACK)
+
+            // NEW CODE: Check if this is a dynamic collage and create ambient background
+            val isCollage = templateType == EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE
+
+            if (isCollage) {
+                // Create and apply ambient background instead of plain black
+                val backgroundBitmap = createAmbientCollageBackground(photos, containerWidth, containerHeight)
+                canvas.drawBitmap(backgroundBitmap, 0f, 0f, null)
+                // Recycle the background bitmap after use
+                backgroundBitmap.recycle()
+            } else {
+                // For other templates, use simple black background
+                canvas.drawColor(Color.BLACK)
+            }
+
             val paint = Paint().apply {
                 isAntiAlias = true
                 isFilterBitmap = true
@@ -195,7 +380,7 @@ class SmartTemplateHelper @Inject constructor(
             }
 
             // Check if this is a dynamic collage with rotated photos
-            val isRotatedCollage = templateType == EnhancedMultiPhotoLayoutManager.LAYOUT_TYPE_DYNAMIC_COLLAGE &&
+            val isRotatedCollage = isCollage &&
                     regions.isNotEmpty() && regions[0].photoSuitabilityScores.containsKey(-1)
 
             // Draw only regions that have a cropped bitmap
