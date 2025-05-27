@@ -67,6 +67,9 @@ import com.photostreamr.ui.BitmapMemoryManager
 import com.photostreamr.ui.DiskCacheManager
 import com.photostreamr.version.ProVersionPromptManager
 import java.util.concurrent.atomic.AtomicBoolean
+import com.photostreamr.sharing.SocialSharingManager
+import com.photostreamr.sharing.ShareButtonController
+
 
 
 @AndroidEntryPoint
@@ -150,6 +153,11 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var diskCacheManager: DiskCacheManager
 
+    @Inject
+    lateinit var socialSharingManager: SocialSharingManager
+
+    private lateinit var shareButtonController: ShareButtonController
+
     private var isDestroyed = false
 
     private var isAuthenticating = false
@@ -161,6 +169,9 @@ class MainActivity : AppCompatActivity() {
 
     private var photoDisplayInitiated = false
     private var photoDisplayLaunched = AtomicBoolean(false)
+
+    private var shareButtonTapHandler = Handler(Looper.getMainLooper())
+    private var shareButtonTapCount = 0
 
 
     private val viewLifecycleOwner: LifecycleOwner?
@@ -659,23 +670,87 @@ class MainActivity : AppCompatActivity() {
         binding.root.setOnClickListener {
             Log.d(TAG, "Root view clicked, current destination: ${navController.currentDestination?.id}")
             if (navController.currentDestination?.id == R.id.mainFragment) {
-                Log.d(TAG, "Showing settings button")
-                settingsButtonController.show()
+                showActionButtons()
             }
         }
 
         binding.screensaverContainer.setOnClickListener {
             Log.d(TAG, "Screensaver container clicked, current destination: ${navController.currentDestination?.id}")
             if (navController.currentDestination?.id == R.id.mainFragment) {
-                Log.d(TAG, "Showing settings button")
-                settingsButtonController.show()
+                showActionButtons()
             }
+        }
+    }
+
+    /**
+     * Show both settings and share buttons
+     */
+    private fun showActionButtons() {
+        Log.d(TAG, "Showing both settings and share buttons")
+        settingsButtonController.show()
+        shareButtonController.show()
+    }
+
+    /**
+     * Hide both settings and share buttons
+     */
+    private fun hideActionButtons() {
+        settingsButtonController.hide()
+        shareButtonController.hide()
+    }
+
+    /**
+     * Handle share button click
+     */
+    private fun handleShareButtonClick() {
+        try {
+            Log.d(TAG, "Share button clicked")
+
+            // Hide both buttons immediately
+            hideActionButtons()
+
+            // Get shareable view and elements to hide
+            val shareableView = photoDisplayManager.getCurrentShareableView()
+            if (shareableView == null) {
+                Log.e(TAG, "No shareable view available")
+                showToast(getString(R.string.photo_not_available))
+                return
+            }
+
+            // Get UI elements that should be hidden during capture
+            val elementsToHide = mutableListOf<View>().apply {
+                // Hide both settings and share buttons
+                add(binding.settingsButton.settingsFab)
+                add(binding.shareButton)
+                // Add other overlay elements
+                addAll(photoDisplayManager.getOverlayElementsToHide())
+            }
+
+            // Start sharing process
+            lifecycleScope.launch {
+                try {
+                    val success = socialSharingManager.shareCurrentView(shareableView, elementsToHide)
+                    if (!success) {
+                        showToast(getString(R.string.error_sharing_photo))
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during sharing process", e)
+                    showToast(getString(R.string.error_sharing_photo))
+                }
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling share button click", e)
+            showToast(getString(R.string.error_sharing_photo))
         }
     }
 
     private fun setupSettingsButton() {
         try {
             val settingsFab = binding.settingsButton.settingsFab
+            val shareButton = binding.shareButton
+
+            // Setup settings button (keep existing logic unchanged)
             settingsFab.apply {
                 visibility = View.VISIBLE
                 alpha = 0f
@@ -685,10 +760,8 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener {
                     if (navController.currentDestination?.id == R.id.mainFragment) {
                         if (securityPreferences.isSecurityEnabled) {
-                            // Always check security when enabled
                             checkSecurityWithCallback {
-                                // After successful authentication
-                                authManager.setAuthenticated(true) // Keep authenticated state
+                                authManager.setAuthenticated(true)
                                 navigateToSettings()
                             }
                         } else {
@@ -698,9 +771,21 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            // Create settings button controller (keep existing)
             settingsButtonController = SettingsButtonController(settingsFab)
+
+            // Create share button controller
+            shareButtonController = ShareButtonController(shareButton)
+
+            // Setup share button click listener
+            shareButtonController.setOnClickListener {
+                if (navController.currentDestination?.id == R.id.mainFragment) {
+                    handleShareButtonClick()
+                }
+            }
+
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting up settings button", e)
+            Log.e(TAG, "Error setting up action buttons", e)
         }
     }
 

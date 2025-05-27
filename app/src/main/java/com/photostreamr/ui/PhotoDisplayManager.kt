@@ -111,6 +111,9 @@ class PhotoDisplayManager @Inject constructor(
     private var lastDisplayStartTime = 0L
     private val MIN_DISPLAY_INTERVAL = 1500L // 1.5 seconds minimum between display starts
 
+    private var isSlideshowPaused = false
+    private var pauseStartTime = 0L
+
     data class Views(
         val primaryView: ImageView,
         val overlayView: ImageView,
@@ -1803,44 +1806,67 @@ class PhotoDisplayManager @Inject constructor(
     }
 
     /**
-     * Get a photo index that's likely different from the current one
-     * Used for ensuring varied experience after restart
+     * Pause the slideshow for social sharing
      */
-    private fun getRandomDifferentPhotoIndex(): Int {
-        val photoCount = photoManager.getPhotoCount()
+    fun pauseSlideshow() {
+        Log.d(TAG, "Pausing slideshow for sharing")
+        isSlideshowPaused = true
+        pauseStartTime = System.currentTimeMillis()
+        displayJob?.cancel()
+    }
 
-        // If we have few photos, just add 1 and wrap around
-        if (photoCount <= 3) {
-            return (currentPhotoIndex + 1) % photoCount
-        }
+    /**
+     * Resume the slideshow after sharing
+     */
+    fun resumeSlideshow() {
+        Log.d(TAG, "Resuming slideshow after sharing")
+        if (isSlideshowPaused) {
+            isSlideshowPaused = false
 
-        // With more photos, pick a truly random one but avoid current
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val wasRestarting = prefs.getBoolean("is_performing_restart", false)
+            // Calculate remaining time for current photo
+            val pauseDuration = System.currentTimeMillis() - pauseStartTime
+            val interval = getIntervalMillis()
+            val remainingTime = maxOf(1000L, interval - pauseDuration) // At least 1 second
 
-        // During restart, be extra sure we get a different photo
-        return if (wasRestarting) {
-            // Get a sequence of photos to avoid
-            val excludeIndices = setOf(
-                currentPhotoIndex,
-                (currentPhotoIndex + 1) % photoCount,
-                (currentPhotoIndex - 1 + photoCount) % photoCount
-            )
-
-            // Keep trying until we find one not in the exclude list
-            var candidate = Random.nextInt(photoCount)
-            while (excludeIndices.contains(candidate)) {
-                candidate = Random.nextInt(photoCount)
+            // Schedule next photo with remaining time
+            displayJob = lifecycleScope?.launch {
+                try {
+                    delay(remainingTime)
+                    if (isActive && !isSlideshowPaused) {
+                        loadAndDisplayPhoto(false)
+                    }
+                } catch (e: CancellationException) {
+                    Log.d(TAG, "Photo transition job cancelled during resume")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during photo transition", e)
+                }
             }
-
-            candidate
-        } else {
-            // Normal operation, just avoid current
-            var newIndex = Random.nextInt(photoCount)
-            if (newIndex == currentPhotoIndex) {
-                newIndex = (newIndex + 1) % photoCount
-            }
-            newIndex
         }
     }
+
+    /**
+     * Get the current container view for sharing
+     */
+    fun getCurrentShareableView(): View? {
+        return views?.container
+    }
+
+    /**
+     * Get overlay elements that should be hidden during capture
+     */
+    fun getOverlayElementsToHide(): List<View> {
+        val overlays = mutableListOf<View>()
+        views?.let { views ->
+            views.overlayMessageContainer?.let { overlays.add(it) }
+            views.backgroundLoadingIndicator?.let { overlays.add(it) }
+            views.loadingIndicator?.let { overlays.add(it) }
+            views.loadingMessage?.let { overlays.add(it) }
+        }
+        return overlays
+    }
+
+    /**
+     * Check if slideshow is currently paused
+     */
+    fun isSlideshowPaused(): Boolean = isSlideshowPaused
 }

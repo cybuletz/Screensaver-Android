@@ -345,6 +345,7 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Settings button -->
     <include
         android:id="@+id/settings_button"
         layout="@layout/settings_button_layout"
@@ -355,5 +356,23 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintVertical_bias="0.4" />
+
+    <!-- Share Button -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/shareButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:src="@drawable/ic_share"
+        android:contentDescription="@string/share_photo"
+        android:visibility="gone"
+        app:tint="@android:color/white"
+        app:backgroundTint="@color/share_button_color"
+        app:elevation="6dp"
+        app:fabSize="normal"
+        app:layout_constraintTop_toTopOf="@id/settings_button"
+        app:layout_constraintBottom_toBottomOf="@id/settings_button"
+        app:layout_constraintStart_toEndOf="@id/settings_button" />
+
 
 </androidx.constraintlayout.widget.ConstraintLayout>

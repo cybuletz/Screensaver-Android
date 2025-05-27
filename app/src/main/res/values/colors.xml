@@ -30,6 +30,8 @@
     <color name="background">#FFFFFF</color>
     <color name="background_dark">#121212</color>
 
+    <color name="share_button_color">#FF4081</color>
+
     <!-- Material You Settings Card Colors -->
     <color name="settings_card_background_light">@color/material_dynamic_primary95</color>
     <color name="settings_card_background_dark">@color/material_dynamic_neutral20</color>

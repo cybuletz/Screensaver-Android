@@ -7,6 +7,9 @@
         name="cached_photos"
         path="/" />
     <cache-path
+        name="shared_photos"
+        path="shared_photos/" />
+    <cache-path
         name="shared_images"
         path="images/"/>
     <files-path

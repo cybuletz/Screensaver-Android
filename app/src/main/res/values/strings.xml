@@ -873,4 +873,9 @@
     <string name="added_photos_from_folder">Added %1$d photos from %2$s</string>
     <string name="error_selecting_photos">Error selecting photos</string>
 
+    <string name="share_photo">Share photo</string>
+    <string name="share_slideshow_photo">Share from Slideshow</string>
+    <string name="error_sharing_photo">Unable to share photo</string>
+    <string name="photo_not_available">Photo not available for sharing</string>
+
 </resources>
