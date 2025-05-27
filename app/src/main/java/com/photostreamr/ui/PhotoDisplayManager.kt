@@ -47,6 +47,7 @@ import android.renderscript.Allocation
 import android.renderscript.Element
 import android.renderscript.RenderScript
 import android.renderscript.ScriptIntrinsicBlur
+import androidx.constraintlayout.widget.ConstraintLayout
 import coil.imageLoader
 import coil.load
 import coil.request.CachePolicy
@@ -1861,6 +1862,13 @@ class PhotoDisplayManager @Inject constructor(
             views.backgroundLoadingIndicator?.let { overlays.add(it) }
             views.loadingIndicator?.let { overlays.add(it) }
             views.loadingMessage?.let { overlays.add(it) }
+
+            // NEW: Add widgets layer to the list of elements to hide during sharing
+            val container = views.container
+            if (container is ViewGroup) {
+                val widgetsLayer = container.findViewById<ConstraintLayout>(R.id.widgets_layer)
+                widgetsLayer?.let { overlays.add(it) }
+            }
         }
         return overlays
     }
