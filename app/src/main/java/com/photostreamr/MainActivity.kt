@@ -670,6 +670,10 @@ class MainActivity : AppCompatActivity() {
         binding.root.setOnClickListener {
             Log.d(TAG, "Root view clicked, current destination: ${navController.currentDestination?.id}")
             if (navController.currentDestination?.id == R.id.mainFragment) {
+                // Pause slideshow when showing buttons
+                if (shouldShowShareButton()) {
+                    photoDisplayManager.pauseSlideshow()
+                }
                 showActionButtons()
             }
         }
@@ -677,18 +681,75 @@ class MainActivity : AppCompatActivity() {
         binding.screensaverContainer.setOnClickListener {
             Log.d(TAG, "Screensaver container clicked, current destination: ${navController.currentDestination?.id}")
             if (navController.currentDestination?.id == R.id.mainFragment) {
+                // Pause slideshow when showing buttons
+                if (shouldShowShareButton()) {
+                    photoDisplayManager.pauseSlideshow()
+                }
                 showActionButtons()
             }
         }
     }
 
     /**
-     * Show both settings and share buttons
+     * Show both settings and share buttons (with conditions)
      */
     private fun showActionButtons() {
-        Log.d(TAG, "Showing both settings and share buttons")
+        Log.d(TAG, "Checking if action buttons should be shown")
+
+        // Always show settings button
         settingsButtonController.show()
-        shareButtonController.show()
+
+        // Only show share button if slideshow is active and has photos
+        if (shouldShowShareButton()) {
+            Log.d(TAG, "Showing share button - slideshow is active")
+            shareButtonController.show()
+        } else {
+            Log.d(TAG, "Not showing share button - no active slideshow")
+        }
+
+        // Auto-hide both buttons after 3 seconds (like settings button behavior)
+        Handler(Looper.getMainLooper()).postDelayed({
+            hideActionButtons()
+        }, 3000)
+    }
+
+    /**
+     * Check if share button should be shown
+     */
+    private fun shouldShowShareButton(): Boolean {
+        // Check if we're on the main fragment
+        if (navController.currentDestination?.id != R.id.mainFragment) {
+            return false
+        }
+
+        // Check if photo display manager is active and has photos
+        val hasActiveSlideshow = photoDisplayManager.isScreensaverActive()
+        val hasPhotos = try {
+            photoRepository.getPhotoCount() > 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking photo count", e)
+            false
+        }
+
+        // Check if not showing default photo (you might need to add this method to PhotoDisplayManager)
+        val notShowingDefault = !isShowingDefaultPhoto()
+
+        return hasActiveSlideshow && hasPhotos && notShowingDefault
+    }
+
+    /**
+     * Check if currently showing default photo
+     */
+    private fun isShowingDefaultPhoto(): Boolean {
+        // You can implement this by checking if the current photo URL is null or default
+        // This is a simplified check - you might want to add a method to PhotoDisplayManager
+        return try {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val isFirstLaunch = prefs.getBoolean(PREF_FIRST_LAUNCH, true)
+            isFirstLaunch || !photoDisplayManager.isScreensaverActive()
+        } catch (e: Exception) {
+            true // Default to not showing share if we can't determine
+        }
     }
 
     /**
@@ -697,6 +758,11 @@ class MainActivity : AppCompatActivity() {
     private fun hideActionButtons() {
         settingsButtonController.hide()
         shareButtonController.hide()
+
+        // Resume slideshow when buttons are hidden
+        if (photoDisplayManager.isScreensaverActive()) {
+            photoDisplayManager.resumeSlideshow()
+        }
     }
 
     /**
@@ -708,6 +774,13 @@ class MainActivity : AppCompatActivity() {
 
             // Hide both buttons immediately
             hideActionButtons()
+
+            // Check if we should still allow sharing
+            if (!shouldShowShareButton()) {
+                Log.e(TAG, "Share not available - no active slideshow")
+                showToast(getString(R.string.photo_not_available))
+                return
+            }
 
             // Get shareable view and elements to hide
             val shareableView = photoDisplayManager.getCurrentShareableView()
@@ -733,15 +806,22 @@ class MainActivity : AppCompatActivity() {
                     if (!success) {
                         showToast(getString(R.string.error_sharing_photo))
                     }
+
+                    // Resume slideshow after sharing is done
+                    photoDisplayManager.resumeSlideshow()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error during sharing process", e)
                     showToast(getString(R.string.error_sharing_photo))
+                    // Resume slideshow even on error
+                    photoDisplayManager.resumeSlideshow()
                 }
             }
 
         } catch (e: Exception) {
             Log.e(TAG, "Error handling share button click", e)
             showToast(getString(R.string.error_sharing_photo))
+            // Resume slideshow even on error
+            photoDisplayManager.resumeSlideshow()
         }
     }
 
