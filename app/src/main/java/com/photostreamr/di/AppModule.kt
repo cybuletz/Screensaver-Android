@@ -34,6 +34,7 @@ import com.photostreamr.data.SecureStorage
 import com.photostreamr.recovery.StateRecoveryManager
 import com.photostreamr.recovery.StateRestoration
 import com.photostreamr.data.PhotoCache
+import com.photostreamr.feedback.PlayStoreReviewManager
 import com.photostreamr.music.SpotifyManager
 import com.photostreamr.music.SpotifyPreferences
 import com.photostreamr.photos.CoilImageLoadStrategy
@@ -363,5 +364,11 @@ object AppModule {
     @Singleton
     fun provideDiskCacheManager(@ApplicationContext context: Context): DiskCacheManager {
         return DiskCacheManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun providePlayStoreReviewManager(@ApplicationContext context: Context): PlayStoreReviewManager {
+        return PlayStoreReviewManager(context)
     }
 }

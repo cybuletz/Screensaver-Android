@@ -62,6 +62,9 @@ import com.photostreamr.tutorial.HelpDialogFragment
 import com.photostreamr.tutorial.TutorialManager
 import com.photostreamr.tutorial.TutorialOverlayFragment
 import com.photostreamr.tutorial.TutorialType
+import com.photostreamr.feedback.FeedbackDialog
+import com.photostreamr.feedback.PlayStoreReviewManager
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.TutorialCallback {
@@ -116,6 +119,9 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
 
     @Inject
     lateinit var consentManager: ConsentManager
+
+    @Inject
+    lateinit var playStoreReviewManager: PlayStoreReviewManager
 
     private lateinit var adContainer: FrameLayout
 
@@ -504,6 +510,31 @@ class SettingsFragment : PreferenceFragmentCompat(), TutorialOverlayFragment.Tut
                 // Show the consent form
                 consentManager.showConsentForm(requireActivity())
                 return true
+            }
+            "user_feedback" -> {
+                try {
+                    Log.d("SettingsFragment", "Showing FeedbackDialog")
+                    val dialog = FeedbackDialog.newInstance()
+                    dialog.show(childFragmentManager, "feedback_dialog")
+                    true
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Error showing feedback dialog", e)
+                    false
+                }
+            }
+            "rate_app" -> {
+                try {
+                    Log.d("SettingsFragment", "Requesting Play Store review")
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        playStoreReviewManager.requestReview(requireActivity())
+                    }
+                    true
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Error requesting review", e)
+                    // Fallback to direct Play Store link
+                    playStoreReviewManager.openPlayStorePage()
+                    false
+                }
             }
             else -> super.onPreferenceTreeClick(preference)
         }

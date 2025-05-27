@@ -255,6 +255,10 @@ dependencies {
     implementation("com.google.api-client:google-api-client-android:2.7.2")
     implementation("com.google.api-client:google-api-client-gson:2.7.2")
 
+    // Google Play In-App Review
+    implementation("com.google.android.play:review:2.0.2")
+    implementation("com.google.android.play:review-ktx:2.0.2")
+
     // Retrofit
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

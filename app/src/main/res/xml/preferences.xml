@@ -52,17 +52,40 @@
         android:icon="@drawable/premium"
         style="@style/SettingsCardStyle"/>
 
-    <Preference
-        android:key="help_preferences"
-        android:title="Help &amp; Tutorial"
-        android:summary="Show guidance about different settings"
-        android:icon="@drawable/ic_help"
-        app:iconSpaceReserved="true" />
+    <!-- Add Feedback Section -->
+    <PreferenceCategory
+        android:title="Support &amp; Privacy"
+        android:key="feedback_category">
 
-    <Preference
-        android:key="privacy_settings"
-        android:title="@string/privacy_settings_title"
-        android:summary="@string/privacy_settings_summary" />
+        <Preference
+            android:key="user_feedback"
+            android:title="Send Feedback"
+            android:summary="Share your thoughts and help us improve"
+            android:icon="@drawable/ic_feedback"
+            app:iconSpaceReserved="true" />
+
+        <Preference
+            android:key="rate_app"
+            android:title="Rate on Play Store"
+            android:summary="Love the app? Rate us on Google Play"
+            android:icon="@drawable/ic_star"
+            app:iconSpaceReserved="true" />
+
+        <Preference
+            android:key="help_preferences"
+            android:title="Help &amp; Tutorial"
+            android:summary="Show guidance about different settings"
+            android:icon="@drawable/ic_help"
+            app:iconSpaceReserved="true" />
+
+        <Preference
+            android:key="privacy_settings"
+            android:title="@string/privacy_settings_title"
+            android:summary="@string/privacy_settings_summary"
+            android:icon="@drawable/ic_privacy"
+            app:iconSpaceReserved="true" />
+
+    </PreferenceCategory>
 
     <Preference
         android:layout="@layout/preference_bottom_spacing"
