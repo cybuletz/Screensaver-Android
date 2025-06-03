@@ -318,7 +318,7 @@ class PhotoRepository @Inject constructor(
     }
 
     fun validateStoredPhotos() {
-        repoScope.launch {
+        repoScope.launch(Dispatchers.IO) { // Change from Dispatchers.Main to Dispatchers.IO
             try {
                 // Create a safe copy of the current photos before validating
                 val currentPhotos = loadPhotos()?.toList() ?: emptyList()
@@ -355,9 +355,11 @@ class PhotoRepository @Inject constructor(
 
                 // Update albums if any changes
                 if (updatedAlbums.sumOf { it.photoUris.size } < currentAlbums.sumOf { it.photoUris.size }) {
-                    synchronized(virtualAlbums) {  // Add synchronization
-                        virtualAlbums.clear()
-                        virtualAlbums.addAll(updatedAlbums)
+                    withContext(Dispatchers.Main) { // Switch to Main for UI updates
+                        synchronized(virtualAlbums) {
+                            virtualAlbums.clear()
+                            virtualAlbums.addAll(updatedAlbums)
+                        }
                     }
                     saveVirtualAlbums()
                 }
@@ -466,38 +468,42 @@ class PhotoRepository @Inject constructor(
     }
 
     private fun saveVirtualAlbums() {
-        try {
-            // Filter out albums with invalid URIs
-            val validAlbums = virtualAlbums.map { album ->
-                // Validate each URI in the album
-                val validUris = album.photoUris.filter { uri ->
-                    photoUriManager.hasValidPermission(Uri.parse(uri))
+        // Move the entire validation to IO thread
+        repoScope.launch(Dispatchers.IO) {
+            try {
+                // Filter out albums with invalid URIs
+                val validAlbums = virtualAlbums.map { album ->
+                    // Validate each URI in the album
+                    val validUris = album.photoUris.filter { uri ->
+                        photoUriManager.hasValidPermission(Uri.parse(uri))
+                    }
+                    album.copy(photoUris = validUris)
+                }.filter { it.photoUris.isNotEmpty() }
+
+                // Create JSON array from valid albums
+                val jsonArray = JSONArray()
+                validAlbums.forEach { album ->
+                    jsonArray.put(JSONObject().apply {
+                        put("id", album.id)
+                        put("name", album.name)
+                        put("photoUris", JSONArray(album.photoUris))
+                        put("dateCreated", album.dateCreated)
+                        put("isSelected", album.isSelected)
+                    })
                 }
-                album.copy(photoUris = validUris)
-            }.filter { it.photoUris.isNotEmpty() }
 
-            // Create JSON array from valid albums
-            val jsonArray = JSONArray()
-            validAlbums.forEach { album ->
-                jsonArray.put(JSONObject().apply {
-                    put("id", album.id)
-                    put("name", album.name)
-                    put("photoUris", JSONArray(album.photoUris))
-                    put("dateCreated", album.dateCreated)
-                    put("isSelected", album.isSelected)
-                })
-            }
+                // Save to preferences (this is the disk write causing StrictMode violation)
+                preferences.edit()
+                    .putString(KEY_VIRTUAL_ALBUMS, jsonArray.toString())
+                    .apply()
 
-            preferences.edit()
-                .putString(KEY_VIRTUAL_ALBUMS, jsonArray.toString())
-                .apply()
-
-            Log.d(TAG, """Saved virtual albums:
+                Log.d(TAG, """Saved virtual albums:
             • Total albums: ${validAlbums.size}
             • Selected albums: ${validAlbums.count { it.isSelected }}
             • Selection states: ${validAlbums.joinToString { "${it.id}: ${it.isSelected}" }}""".trimIndent())
-        } catch (e: Exception) {
-            Log.e(TAG, "Error saving virtual albums", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving virtual albums", e)
+            }
         }
     }
 

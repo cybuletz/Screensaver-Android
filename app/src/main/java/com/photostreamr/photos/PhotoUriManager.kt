@@ -31,9 +31,9 @@ class PhotoUriManager @Inject constructor(
     private var cacheMisses = 0
     private var totalValidations = 0
 
-    // Log stats periodically (every 100 validations)
+    // Log stats periodically (every 500 validations)
     private fun logCacheStatsIfNeeded() {
-        if (++totalValidations % 100 == 0) {
+        if (++totalValidations % 500 == 0) { // Changed from 100 to 500
             val hitRate = if (totalValidations > 0)
                 (cacheHits.toFloat() / totalValidations * 100).toInt()
             else 0
@@ -93,35 +93,41 @@ class PhotoUriManager @Inject constructor(
         // For local files - check if file exists
         else if (uri.scheme == "content" || uri.scheme == "file") {
             try {
-                // For content URIs, try to open the file
+                // Check permissions more safely first
+                val mimeType = context.contentResolver.getType(uri)
+                if (mimeType == null) {
+                    Log.d(TAG, "Local file URI $uriString - no access to mime type")
+                    validationCache[uriString] = false
+                    timestampCache[uriString] = System.currentTimeMillis()
+                    logCacheStatsIfNeeded()
+                    return false
+                }
+
+                // Now try to open the stream
                 context.contentResolver.openInputStream(uri)?.use { stream ->
                     Log.d(TAG, "Local file URI $uriString - exists: true")
-
-                    // Store in cache
                     validationCache[uriString] = true
                     timestampCache[uriString] = System.currentTimeMillis()
-
                     logCacheStatsIfNeeded()
                     return true
                 }
 
-                // If we got here, the stream couldn't be opened
                 Log.d(TAG, "Local file URI $uriString - stream could not be opened")
-
-                // Store in cache
                 validationCache[uriString] = false
                 timestampCache[uriString] = System.currentTimeMillis()
-
                 logCacheStatsIfNeeded()
                 return false
 
-            } catch (e: Exception) {
-                Log.d(TAG, "Local file URI $uriString - exists: false (${e.message})")
-
-                // Store in cache
+            } catch (e: SecurityException) {
+                Log.d(TAG, "Local file URI $uriString - SecurityException: ${e.message}")
                 validationCache[uriString] = false
                 timestampCache[uriString] = System.currentTimeMillis()
-
+                logCacheStatsIfNeeded()
+                return false
+            } catch (e: Exception) {
+                Log.d(TAG, "Local file URI $uriString - exists: false (${e.message})")
+                validationCache[uriString] = false
+                timestampCache[uriString] = System.currentTimeMillis()
                 logCacheStatsIfNeeded()
                 return false
             }

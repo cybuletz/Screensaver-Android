@@ -342,8 +342,10 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                // Validate photos first
-                photoRepository.validateStoredPhotos()
+                // Validate photos first - background thread
+                withContext(Dispatchers.IO) {
+                    photoRepository.validateStoredPhotos()
+                }
 
                 // Update photo sources
                 photoDisplayManager.updatePhotoSources()
@@ -1209,8 +1211,10 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         // Before updating display, validate URIs
-                        val validPhotos = photos.filter { uri ->
-                            photoUriManager.hasValidPermission(uri)
+                        val validPhotos = withContext(Dispatchers.IO) {
+                            photos.filter { uri ->
+                                photoUriManager.hasValidPermission(uri)
+                            }
                         }
 
                         if (validPhotos.size < photos.size) {
