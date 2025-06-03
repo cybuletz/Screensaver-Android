@@ -717,24 +717,35 @@ class MainActivity : AppCompatActivity() {
      * Check if share button should be shown
      */
     private fun shouldShowShareButton(): Boolean {
-        // Check if we're on the main fragment
-        if (navController.currentDestination?.id != R.id.mainFragment) {
+        try {
+            // Check if we're on the main fragment
+            if (navController.currentDestination?.id != R.id.mainFragment) {
+                Log.d(TAG, "Share button check: Not on main fragment")
+                return false
+            }
+
+            // Just check if we have photos, ignore slideshow state
+            val hasPhotos = try {
+                photoRepository.getPhotoCount() > 0
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking photo count", e)
+                false
+            }
+
+            // Don't check if showing default photo
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val isFirstLaunch = prefs.getBoolean(PREF_FIRST_LAUNCH, true)
+
+            val shouldShow = hasPhotos && !isFirstLaunch
+
+            Log.d(TAG, "Share button visibility check: photos=$hasPhotos, notFirstLaunch=${!isFirstLaunch} -> show=$shouldShow")
+
+            return shouldShow
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in shouldShowShareButton", e)
             return false
         }
-
-        // Check if photo display manager is active and has photos
-        val hasActiveSlideshow = photoDisplayManager.isScreensaverActive()
-        val hasPhotos = try {
-            photoRepository.getPhotoCount() > 0
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking photo count", e)
-            false
-        }
-
-        // Check if not showing default photo (you might need to add this method to PhotoDisplayManager)
-        val notShowingDefault = !isShowingDefaultPhoto()
-
-        return hasActiveSlideshow && hasPhotos && notShowingDefault
     }
 
     /**

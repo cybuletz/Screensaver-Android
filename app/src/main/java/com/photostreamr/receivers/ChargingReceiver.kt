@@ -15,7 +15,9 @@ class ChargingReceiver : BroadcastReceiver() {
         private const val DEBOUNCE_TIME = 1000L // 1 second debounce
     }
 
-    private var lastProcessedTime = 0L
+    init {
+        Log.i("ChargingReceiver", "ChargingReceiver class initialized")
+    }
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
@@ -24,7 +26,7 @@ class ChargingReceiver : BroadcastReceiver() {
         try {
             // Always log preference state
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val startOnCharge = prefs.getBoolean("start_on_charge", false)
+            val startOnCharge = prefs.getBoolean("start_on_charge", true)
             val allPrefs = prefs.all.toString()
 
             Log.i(TAG, """
@@ -113,22 +115,6 @@ class ChargingReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             Log.e(TAG, "Error starting app", e)
             e.printStackTrace()
-        }
-    }
-
-    private fun logPreferenceState(context: Context) {
-        try {
-            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val startOnCharge = prefs.getBoolean("start_on_charge", false)
-            val allPrefs = prefs.all
-
-            Log.d(TAG, """
-            Preference State:
-            - start_on_charge: $startOnCharge
-            - all preferences: $allPrefs
-        """.trimIndent())
-        } catch (e: Exception) {
-            Log.e(TAG, "Error logging preferences", e)
         }
     }
 

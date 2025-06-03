@@ -59,14 +59,14 @@ class AdManager @Inject constructor(
         private const val TAG = "AdManager"
 
         // Test ad units
-        //private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111" // Standard test ID
-        //private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712" // Standard test ID
-        //private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-3940256099942544/2247696110" // Standard test ID
+        private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111" // Standard test ID
+        private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712" // Standard test ID
+        private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-3940256099942544/2247696110" // Standard test ID
 
         // Production ad units (Replace with your actual IDs if necessary)
-        private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-1825370608705808/5588599522"
-        private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-1825370608705808/2803751564"
-        private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-1825370608705808/2360210075"
+        //private const val TEST_BANNER_AD_UNIT_ID = "ca-app-pub-1825370608705808/5588599522"
+        //private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-1825370608705808/2803751564"
+        //private const val TEST_NATIVE_AD_UNIT_ID = "ca-app-pub-1825370608705808/2360210075"
 
         // Production ad units (Replace with your actual IDs if necessary)
         private const val PRODUCTION_BANNER_AD_UNIT_ID = "ca-app-pub-1825370608705808/5588599522"
