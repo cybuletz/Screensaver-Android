@@ -438,20 +438,23 @@ class PhotoRepository @Inject constructor(
     fun removePhoto(uri: String) {
         val previousCount = mediaItems.size
 
-        // First, update virtual albums to remove the photo
-        val updatedAlbums = virtualAlbums.mapNotNull { album ->
-            val updatedPhotoUris = album.photoUris.filterNot { it == uri }
-            if (updatedPhotoUris.isEmpty()) {
-                // If album becomes empty, return null to remove it
-                null
-            } else {
-                album.copy(photoUris = updatedPhotoUris)
+        //  Thread-safe version
+        val updatedAlbums = synchronized(virtualAlbums) {
+            virtualAlbums.mapNotNull { album ->
+                val updatedPhotoUris = album.photoUris.filterNot { it == uri }
+                if (updatedPhotoUris.isEmpty()) {
+                    null
+                } else {
+                    album.copy(photoUris = updatedPhotoUris)
+                }
             }
         }
 
-        // Update the albums list
-        virtualAlbums.clear()
-        virtualAlbums.addAll(updatedAlbums)
+        //  Thread-safe update
+        synchronized(virtualAlbums) {
+            virtualAlbums.clear()
+            virtualAlbums.addAll(updatedAlbums)
+        }
 
         // Then remove from mediaItems
         mediaItems.removeIf { it.baseUrl == uri }
@@ -461,21 +464,31 @@ class PhotoRepository @Inject constructor(
         saveVirtualAlbums()
 
         Log.d(TAG, """Removed photo with URI: $uri 
-        • Previous count: $previousCount
-        • New count: ${mediaItems.size}
-        • Updated virtual albums: ${virtualAlbums.size}
-        • Total photos in albums: ${virtualAlbums.sumOf { it.photoUris.size }}""".trimIndent())
+    • Previous count: $previousCount
+    • New count: ${mediaItems.size}
+    • Updated virtual albums: ${virtualAlbums.size}
+    • Total photos in albums: ${virtualAlbums.sumOf { it.photoUris.size }}""".trimIndent())
     }
 
     private fun saveVirtualAlbums() {
         // Move the entire validation to IO thread
         repoScope.launch(Dispatchers.IO) {
             try {
+                // THREAD-SAFE: Create a safe copy of virtualAlbums before processing
+                val albumsCopy = synchronized(virtualAlbums) {
+                    ArrayList(virtualAlbums) // Create safe copy
+                }
+
                 // Filter out albums with invalid URIs
-                val validAlbums = virtualAlbums.map { album ->
+                val validAlbums = albumsCopy.map { album ->
                     // Validate each URI in the album
                     val validUris = album.photoUris.filter { uri ->
-                        photoUriManager.hasValidPermission(Uri.parse(uri))
+                        try {
+                            !uri.isNullOrBlank() && photoUriManager.hasValidPermission(Uri.parse(uri))
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Invalid URI found during save: $uri", e)
+                            false
+                        }
                     }
                     album.copy(photoUris = validUris)
                 }.filter { it.photoUris.isNotEmpty() }
@@ -483,26 +496,106 @@ class PhotoRepository @Inject constructor(
                 // Create JSON array from valid albums
                 val jsonArray = JSONArray()
                 validAlbums.forEach { album ->
-                    jsonArray.put(JSONObject().apply {
-                        put("id", album.id)
-                        put("name", album.name)
-                        put("photoUris", JSONArray(album.photoUris))
-                        put("dateCreated", album.dateCreated)
-                        put("isSelected", album.isSelected)
-                    })
+                    try {
+                        jsonArray.put(JSONObject().apply {
+                            put("id", album.id)
+                            put("name", album.name)
+                            put("photoUris", JSONArray(album.photoUris))
+                            put("dateCreated", album.dateCreated)
+                            put("isSelected", album.isSelected)
+                        })
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error serializing album ${album.id}, skipping", e)
+                    }
                 }
 
-                // Save to preferences (this is the disk write causing StrictMode violation)
-                preferences.edit()
-                    .putString(KEY_VIRTUAL_ALBUMS, jsonArray.toString())
-                    .apply()
+                // Validate JSON before saving
+                val jsonString = jsonArray.toString()
+                if (isValidJson(jsonString)) {
+                    // Save to preferences (this is the disk write causing StrictMode violation)
+                    preferences.edit()
+                        .putString(KEY_VIRTUAL_ALBUMS, jsonString)
+                        .apply()
 
-                Log.d(TAG, """Saved virtual albums:
-            • Total albums: ${validAlbums.size}
-            • Selected albums: ${validAlbums.count { it.isSelected }}
-            • Selection states: ${validAlbums.joinToString { "${it.id}: ${it.isSelected}" }}""".trimIndent())
+                    Log.d(TAG, """Saved virtual albums:
+                • Total albums: ${validAlbums.size}
+                • Selected albums: ${validAlbums.count { it.isSelected }}
+                • Selection states: ${validAlbums.joinToString { "${it.id}: ${it.isSelected}" }}""".trimIndent())
+                } else {
+                    Log.e(TAG, "Generated invalid JSON, not saving to prevent corruption")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving virtual albums", e)
+            }
+        }
+    }
+
+    private fun loadVirtualAlbums() {
+        try {
+            val json = preferences.getString(KEY_VIRTUAL_ALBUMS, null)
+            if (!json.isNullOrEmpty()) {
+                // Add JSON validation before parsing
+                if (!isValidJson(json)) {
+                    Log.w(TAG, "Invalid JSON detected in virtual albums, clearing corrupted data")
+                    preferences.edit().remove(KEY_VIRTUAL_ALBUMS).apply()
+                    return
+                }
+
+                val jsonArray = JSONArray(json)
+
+                // Create a temporary list instead of modifying virtualAlbums directly
+                val tempAlbums = mutableListOf<VirtualAlbum>()
+
+                for (i in 0 until jsonArray.length()) {
+                    try {
+                        val obj = jsonArray.getJSONObject(i)
+                        val urisArray = obj.getJSONArray("photoUris")
+                        val photoUris = mutableListOf<String>()
+
+                        for (j in 0 until urisArray.length()) {
+                            try {
+                                val uri = urisArray.getString(j)
+                                // Validate URI format before adding
+                                if (!uri.isNullOrBlank()) {
+                                    photoUris.add(uri)
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Invalid URI at index $j in album $i, skipping", e)
+                            }
+                        }
+
+                        // Only add album if it has valid URIs
+                        if (photoUris.isNotEmpty()) {
+                            val album = VirtualAlbum(
+                                id = obj.getString("id"),
+                                name = obj.getString("name"),
+                                photoUris = photoUris,
+                                dateCreated = obj.getLong("dateCreated"),
+                                isSelected = obj.optBoolean("isSelected", false)
+                            )
+                            tempAlbums.add(album)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error parsing album at index $i, skipping", e)
+                        continue
+                    }
+                }
+
+                // THREAD-SAFE: Now that iteration is complete, update the virtualAlbums list
+                synchronized(virtualAlbums) {
+                    virtualAlbums.clear()
+                    virtualAlbums.addAll(tempAlbums)
+                }
+
+                val selectedCount = virtualAlbums.count { it.isSelected }
+                Log.d(TAG, "Successfully loaded ${tempAlbums.size} virtual albums (${selectedCount} selected)")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading virtual albums, clearing corrupted data", e)
+            // Clear corrupted data and reset
+            preferences.edit().remove(KEY_VIRTUAL_ALBUMS).apply()
+            synchronized(virtualAlbums) {
+                virtualAlbums.clear()
             }
         }
     }
@@ -511,24 +604,36 @@ class PhotoRepository @Inject constructor(
         try {
             val json = preferences.getString(KEY_MEDIA_ITEMS, null)
             if (!json.isNullOrEmpty()) {
+                // Add JSON validation before parsing
+                if (!isValidJson(json)) {
+                    Log.w(TAG, "Invalid JSON detected in cached items, clearing corrupted data")
+                    preferences.edit().remove(KEY_MEDIA_ITEMS).apply()
+                    return
+                }
+
                 val jsonArray = JSONArray(json)
                 val items = mutableListOf<MediaItem>()
 
                 for (i in 0 until jsonArray.length()) {
-                    val obj = jsonArray.getJSONObject(i)
-                    items.add(MediaItem(
-                        id = obj.getString("id"),
-                        albumId = obj.getString("albumId"),
-                        baseUrl = obj.getString("baseUrl"),
-                        mimeType = obj.getString("mimeType"),
-                        width = obj.getInt("width"),
-                        height = obj.getInt("height"),
-                        description = if (obj.has("description")) obj.getString("description") else null,
-                        createdAt = if (obj.has("createdAt")) obj.getLong("createdAt") else System.currentTimeMillis(),
-                        loadState = MediaItem.LoadState.valueOf(
-                            if (obj.has("loadState")) obj.getString("loadState") else "IDLE"
-                        )
-                    ))
+                    try {
+                        val obj = jsonArray.getJSONObject(i)
+                        items.add(MediaItem(
+                            id = obj.getString("id"),
+                            albumId = obj.getString("albumId"),
+                            baseUrl = obj.getString("baseUrl"),
+                            mimeType = obj.getString("mimeType"),
+                            width = obj.getInt("width"),
+                            height = obj.getInt("height"),
+                            description = if (obj.has("description")) obj.getString("description") else null,
+                            createdAt = if (obj.has("createdAt")) obj.getLong("createdAt") else System.currentTimeMillis(),
+                            loadState = MediaItem.LoadState.valueOf(
+                                if (obj.has("loadState")) obj.getString("loadState") else "IDLE"
+                            )
+                        ))
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error parsing media item at index $i, skipping", e)
+                        continue
+                    }
                 }
 
                 mediaItems.clear()
@@ -536,73 +641,25 @@ class PhotoRepository @Inject constructor(
                 Log.d(TAG, "Successfully loaded ${items.size} items from cache")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading cached items", e)
+            Log.e(TAG, "Error loading cached items, clearing corrupted data", e)
+            // Clear corrupted data and reset
+            preferences.edit()
+                .remove(KEY_MEDIA_ITEMS)
+                .putBoolean(KEY_HAS_PHOTOS, false)
+                .apply()
+            mediaItems.clear()
         }
     }
 
-    private fun loadVirtualAlbums() {
-        try {
-            val json = preferences.getString(KEY_VIRTUAL_ALBUMS, null)
-            if (!json.isNullOrEmpty()) {
-                val jsonArray = JSONArray(json)
-
-                // Create a temporary list instead of modifying virtualAlbums directly
-                val tempAlbums = mutableListOf<VirtualAlbum>()
-
-                for (i in 0 until jsonArray.length()) {
-                    val obj = jsonArray.getJSONObject(i)
-                    val urisArray = obj.getJSONArray("photoUris")
-                    val photoUris = mutableListOf<String>()
-                    for (j in 0 until urisArray.length()) {
-                        photoUris.add(urisArray.getString(j))
-                    }
-
-                    val album = VirtualAlbum(
-                        id = obj.getString("id"),
-                        name = obj.getString("name"),
-                        photoUris = photoUris,
-                        dateCreated = obj.getLong("dateCreated"),
-                        isSelected = obj.optBoolean("isSelected", false)
-                    )
-                    tempAlbums.add(album)
-                }
-
-                // Now that iteration is complete, update the virtualAlbums list
-                synchronized(virtualAlbums) {
-                    virtualAlbums.clear()
-                    virtualAlbums.addAll(tempAlbums)
-                }
-
-                val selectedCount = virtualAlbums.count { it.isSelected }
-            }
+    // Helper method for JSON validation
+    private fun isValidJson(jsonString: String): Boolean {
+        return try {
+            JSONArray(jsonString)
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading virtual albums", e)
+            Log.w(TAG, "JSON validation failed: ${e.message}")
+            false
         }
-    }
-
-    fun addVirtualAlbum(album: VirtualAlbum) {
-        virtualAlbums.add(album)
-        saveVirtualAlbums()
-        Log.d(TAG, "Added new virtual album: ${album.name} (selected: ${album.isSelected})")
-    }
-
-    fun cleanup() {
-        // Cancel any ongoing coroutine operations
-        repoScope.cancel()
-
-        // Existing cleanup logic
-        val previousCount = mediaItems.size
-        mediaItems.clear()
-        virtualAlbums.clear()
-        preferences.edit()
-            .remove(KEY_MEDIA_ITEMS)
-            .remove(KEY_VIRTUAL_ALBUMS)
-            .putBoolean(KEY_HAS_PHOTOS, false)
-            .apply()
-        Log.d(TAG, "Explicitly cleared all photos and virtual albums (previous count: $previousCount)")
-
-        // Create a new scope for future operations
-        repoScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     }
 
     fun addPhotos(photos: List<MediaItem>, mode: PhotoAddMode = PhotoAddMode.MERGE) {
@@ -742,19 +799,53 @@ class PhotoRepository @Inject constructor(
     }
 
     fun getAllAlbums(): List<VirtualAlbum> {
-        return virtualAlbums.toList()
+        return synchronized(virtualAlbums) {
+            virtualAlbums.toList() // Create safe copy
+        }
+    }
+
+    fun addVirtualAlbum(album: VirtualAlbum) {
+        synchronized(virtualAlbums) {
+            virtualAlbums.add(album)
+        }
+        saveVirtualAlbums()
+        Log.d(TAG, "Added new virtual album: ${album.name} (selected: ${album.isSelected})")
     }
 
     fun syncVirtualAlbums(albums: List<VirtualAlbum>) {
-        virtualAlbums.clear()
-        virtualAlbums.addAll(albums)
+        synchronized(virtualAlbums) {
+            virtualAlbums.clear()
+            virtualAlbums.addAll(albums)
+        }
         saveVirtualAlbums()
         // Force reload to ensure consistency
         loadVirtualAlbums()
 
+        val selectedCount = synchronized(virtualAlbums) {
+            virtualAlbums.count { it.isSelected }
+        }
         Log.d(TAG, """Synced albums to repository:
-        • Total albums: ${virtualAlbums.size}
-        • Selected albums: ${virtualAlbums.count { it.isSelected }}
-        • Selection states: ${virtualAlbums.joinToString { "${it.id}: ${it.isSelected}" }}""".trimIndent())
+    • Total albums: ${virtualAlbums.size}
+    • Selected albums: ${selectedCount}
+    • Selection states: ${virtualAlbums.joinToString { "${it.id}: ${it.isSelected}" }}""".trimIndent())
+    }
+
+    fun cleanup() {
+        // Cancel any ongoing coroutine operations
+        repoScope.cancel()
+
+        // Existing cleanup logic
+        val previousCount = mediaItems.size
+        mediaItems.clear()
+        virtualAlbums.clear()
+        preferences.edit()
+            .remove(KEY_MEDIA_ITEMS)
+            .remove(KEY_VIRTUAL_ALBUMS)
+            .putBoolean(KEY_HAS_PHOTOS, false)
+            .apply()
+        Log.d(TAG, "Explicitly cleared all photos and virtual albums (previous count: $previousCount)")
+
+        // Create a new scope for future operations
+        repoScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     }
 }

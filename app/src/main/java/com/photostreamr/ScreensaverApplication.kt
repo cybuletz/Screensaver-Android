@@ -149,13 +149,13 @@ class ScreensaverApplication : Application() {
     }
 
     private fun checkFirstInstall() {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val lastInstalledVersion = prefs.getInt("last_installed_version", -1)
-        val currentVersion = BuildConfig.VERSION_CODE
+        applicationScope.launch(Dispatchers.IO) { // Move to background thread
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this@ScreensaverApplication)
+            val lastInstalledVersion = prefs.getInt("last_installed_version", -1)
+            val currentVersion = BuildConfig.VERSION_CODE
 
-        if (lastInstalledVersion == -1 || isAppDataCleared()) {
-            // This is a fresh install or app data was cleared
-            applicationScope.launch {
+            if (lastInstalledVersion == -1 || isAppDataCleared()) {
+                // This is a fresh install or app data was cleared
                 try {
                     appDataManager.performFullReset()
                     prefs.edit()

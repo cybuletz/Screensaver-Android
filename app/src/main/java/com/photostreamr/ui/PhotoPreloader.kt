@@ -61,21 +61,24 @@ class PhotoPreloader @Inject constructor(
     fun releaseContentUri(uri: String) {
         if (!uri.startsWith("content://")) return
 
-        try {
-            // Remove from tracking
-            openContentUris.remove(uri)
+        // Move the actual I/O operation to background thread
+        preloaderScope.launch(Dispatchers.IO) {
+            try {
+                // Remove from tracking
+                openContentUris.remove(uri)
 
-            // Try to explicitly close resources
-            context.contentResolver.openInputStream(Uri.parse(uri))?.close()
+                // Try to explicitly close resources (now on IO thread)
+                context.contentResolver.openInputStream(Uri.parse(uri))?.close()
 
-            // Force GC on Android 8 to help release native resources
-            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.O) {
-                System.gc()
+                // Force GC on Android 8 to help release native resources
+                if (Build.VERSION.SDK_INT == Build.VERSION_CODES.O) {
+                    System.gc()
+                }
+
+                Log.d(TAG, "Released resources for content URI: $uri")
+            } catch (e: Exception) {
+                Log.d(TAG, "Non-critical error releasing content URI: ${e.message}")
             }
-
-            Log.d(TAG, "Released resources for content URI: $uri")
-        } catch (e: Exception) {
-            Log.d(TAG, "Non-critical error releasing content URI: ${e.message}")
         }
     }
 
